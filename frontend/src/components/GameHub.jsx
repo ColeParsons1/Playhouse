@@ -234,21 +234,28 @@ const GameHub = ({ player, onPlayerUpdate }) => {
       const gameData = GAMES.find(g => g.id === currentGame);
       if (gameData) {
         const previousHigh = getHighScore(currentGame);
-        saveHighScore(currentGame, gameData.name, earnedCoins, player?.name || 'Player');
+        saveHighScore(currentGame, gameData.name, earnedCoins, player?.name || 'Guest');
         const isNewRecord = earnedCoins > previousHigh;
 
         // Force leaderboard refresh
         setLeaderboardKey(k => k + 1);
 
-        try {
-          // Add coins to player
-          const response = await playerApi.addCoins(player.id, earnedCoins);
-          setReward({ coins: earnedCoins, isNewRecord, gameName: gameData.name });
-          setShowReward(true);
-          onPlayerUpdate?.(response.data);
-        } catch (error) {
-          console.error('Failed to add coins:', error);
-          // Still show the reward even if API fails
+        // Only try to save coins if player is logged in
+        if (player?.id) {
+          try {
+            // Add coins to player
+            const response = await playerApi.addCoins(player.id, earnedCoins);
+            setReward({ coins: earnedCoins, isNewRecord, gameName: gameData.name });
+            setShowReward(true);
+            onPlayerUpdate?.(response.data);
+          } catch (error) {
+            console.error('Failed to add coins:', error);
+            // Still show the reward even if API fails
+            setReward({ coins: earnedCoins, isNewRecord, gameName: gameData.name });
+            setShowReward(true);
+          }
+        } else {
+          // Guest mode - just show the reward without saving
           setReward({ coins: earnedCoins, isNewRecord, gameName: gameData.name });
           setShowReward(true);
         }

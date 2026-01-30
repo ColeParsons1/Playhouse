@@ -42,19 +42,30 @@ function App() {
   }, []);
 
   const initializePlayer = async () => {
+    // Load saved theme from localStorage first
+    const savedTheme = localStorage.getItem('active_theme');
+    if (savedTheme) {
+      setActiveTheme(savedTheme);
+    }
+
+    // Stop loading immediately so users can play games
+    setLoading(false);
+
+    // Try to get player data in background (optional)
     try {
       const response = await playerApi.getOrCreateTanvi();
       setPlayer(response.data);
 
-      // Load saved theme from localStorage
-      const savedTheme = localStorage.getItem(`active_theme_${response.data?.id}`);
-      if (savedTheme) {
-        setActiveTheme(savedTheme);
+      // Update theme if player has one saved
+      if (response.data?.id) {
+        const playerTheme = localStorage.getItem(`active_theme_${response.data.id}`);
+        if (playerTheme) {
+          setActiveTheme(playerTheme);
+        }
       }
     } catch (error) {
-      console.error('Failed to initialize player:', error);
-    } finally {
-      setLoading(false);
+      console.error('Failed to initialize player (playing as guest):', error);
+      // Player stays null - guest mode
     }
   };
 
