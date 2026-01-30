@@ -6,6 +6,7 @@ import FloatingAnimals from './components/FloatingAnimals';
 import BottomNav from './components/BottomNav';
 import VoiceRoomsLobby from './components/VoiceRoomsLobby';
 import VoiceRoomGame from './components/VoiceRoomGame';
+import AnniversaryCard from './components/AnniversaryCard';
 import './App.css';
 
 // Lazy load screens and modals
@@ -34,6 +35,7 @@ function App() {
   const [currentRoom, setCurrentRoom] = useState(null);
   const [inGame, setInGame] = useState(false);
   const [activeTheme, setActiveTheme] = useState('default');
+  const [showAnniversaryCard, setShowAnniversaryCard] = useState(true);
 
   useEffect(() => {
     initializePlayer();
@@ -183,6 +185,13 @@ function App() {
   return (
     <ThemeProvider theme={activeTheme}>
       <div className="app">
+        {/* Anniversary Card - shows on first load */}
+        <AnimatePresence>
+          {showAnniversaryCard && (
+            <AnniversaryCard onClose={() => setShowAnniversaryCard(false)} />
+          )}
+        </AnimatePresence>
+
         {/* Voice Room Game - shows when player is in a room */}
         {inGame && currentRoom && (
           <VoiceRoomGame
