@@ -50,8 +50,8 @@
     color-mix(in srgb, var(--game-color) 80%, white),
     color-mix(in srgb, var(--game-color) 95%, black)
   );
-  backdrop-filter: blur(30px) saturate(200%);
-  -webkit-backdrop-filter: blur(30px) saturate(200%);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
   border: 2px solid color-mix(in srgb, var(--game-color) 50%, white);
   border-radius: var(--radius-xl);
   cursor: pointer;
@@ -260,8 +260,8 @@
     rgba(255, 255, 255, 0.08) 50%,
     rgba(255, 255, 255, 0.12) 100%
   );
-  backdrop-filter: blur(50px) saturate(200%) brightness(1.1);
-  -webkit-backdrop-filter: blur(50px) saturate(200%) brightness(1.1);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: var(--radius-2xl);
   padding: 32px;

@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense, memo, useCallback } from 'react';
+import React, { useState, lazy, Suspense, memo, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { playerApi } from '../api/client';
 import Leaderboard, { saveHighScore, getHighScore } from './Leaderboard';
@@ -225,6 +225,18 @@ const GameHub = ({ player, onPlayerUpdate }) => {
     setActiveGame(gameId);
   }, []);
 
+  // Use refs for stable values to prevent unnecessary re-renders
+  const playerIdRef = React.useRef(player?.id);
+  const playerNameRef = React.useRef(player?.name);
+  const onPlayerUpdateRef = React.useRef(onPlayerUpdate);
+
+  // Update refs when values change
+  React.useEffect(() => {
+    playerIdRef.current = player?.id;
+    playerNameRef.current = player?.name;
+    onPlayerUpdateRef.current = onPlayerUpdate;
+  }, [player?.id, player?.name, onPlayerUpdate]);
+
   const handleGameEnd = useCallback(async (earnedCoins) => {
     const currentGame = activeGame;
     setActiveGame(null);
@@ -234,20 +246,20 @@ const GameHub = ({ player, onPlayerUpdate }) => {
       const gameData = GAMES.find(g => g.id === currentGame);
       if (gameData) {
         const previousHigh = getHighScore(currentGame);
-        saveHighScore(currentGame, gameData.name, earnedCoins, player?.name || 'Guest');
+        saveHighScore(currentGame, gameData.name, earnedCoins, playerNameRef.current || 'Guest');
         const isNewRecord = earnedCoins > previousHigh;
 
         // Force leaderboard refresh
         setLeaderboardKey(k => k + 1);
 
         // Only try to save coins if player is logged in
-        if (player?.id) {
+        if (playerIdRef.current) {
           try {
             // Add coins to player
-            const response = await playerApi.addCoins(player.id, earnedCoins);
+            const response = await playerApi.addCoins(playerIdRef.current, earnedCoins);
             setReward({ coins: earnedCoins, isNewRecord, gameName: gameData.name });
             setShowReward(true);
-            onPlayerUpdate?.(response.data);
+            onPlayerUpdateRef.current?.(response.data);
           } catch (error) {
             console.error('Failed to add coins:', error);
             // Still show the reward even if API fails
@@ -261,7 +273,7 @@ const GameHub = ({ player, onPlayerUpdate }) => {
         }
       }
     }
-  }, [activeGame, player?.id, player?.name, onPlayerUpdate]);
+  }, [activeGame]); // Only depends on activeGame now - more stable
 
   const handleCloseGame = useCallback(() => {
     setActiveGame(null);
@@ -314,8 +326,9 @@ const GameHub = ({ player, onPlayerUpdate }) => {
     );
   };
 
-  const featuredGame = GAMES.find(g => g.featured);
-  const otherGames = GAMES.filter(g => !g.featured);
+  // Memoize game lists to prevent recalculation on every render
+  const featuredGame = useMemo(() => GAMES.find(g => g.featured), []);
+  const otherGames = useMemo(() => GAMES.filter(g => !g.featured), []);
 
   return (
     <div className="game-hub">

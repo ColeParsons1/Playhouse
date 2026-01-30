@@ -1961,3 +1961,56 @@ body.theme-rainbow {
   --text-secondary: rgba(26, 26, 46, 0.7);
   --text-muted: rgba(26, 26, 46, 0.5);
 }
+
+/* ============================================
+   PERFORMANCE OPTIMIZATIONS
+   Disable heavy animations on mobile & reduced motion
+   ============================================ */
+
+/* Respect user's reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  body::after {
+    animation: none !important;
+  }
+
+  .theme-wrapper {
+    transition: none !important;
+  }
+
+  body {
+    background-attachment: scroll !important;
+    animation: none !important;
+  }
+}
+
+/* Disable expensive animations on mobile for better performance */
+@media (max-width: 768px) {
+  body::before,
+  body::after {
+    animation-duration: 20s !important; /* Slow down animations significantly */
+    animation-timing-function: linear !important;
+  }
+
+  /* Use simpler backgrounds on mobile */
+  body {
+    background-attachment: scroll !important; /* Fixed backgrounds are expensive on mobile */
+  }
+}
+
+/* Battery saver - reduce animations when device is in low power mode */
+@media (prefers-reduced-motion: reduce), (update: slow) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* GPU acceleration hints for smoother animations */
+body::before,
+body::after {
+  will-change: opacity, transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}

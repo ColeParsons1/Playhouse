@@ -1,13 +1,84 @@
 import axios from 'axios';
 
-const API_BASE = 'http://172.20.4.93:8001/api';
+// Use environment variable or fallback - production uses relative URL for nginx proxy
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
+
+// Simple in-memory cache for GET requests
+const cache = new Map();
+const CACHE_DURATION = 30000; // 30 seconds
 
 const client = axios.create({
   baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 10000, // 10 second timeout
 });
+
+// Request deduplication - prevent duplicate concurrent requests
+const pendingRequests = new Map();
+
+// Response interceptor for caching GET requests
+client.interceptors.request.use((config) => {
+  // Only cache GET requests
+  if (config.method === 'get') {
+    const cacheKey = config.url + JSON.stringify(config.params || {});
+    const cached = cache.get(cacheKey);
+
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      // Return cached response by throwing a special error that we'll catch
+      const error = new Error('CACHE_HIT');
+      error.cachedResponse = cached.data;
+      throw error;
+    }
+
+    // Check for pending duplicate request
+    if (pendingRequests.has(cacheKey)) {
+      return pendingRequests.get(cacheKey);
+    }
+
+    config._cacheKey = cacheKey;
+  }
+  return config;
+});
+
+// Response interceptor to store in cache
+client.interceptors.response.use(
+  (response) => {
+    if (response.config.method === 'get' && response.config._cacheKey) {
+      cache.set(response.config._cacheKey, {
+        data: response,
+        timestamp: Date.now(),
+      });
+      pendingRequests.delete(response.config._cacheKey);
+    }
+    return response;
+  },
+  (error) => {
+    // Handle cache hit
+    if (error.message === 'CACHE_HIT') {
+      return Promise.resolve(error.cachedResponse);
+    }
+    // Clean up pending request on error
+    if (error.config?._cacheKey) {
+      pendingRequests.delete(error.config._cacheKey);
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Clear cache utility (call after mutations)
+export const clearCache = (urlPattern) => {
+  if (urlPattern) {
+    for (const key of cache.keys()) {
+      if (key.includes(urlPattern)) {
+        cache.delete(key);
+      }
+    }
+  } else {
+    cache.clear();
+  }
+};
 
 export const playerApi = {
   getOrCreateTanvi: () => client.post('/players/get_or_create_tanvi/'),

@@ -60,7 +60,7 @@
     rgba(255, 255, 255, 0.05) 50%,
     rgba(255, 255, 255, 0.1) 100%
   );
-  --glass-blur: blur(40px) saturate(200%) brightness(1.1);
+  --glass-blur: blur(16px) saturate(150%);
   --glass-border: 1px solid rgba(255, 255, 255, 0.25);
   --glass-shadow:
     0 8px 32px rgba(0, 0, 0, 0.12),
@@ -540,4 +540,68 @@ input::placeholder, textarea::placeholder {
 .tooltip:hover::after {
   opacity: 1;
   visibility: visible;
+}
+
+/* ============================================
+   PERFORMANCE OPTIMIZATIONS
+   ============================================ */
+
+/* GPU acceleration for animated elements */
+.float-animation,
+.bounce-animation,
+.pop-animation,
+.slide-in,
+.fade-in,
+.hover-lift,
+.animated-border {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Optimize mobile performance */
+@media (max-width: 768px) {
+  /* Disable expensive backdrop-filter on mobile when not needed */
+  .cute-card,
+  .glass-panel {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* Simpler shadows on mobile */
+  .hover-lift:hover {
+    transform: translateY(-2px);
+  }
+
+  /* Reduce animation complexity */
+  .float-animation {
+    animation-duration: 4s;
+  }
+}
+
+/* Content visibility for off-screen elements */
+.game-card,
+.games-grid > * {
+  content-visibility: auto;
+  contain-intrinsic-size: 150px;
+}
+
+/* Optimize paint for frequently changing elements */
+.xp-bar-fill,
+.loading-spinner,
+.status-online {
+  will-change: width, transform;
+  contain: layout style paint;
 }
