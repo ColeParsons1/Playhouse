@@ -5,9 +5,8 @@
 }
 
 .app-content {
-  position: relative;
-  z-index: 1;
   padding-bottom: 64px; /* Space for bottom nav */
+  /* Note: Removed position:relative and z-index to allow game overlays to escape stacking context */
 }
 
 /* Screen Loading */
