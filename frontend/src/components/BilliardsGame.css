@@ -1,0 +1,665 @@
+/* Billiards Game Styles */
+
+.billiards-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: linear-gradient(180deg, #1a3d1a 0%, #0d2b0d 100%);
+  z-index: 10000;
+  display: flex;
+  overflow: hidden;
+  isolation: isolate;
+  contain: strict;
+}
+
+.billiards-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+}
+
+/* ============================================
+   HEADER
+   ============================================ */
+.billiards-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  padding-top: max(10px, env(safe-area-inset-top, 0px));
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.3) 100%);
+  border-radius: 16px;
+  margin-bottom: 10px;
+  z-index: 200;
+}
+
+.billiards-player-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 8px 16px;
+  border-radius: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  min-width: 90px;
+  transition: all 0.3s ease;
+}
+
+.billiards-player-stat.active {
+  background: linear-gradient(135deg, rgba(100, 200, 100, 0.4), rgba(50, 150, 50, 0.3));
+  border-color: rgba(100, 255, 100, 0.6);
+  box-shadow: 0 0 20px rgba(100, 255, 100, 0.3);
+}
+
+.billiards-player-stat.cpu {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.billiards-player-stat.cpu.active {
+  background: linear-gradient(135deg, rgba(255, 100, 100, 0.4), rgba(200, 50, 50, 0.3));
+  border-color: rgba(255, 100, 100, 0.6);
+  box-shadow: 0 0 20px rgba(255, 100, 100, 0.3);
+}
+
+.player-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.player-score {
+  font-size: 1.4rem;
+  font-weight: 900;
+  color: #FFD700;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+.billiards-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 8px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.billiards-stat.score {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.3), rgba(255, 165, 0, 0.2));
+  border-color: rgba(255, 215, 0, 0.5);
+}
+
+.billiards-stat.pocketed {
+  background: linear-gradient(135deg, rgba(100, 100, 100, 0.3), rgba(50, 50, 50, 0.2));
+  border-color: rgba(150, 150, 150, 0.5);
+}
+
+.billiards-stat-icon {
+  font-size: 1.2rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.billiards-stat-value {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.billiards-timer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, rgba(139, 69, 19, 0.6), rgba(101, 67, 33, 0.4));
+  padding: 10px 18px;
+  border-radius: 25px;
+  border: 2px solid rgba(139, 69, 19, 0.7);
+}
+
+.billiards-timer-icon {
+  font-size: 1.2rem;
+}
+
+.billiards-timer-value {
+  font-size: 1.3rem;
+  font-weight: 900;
+  color: #FFD700;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+.billiards-timer-value.warning {
+  animation: billiards-pulse-warning 0.4s ease-in-out infinite;
+  color: #FF4444;
+}
+
+@keyframes billiards-pulse-warning {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
+/* ============================================
+   STREAK INDICATOR
+   ============================================ */
+.billiards-streak {
+  position: absolute;
+  top: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, rgba(255, 150, 50, 0.95), rgba(255, 80, 30, 0.9));
+  color: white;
+  padding: 10px 24px;
+  border-radius: 25px;
+  font-size: 1rem;
+  font-weight: 800;
+  z-index: 160;
+  border: 2px solid rgba(255, 200, 100, 0.7);
+  box-shadow: 0 4px 20px rgba(255, 100, 0, 0.5);
+  animation: streak-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes streak-pop {
+  0% {
+    transform: translateX(-50%) scale(0.5);
+    opacity: 0;
+  }
+  50% {
+    transform: translateX(-50%) scale(1.1);
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+}
+
+/* ============================================
+   TURN INDICATOR
+   ============================================ */
+.billiards-turn-indicator {
+  position: absolute;
+  top: 75px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  z-index: 150;
+  animation: turn-fade-in 0.3s ease-out;
+}
+
+.billiards-turn-indicator.player {
+  background: linear-gradient(135deg, rgba(100, 200, 100, 0.9), rgba(50, 150, 50, 0.8));
+  color: white;
+  border: 2px solid rgba(100, 255, 100, 0.5);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.billiards-turn-indicator.cpu {
+  background: linear-gradient(135deg, rgba(200, 100, 100, 0.9), rgba(150, 50, 50, 0.8));
+  color: white;
+  border: 2px solid rgba(255, 100, 100, 0.5);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes turn-fade-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* ============================================
+   GAME MESSAGE
+   ============================================ */
+.billiards-message {
+  position: absolute;
+  top: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: #FFD700;
+  padding: 12px 24px;
+  border-radius: 25px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  z-index: 150;
+  animation: billiards-message-pop 0.3s ease-out;
+  border: 2px solid rgba(255, 215, 0, 0.5);
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+@keyframes billiards-message-pop {
+  0% {
+    transform: translateX(-50%) scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+}
+
+/* ============================================
+   GAME AREA
+   ============================================ */
+.billiards-game-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  min-height: 300px;
+  width: 100%;
+}
+
+.billiards-game-area canvas {
+  border-radius: 10px;
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.5),
+    0 0 0 5px #5a2d0a,
+    0 0 0 10px #3d1a0a,
+    inset 0 0 30px rgba(0, 0, 0, 0.3);
+  touch-action: none;
+  cursor: crosshair;
+}
+
+/* ============================================
+   POCKETED BALLS DISPLAY
+   ============================================ */
+.billiards-pocketed {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 16px;
+  margin-top: 10px;
+  min-height: 50px;
+  flex-wrap: wrap;
+}
+
+.pocketed-ball {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 900;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.4),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 2px 4px rgba(255, 255, 255, 0.2);
+  animation: pocketed-pop 0.3s ease-out;
+}
+
+.pocketed-ball span {
+  background: white;
+  color: black;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.55rem;
+}
+
+@keyframes pocketed-pop {
+  0% {
+    transform: scale(0);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ============================================
+   HINT
+   ============================================ */
+.billiards-hint {
+  position: absolute;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  color: rgba(255, 255, 255, 0.8);
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  z-index: 100;
+  pointer-events: none;
+  animation: billiards-hint-pulse 2s ease-in-out infinite;
+}
+
+@keyframes billiards-hint-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* ============================================
+   COUNTDOWN
+   ============================================ */
+.billiards-countdown {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 8rem;
+  font-weight: 900;
+  color: #FFD700;
+  text-shadow:
+    0 0 40px rgba(255, 215, 0, 0.9),
+    0 0 80px rgba(255, 215, 0, 0.6),
+    0 6px 12px rgba(0, 0, 0, 0.8),
+    -3px -3px 0 #8B4513,
+    3px -3px 0 #8B4513,
+    -3px 3px 0 #8B4513,
+    3px 3px 0 #8B4513;
+  z-index: 250;
+  animation: billiards-countdown-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  pointer-events: none;
+}
+
+@keyframes billiards-countdown-pop {
+  0% {
+    transform: translate(-50%, -50%) scale(2);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+
+/* ============================================
+   GAME OVER
+   ============================================ */
+.billiards-game-over {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  z-index: 300;
+  animation: billiards-fade-in 0.4s ease-out;
+}
+
+@keyframes billiards-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.billiards-game-over-content {
+  background: linear-gradient(145deg, #2d4a2d, #1a3a1a);
+  border-radius: 32px;
+  padding: 40px 36px;
+  max-width: 400px;
+  width: 92%;
+  text-align: center;
+  box-shadow:
+    0 25px 80px rgba(0, 0, 0, 0.5),
+    0 0 60px rgba(139, 69, 19, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border: 3px solid rgba(139, 69, 19, 0.6);
+  animation: billiards-game-over-slide 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes billiards-game-over-slide {
+  from {
+    transform: translateY(80px) scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.billiards-game-over-title {
+  font-size: 2rem;
+  font-weight: 900;
+  margin: 0 0 28px 0;
+  background: linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FFD700 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: billiards-shine 2s linear infinite;
+}
+
+@keyframes billiards-shine {
+  0% { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+
+.billiards-game-over-title span {
+  -webkit-text-fill-color: initial;
+}
+
+.billiards-final-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.billiards-final-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.billiards-final-stat.highlight {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.25), rgba(255, 165, 0, 0.15));
+  border-color: rgba(255, 215, 0, 0.5);
+  box-shadow: 0 6px 20px rgba(255, 215, 0, 0.2);
+}
+
+.billiards-final-icon {
+  font-size: 1.8rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.billiards-final-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  flex: 1;
+  text-align: left;
+  margin-left: 12px;
+}
+
+.billiards-final-value {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.billiards-final-value.coins {
+  color: #FFD700;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+.billiards-achievement {
+  display: inline-block;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  border-radius: 25px;
+  color: #5a3d00;
+  font-weight: 900;
+  font-size: 1rem;
+  margin-bottom: 24px;
+  box-shadow: 0 6px 25px rgba(255, 165, 0, 0.5);
+}
+
+.billiards-claim-btn {
+  width: 100%;
+  padding: 18px 28px;
+  font-size: 1.25rem;
+  background: linear-gradient(135deg, #8B4513 0%, #654321 50%, #8B4513 100%) !important;
+  background-size: 200% auto;
+  color: white !important;
+  border: none;
+  border-radius: 20px;
+  font-weight: 900;
+  box-shadow:
+    0 8px 30px rgba(139, 69, 19, 0.4),
+    inset 0 2px 0 rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.3s ease;
+}
+
+.billiards-claim-btn:hover {
+  background-position: right center;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(139, 69, 19, 0.5);
+}
+
+.billiards-claim-btn:active {
+  transform: scale(0.98) translateY(0);
+}
+
+/* ============================================
+   CLOSE BUTTON
+   ============================================ */
+.billiards-close-btn {
+  position: absolute;
+  top: max(20px, env(safe-area-inset-top, 0px));
+  right: 20px;
+  width: 44px;
+  height: 44px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid rgba(255, 100, 100, 0.4);
+  border-radius: 50%;
+  color: #FF6B6B;
+  font-size: 1.2rem;
+  cursor: pointer;
+  z-index: 250;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.billiards-close-btn:hover {
+  background: rgba(255, 100, 100, 0.3);
+  border-color: rgba(255, 100, 100, 0.6);
+  transform: scale(1.1);
+}
+
+/* ============================================
+   MOBILE OPTIMIZATIONS
+   ============================================ */
+@media (max-width: 480px) {
+  .billiards-container {
+    padding: 5px;
+  }
+
+  .billiards-header {
+    padding: 8px 12px;
+    margin-bottom: 5px;
+  }
+
+  .billiards-stat {
+    padding: 6px 10px;
+  }
+
+  .billiards-stat-icon {
+    font-size: 1rem;
+  }
+
+  .billiards-stat-value {
+    font-size: 0.9rem;
+  }
+
+  .billiards-timer {
+    padding: 8px 12px;
+  }
+
+  .billiards-countdown {
+    font-size: 5rem;
+  }
+
+  .billiards-game-over-content {
+    padding: 28px 24px;
+  }
+
+  .billiards-game-over-title {
+    font-size: 1.6rem;
+  }
+
+  .billiards-pocketed {
+    padding: 8px;
+    gap: 5px;
+  }
+
+  .pocketed-ball {
+    width: 25px;
+    height: 25px;
+  }
+
+  .pocketed-ball span {
+    width: 12px;
+    height: 12px;
+    font-size: 0.5rem;
+  }
+}
+
+/* Landscape optimization */
+@media (max-height: 500px) and (orientation: landscape) {
+  .billiards-header {
+    padding: 6px 12px;
+  }
+
+  .billiards-countdown {
+    font-size: 4rem;
+  }
+
+  .billiards-pocketed {
+    padding: 6px;
+  }
+}
+
+/* Very small screens */
+@media (max-width: 360px) {
+  .billiards-stat {
+    padding: 5px 8px;
+    gap: 4px;
+  }
+
+  .billiards-timer {
+    padding: 6px 10px;
+  }
+}

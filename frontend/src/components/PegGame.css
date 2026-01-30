@@ -1,0 +1,470 @@
+/* Peg Game (Cracker Barrel) Styles */
+
+.peg-game-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: linear-gradient(180deg, #2C1810 0%, #4A3728 50%, #2C1810 100%);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.peg-game-container {
+  width: 100%;
+  height: 100%;
+  max-width: 500px;
+  max-height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Menu */
+.peg-game-menu {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  text-align: center;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.peg-game-title {
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: #F4D03F;
+  text-shadow:
+    3px 3px 0 #8B4513,
+    -1px -1px 0 #654321,
+    0 4px 10px rgba(0, 0, 0, 0.5);
+  margin-bottom: 10px;
+}
+
+.peg-game-title span {
+  display: inline-block;
+  animation: peg-bounce 0.8s ease-in-out infinite alternate;
+}
+
+.peg-game-title span:last-child {
+  animation-delay: 0.4s;
+}
+
+@keyframes peg-bounce {
+  from { transform: translateY(0) rotate(0deg); }
+  to { transform: translateY(-5px) rotate(5deg); }
+}
+
+.peg-game-subtitle {
+  font-size: 1.1rem;
+  color: #D4A574;
+  margin-bottom: 20px;
+}
+
+.peg-game-rules {
+  background: rgba(139, 69, 19, 0.5);
+  border-radius: 16px;
+  padding: 15px 20px;
+  margin-bottom: 20px;
+  max-width: 320px;
+  border: 2px solid #654321;
+}
+
+.peg-game-rules h3 {
+  margin: 0 0 10px 0;
+  color: #F4D03F;
+  font-size: 1.1rem;
+}
+
+.peg-game-rules ul {
+  margin: 0;
+  padding-left: 20px;
+  text-align: left;
+  color: #E8D5B7;
+  font-size: 0.95rem;
+}
+
+.peg-game-rules li {
+  margin-bottom: 6px;
+}
+
+.starting-hole-select {
+  background: rgba(139, 69, 19, 0.4);
+  border-radius: 16px;
+  padding: 15px 20px;
+  margin-bottom: 20px;
+  border: 2px solid #654321;
+}
+
+.starting-hole-select h3 {
+  margin: 0 0 15px 0;
+  color: #F4D03F;
+  font-size: 1rem;
+}
+
+.mini-board {
+  position: relative;
+  width: 160px;
+  height: 140px;
+  margin: 0 auto 10px;
+}
+
+.mini-hole {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #1a0f0a;
+  border: 2px solid #654321;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 12px;
+  color: #F4D03F;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mini-hole:hover {
+  background: #F4D03F;
+  transform: scale(1.2);
+}
+
+.hint-text {
+  color: #A08060;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.peg-close-btn-menu {
+  padding: 12px 24px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid #654321;
+  border-radius: 25px;
+  color: #D4A574;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.peg-close-btn-menu:hover {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* Playing */
+.peg-game-playing {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.peg-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.peg-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(139, 69, 19, 0.5);
+  padding: 8px 14px;
+  border-radius: 20px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #F4D03F;
+}
+
+.peg-moves {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #D4A574;
+}
+
+.peg-reset-btn {
+  background: rgba(139, 69, 19, 0.5);
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.peg-reset-btn:hover {
+  transform: rotate(180deg);
+  background: rgba(139, 69, 19, 0.8);
+}
+
+.peg-board-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.peg-board {
+  position: relative;
+  width: 200px;
+  height: 180px;
+}
+
+.board-triangle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.5));
+}
+
+.peg-hole {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  margin-left: -14px;
+  margin-top: -14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #2a1a10, #1a0f0a);
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.8),
+    0 1px 2px rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: all 0.2s;
+  z-index: 1;
+}
+
+.peg-hole.valid-move {
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.8),
+    0 0 10px rgba(0, 255, 0, 0.6),
+    0 0 20px rgba(0, 255, 0, 0.3);
+}
+
+.valid-move-indicator {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: rgba(0, 255, 0, 0.3);
+  animation: pulse-move 1s ease-in-out infinite;
+}
+
+@keyframes pulse-move {
+  0%, 100% { transform: scale(0.8); opacity: 0.5; }
+  50% { transform: scale(1); opacity: 1; }
+}
+
+.peg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px;
+  height: 32px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.peg:hover {
+  transform: translate(-50%, -55%);
+}
+
+.peg-selected {
+  transform: translate(-50%, -60%) !important;
+  filter: drop-shadow(0 4px 8px rgba(244, 208, 63, 0.5));
+}
+
+.peg-top {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #E74C3C, #C0392B);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.peg-body {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 22px;
+  background: linear-gradient(90deg, #D4A574, #C19A6B, #D4A574);
+  border-radius: 2px 2px 4px 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.peg-hole.selected .peg-top {
+  background: radial-gradient(circle at 30% 30%, #F4D03F, #D4AC0D);
+}
+
+.peg-instructions {
+  padding: 15px 20px;
+  text-align: center;
+  color: #D4A574;
+  font-size: 1rem;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.peg-close-btn {
+  position: absolute;
+  top: max(60px, calc(env(safe-area-inset-top, 0px) + 50px));
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  z-index: 100;
+}
+
+/* Game Over */
+.peg-game-over {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(5px);
+}
+
+.peg-game-over-content {
+  background: linear-gradient(145deg, #4A3728, #2C1810);
+  border: 3px solid #8B4513;
+  border-radius: 24px;
+  padding: 30px;
+  text-align: center;
+  max-width: 320px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.rating-emoji {
+  font-size: 4rem;
+  margin-bottom: 10px;
+}
+
+.peg-game-over-content h2 {
+  font-size: 1.6rem;
+  color: #F4D03F;
+  margin: 0 0 15px 0;
+  text-shadow: 2px 2px 0 #8B4513;
+}
+
+.peg-stars {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.peg-stars .star {
+  font-size: 2rem;
+  opacity: 0.3;
+  filter: grayscale(1);
+  transition: all 0.3s;
+}
+
+.peg-stars .star.earned {
+  opacity: 1;
+  filter: grayscale(0);
+  animation: star-pop 0.3s ease-out;
+}
+
+@keyframes star-pop {
+  0% { transform: scale(0); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+.pegs-remaining {
+  font-size: 1.1rem;
+  color: #D4A574;
+  margin-bottom: 10px;
+}
+
+.final-score {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #F4D03F;
+  margin-bottom: 20px;
+}
+
+.peg-game-over-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.peg-claim-btn {
+  padding: 14px 28px;
+  background: linear-gradient(135deg, #4CAF50, #2E7D32);
+  border: none;
+  border-radius: 30px;
+  color: white;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.peg-claim-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
+}
+
+.peg-retry-btn,
+.peg-menu-btn {
+  padding: 12px 24px;
+  background: rgba(139, 69, 19, 0.5);
+  border: 2px solid #654321;
+  border-radius: 25px;
+  color: #D4A574;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.peg-retry-btn:hover,
+.peg-menu-btn:hover {
+  background: rgba(139, 69, 19, 0.8);
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+  .peg-game-title {
+    font-size: 1.8rem;
+  }
+
+  .peg-board {
+    transform: scale(1.1);
+  }
+
+  .peg-stat {
+    padding: 6px 10px;
+    font-size: 0.95rem;
+  }
+}

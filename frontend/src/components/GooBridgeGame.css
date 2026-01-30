@@ -1,0 +1,521 @@
+/* Goo Bridge Game */
+
+.goo-bridge-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: linear-gradient(180deg,
+    #0f0f23 0%,
+    #1a1a2e 50%,
+    #16213e 100%
+  );
+  z-index: 10000;
+  display: flex;
+  overflow: hidden;
+  isolation: isolate;
+  contain: strict;
+}
+
+.goo-bridge-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Menu */
+.goo-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px;
+  text-align: center;
+}
+
+.goo-title {
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: #2ecc71;
+  text-shadow: 0 4px 20px rgba(46, 204, 113, 0.5);
+  margin-bottom: 10px;
+}
+
+.goo-subtitle {
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 30px;
+}
+
+.goo-instructions-box {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 20px 30px;
+  margin-bottom: 30px;
+}
+
+.goo-instructions-box p {
+  color: rgba(255, 255, 255, 0.8);
+  margin: 8px 0;
+  font-size: 1rem;
+}
+
+.start-button {
+  background: linear-gradient(135deg, #2ecc71, #27ae60);
+  color: white;
+  border: none;
+  padding: 16px 40px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  border-radius: 30px;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(46, 204, 113, 0.4);
+  transition: all 0.2s ease;
+  margin-bottom: 15px;
+}
+
+.start-button:hover {
+  transform: scale(1.05);
+}
+
+.start-button:active {
+  transform: scale(0.98);
+}
+
+.close-button-menu {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 12px 30px;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 25px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.close-button-menu:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Header */
+.goo-bridge-overlay .game-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  padding-top: max(16px, env(safe-area-inset-top, 0px));
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.4) 0%, transparent 100%);
+}
+
+/* Timer */
+.goo-bridge-overlay .game-timer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 8px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.goo-bridge-overlay .game-timer.warning {
+  background: rgba(255, 100, 100, 0.2);
+  border-color: rgba(255, 100, 100, 0.5);
+  animation: timer-pulse 0.5s ease-in-out infinite;
+}
+
+@keyframes timer-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.goo-bridge-overlay .timer-icon {
+  font-size: 1.1rem;
+}
+
+.goo-bridge-overlay .timer-value {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: white;
+}
+
+.level-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.level-number {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #2ecc71;
+}
+
+.level-name {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.goo-bridge-overlay .game-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 8px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.goo-bridge-overlay .stat-icon {
+  font-size: 1.2rem;
+}
+
+.goo-bridge-overlay .stat-value {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: white;
+}
+
+/* Canvas Container */
+.canvas-container {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+}
+
+.canvas-container canvas {
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  touch-action: none;
+}
+
+/* Footer */
+.game-footer {
+  width: 100%;
+  padding: 16px 20px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  display: flex;
+  justify-content: center;
+}
+
+.goo-remaining {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(46, 204, 113, 0.2);
+  padding: 12px 24px;
+  border-radius: 25px;
+  border: 2px solid rgba(46, 204, 113, 0.4);
+}
+
+.goo-icon {
+  font-size: 1.5rem;
+}
+
+.goo-count {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: #2ecc71;
+}
+
+.goo-label {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.goo-used-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.goo-used-label {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.goo-used-count {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Hint Popup */
+.hint-popup {
+  position: absolute;
+  bottom: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 230, 109, 0.2);
+  border: 1px solid rgba(255, 230, 109, 0.5);
+  padding: 12px 24px;
+  border-radius: 20px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ffe66d;
+  white-space: nowrap;
+  z-index: 50;
+}
+
+/* Goal Reached Flash */
+.goal-reached-flash {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.9), rgba(255, 165, 0, 0.9));
+  color: #8B4513;
+  padding: 20px 40px;
+  border-radius: 20px;
+  font-size: 1.5rem;
+  font-weight: 800;
+  animation: goal-flash 0.5s ease-out;
+  z-index: 100;
+}
+
+@keyframes goal-flash {
+  0% { transform: translate(-50%, -50%) scale(0); }
+  50% { transform: translate(-50%, -50%) scale(1.1); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+
+/* Level Complete Screen */
+.level-complete-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 200;
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.level-complete-content {
+  background: linear-gradient(145deg, #1a1a2e, #16213e);
+  border-radius: 24px;
+  padding: 40px;
+  text-align: center;
+  border: 3px solid #2ecc71;
+  box-shadow: 0 0 40px rgba(46, 204, 113, 0.3);
+}
+
+.level-complete-content h2 {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #2ecc71;
+  margin-bottom: 15px;
+}
+
+.coins-earned {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #FFD700;
+  margin-bottom: 10px;
+}
+
+.level-rewards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.bonus-earned {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #4ade80;
+}
+
+.timeout-message {
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 20px;
+}
+
+.game-over-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.retry-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 14px 30px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  border-radius: 25px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.retry-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.next-level-btn {
+  background: linear-gradient(135deg, #2ecc71, #27ae60);
+  color: white;
+  border: none;
+  padding: 14px 35px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  border-radius: 25px;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(46, 204, 113, 0.4);
+}
+
+.next-level-btn:active {
+  transform: scale(0.98);
+}
+
+/* Game Over Screen */
+.goo-bridge-overlay .game-over-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 200;
+}
+
+.goo-bridge-overlay .game-over-content {
+  background: linear-gradient(145deg, #1a1a2e, #16213e);
+  border-radius: 28px;
+  padding: 36px 32px;
+  max-width: 380px;
+  width: 90%;
+  text-align: center;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    0 0 40px rgba(46, 204, 113, 0.2);
+  border: 3px solid rgba(46, 204, 113, 0.5);
+  animation: slide-up 0.4s ease-out;
+}
+
+@keyframes slide-up {
+  from { transform: translateY(50px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.goo-bridge-overlay .game-over-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  margin: 0 0 24px 0;
+  color: #2ecc71;
+}
+
+.goo-bridge-overlay .final-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.goo-bridge-overlay .final-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.goo-bridge-overlay .final-stat.highlight {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 165, 0, 0.15));
+  border-color: rgba(255, 215, 0, 0.4);
+}
+
+.goo-bridge-overlay .final-stat-icon {
+  font-size: 1.8rem;
+}
+
+.goo-bridge-overlay .final-stat-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  flex: 1;
+  text-align: left;
+  margin-left: 12px;
+}
+
+.goo-bridge-overlay .final-stat-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: white;
+}
+
+.goo-bridge-overlay .final-stat-value.coins {
+  color: #ffd700;
+}
+
+.goo-bridge-overlay .achievement-badge {
+  display: inline-block;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #2ecc71, #27ae60);
+  border-radius: 25px;
+  color: white;
+  font-weight: 800;
+  font-size: 1rem;
+  margin-bottom: 20px;
+}
+
+.goo-bridge-overlay .claim-rewards-btn {
+  width: 100%;
+  padding: 16px 24px;
+  font-size: 1.2rem;
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  color: #8B4513;
+  border: none;
+  border-radius: 16px;
+  font-weight: 800;
+  box-shadow: 0 6px 20px rgba(255, 165, 0, 0.4);
+  cursor: pointer;
+}
+
+.goo-bridge-overlay .claim-rewards-btn:active {
+  transform: scale(0.98);
+}
+
+/* Mobile */
+@media (max-width: 380px) {
+  .goo-title {
+    font-size: 2rem;
+  }
+
+  .goo-instructions-box {
+    padding: 15px 20px;
+  }
+
+  .goo-instructions-box p {
+    font-size: 0.9rem;
+  }
+}

@@ -1,0 +1,473 @@
+/* Quick Draw Game */
+
+.quickdraw-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: linear-gradient(180deg,
+    #2C1810 0%,
+    #4A2C17 30%,
+    #6B3D1E 60%,
+    #8B4513 100%
+  );
+  z-index: 10000;
+  display: flex;
+  overflow: hidden;
+  isolation: isolate;
+  contain: strict;
+}
+
+.quickdraw-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle 3px at 15% 25%, rgba(255, 215, 0, 0.3), transparent),
+    radial-gradient(circle 2px at 85% 15%, rgba(255, 215, 0, 0.2), transparent),
+    radial-gradient(circle 3px at 50% 50%, rgba(255, 215, 0, 0.25), transparent),
+    radial-gradient(circle 2px at 25% 75%, rgba(255, 215, 0, 0.15), transparent),
+    radial-gradient(circle 3px at 75% 85%, rgba(255, 215, 0, 0.2), transparent);
+  pointer-events: none;
+}
+
+.quickdraw-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  flex: 1;
+}
+
+/* Game Area */
+.quickdraw-area {
+  position: absolute;
+  inset: 0;
+  top: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.quickdraw-area.waiting {
+  background: radial-gradient(circle at center,
+    rgba(139, 69, 19, 0.3) 0%,
+    transparent 70%
+  );
+}
+
+.quickdraw-area.react {
+  background: radial-gradient(circle at center,
+    rgba(255, 215, 0, 0.4) 0%,
+    rgba(255, 165, 0, 0.2) 50%,
+    transparent 70%
+  );
+  animation: flash-ready 0.1s ease-out;
+}
+
+@keyframes flash-ready {
+  0% { background-color: rgba(255, 215, 0, 0.6); }
+  100% { background-color: transparent; }
+}
+
+.quickdraw-area.result {
+  pointer-events: none;
+}
+
+/* Wait Message */
+.wait-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  animation: wait-pulse 2s ease-in-out infinite;
+}
+
+@keyframes wait-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+.wait-icon {
+  font-size: 4rem;
+}
+
+.wait-text {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 4px;
+}
+
+/* Target Area */
+.target-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  animation: target-pop 0.2s ease-out;
+}
+
+@keyframes target-pop {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.target-emoji {
+  font-size: 6rem;
+  filter: drop-shadow(0 0 30px rgba(255, 215, 0, 0.8));
+  animation: target-glow 0.3s ease-in-out infinite alternate;
+}
+
+@keyframes target-glow {
+  0% { filter: drop-shadow(0 0 30px rgba(255, 215, 0, 0.6)); }
+  100% { filter: drop-shadow(0 0 50px rgba(255, 215, 0, 1)); }
+}
+
+.tap-text {
+  font-size: 2rem;
+  font-weight: 900;
+  color: #FFD700;
+  text-shadow:
+    0 0 20px rgba(255, 215, 0, 0.8),
+    0 2px 4px rgba(0, 0, 0, 0.5);
+  letter-spacing: 4px;
+  animation: tap-pulse 0.2s ease-in-out infinite;
+}
+
+@keyframes tap-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+/* Result Display */
+.result-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  animation: result-pop 0.3s ease-out;
+}
+
+@keyframes result-pop {
+  0% { transform: scale(0.5); opacity: 0; }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.result-emoji {
+  font-size: 4rem;
+}
+
+.result-text {
+  font-size: 2rem;
+  font-weight: 900;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.result-display.perfect .result-text {
+  color: #FFD700;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+}
+
+.result-display.good .result-text {
+  color: #90EE90;
+}
+
+.result-display.ok .result-text {
+  color: #87CEEB;
+}
+
+.result-display.miss .result-text,
+.result-display.false_start .result-text {
+  color: #FF6B6B;
+}
+
+.result-time {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.result-coins {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #FFD700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.result-display.false_start .result-coins {
+  color: #FF6B6B;
+}
+
+/* Round Indicator */
+.round-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.3), rgba(255, 165, 0, 0.3));
+  padding: 10px 20px;
+  border-radius: 25px;
+  border: 2px solid rgba(255, 215, 0, 0.5);
+}
+
+.round-text {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #FFD700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Shared styles */
+.quickdraw-overlay .game-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  padding-top: max(16px, env(safe-area-inset-top, 0px));
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, transparent 100%);
+  z-index: 100;
+}
+
+.quickdraw-overlay .game-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 8px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.quickdraw-overlay .stat-icon {
+  font-size: 1.2rem;
+}
+
+.quickdraw-overlay .stat-value {
+  font-size: 1rem;
+  font-weight: 800;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  min-width: 2ch;
+  text-align: center;
+}
+
+.quickdraw-overlay .countdown-display {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 8rem;
+  font-weight: 900;
+  color: #FFD700;
+  text-shadow:
+    0 0 30px rgba(255, 215, 0, 0.8),
+    0 4px 8px rgba(0, 0, 0, 0.5);
+  z-index: 50;
+  animation: countdown-pop 0.3s ease-out;
+}
+
+@keyframes countdown-pop {
+  0% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+
+.quickdraw-overlay .game-over-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(44, 24, 16, 0.9);
+  z-index: 200;
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.quickdraw-overlay .game-over-content {
+  background: linear-gradient(145deg, #FFFFFF, #FFF8DC);
+  border-radius: 28px;
+  padding: 36px 32px;
+  max-width: 380px;
+  width: 90%;
+  text-align: center;
+  box-shadow:
+    0 20px 60px rgba(255, 215, 0, 0.3),
+    0 0 40px rgba(139, 69, 19, 0.2);
+  border: 3px solid rgba(255, 215, 0, 0.5);
+  animation: slide-up 0.4s ease-out;
+}
+
+@keyframes slide-up {
+  from { transform: translateY(50px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.quickdraw-overlay .game-over-title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  margin: 0 0 24px 0;
+  background: linear-gradient(135deg, #8B4513, #D2691E);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.quickdraw-overlay .game-over-title span {
+  -webkit-text-fill-color: initial;
+}
+
+.quickdraw-overlay .final-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.quickdraw-overlay .final-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #FFF8DC, #FAEBD7);
+  border-radius: 14px;
+  border: 2px solid rgba(139, 69, 19, 0.2);
+}
+
+.quickdraw-overlay .final-stat.highlight {
+  background: linear-gradient(135deg, #FFF8DC, #FFFACD);
+  border-color: #FFD700;
+  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
+}
+
+.quickdraw-overlay .final-stat-icon {
+  font-size: 1.8rem;
+}
+
+.quickdraw-overlay .final-stat-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #666;
+  flex: 1;
+  text-align: left;
+  margin-left: 12px;
+}
+
+.quickdraw-overlay .final-stat-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #8B4513;
+}
+
+.quickdraw-overlay .final-stat-value.coins {
+  color: #B8860B;
+}
+
+.quickdraw-overlay .achievement-badge {
+  display: inline-block;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #8B4513, #D2691E);
+  border-radius: 25px;
+  color: white;
+  font-weight: 800;
+  font-size: 1rem;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 15px rgba(139, 69, 19, 0.4);
+}
+
+.quickdraw-overlay .claim-rewards-btn {
+  width: 100%;
+  padding: 16px 24px;
+  font-size: 1.2rem;
+  background: linear-gradient(135deg, #FFD700, #FFA500) !important;
+  color: #8B4513 !important;
+  border: none;
+  border-radius: 16px;
+  font-weight: 800;
+  box-shadow: 0 6px 20px rgba(255, 165, 0, 0.4);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.quickdraw-overlay .claim-rewards-btn:active {
+  transform: scale(0.98);
+}
+
+.quickdraw-overlay .game-instructions {
+  position: absolute;
+  bottom: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  z-index: 50;
+}
+
+.quickdraw-overlay .game-instructions p {
+  color: white;
+  font-size: 1.2rem;
+  font-weight: 600;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  margin: 8px 0;
+}
+
+.quickdraw-overlay .game-instructions .coins-hint {
+  font-size: 1rem;
+  color: #FFD700;
+}
+
+.quickdraw-overlay .game-close-btn {
+  position: absolute;
+  top: max(20px, env(safe-area-inset-top, 0px));
+  right: 20px;
+  width: 44px;
+  height: 44px;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  z-index: 150;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+  .quickdraw-overlay .countdown-display {
+    font-size: 5rem;
+  }
+
+  .target-emoji {
+    font-size: 5rem;
+  }
+
+  .tap-text {
+    font-size: 1.6rem;
+  }
+
+  .result-text {
+    font-size: 1.6rem;
+  }
+
+  .wait-text {
+    font-size: 1.2rem;
+  }
+}

@@ -1,0 +1,279 @@
+.stats-modal {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 24px;
+  padding: 0;
+  max-width: 450px;
+  width: 100%;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(255, 105, 180, 0.3);
+}
+
+.stats-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, #DDA0DD, #BA55D3);
+  color: white;
+}
+
+.stats-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+.stats-icon {
+  font-size: 1.8rem;
+}
+
+.stats-player-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px;
+  background: linear-gradient(180deg, rgba(221, 160, 221, 0.2), transparent);
+}
+
+.player-avatar {
+  font-size: 4rem;
+  margin-bottom: 8px;
+}
+
+.player-name {
+  font-size: 1.5rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #FF69B4, #BA55D3);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 0 24px 24px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 12px;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 228, 236, 0.5);
+  box-shadow: 0 4px 15px rgba(255, 182, 193, 0.2);
+  transition: all 0.3s;
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 25px rgba(255, 182, 193, 0.3);
+  border-color: var(--accent-color);
+}
+
+.stat-icon {
+  font-size: 1.8rem;
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-primary, #333);
+}
+
+.stat-label {
+  font-size: 0.7rem;
+  color: var(--text-secondary, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.stats-achievements {
+  padding: 0 24px 24px;
+}
+
+.achievements-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-secondary, #666);
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.achievements-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.achievement {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 8px;
+  background: #f0f0f0;
+  border-radius: 12px;
+  opacity: 0.4;
+  filter: grayscale(1);
+  transition: all 0.3s;
+}
+
+.achievement.unlocked {
+  background: linear-gradient(135deg, #FFF8DC, #FFFACD);
+  border: 2px solid #FFD700;
+  opacity: 1;
+  filter: none;
+}
+
+.achievement-icon {
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+}
+
+.achievement-name {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #666;
+  text-align: center;
+}
+
+.achievement.unlocked .achievement-name {
+  color: #8B4513;
+}
+
+.stats-modal .close-button {
+  margin: 0 24px 24px;
+}
+
+@media (max-width: 480px) {
+  .stats-modal {
+    max-height: 90vh;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stat-card:last-child {
+    grid-column: span 2;
+  }
+
+  .achievements-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ============================================
+   DARK THEME SUPPORT
+   ============================================ */
+
+body.theme-dark .stats-modal,
+body.theme-night .stats-modal,
+body.theme-galaxy .stats-modal,
+body.theme-aurora .stats-modal,
+body.theme-forest .stats-modal,
+body.theme-neon .stats-modal,
+body.theme-ocean .stats-modal {
+  background: rgba(25, 25, 40, 0.98);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+body.theme-dark .stats-player-info,
+body.theme-night .stats-player-info,
+body.theme-galaxy .stats-player-info,
+body.theme-aurora .stats-player-info,
+body.theme-forest .stats-player-info,
+body.theme-neon .stats-player-info,
+body.theme-ocean .stats-player-info {
+  background: linear-gradient(180deg, rgba(102, 126, 234, 0.2), transparent);
+}
+
+body.theme-dark .stat-card,
+body.theme-night .stat-card,
+body.theme-galaxy .stat-card,
+body.theme-aurora .stat-card,
+body.theme-forest .stat-card,
+body.theme-neon .stat-card,
+body.theme-ocean .stat-card {
+  background: rgba(40, 40, 55, 0.8);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+body.theme-dark .stat-card:hover,
+body.theme-night .stat-card:hover,
+body.theme-galaxy .stat-card:hover,
+body.theme-aurora .stat-card:hover,
+body.theme-forest .stat-card:hover,
+body.theme-neon .stat-card:hover,
+body.theme-ocean .stat-card:hover {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+body.theme-dark .achievement,
+body.theme-night .achievement,
+body.theme-galaxy .achievement,
+body.theme-aurora .achievement,
+body.theme-forest .achievement,
+body.theme-neon .achievement,
+body.theme-ocean .achievement {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+body.theme-dark .achievement.unlocked,
+body.theme-night .achievement.unlocked,
+body.theme-galaxy .achievement.unlocked,
+body.theme-aurora .achievement.unlocked,
+body.theme-forest .achievement.unlocked,
+body.theme-neon .achievement.unlocked,
+body.theme-ocean .achievement.unlocked {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 215, 0, 0.1));
+  border-color: rgba(255, 215, 0, 0.5);
+}
+
+body.theme-dark .achievement-name,
+body.theme-night .achievement-name,
+body.theme-galaxy .achievement-name,
+body.theme-aurora .achievement-name,
+body.theme-forest .achievement-name,
+body.theme-neon .achievement-name,
+body.theme-ocean .achievement-name {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+body.theme-dark .achievement.unlocked .achievement-name,
+body.theme-night .achievement.unlocked .achievement-name,
+body.theme-galaxy .achievement.unlocked .achievement-name,
+body.theme-aurora .achievement.unlocked .achievement-name,
+body.theme-forest .achievement.unlocked .achievement-name,
+body.theme-neon .achievement.unlocked .achievement-name,
+body.theme-ocean .achievement.unlocked .achievement-name {
+  color: #ffd700;
+}
+
+/* Neon theme special effects */
+body.theme-neon .stats-header {
+  background: linear-gradient(135deg, #FF2D20, #9B30FF);
+  box-shadow: 0 4px 20px rgba(255, 45, 32, 0.4);
+}
+
+body.theme-neon .stat-card:hover {
+  box-shadow: 0 0 20px rgba(255, 45, 32, 0.3);
+  border-color: rgba(255, 45, 32, 0.5);
+}

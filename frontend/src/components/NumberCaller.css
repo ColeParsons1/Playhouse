@@ -1,0 +1,330 @@
+/* Number Caller - Screenshot inspired design */
+
+.number-caller {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: rgba(20, 10, 50, 0.6);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.current-number-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.caller-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Called balls row - like screenshot */
+.called-balls-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  max-width: 100%;
+  padding: 8px 0;
+}
+
+.called-ball {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.2),
+    inset 0 3px 6px rgba(255, 255, 255, 0.3);
+  position: relative;
+}
+
+/* Ball shine effect */
+.called-ball::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  width: 12px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  transform: rotate(-30deg);
+}
+
+.called-ball .ball-letter {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  line-height: 1;
+}
+
+.called-ball .ball-number {
+  font-size: 1rem;
+  font-weight: 800;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  line-height: 1;
+}
+
+/* Ball colors based on letter - B=blue, I=pink, N=yellow, G=green, O=orange */
+.called-ball.letter-B {
+  background: linear-gradient(145deg, #4a9eff 0%, #2d7fd9 100%);
+}
+.called-ball.letter-I {
+  background: linear-gradient(145deg, #ff6b9d 0%, #e84a7f 100%);
+}
+.called-ball.letter-N {
+  background: linear-gradient(145deg, #ffd700 0%, #e6c200 100%);
+}
+.called-ball.letter-G {
+  background: linear-gradient(145deg, #4ade80 0%, #22c55e 100%);
+}
+.called-ball.letter-O {
+  background: linear-gradient(145deg, #f97316 0%, #ea580c 100%);
+}
+
+/* Current number display */
+.current-number-ball {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 8px 30px rgba(0, 0, 0, 0.4),
+    inset 0 -4px 10px rgba(0, 0, 0, 0.2),
+    inset 0 4px 10px rgba(255, 255, 255, 0.3);
+  animation: glow 2s ease-in-out infinite;
+  position: relative;
+}
+
+.current-number-ball::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 16px;
+  width: 20px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  transform: rotate(-30deg);
+}
+
+/* Color variations for current ball */
+.current-number-ball.letter-B {
+  background: linear-gradient(145deg, #4a9eff 0%, #2d7fd9 100%);
+}
+.current-number-ball.letter-I {
+  background: linear-gradient(145deg, #ff6b9d 0%, #e84a7f 100%);
+}
+.current-number-ball.letter-N {
+  background: linear-gradient(145deg, #ffd700 0%, #e6c200 100%);
+}
+.current-number-ball.letter-G {
+  background: linear-gradient(145deg, #4ade80 0%, #22c55e 100%);
+}
+.current-number-ball.letter-O {
+  background: linear-gradient(145deg, #f97316 0%, #ea580c 100%);
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(255, 215, 0, 0.3), 0 8px 30px rgba(0, 0, 0, 0.4); }
+  50% { box-shadow: 0 0 40px rgba(255, 215, 0, 0.5), 0 8px 40px rgba(0, 0, 0, 0.4); }
+}
+
+.current-number-ball .letter {
+  font-size: 1rem;
+  font-weight: 800;
+  color: white;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.current-number-ball .number {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: white;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+  line-height: 1;
+}
+
+.current-number-ball.waiting {
+  background: linear-gradient(145deg, #555, #444);
+  animation: none;
+}
+
+.waiting-text {
+  font-size: 2rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Call button */
+.call-button {
+  font-size: 1rem;
+  padding: 12px 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #ffd700, #ffaa00);
+  color: #333;
+  border: none;
+  border-radius: 25px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.4);
+  transition: all 0.2s ease;
+}
+
+.call-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 215, 0, 0.5);
+}
+
+.call-button:disabled {
+  background: linear-gradient(135deg, #666, #555);
+  color: #999;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.call-button .sparkle {
+  animation: sparkle 1s ease-in-out infinite;
+}
+
+@keyframes sparkle {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.2) rotate(15deg); }
+}
+
+.loading-spinner {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Recent numbers section */
+.recent-numbers {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.recent-label {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.recent-balls {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.recent-ball {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  position: relative;
+}
+
+.recent-ball::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 6px;
+  width: 8px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  transform: rotate(-30deg);
+}
+
+/* Recent ball colors */
+.recent-ball.letter-B { background: linear-gradient(145deg, #4a9eff, #2d7fd9); }
+.recent-ball.letter-I { background: linear-gradient(145deg, #ff6b9d, #e84a7f); }
+.recent-ball.letter-N { background: linear-gradient(145deg, #ffd700, #e6c200); }
+.recent-ball.letter-G { background: linear-gradient(145deg, #4ade80, #22c55e); }
+.recent-ball.letter-O { background: linear-gradient(145deg, #f97316, #ea580c); }
+
+.recent-ball .recent-letter {
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: white;
+  line-height: 1;
+}
+
+.recent-ball .recent-number {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: white;
+  line-height: 1;
+}
+
+.numbers-called-count {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .number-caller {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .current-number-ball {
+    width: 70px;
+    height: 70px;
+  }
+
+  .current-number-ball .letter {
+    font-size: 0.9rem;
+  }
+
+  .current-number-ball .number {
+    font-size: 1.5rem;
+  }
+
+  .call-button {
+    font-size: 0.9rem;
+    padding: 10px 24px;
+  }
+
+  .called-ball {
+    width: 42px;
+    height: 42px;
+  }
+
+  .called-ball .ball-number {
+    font-size: 0.9rem;
+  }
+
+  .recent-ball {
+    width: 32px;
+    height: 32px;
+  }
+}

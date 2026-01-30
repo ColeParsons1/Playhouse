@@ -1,0 +1,208 @@
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.win-modal {
+  background: linear-gradient(145deg, #FFFFFF, #FFF5F8);
+  border-radius: 30px;
+  padding: 40px;
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+  box-shadow:
+    0 20px 60px rgba(255, 105, 180, 0.4),
+    0 0 0 5px rgba(255, 182, 193, 0.5);
+  position: relative;
+  overflow: hidden;
+}
+
+.win-modal::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, #FF69B4, #FFD700, #4ECDC4, #DDA0DD);
+}
+
+.win-header, .lose-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.win-emoji {
+  font-size: 2.5rem;
+  animation: bounce 0.6s ease-in-out infinite;
+}
+
+.lose-emoji {
+  font-size: 3rem;
+}
+
+.win-title {
+  font-size: 2.5rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #FF69B4, #FFD700);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+}
+
+.lose-title {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #666;
+}
+
+.win-message, .lose-message {
+  font-size: 1.2rem;
+  color: #666;
+  margin-bottom: 24px;
+}
+
+.encourage-message {
+  font-size: 1rem;
+  color: #888;
+  margin-bottom: 24px;
+  font-style: italic;
+}
+
+.rewards-section {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.reward-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 24px;
+  background: linear-gradient(135deg, #FFF8DC, #FFFACD);
+  border-radius: 16px;
+  border: 3px solid #FFD700;
+  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
+}
+
+.reward-item.gems {
+  background: linear-gradient(135deg, #E6E6FA, #DDA0DD);
+  border-color: #9370DB;
+  box-shadow: 0 4px 15px rgba(147, 112, 219, 0.3);
+}
+
+.reward-icon {
+  font-size: 2rem;
+  margin-bottom: 4px;
+}
+
+.reward-amount {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #8B4513;
+}
+
+.reward-item.gems .reward-amount {
+  color: #4B0082;
+}
+
+.reward-label {
+  font-size: 0.8rem;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.streak-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  border-radius: 25px;
+  margin-bottom: 24px;
+}
+
+.streak-fire-big {
+  font-size: 1.8rem;
+  animation: fire 0.3s ease-in-out infinite alternate;
+}
+
+.streak-number {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #8B4513;
+}
+
+.streak-text {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #8B4513;
+}
+
+.close-button {
+  font-size: 1.1rem;
+  padding: 14px 40px;
+}
+
+/* Confetti */
+.confetti-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1001;
+  overflow: hidden;
+}
+
+.confetti-piece {
+  position: absolute;
+  border-radius: 2px;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+@keyframes fire {
+  from { transform: scale(1) rotate(-5deg); }
+  to { transform: scale(1.1) rotate(5deg); }
+}
+
+@media (max-width: 480px) {
+  .win-modal {
+    padding: 24px;
+  }
+
+  .win-title {
+    font-size: 2rem;
+  }
+
+  .win-emoji {
+    font-size: 2rem;
+  }
+
+  .rewards-section {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .reward-item {
+    flex-direction: row;
+    gap: 12px;
+    padding: 12px 20px;
+  }
+}

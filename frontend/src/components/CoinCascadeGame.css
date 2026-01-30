@@ -1,0 +1,395 @@
+/* Coin Cascade Game */
+
+.cascade-game-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: linear-gradient(180deg,
+    #1a1a2e 0%,
+    #16213e 30%,
+    #0f3460 60%,
+    #1a1a2e 100%
+  );
+  z-index: 10000;
+  display: flex;
+  overflow: hidden;
+  isolation: isolate;
+  contain: strict;
+}
+
+.cascade-game-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(2px 2px at 10% 20%, rgba(255, 215, 0, 0.5), transparent),
+    radial-gradient(2px 2px at 30% 10%, rgba(255, 215, 0, 0.3), transparent),
+    radial-gradient(2px 2px at 50% 30%, rgba(255, 215, 0, 0.4), transparent),
+    radial-gradient(2px 2px at 70% 15%, rgba(255, 215, 0, 0.2), transparent),
+    radial-gradient(2px 2px at 90% 25%, rgba(255, 215, 0, 0.5), transparent),
+    radial-gradient(1px 1px at 15% 45%, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(1px 1px at 45% 55%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1px 1px at 75% 40%, rgba(255, 255, 255, 0.3), transparent);
+  pointer-events: none;
+}
+
+.cascade-game-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  flex: 1;
+}
+
+/* Game Area */
+.cascade-game-area {
+  position: absolute;
+  inset: 0;
+  top: 80px;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+
+.cascade-game-area:active {
+  cursor: grabbing;
+}
+
+/* Coins Container */
+.coins-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Falling Coin */
+.falling-coin {
+  position: absolute;
+  font-size: 2.2rem;
+  transform: translateX(-50%);
+  will-change: top;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  transition: none;
+  pointer-events: none;
+}
+
+.falling-coin.caught {
+  animation: coin-catch 0.2s ease-out forwards;
+}
+
+@keyframes coin-catch {
+  0% {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-50%) scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* Basket */
+.catch-basket {
+  position: absolute;
+  bottom: 40px;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: left 0.05s linear;
+  z-index: 10;
+}
+
+.basket-emoji {
+  font-size: 3.5rem;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+}
+
+/* Basket guide line */
+.basket-guide {
+  position: absolute;
+  bottom: 100px;
+  width: 2px;
+  height: calc(100% - 100px);
+  background: linear-gradient(180deg,
+    transparent 0%,
+    rgba(255, 215, 0, 0.1) 20%,
+    rgba(255, 215, 0, 0.2) 80%,
+    rgba(255, 215, 0, 0.3) 100%
+  );
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* Shared styles */
+.cascade-game-overlay .game-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  padding-top: max(16px, env(safe-area-inset-top, 0px));
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, transparent 100%);
+  z-index: 100;
+}
+
+.cascade-game-overlay .game-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 8px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.cascade-game-overlay .stat-icon {
+  font-size: 1.2rem;
+}
+
+.cascade-game-overlay .stat-value {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  min-width: 2ch;
+  text-align: center;
+}
+
+.cascade-game-overlay .game-timer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.3), rgba(255, 165, 0, 0.3));
+  padding: 10px 18px;
+  border-radius: 25px;
+  border: 2px solid rgba(255, 215, 0, 0.5);
+}
+
+.cascade-game-overlay .timer-icon {
+  font-size: 1.3rem;
+}
+
+.cascade-game-overlay .timer-value {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #FFD700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.cascade-game-overlay .timer-value.warning {
+  color: #FF6B6B;
+  animation: pulse-warning 0.5s ease-in-out infinite;
+}
+
+@keyframes pulse-warning {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.cascade-game-overlay .countdown-display {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 8rem;
+  font-weight: 900;
+  color: white;
+  text-shadow:
+    0 0 30px rgba(255, 215, 0, 0.8),
+    0 0 60px rgba(255, 165, 0, 0.6);
+  z-index: 50;
+  animation: countdown-pop 0.3s ease-out;
+}
+
+@keyframes countdown-pop {
+  0% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+
+.cascade-game-overlay .game-over-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 200;
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.cascade-game-overlay .game-over-content {
+  background: linear-gradient(145deg, #FFFFFF, #FFF5F8);
+  border-radius: 28px;
+  padding: 36px 32px;
+  max-width: 380px;
+  width: 90%;
+  text-align: center;
+  box-shadow:
+    0 20px 60px rgba(255, 215, 0, 0.3),
+    0 0 40px rgba(255, 165, 0, 0.2);
+  border: 3px solid rgba(255, 215, 0, 0.5);
+  animation: slide-up 0.4s ease-out;
+}
+
+@keyframes slide-up {
+  from { transform: translateY(50px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.cascade-game-overlay .game-over-title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  margin: 0 0 24px 0;
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.cascade-game-overlay .game-over-title span {
+  -webkit-text-fill-color: initial;
+}
+
+.cascade-game-overlay .final-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.cascade-game-overlay .final-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #F0F0F0, #E8E8E8);
+  border-radius: 14px;
+  border: 2px solid #DDD;
+}
+
+.cascade-game-overlay .final-stat.highlight {
+  background: linear-gradient(135deg, #FFF8DC, #FFFACD);
+  border-color: #FFD700;
+  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
+}
+
+.cascade-game-overlay .final-stat-icon {
+  font-size: 1.8rem;
+}
+
+.cascade-game-overlay .final-stat-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #666;
+  flex: 1;
+  text-align: left;
+  margin-left: 12px;
+}
+
+.cascade-game-overlay .final-stat-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #333;
+}
+
+.cascade-game-overlay .final-stat-value.coins {
+  color: #B8860B;
+}
+
+.cascade-game-overlay .achievement-badge {
+  display: inline-block;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  border-radius: 25px;
+  color: #8B4513;
+  font-weight: 800;
+  font-size: 1rem;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.4);
+}
+
+.cascade-game-overlay .claim-rewards-btn {
+  width: 100%;
+  padding: 16px 24px;
+  font-size: 1.2rem;
+  background: linear-gradient(135deg, #FFD700, #FFA500) !important;
+  color: #8B4513 !important;
+  border: none;
+  border-radius: 16px;
+  font-weight: 800;
+  box-shadow: 0 6px 20px rgba(255, 165, 0, 0.4);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cascade-game-overlay .claim-rewards-btn:active {
+  transform: scale(0.98);
+}
+
+.cascade-game-overlay .game-instructions {
+  position: absolute;
+  bottom: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  z-index: 50;
+}
+
+.cascade-game-overlay .game-instructions p {
+  color: white;
+  font-size: 1.2rem;
+  font-weight: 600;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  margin: 8px 0;
+}
+
+.cascade-game-overlay .game-instructions .coins-hint {
+  font-size: 1rem;
+  color: #FFD700;
+}
+
+.cascade-game-overlay .game-close-btn {
+  position: absolute;
+  top: max(20px, env(safe-area-inset-top, 0px));
+  right: 20px;
+  width: 44px;
+  height: 44px;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  z-index: 150;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+  .cascade-game-overlay .countdown-display {
+    font-size: 5rem;
+  }
+
+  .basket-emoji {
+    font-size: 3rem;
+  }
+
+  .falling-coin {
+    font-size: 1.8rem;
+  }
+}

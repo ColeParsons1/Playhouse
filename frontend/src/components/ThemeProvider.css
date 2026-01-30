@@ -1,0 +1,1963 @@
+/* ============================================
+   THEME PROVIDER - ULTRA PREMIUM IMMERSIVE THEMES
+   Cinematic, breathtaking visual experiences
+   ============================================ */
+
+.theme-wrapper {
+  min-height: 100vh;
+  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+/* Ensure content stays above theme effects */
+.theme-wrapper > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* ============================================
+   DEFAULT THEME - Dreamy Rose Garden
+   Soft romantic atmosphere with floating petals
+   ============================================ */
+body.theme-default {
+  background:
+    radial-gradient(ellipse 120% 80% at 50% 120%, rgba(255, 182, 193, 0.7) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 60% at 20% 20%, rgba(255, 228, 225, 0.8) 0%, transparent 40%),
+    radial-gradient(ellipse 60% 50% at 80% 30%, rgba(255, 192, 203, 0.6) 0%, transparent 35%),
+    linear-gradient(180deg,
+      #FFF5F7 0%,
+      #FFE8EE 20%,
+      #FFDDE6 40%,
+      #FFD4DF 60%,
+      #FFCBD8 80%,
+      #FFC2D1 100%
+    );
+  background-attachment: fixed;
+}
+
+body.theme-default::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle 4px at 15% 25%, rgba(255, 255, 255, 0.9) 0%, transparent 100%),
+    radial-gradient(circle 3px at 35% 15%, rgba(255, 255, 255, 0.8) 0%, transparent 100%),
+    radial-gradient(circle 5px at 55% 35%, rgba(255, 255, 255, 0.85) 0%, transparent 100%),
+    radial-gradient(circle 3px at 75% 20%, rgba(255, 255, 255, 0.75) 0%, transparent 100%),
+    radial-gradient(circle 4px at 85% 45%, rgba(255, 255, 255, 0.9) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: default-sparkle 4s ease-in-out infinite;
+}
+
+@keyframes default-sparkle {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+body.theme-default::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 40% 30% at 70% 80%, rgba(255, 182, 193, 0.4) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  animation: default-glow 6s ease-in-out infinite;
+}
+
+@keyframes default-glow {
+  0%, 100% { opacity: 0.5; transform: translateY(0); }
+  50% { opacity: 0.8; transform: translateY(-10px); }
+}
+
+/* ============================================
+   PASTEL THEME - Ethereal Cloud Kingdom
+   Floating through magical cotton candy skies
+   ============================================ */
+body.theme-pastel {
+  background: linear-gradient(180deg,
+    #E8F4FC 0%,
+    #F0E6FA 15%,
+    #FCE4EC 30%,
+    #E8F5E9 45%,
+    #FFF8E1 60%,
+    #F3E5F5 75%,
+    #E1F5FE 90%,
+    #FCE4EC 100%
+  );
+  background-size: 100% 200%;
+  animation: pastel-shift 20s ease-in-out infinite;
+  background-attachment: fixed;
+}
+
+@keyframes pastel-shift {
+  0%, 100% { background-position: 0% 0%; }
+  50% { background-position: 0% 100%; }
+}
+
+body.theme-pastel::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Fluffy clouds */
+    radial-gradient(ellipse 350px 180px at 10% 25%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.5) 30%, transparent 70%),
+    radial-gradient(ellipse 280px 150px at 15% 30%, rgba(252, 228, 236, 0.7) 0%, transparent 60%),
+    radial-gradient(ellipse 320px 160px at 85% 20%, rgba(255, 255, 255, 0.9) 0%, rgba(248, 240, 255, 0.5) 35%, transparent 70%),
+    radial-gradient(ellipse 250px 130px at 80% 25%, rgba(225, 245, 254, 0.6) 0%, transparent 55%),
+    radial-gradient(ellipse 380px 190px at 50% 75%, rgba(255, 255, 255, 0.85) 0%, rgba(255, 248, 225, 0.4) 35%, transparent 70%),
+    radial-gradient(ellipse 300px 155px at 55% 78%, rgba(243, 229, 245, 0.5) 0%, transparent 55%);
+  pointer-events: none;
+  z-index: 0;
+  animation: pastel-clouds 40s ease-in-out infinite;
+}
+
+@keyframes pastel-clouds {
+  0%, 100% { transform: translateX(0) translateY(0); }
+  25% { transform: translateX(30px) translateY(-10px); }
+  50% { transform: translateX(0) translateY(-20px); }
+  75% { transform: translateX(-30px) translateY(-10px); }
+}
+
+body.theme-pastel::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle 6px at 20% 40%, rgba(255, 182, 255, 0.6) 0%, transparent 100%),
+    radial-gradient(circle 5px at 45% 25%, rgba(182, 255, 255, 0.5) 0%, transparent 100%),
+    radial-gradient(circle 7px at 70% 55%, rgba(255, 255, 182, 0.55) 0%, transparent 100%),
+    radial-gradient(circle 4px at 85% 35%, rgba(182, 255, 212, 0.5) 0%, transparent 100%),
+    radial-gradient(circle 6px at 30% 70%, rgba(255, 212, 255, 0.55) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: pastel-sparkles 8s ease-in-out infinite;
+}
+
+@keyframes pastel-sparkles {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.theme-pastel .cute-button {
+  background: linear-gradient(135deg, #E1BEE7, #B2EBF2, #F8BBD9);
+  background-size: 200% 200%;
+  animation: pastel-button 4s ease infinite;
+  box-shadow: 0 4px 20px rgba(225, 190, 231, 0.5);
+}
+
+@keyframes pastel-button {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* ============================================
+   OCEAN THEME - Mystical Deep Sea
+   Bioluminescent underwater paradise
+   ============================================ */
+body.theme-ocean {
+  background: linear-gradient(180deg,
+    #0077B6 0%,
+    #0096C7 8%,
+    #00B4D8 15%,
+    #0096C7 25%,
+    #0077B6 35%,
+    #005F8A 50%,
+    #004766 65%,
+    #003049 80%,
+    #001D3D 100%
+  );
+  background-attachment: fixed;
+}
+
+/* Animated caustic light patterns */
+body.theme-ocean::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Surface light streaming down */
+    radial-gradient(ellipse 100% 50% at 50% -10%, rgba(255, 255, 255, 0.25) 0%, transparent 60%),
+    /* Caustic light patterns */
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 500 500' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='caustics'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.015' numOctaves='3' seed='1'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='30'/%3E%3C/filter%3E%3Ccircle cx='250' cy='250' r='200' fill='rgba(0,200,255,0.08)' filter='url(%23caustics)'/%3E%3C/svg%3E");
+  background-size: 100% 100%, 200% 200%;
+  pointer-events: none;
+  z-index: 0;
+  animation: ocean-caustics 8s ease-in-out infinite;
+}
+
+@keyframes ocean-caustics {
+  0% { background-position: 0% 0%, 0% 0%; opacity: 0.8; }
+  25% { background-position: 0% 0%, 50% 25%; opacity: 1; }
+  50% { background-position: 0% 0%, 100% 50%; opacity: 0.9; }
+  75% { background-position: 0% 0%, 50% 75%; opacity: 1; }
+  100% { background-position: 0% 0%, 0% 100%; opacity: 0.8; }
+}
+
+/* Bioluminescent particles and bubbles */
+body.theme-ocean::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    /* Glowing jellyfish-like particles */
+    radial-gradient(circle 8px at 15% 60%, rgba(0, 255, 255, 0.7) 0%, rgba(0, 200, 255, 0.3) 40%, transparent 70%),
+    radial-gradient(circle 6px at 25% 40%, rgba(100, 255, 255, 0.6) 0%, rgba(0, 200, 255, 0.2) 50%, transparent 70%),
+    radial-gradient(circle 10px at 40% 75%, rgba(0, 255, 200, 0.65) 0%, rgba(0, 200, 150, 0.25) 45%, transparent 70%),
+    radial-gradient(circle 5px at 60% 30%, rgba(150, 255, 255, 0.55) 0%, transparent 60%),
+    radial-gradient(circle 8px at 75% 55%, rgba(0, 255, 255, 0.6) 0%, rgba(0, 180, 255, 0.2) 45%, transparent 70%),
+    radial-gradient(circle 12px at 85% 80%, rgba(50, 255, 200, 0.5) 0%, rgba(0, 200, 150, 0.2) 40%, transparent 70%),
+    /* Tiny bubbles */
+    radial-gradient(circle 3px at 20% 25%, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%),
+    radial-gradient(circle 2px at 35% 45%, rgba(255, 255, 255, 0.7) 0%, transparent 100%),
+    radial-gradient(circle 4px at 55% 65%, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%),
+    radial-gradient(circle 2px at 70% 20%, rgba(255, 255, 255, 0.6) 0%, transparent 100%),
+    radial-gradient(circle 3px at 90% 45%, rgba(255, 255, 255, 0.7) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: ocean-life 12s ease-in-out infinite;
+}
+
+@keyframes ocean-life {
+  0% { transform: translateY(0) translateX(0); opacity: 0.7; }
+  25% { transform: translateY(-30px) translateX(10px); opacity: 1; }
+  50% { transform: translateY(-50px) translateX(-5px); opacity: 0.8; }
+  75% { transform: translateY(-30px) translateX(15px); opacity: 1; }
+  100% { transform: translateY(0) translateX(0); opacity: 0.7; }
+}
+
+.theme-ocean .cute-button {
+  background: linear-gradient(145deg, #00D4FF, #0099CC);
+  box-shadow: 0 4px 20px rgba(0, 212, 255, 0.5), 0 0 40px rgba(0, 212, 255, 0.2);
+}
+
+/* ============================================
+   SAKURA THEME - Enchanted Cherry Blossom
+   Magical Japanese spring with falling petals
+   ============================================ */
+body.theme-sakura {
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 90%, rgba(255, 183, 197, 0.5) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 85%, rgba(255, 192, 203, 0.4) 0%, transparent 50%),
+    linear-gradient(180deg,
+      #FFF5F7 0%,
+      #FFECF0 15%,
+      #FFE0E8 30%,
+      #FFD4E0 50%,
+      #FFC8D8 70%,
+      #FFBCD0 85%,
+      #FFB0C8 100%
+    );
+  background-attachment: fixed;
+}
+
+body.theme-sakura::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Tree silhouettes */
+    radial-gradient(ellipse 300px 400px at 5% 100%, rgba(139, 90, 90, 0.2) 0%, transparent 60%),
+    radial-gradient(ellipse 250px 350px at 95% 100%, rgba(139, 90, 90, 0.15) 0%, transparent 55%),
+    /* Soft bloom glow */
+    radial-gradient(ellipse 200px 150px at 10% 80%, rgba(255, 182, 193, 0.5) 0%, transparent 70%),
+    radial-gradient(ellipse 180px 130px at 90% 85%, rgba(255, 192, 203, 0.45) 0%, transparent 65%),
+    /* Sunbeams */
+    linear-gradient(135deg, rgba(255, 255, 220, 0.3) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Falling sakura petals - Layer 1 */
+body.theme-sakura::after {
+  content: '🌸';
+  position: fixed;
+  font-size: 22px;
+  top: -30px;
+  left: 10%;
+  animation: sakura-fall-1 8s linear infinite;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 2px 4px rgba(255, 105, 180, 0.3));
+}
+
+.theme-sakura::before {
+  content: '🌸';
+  position: fixed;
+  font-size: 18px;
+  top: -30px;
+  left: 30%;
+  animation: sakura-fall-2 10s linear infinite;
+  animation-delay: 2s;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 2px 4px rgba(255, 105, 180, 0.3));
+}
+
+.theme-sakura::after {
+  content: '🌸';
+  position: fixed;
+  font-size: 24px;
+  top: -30px;
+  left: 55%;
+  animation: sakura-fall-3 7s linear infinite;
+  animation-delay: 4s;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 2px 4px rgba(255, 105, 180, 0.3));
+}
+
+@keyframes sakura-fall-1 {
+  0% { transform: translateY(-30px) translateX(0) rotate(0deg) scale(1); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(100vh) translateX(150px) rotate(720deg) scale(0.7); opacity: 0; }
+}
+
+@keyframes sakura-fall-2 {
+  0% { transform: translateY(-30px) translateX(0) rotate(0deg) scale(1); opacity: 0; }
+  10% { opacity: 0.9; }
+  90% { opacity: 0.9; }
+  100% { transform: translateY(100vh) translateX(-100px) rotate(-540deg) scale(0.6); opacity: 0; }
+}
+
+@keyframes sakura-fall-3 {
+  0% { transform: translateY(-30px) translateX(0) rotate(0deg) scale(1); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(100vh) translateX(80px) rotate(480deg) scale(0.8); opacity: 0; }
+}
+
+.theme-sakura .cute-button {
+  background: linear-gradient(145deg, #FF8FAB, #FF6B8A);
+  box-shadow: 0 4px 20px rgba(255, 107, 138, 0.5);
+}
+
+/* ============================================
+   SUNSET THEME - Golden Hour Paradise
+   Breathtaking cinematic sunset
+   ============================================ */
+body.theme-sunset {
+  background: linear-gradient(180deg,
+    #1B2838 0%,
+    #2C3E50 5%,
+    #34495E 10%,
+    #5D6D7E 15%,
+    #85929E 20%,
+    #AEB6BF 25%,
+    #D5DBDB 30%,
+    #FDEBD0 35%,
+    #F9E79F 40%,
+    #F7DC6F 45%,
+    #F5B041 52%,
+    #EB984E 58%,
+    #E74C3C 65%,
+    #C0392B 72%,
+    #922B21 80%,
+    #641E16 88%,
+    #1B1B2F 100%
+  );
+  background-attachment: fixed;
+}
+
+/* Sun with realistic glow */
+body.theme-sunset::before {
+  content: '';
+  position: fixed;
+  top: 28%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100px;
+  height: 100px;
+  background: radial-gradient(circle,
+    rgba(255, 255, 220, 1) 0%,
+    rgba(255, 235, 150, 0.95) 20%,
+    rgba(255, 200, 80, 0.8) 40%,
+    rgba(255, 160, 50, 0.5) 60%,
+    rgba(255, 100, 50, 0.3) 80%,
+    transparent 100%
+  );
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  box-shadow:
+    0 0 60px 30px rgba(255, 200, 100, 0.6),
+    0 0 120px 60px rgba(255, 150, 50, 0.4),
+    0 0 200px 100px rgba(255, 100, 50, 0.3),
+    0 0 300px 150px rgba(255, 80, 50, 0.2);
+  animation: sun-pulse 4s ease-in-out infinite;
+}
+
+@keyframes sun-pulse {
+  0%, 100% {
+    transform: translateX(-50%) scale(1);
+    box-shadow:
+      0 0 60px 30px rgba(255, 200, 100, 0.6),
+      0 0 120px 60px rgba(255, 150, 50, 0.4),
+      0 0 200px 100px rgba(255, 100, 50, 0.3),
+      0 0 300px 150px rgba(255, 80, 50, 0.2);
+  }
+  50% {
+    transform: translateX(-50%) scale(1.05);
+    box-shadow:
+      0 0 80px 40px rgba(255, 200, 100, 0.7),
+      0 0 150px 80px rgba(255, 150, 50, 0.5),
+      0 0 250px 130px rgba(255, 100, 50, 0.35),
+      0 0 350px 180px rgba(255, 80, 50, 0.25);
+  }
+}
+
+/* Lens flare and clouds */
+body.theme-sunset::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Lens flare streaks */
+    linear-gradient(90deg, transparent 40%, rgba(255, 200, 150, 0.15) 50%, transparent 60%),
+    /* Flare spots */
+    radial-gradient(circle 20px at 40% 35%, rgba(255, 220, 180, 0.3) 0%, transparent 100%),
+    radial-gradient(circle 12px at 35% 40%, rgba(200, 255, 200, 0.2) 0%, transparent 100%),
+    radial-gradient(circle 25px at 28% 48%, rgba(255, 180, 255, 0.15) 0%, transparent 100%),
+    radial-gradient(circle 8px at 65% 32%, rgba(255, 255, 200, 0.25) 0%, transparent 100%),
+    /* Silhouette clouds */
+    radial-gradient(ellipse 400px 80px at 20% 50%, rgba(0, 0, 0, 0.15) 0%, transparent 70%),
+    radial-gradient(ellipse 300px 60px at 75% 55%, rgba(0, 0, 0, 0.12) 0%, transparent 65%),
+    radial-gradient(ellipse 350px 70px at 50% 52%, rgba(0, 0, 0, 0.1) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  animation: sunset-flare 8s ease-in-out infinite;
+}
+
+@keyframes sunset-flare {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+.theme-sunset .cute-button {
+  background: linear-gradient(145deg, #FF8C42, #FF6B35);
+  box-shadow: 0 4px 20px rgba(255, 107, 53, 0.5);
+}
+
+/* ============================================
+   NIGHT THEME - Cosmic Starry Night
+   Magical night sky with shooting stars
+   ============================================ */
+body.theme-night {
+  background: linear-gradient(180deg,
+    #0a0a18 0%,
+    #0d0d25 15%,
+    #101035 30%,
+    #151550 50%,
+    #1a1a60 70%,
+    #1f1f70 85%,
+    #252580 100%
+  );
+  background-attachment: fixed;
+}
+
+/* Stars and moon */
+body.theme-night::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    /* Moon with glow */
+    radial-gradient(circle 45px at 85% 15%,
+      rgba(255, 255, 240, 1) 0%,
+      rgba(255, 255, 220, 0.9) 30%,
+      rgba(255, 255, 200, 0.5) 60%,
+      transparent 100%
+    ),
+    radial-gradient(circle 80px at 85% 15%,
+      rgba(200, 200, 255, 0.2) 0%,
+      transparent 100%
+    ),
+    /* Bright stars */
+    radial-gradient(circle 3px at 10% 10%, rgba(255, 255, 255, 1) 0%, transparent 100%),
+    radial-gradient(circle 2px at 25% 8%, rgba(255, 255, 255, 0.9) 0%, transparent 100%),
+    radial-gradient(circle 3px at 45% 5%, rgba(255, 255, 255, 0.95) 0%, transparent 100%),
+    radial-gradient(circle 2px at 65% 12%, rgba(255, 255, 255, 0.85) 0%, transparent 100%),
+    radial-gradient(circle 4px at 15% 25%, rgba(255, 255, 255, 1) 0%, transparent 100%),
+    radial-gradient(circle 2px at 35% 20%, rgba(255, 255, 255, 0.8) 0%, transparent 100%),
+    radial-gradient(circle 3px at 55% 28%, rgba(255, 255, 255, 0.9) 0%, transparent 100%),
+    radial-gradient(circle 2px at 75% 22%, rgba(255, 255, 255, 0.85) 0%, transparent 100%),
+    radial-gradient(circle 3px at 92% 35%, rgba(255, 255, 255, 0.95) 0%, transparent 100%),
+    /* Medium stars */
+    radial-gradient(circle 2px at 5% 40%, rgba(255, 255, 255, 0.7) 0%, transparent 100%),
+    radial-gradient(circle 2px at 20% 45%, rgba(255, 255, 255, 0.75) 0%, transparent 100%),
+    radial-gradient(circle 2px at 40% 38%, rgba(255, 255, 255, 0.7) 0%, transparent 100%),
+    radial-gradient(circle 2px at 60% 42%, rgba(255, 255, 255, 0.8) 0%, transparent 100%),
+    radial-gradient(circle 2px at 80% 48%, rgba(255, 255, 255, 0.7) 0%, transparent 100%),
+    radial-gradient(circle 2px at 95% 55%, rgba(255, 255, 255, 0.75) 0%, transparent 100%),
+    /* Faint stars */
+    radial-gradient(circle 1px at 8% 55%, rgba(255, 255, 255, 0.5) 0%, transparent 100%),
+    radial-gradient(circle 1px at 22% 60%, rgba(255, 255, 255, 0.45) 0%, transparent 100%),
+    radial-gradient(circle 1px at 38% 52%, rgba(255, 255, 255, 0.5) 0%, transparent 100%),
+    radial-gradient(circle 1px at 52% 58%, rgba(255, 255, 255, 0.4) 0%, transparent 100%),
+    radial-gradient(circle 1px at 68% 65%, rgba(255, 255, 255, 0.5) 0%, transparent 100%),
+    radial-gradient(circle 1px at 88% 70%, rgba(255, 255, 255, 0.45) 0%, transparent 100%),
+    /* Colored stars */
+    radial-gradient(circle 2px at 18% 15%, rgba(255, 200, 200, 0.8) 0%, transparent 100%),
+    radial-gradient(circle 2px at 58% 35%, rgba(200, 200, 255, 0.8) 0%, transparent 100%),
+    radial-gradient(circle 2px at 78% 8%, rgba(255, 255, 200, 0.8) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: stars-twinkle 3s ease-in-out infinite;
+}
+
+@keyframes stars-twinkle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+/* Aurora and shooting star */
+body.theme-night::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Aurora borealis */
+    radial-gradient(ellipse 80% 25% at 30% 40%, rgba(0, 255, 150, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 20% at 50% 35%, rgba(100, 200, 255, 0.08) 0%, transparent 65%),
+    radial-gradient(ellipse 70% 22% at 70% 42%, rgba(200, 100, 255, 0.09) 0%, transparent 68%),
+    /* Shooting star trail */
+    linear-gradient(225deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0) 48%,
+      rgba(255, 255, 255, 0.8) 49%,
+      rgba(255, 255, 255, 0.4) 50%,
+      rgba(255, 255, 255, 0) 51%,
+      rgba(255, 255, 255, 0) 100%
+    );
+  background-size: 100% 100%, 100% 100%, 100% 100%, 300% 300%;
+  pointer-events: none;
+  z-index: 0;
+  animation: aurora-shimmer 15s ease-in-out infinite, shooting-star 8s linear infinite;
+}
+
+@keyframes aurora-shimmer {
+  0%, 100% { opacity: 0.8; transform: scaleX(1); }
+  50% { opacity: 1; transform: scaleX(1.1); }
+}
+
+@keyframes shooting-star {
+  0%, 90% { background-position: 0% 0%, 0% 0%, 0% 0%, 200% -100%; }
+  100% { background-position: 0% 0%, 0% 0%, 0% 0%, -100% 200%; }
+}
+
+body.theme-night .game-title,
+body.theme-night .greeting-text {
+  color: #FF69B4 !important;
+  -webkit-text-fill-color: #FF69B4 !important;
+  text-shadow: 0 0 20px rgba(255, 105, 180, 0.6), 0 0 40px rgba(255, 105, 180, 0.3);
+}
+
+body.theme-night .game-subtitle {
+  color: #B8B8E0 !important;
+}
+
+.theme-night .cute-button {
+  background: linear-gradient(145deg, #8B5CF6, #7C3AED);
+  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.5), 0 0 30px rgba(139, 92, 246, 0.2);
+}
+
+/* ============================================
+   RAINBOW THEME - Prismatic Dream World
+   Flowing liquid rainbow with sparkle magic
+   ============================================ */
+body.theme-rainbow {
+  background: linear-gradient(
+    135deg,
+    #FF6B6B 0%,
+    #FF8E53 10%,
+    #FFCD38 20%,
+    #7BED9F 30%,
+    #70A1FF 40%,
+    #5352ED 50%,
+    #B33771 60%,
+    #FF6B6B 70%,
+    #FF8E53 80%,
+    #FFCD38 90%,
+    #7BED9F 100%
+  );
+  background-size: 400% 400%;
+  animation: rainbow-flow 6s ease infinite;
+}
+
+@keyframes rainbow-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Shimmer sweep */
+body.theme-rainbow::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 40%,
+    rgba(255, 255, 255, 0.4) 45%,
+    rgba(255, 255, 255, 0.6) 50%,
+    rgba(255, 255, 255, 0.4) 55%,
+    transparent 60%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: rainbow-shimmer 2.5s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes rainbow-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Magic sparkles */
+body.theme-rainbow::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    radial-gradient(circle 6px at 10% 20%, rgba(255, 255, 255, 1) 0%, transparent 100%),
+    radial-gradient(circle 4px at 25% 50%, rgba(255, 255, 255, 0.9) 0%, transparent 100%),
+    radial-gradient(circle 8px at 45% 15%, rgba(255, 255, 255, 0.95) 0%, transparent 100%),
+    radial-gradient(circle 5px at 60% 70%, rgba(255, 255, 255, 0.85) 0%, transparent 100%),
+    radial-gradient(circle 7px at 80% 35%, rgba(255, 255, 255, 1) 0%, transparent 100%),
+    radial-gradient(circle 4px at 90% 80%, rgba(255, 255, 255, 0.9) 0%, transparent 100%),
+    radial-gradient(circle 6px at 15% 85%, rgba(255, 255, 255, 0.95) 0%, transparent 100%),
+    radial-gradient(circle 5px at 70% 90%, rgba(255, 255, 255, 0.85) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+  animation: rainbow-sparkle 2s ease-in-out infinite;
+}
+
+@keyframes rainbow-sparkle {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.3); }
+}
+
+.theme-rainbow .cute-button {
+  background: linear-gradient(90deg, #FF6B6B, #FFCD38, #7BED9F, #70A1FF, #B33771);
+  background-size: 300% 100%;
+  animation: rainbow-button 3s ease infinite;
+  box-shadow: 0 4px 25px rgba(255, 107, 107, 0.5);
+}
+
+@keyframes rainbow-button {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ============================================
+   AURORA THEME - Northern Lights Spectacle
+   Mesmerizing dancing aurora borealis
+   ============================================ */
+body.theme-aurora {
+  background: linear-gradient(180deg,
+    #0B1026 0%,
+    #0F1730 15%,
+    #141E3C 30%,
+    #1A2648 50%,
+    #1F2E54 70%,
+    #243660 85%,
+    #2A3E6C 100%
+  );
+  background-attachment: fixed;
+}
+
+body.theme-aurora::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Aurora curtains */
+    radial-gradient(ellipse 120% 60% at 20% 25%, rgba(0, 255, 150, 0.25) 0%, transparent 60%),
+    radial-gradient(ellipse 100% 50% at 40% 30%, rgba(50, 255, 200, 0.2) 0%, transparent 55%),
+    radial-gradient(ellipse 80% 45% at 60% 20%, rgba(100, 200, 255, 0.22) 0%, transparent 50%),
+    radial-gradient(ellipse 110% 55% at 80% 35%, rgba(150, 100, 255, 0.2) 0%, transparent 58%),
+    radial-gradient(ellipse 90% 48% at 30% 40%, rgba(255, 100, 200, 0.15) 0%, transparent 52%);
+  pointer-events: none;
+  z-index: 0;
+  animation: aurora-dance 10s ease-in-out infinite;
+  filter: blur(20px);
+}
+
+@keyframes aurora-dance {
+  0%, 100% {
+    transform: translateX(0) scaleY(1) skewX(0deg);
+    opacity: 0.8;
+  }
+  25% {
+    transform: translateX(40px) scaleY(1.15) skewX(2deg);
+    opacity: 1;
+  }
+  50% {
+    transform: translateX(-30px) scaleY(0.9) skewX(-3deg);
+    opacity: 0.9;
+  }
+  75% {
+    transform: translateX(20px) scaleY(1.1) skewX(1deg);
+    opacity: 1;
+  }
+}
+
+body.theme-aurora::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    /* Stars */
+    radial-gradient(circle 2px at 8% 15%, rgba(255, 255, 255, 0.9) 0%, transparent 100%),
+    radial-gradient(circle 2px at 22% 25%, rgba(255, 255, 255, 0.8) 0%, transparent 100%),
+    radial-gradient(circle 3px at 38% 12%, rgba(255, 255, 255, 0.85) 0%, transparent 100%),
+    radial-gradient(circle 2px at 55% 20%, rgba(255, 255, 255, 0.75) 0%, transparent 100%),
+    radial-gradient(circle 2px at 72% 8%, rgba(255, 255, 255, 0.9) 0%, transparent 100%),
+    radial-gradient(circle 3px at 88% 18%, rgba(255, 255, 255, 0.8) 0%, transparent 100%),
+    radial-gradient(circle 1px at 15% 35%, rgba(255, 255, 255, 0.6) 0%, transparent 100%),
+    radial-gradient(circle 1px at 45% 40%, rgba(255, 255, 255, 0.55) 0%, transparent 100%),
+    radial-gradient(circle 1px at 65% 32%, rgba(255, 255, 255, 0.65) 0%, transparent 100%),
+    radial-gradient(circle 1px at 92% 45%, rgba(255, 255, 255, 0.5) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: aurora-stars 4s ease-in-out infinite;
+}
+
+@keyframes aurora-stars {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+.theme-aurora .cute-button {
+  background: linear-gradient(145deg, #00E5A0, #00C4B4);
+  box-shadow: 0 4px 25px rgba(0, 229, 160, 0.5), 0 0 40px rgba(0, 229, 160, 0.2);
+}
+
+body.theme-aurora .game-title,
+body.theme-aurora .greeting-text {
+  color: #7FFFD4 !important;
+  -webkit-text-fill-color: #7FFFD4 !important;
+  text-shadow: 0 0 20px rgba(127, 255, 212, 0.5);
+}
+
+/* ============================================
+   CANDY THEME - Sweet Cotton Candy Paradise
+   Delicious swirling candy colors
+   ============================================ */
+body.theme-candy {
+  background: linear-gradient(135deg,
+    #FFB6E1 0%,
+    #FFC8E8 12%,
+    #D4F0FC 25%,
+    #B8E8F8 38%,
+    #FFD6ED 50%,
+    #FFE8F4 62%,
+    #C8F4FC 75%,
+    #A8E8F4 88%,
+    #FFB6E1 100%
+  );
+  background-size: 400% 400%;
+  animation: candy-swirl 12s ease infinite;
+}
+
+@keyframes candy-swirl {
+  0% { background-position: 0% 0%; }
+  25% { background-position: 100% 0%; }
+  50% { background-position: 100% 100%; }
+  75% { background-position: 0% 100%; }
+  100% { background-position: 0% 0%; }
+}
+
+body.theme-candy::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Fluffy candy clouds */
+    radial-gradient(ellipse 200px 120px at 15% 30%, rgba(255, 255, 255, 0.9) 0%, rgba(255, 220, 240, 0.4) 50%, transparent 70%),
+    radial-gradient(ellipse 180px 100px at 80% 25%, rgba(255, 255, 255, 0.85) 0%, rgba(200, 240, 255, 0.35) 50%, transparent 70%),
+    radial-gradient(ellipse 220px 130px at 50% 70%, rgba(255, 255, 255, 0.8) 0%, rgba(255, 230, 245, 0.3) 50%, transparent 70%),
+    radial-gradient(ellipse 160px 90px at 85% 75%, rgba(255, 255, 255, 0.75) 0%, rgba(220, 245, 255, 0.3) 50%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  animation: candy-float 15s ease-in-out infinite;
+}
+
+@keyframes candy-float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-20px) scale(1.05); }
+}
+
+body.theme-candy::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    /* Sparkle sprinkles */
+    radial-gradient(circle 5px at 12% 25%, rgba(255, 255, 255, 0.95) 0%, transparent 100%),
+    radial-gradient(circle 4px at 28% 55%, rgba(255, 200, 230, 0.9) 0%, transparent 100%),
+    radial-gradient(circle 6px at 45% 18%, rgba(200, 240, 255, 0.85) 0%, transparent 100%),
+    radial-gradient(circle 4px at 62% 72%, rgba(255, 230, 245, 0.9) 0%, transparent 100%),
+    radial-gradient(circle 5px at 78% 38%, rgba(255, 255, 255, 0.95) 0%, transparent 100%),
+    radial-gradient(circle 4px at 92% 65%, rgba(220, 245, 255, 0.85) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: candy-sparkle 3s ease-in-out infinite;
+}
+
+@keyframes candy-sparkle {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.theme-candy .cute-button {
+  background: linear-gradient(145deg, #FF9ED2, #9ED8FF);
+  box-shadow: 0 4px 20px rgba(255, 158, 210, 0.5);
+}
+
+/* ============================================
+   LAVENDER THEME - Dreamy Purple Meadows
+   Serene lavender fields at twilight
+   ============================================ */
+body.theme-lavender {
+  background:
+    radial-gradient(ellipse 100% 50% at 50% 100%, rgba(138, 100, 180, 0.4) 0%, transparent 60%),
+    linear-gradient(180deg,
+      #F0E6FA 0%,
+      #E8DCF4 15%,
+      #DFD0EE 30%,
+      #D6C4E8 45%,
+      #CDB8E2 60%,
+      #C4ACDC 75%,
+      #BBA0D6 90%,
+      #B294D0 100%
+    );
+  background-attachment: fixed;
+}
+
+body.theme-lavender::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Soft sunbeams */
+    radial-gradient(ellipse 80% 50% at 75% 20%, rgba(255, 255, 230, 0.35) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 25% 30%, rgba(255, 255, 240, 0.25) 0%, transparent 50%),
+    /* Lavender field rows suggestion */
+    repeating-linear-gradient(
+      180deg,
+      transparent 0px,
+      transparent 40px,
+      rgba(138, 100, 180, 0.08) 40px,
+      rgba(138, 100, 180, 0.08) 42px
+    );
+  pointer-events: none;
+  z-index: 0;
+  animation: lavender-sway 6s ease-in-out infinite;
+}
+
+@keyframes lavender-sway {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(8px); }
+}
+
+body.theme-lavender::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    /* Floating pollen/petals */
+    radial-gradient(circle 3px at 15% 30%, rgba(200, 180, 220, 0.8) 0%, transparent 100%),
+    radial-gradient(circle 2px at 35% 55%, rgba(220, 200, 240, 0.7) 0%, transparent 100%),
+    radial-gradient(circle 4px at 55% 25%, rgba(190, 170, 210, 0.75) 0%, transparent 100%),
+    radial-gradient(circle 2px at 75% 65%, rgba(210, 190, 230, 0.7) 0%, transparent 100%),
+    radial-gradient(circle 3px at 90% 40%, rgba(200, 180, 220, 0.8) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: lavender-float 10s ease-in-out infinite;
+}
+
+@keyframes lavender-float {
+  0%, 100% { transform: translateY(0); opacity: 0.6; }
+  50% { transform: translateY(-15px); opacity: 1; }
+}
+
+.theme-lavender .cute-button {
+  background: linear-gradient(145deg, #B39DDB, #9575CD);
+  box-shadow: 0 4px 20px rgba(149, 117, 205, 0.5);
+}
+
+/* ============================================
+   MINT THEME - Fresh Botanical Garden
+   Crisp refreshing mint with dewdrops
+   ============================================ */
+body.theme-mint {
+  background:
+    radial-gradient(ellipse 80% 60% at 30% 80%, rgba(100, 200, 180, 0.3) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 50% at 70% 20%, rgba(150, 220, 200, 0.25) 0%, transparent 45%),
+    linear-gradient(180deg,
+      #E8F8F5 0%,
+      #D5F2EC 15%,
+      #C2ECE3 30%,
+      #AFE6DA 45%,
+      #9CE0D1 60%,
+      #89DAC8 75%,
+      #76D4BF 90%,
+      #63CEB6 100%
+    );
+  background-attachment: fixed;
+}
+
+body.theme-mint::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Light rays through leaves */
+    radial-gradient(ellipse 60% 40% at 20% 15%, rgba(255, 255, 240, 0.4) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 35% at 80% 25%, rgba(255, 255, 230, 0.35) 0%, transparent 50%),
+    /* Leaf shadows */
+    radial-gradient(ellipse 120px 80px at 15% 30%, rgba(50, 150, 120, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 100px 70px at 85% 60%, rgba(50, 150, 120, 0.08) 0%, transparent 65%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+body.theme-mint::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    /* Dewdrops */
+    radial-gradient(circle 6px at 18% 35%, rgba(255, 255, 255, 0.9) 0%, rgba(200, 255, 240, 0.4) 50%, transparent 100%),
+    radial-gradient(circle 4px at 42% 22%, rgba(255, 255, 255, 0.85) 0%, rgba(200, 255, 240, 0.35) 50%, transparent 100%),
+    radial-gradient(circle 5px at 65% 55%, rgba(255, 255, 255, 0.9) 0%, rgba(200, 255, 240, 0.4) 50%, transparent 100%),
+    radial-gradient(circle 4px at 88% 42%, rgba(255, 255, 255, 0.8) 0%, rgba(200, 255, 240, 0.3) 50%, transparent 100%),
+    radial-gradient(circle 6px at 35% 75%, rgba(255, 255, 255, 0.85) 0%, rgba(200, 255, 240, 0.35) 50%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: mint-shimmer 5s ease-in-out infinite;
+}
+
+@keyframes mint-shimmer {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+.theme-mint .cute-button {
+  background: linear-gradient(145deg, #4DD0B0, #26A69A);
+  box-shadow: 0 4px 20px rgba(38, 166, 154, 0.5);
+}
+
+/* ============================================
+   ROSE THEME - Romantic Rose Garden
+   Deep velvety rose petals floating
+   ============================================ */
+body.theme-rose {
+  background:
+    radial-gradient(ellipse 100% 60% at 50% 110%, rgba(180, 80, 100, 0.4) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 20% 20%, rgba(255, 200, 210, 0.5) 0%, transparent 45%),
+    radial-gradient(ellipse 50% 35% at 85% 30%, rgba(255, 180, 195, 0.4) 0%, transparent 40%),
+    linear-gradient(180deg,
+      #FFF0F3 0%,
+      #FFE4EA 12%,
+      #FFD8E1 24%,
+      #FFCCD8 36%,
+      #F0B0C0 48%,
+      #E090A8 60%,
+      #D07090 72%,
+      #C05078 84%,
+      #A03060 100%
+    );
+  background-attachment: fixed;
+}
+
+body.theme-rose::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Rose petal shapes */
+    radial-gradient(ellipse 50px 60px at 12% 25%, rgba(255, 150, 170, 0.5) 0%, transparent 70%),
+    radial-gradient(ellipse 45px 55px at 88% 35%, rgba(255, 140, 165, 0.45) 0%, transparent 65%),
+    radial-gradient(ellipse 55px 65px at 35% 75%, rgba(255, 160, 180, 0.5) 0%, transparent 70%),
+    radial-gradient(ellipse 40px 50px at 75% 80%, rgba(255, 130, 155, 0.4) 0%, transparent 65%),
+    radial-gradient(ellipse 48px 58px at 55% 20%, rgba(255, 145, 168, 0.45) 0%, transparent 68%);
+  pointer-events: none;
+  z-index: 0;
+  animation: rose-float 12s ease-in-out infinite;
+}
+
+@keyframes rose-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); opacity: 0.8; }
+  25% { transform: translateY(-10px) rotate(2deg); opacity: 1; }
+  50% { transform: translateY(-5px) rotate(-1deg); opacity: 0.9; }
+  75% { transform: translateY(-15px) rotate(3deg); opacity: 1; }
+}
+
+body.theme-rose::after {
+  content: '🌹';
+  position: fixed;
+  font-size: 28px;
+  top: 15%;
+  left: 8%;
+  animation: rose-bob 6s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(160, 48, 96, 0.4));
+}
+
+.theme-rose::before {
+  content: '🌹';
+  position: fixed;
+  font-size: 22px;
+  top: 45%;
+  right: 10%;
+  animation: rose-bob 7s ease-in-out infinite;
+  animation-delay: 2s;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(160, 48, 96, 0.4));
+}
+
+.theme-rose::after {
+  content: '🌹';
+  position: fixed;
+  font-size: 24px;
+  bottom: 20%;
+  left: 50%;
+  animation: rose-bob 5s ease-in-out infinite;
+  animation-delay: 4s;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(160, 48, 96, 0.4));
+}
+
+@keyframes rose-bob {
+  0%, 100% { transform: translateY(0) rotate(-5deg); }
+  50% { transform: translateY(-15px) rotate(5deg); }
+}
+
+.theme-rose .cute-button {
+  background: linear-gradient(145deg, #E85D75, #D14D65);
+  box-shadow: 0 4px 20px rgba(232, 93, 117, 0.5);
+}
+
+/* ============================================
+   GALAXY THEME - Deep Space Nebula
+   Breathtaking cosmic nebula with stars
+   ============================================ */
+body.theme-galaxy {
+  background: linear-gradient(180deg,
+    #05050F 0%,
+    #0A0A1F 15%,
+    #0F0F2F 30%,
+    #14143F 50%,
+    #0F0F2F 70%,
+    #0A0A1F 85%,
+    #05050F 100%
+  );
+  background-attachment: fixed;
+}
+
+body.theme-galaxy::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Nebula clouds - purple/pink/blue */
+    radial-gradient(ellipse 70% 60% at 25% 30%, rgba(138, 43, 226, 0.35) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 75% 65%, rgba(255, 20, 147, 0.28) 0%, transparent 55%),
+    radial-gradient(ellipse 80% 55% at 50% 80%, rgba(30, 144, 255, 0.25) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 45% at 85% 25%, rgba(255, 105, 180, 0.22) 0%, transparent 50%),
+    radial-gradient(ellipse 65% 50% at 15% 75%, rgba(75, 0, 130, 0.3) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 60% 15%, rgba(0, 191, 255, 0.2) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+  animation: galaxy-rotate 60s linear infinite;
+  filter: blur(30px);
+}
+
+@keyframes galaxy-rotate {
+  0% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.15); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+body.theme-galaxy::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    /* Dense star field */
+    radial-gradient(circle 3px at 5% 8%, rgba(255, 255, 255, 1) 0%, transparent 100%),
+    radial-gradient(circle 2px at 12% 22%, rgba(255, 255, 255, 0.9) 0%, transparent 100%),
+    radial-gradient(circle 4px at 22% 12%, rgba(255, 200, 255, 0.95) 0%, transparent 100%),
+    radial-gradient(circle 2px at 32% 35%, rgba(255, 255, 255, 0.8) 0%, transparent 100%),
+    radial-gradient(circle 3px at 42% 8%, rgba(200, 200, 255, 0.9) 0%, transparent 100%),
+    radial-gradient(circle 2px at 52% 28%, rgba(255, 255, 255, 0.85) 0%, transparent 100%),
+    radial-gradient(circle 3px at 62% 18%, rgba(255, 255, 255, 0.95) 0%, transparent 100%),
+    radial-gradient(circle 2px at 72% 42%, rgba(255, 255, 200, 0.85) 0%, transparent 100%),
+    radial-gradient(circle 4px at 82% 25%, rgba(255, 255, 255, 1) 0%, transparent 100%),
+    radial-gradient(circle 2px at 92% 15%, rgba(200, 255, 255, 0.9) 0%, transparent 100%),
+    radial-gradient(circle 2px at 8% 55%, rgba(255, 255, 255, 0.75) 0%, transparent 100%),
+    radial-gradient(circle 3px at 25% 65%, rgba(255, 255, 255, 0.85) 0%, transparent 100%),
+    radial-gradient(circle 2px at 45% 52%, rgba(255, 255, 255, 0.8) 0%, transparent 100%),
+    radial-gradient(circle 2px at 65% 72%, rgba(255, 255, 255, 0.7) 0%, transparent 100%),
+    radial-gradient(circle 3px at 85% 58%, rgba(255, 200, 255, 0.85) 0%, transparent 100%),
+    radial-gradient(circle 2px at 18% 85%, rgba(255, 255, 255, 0.75) 0%, transparent 100%),
+    radial-gradient(circle 2px at 38% 78%, rgba(255, 255, 255, 0.8) 0%, transparent 100%),
+    radial-gradient(circle 3px at 58% 88%, rgba(200, 200, 255, 0.85) 0%, transparent 100%),
+    radial-gradient(circle 2px at 78% 82%, rgba(255, 255, 255, 0.7) 0%, transparent 100%),
+    radial-gradient(circle 2px at 95% 75%, rgba(255, 255, 255, 0.8) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: galaxy-twinkle 3s ease-in-out infinite;
+}
+
+@keyframes galaxy-twinkle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+.theme-galaxy .cute-button {
+  background: linear-gradient(145deg, #9B59B6, #8E44AD);
+  box-shadow: 0 4px 25px rgba(155, 89, 182, 0.6), 0 0 50px rgba(155, 89, 182, 0.3);
+}
+
+body.theme-galaxy .game-title,
+body.theme-galaxy .greeting-text {
+  color: #E879F9 !important;
+  -webkit-text-fill-color: #E879F9 !important;
+  text-shadow: 0 0 25px rgba(232, 121, 249, 0.7), 0 0 50px rgba(232, 121, 249, 0.4);
+}
+
+body.theme-galaxy .game-subtitle {
+  color: #C4B5FD !important;
+}
+
+/* ============================================
+   PEACH THEME - Golden Peach Orchard
+   Warm sunset through peach blossoms
+   ============================================ */
+body.theme-peach {
+  background:
+    radial-gradient(ellipse 100% 70% at 80% 10%, rgba(255, 220, 150, 0.4) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 50% at 20% 80%, rgba(255, 180, 130, 0.3) 0%, transparent 45%),
+    linear-gradient(180deg,
+      #FFF8F0 0%,
+      #FFF0E0 15%,
+      #FFE8D0 30%,
+      #FFE0C0 45%,
+      #FFD8B0 60%,
+      #FFD0A0 75%,
+      #FFC890 90%,
+      #FFC080 100%
+    );
+  background-attachment: fixed;
+}
+
+body.theme-peach::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Warm sunlight */
+    radial-gradient(ellipse 70% 50% at 85% 15%, rgba(255, 255, 200, 0.5) 0%, transparent 55%),
+    /* Peach-like shapes */
+    radial-gradient(circle 40px at 15% 25%, rgba(255, 180, 140, 0.4) 0%, transparent 70%),
+    radial-gradient(circle 35px at 82% 65%, rgba(255, 170, 130, 0.35) 0%, transparent 65%),
+    radial-gradient(circle 45px at 45% 85%, rgba(255, 190, 150, 0.4) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  animation: peach-glow 8s ease-in-out infinite;
+}
+
+@keyframes peach-glow {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+body.theme-peach::after {
+  content: '🍑';
+  position: fixed;
+  font-size: 26px;
+  top: 12%;
+  right: 15%;
+  animation: peach-float 5s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(255, 160, 100, 0.4));
+}
+
+.theme-peach::before {
+  content: '🍑';
+  position: fixed;
+  font-size: 20px;
+  top: 55%;
+  left: 10%;
+  animation: peach-float 6s ease-in-out infinite;
+  animation-delay: 1.5s;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(255, 160, 100, 0.4));
+}
+
+.theme-peach::after {
+  content: '🍑';
+  position: fixed;
+  font-size: 22px;
+  bottom: 18%;
+  right: 40%;
+  animation: peach-float 4.5s ease-in-out infinite;
+  animation-delay: 3s;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(255, 160, 100, 0.4));
+}
+
+@keyframes peach-float {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-12px) rotate(3deg); }
+}
+
+.theme-peach .cute-button {
+  background: linear-gradient(145deg, #FFAB76, #FF8C50);
+  box-shadow: 0 4px 20px rgba(255, 140, 80, 0.5);
+}
+
+/* ============================================
+   BUTTERFLY THEME - Enchanted Garden
+   Magical butterflies in a flower paradise
+   ============================================ */
+body.theme-butterfly {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 100%, rgba(100, 200, 150, 0.3) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 20% 20%, rgba(255, 230, 200, 0.4) 0%, transparent 45%),
+    linear-gradient(180deg,
+      #F0FFF4 0%,
+      #E0F8E8 15%,
+      #C8F0D8 30%,
+      #A8E8C4 45%,
+      #88E0B0 55%,
+      #A0E8BC 70%,
+      #B8F0C8 85%,
+      #D0F8D4 100%
+    );
+  background-attachment: fixed;
+}
+
+body.theme-butterfly::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Flower patches */
+    radial-gradient(circle 60px at 10% 85%, rgba(255, 182, 193, 0.55) 0%, transparent 70%),
+    radial-gradient(circle 50px at 35% 90%, rgba(255, 218, 185, 0.5) 0%, transparent 65%),
+    radial-gradient(circle 55px at 65% 88%, rgba(221, 160, 221, 0.45) 0%, transparent 68%),
+    radial-gradient(circle 45px at 90% 85%, rgba(255, 200, 200, 0.5) 0%, transparent 65%),
+    /* Sunbeams */
+    radial-gradient(ellipse 60% 45% at 75% 15%, rgba(255, 255, 200, 0.45) 0%, transparent 55%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Animated butterflies */
+body.theme-butterfly::after {
+  content: '🦋';
+  position: fixed;
+  font-size: 32px;
+  top: 20%;
+  left: 10%;
+  animation: butterfly-dance-1 12s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(100, 150, 200, 0.4));
+}
+
+.theme-butterfly::before {
+  content: '🦋';
+  position: fixed;
+  font-size: 26px;
+  top: 45%;
+  right: 12%;
+  animation: butterfly-dance-2 10s ease-in-out infinite;
+  animation-delay: 3s;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(100, 150, 200, 0.4));
+}
+
+.theme-butterfly::after {
+  content: '🦋';
+  position: fixed;
+  font-size: 28px;
+  top: 65%;
+  left: 45%;
+  animation: butterfly-dance-3 14s ease-in-out infinite;
+  animation-delay: 6s;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(100, 150, 200, 0.4));
+}
+
+@keyframes butterfly-dance-1 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+  20% { transform: translate(80px, -40px) rotate(15deg) scale(1.1); }
+  40% { transform: translate(150px, 20px) rotate(-10deg) scale(0.95); }
+  60% { transform: translate(100px, -60px) rotate(20deg) scale(1.05); }
+  80% { transform: translate(50px, -20px) rotate(-5deg) scale(1); }
+}
+
+@keyframes butterfly-dance-2 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+  25% { transform: translate(-60px, 50px) rotate(-20deg) scale(1.1); }
+  50% { transform: translate(-120px, -10px) rotate(15deg) scale(0.9); }
+  75% { transform: translate(-50px, 30px) rotate(-8deg) scale(1.05); }
+}
+
+@keyframes butterfly-dance-3 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+  33% { transform: translate(70px, -70px) rotate(25deg) scale(1.15); }
+  66% { transform: translate(-30px, -40px) rotate(-15deg) scale(0.95); }
+}
+
+.theme-butterfly .cute-button {
+  background: linear-gradient(145deg, #5DD39E, #2ECC71);
+  box-shadow: 0 4px 20px rgba(46, 204, 113, 0.5);
+}
+
+/* ============================================
+   CORAL THEME - Tropical Reef Paradise
+   Vibrant underwater coral world
+   ============================================ */
+body.theme-coral {
+  background: linear-gradient(180deg,
+    #B8E8F8 0%,
+    #90D8F0 10%,
+    #68C8E8 20%,
+    #40B8E0 30%,
+    #20A8D8 40%,
+    #0098D0 50%,
+    #0088C0 60%,
+    #0078B0 70%,
+    #006898 82%,
+    #005880 100%
+  );
+  background-attachment: fixed;
+}
+
+body.theme-coral::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Coral formations */
+    radial-gradient(ellipse 80px 100px at 10% 95%, rgba(255, 127, 80, 0.55) 0%, transparent 65%),
+    radial-gradient(ellipse 70px 90px at 25% 90%, rgba(255, 99, 71, 0.5) 0%, transparent 60%),
+    radial-gradient(ellipse 90px 110px at 50% 92%, rgba(255, 182, 193, 0.55) 0%, transparent 65%),
+    radial-gradient(ellipse 65px 85px at 75% 88%, rgba(255, 218, 185, 0.5) 0%, transparent 60%),
+    radial-gradient(ellipse 75px 95px at 92% 94%, rgba(255, 160, 122, 0.5) 0%, transparent 62%),
+    /* Surface light rays */
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, transparent 35%);
+  pointer-events: none;
+  z-index: 0;
+  animation: coral-sway 5s ease-in-out infinite;
+}
+
+@keyframes coral-sway {
+  0%, 100% { transform: translateX(0) scaleX(1); }
+  50% { transform: translateX(5px) scaleX(1.02); }
+}
+
+body.theme-coral::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    /* Bubbles */
+    radial-gradient(circle 10px at 15% 70%, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.15) 40%, transparent 100%),
+    radial-gradient(circle 6px at 30% 55%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.1) 45%, transparent 100%),
+    radial-gradient(circle 14px at 55% 75%, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.1) 40%, transparent 100%),
+    radial-gradient(circle 8px at 70% 50%, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.15) 45%, transparent 100%),
+    radial-gradient(circle 5px at 85% 65%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.1) 50%, transparent 100%),
+    /* Fish-like sparkles */
+    radial-gradient(circle 4px at 40% 40%, rgba(255, 200, 100, 0.6) 0%, transparent 100%),
+    radial-gradient(circle 3px at 65% 35%, rgba(100, 200, 255, 0.5) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: coral-bubbles 8s ease-in-out infinite;
+}
+
+@keyframes coral-bubbles {
+  0% { transform: translateY(0); opacity: 0.6; }
+  50% { opacity: 0.9; }
+  100% { transform: translateY(-80px); opacity: 0.4; }
+}
+
+.theme-coral .cute-button {
+  background: linear-gradient(145deg, #FF7F50, #FF6347);
+  box-shadow: 0 4px 20px rgba(255, 127, 80, 0.5);
+}
+
+/* ============================================
+   STRAWBERRY THEME - Sweet Berry Fields
+   Luscious strawberry paradise
+   ============================================ */
+body.theme-strawberry {
+  background:
+    radial-gradient(ellipse 100% 50% at 50% 100%, rgba(255, 100, 100, 0.25) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 40% at 20% 20%, rgba(255, 220, 220, 0.4) 0%, transparent 45%),
+    linear-gradient(180deg,
+      #FFF8F8 0%,
+      #FFE8E8 15%,
+      #FFD8D8 30%,
+      #FFC8C8 45%,
+      #FFB8B8 60%,
+      #FFA8A8 75%,
+      #FF9898 90%,
+      #FF8888 100%
+    );
+  background-attachment: fixed;
+}
+
+body.theme-strawberry::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Strawberry field rows */
+    radial-gradient(ellipse 60% 25% at 20% 85%, rgba(255, 80, 80, 0.25) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 20% at 55% 88%, rgba(255, 100, 100, 0.22) 0%, transparent 55%),
+    radial-gradient(ellipse 55% 22% at 85% 82%, rgba(255, 90, 90, 0.2) 0%, transparent 58%),
+    /* Green leaf accents */
+    radial-gradient(ellipse 70% 20% at 30% 78%, rgba(100, 200, 100, 0.18) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 18% at 75% 75%, rgba(100, 200, 100, 0.15) 0%, transparent 52%),
+    /* Warm sunlight */
+    radial-gradient(ellipse 60% 45% at 80% 15%, rgba(255, 255, 200, 0.4) 0%, transparent 55%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Floating strawberries */
+body.theme-strawberry::after {
+  content: '🍓';
+  position: fixed;
+  font-size: 28px;
+  top: 12%;
+  left: 12%;
+  animation: strawberry-bounce 4s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(255, 80, 80, 0.4));
+}
+
+.theme-strawberry::before {
+  content: '🍓';
+  position: fixed;
+  font-size: 22px;
+  top: 38%;
+  right: 15%;
+  animation: strawberry-bounce 5s ease-in-out infinite;
+  animation-delay: 1s;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(255, 80, 80, 0.4));
+}
+
+.theme-strawberry::after {
+  content: '🍓';
+  position: fixed;
+  font-size: 25px;
+  bottom: 22%;
+  left: 48%;
+  animation: strawberry-bounce 4.5s ease-in-out infinite;
+  animation-delay: 2.5s;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(255, 80, 80, 0.4));
+}
+
+@keyframes strawberry-bounce {
+  0%, 100% { transform: translateY(0) rotate(-8deg) scale(1); }
+  50% { transform: translateY(-18px) rotate(8deg) scale(1.1); }
+}
+
+.theme-strawberry .cute-button {
+  background: linear-gradient(145deg, #FF6B6B, #EE5A5A);
+  box-shadow: 0 4px 20px rgba(255, 107, 107, 0.5);
+}
+
+/* ============================================
+   FOREST THEME - Enchanted Magical Forest
+   Mystical woodland with fairy lights
+   ============================================ */
+body.theme-forest {
+  background: linear-gradient(180deg,
+    #0F2F1A 0%,
+    #143820 15%,
+    #1A4228 30%,
+    #204C30 42%,
+    #2D6B3F 55%,
+    #3A8A4E 68%,
+    #4AA05E 80%,
+    #5AB66E 90%,
+    #6ACC7E 100%
+  );
+  background-attachment: fixed;
+}
+
+body.theme-forest::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Mystical light beams through canopy */
+    linear-gradient(160deg, rgba(200, 255, 150, 0.18) 0%, transparent 35%),
+    linear-gradient(175deg, rgba(180, 255, 130, 0.12) 5%, transparent 30%),
+    linear-gradient(145deg, rgba(150, 255, 100, 0.15) 0%, transparent 40%),
+    /* Magical glowing spots */
+    radial-gradient(circle 50px at 20% 55%, rgba(150, 255, 150, 0.3) 0%, transparent 70%),
+    radial-gradient(circle 35px at 70% 35%, rgba(180, 255, 180, 0.25) 0%, transparent 65%),
+    radial-gradient(circle 45px at 45% 75%, rgba(100, 255, 150, 0.28) 0%, transparent 68%),
+    radial-gradient(circle 30px at 85% 65%, rgba(200, 255, 200, 0.22) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+  animation: forest-magic 6s ease-in-out infinite;
+}
+
+@keyframes forest-magic {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+body.theme-forest::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    /* Fairy lights / fireflies */
+    radial-gradient(circle 5px at 12% 28%, rgba(200, 255, 150, 0.9) 0%, rgba(150, 255, 100, 0.3) 50%, transparent 100%),
+    radial-gradient(circle 4px at 28% 52%, rgba(180, 255, 130, 0.85) 0%, rgba(130, 255, 80, 0.25) 50%, transparent 100%),
+    radial-gradient(circle 6px at 48% 22%, rgba(150, 255, 120, 0.9) 0%, rgba(100, 255, 80, 0.3) 50%, transparent 100%),
+    radial-gradient(circle 4px at 65% 68%, rgba(200, 255, 180, 0.8) 0%, rgba(150, 255, 130, 0.25) 50%, transparent 100%),
+    radial-gradient(circle 5px at 82% 42%, rgba(180, 255, 150, 0.85) 0%, rgba(130, 255, 100, 0.3) 50%, transparent 100%),
+    radial-gradient(circle 4px at 35% 78%, rgba(160, 255, 140, 0.8) 0%, rgba(110, 255, 90, 0.25) 50%, transparent 100%),
+    radial-gradient(circle 5px at 75% 85%, rgba(200, 255, 160, 0.85) 0%, rgba(150, 255, 110, 0.28) 50%, transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+  animation: fireflies 8s ease-in-out infinite;
+}
+
+@keyframes fireflies {
+  0%, 100% { opacity: 0.5; transform: translateY(0); }
+  25% { opacity: 1; transform: translateY(-8px); }
+  50% { opacity: 0.6; transform: translateY(-15px); }
+  75% { opacity: 1; transform: translateY(-5px); }
+}
+
+.theme-forest .cute-button {
+  background: linear-gradient(145deg, #4CAF50, #388E3C);
+  box-shadow: 0 4px 20px rgba(76, 175, 80, 0.5), 0 0 30px rgba(100, 255, 100, 0.2);
+}
+
+body.theme-forest .game-title,
+body.theme-forest .greeting-text {
+  color: #A5D6A7 !important;
+  -webkit-text-fill-color: #A5D6A7 !important;
+  text-shadow: 0 0 20px rgba(165, 214, 167, 0.6), 0 0 40px rgba(100, 255, 100, 0.3);
+}
+
+body.theme-forest .game-subtitle {
+  color: #81C784 !important;
+}
+
+/* ============================================
+   FARM THEME - Adorable Animal Paradise
+   Sunny farm with cute baby animals
+   ============================================ */
+body.theme-farm {
+  background:
+    /* Sunny sky gradient */
+    radial-gradient(ellipse 120% 60% at 50% -10%, rgba(255, 255, 200, 0.5) 0%, transparent 50%),
+    linear-gradient(180deg,
+      #87CEEB 0%,
+      #98D8F0 15%,
+      #A8E2F5 30%,
+      #B8ECF8 45%,
+      #90D890 55%,
+      #70C870 65%,
+      #60B860 75%,
+      #50A850 85%,
+      #409840 100%
+    );
+  background-attachment: fixed;
+}
+
+body.theme-farm::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Bright sun */
+    radial-gradient(circle 60px at 85% 12%,
+      rgba(255, 255, 150, 1) 0%,
+      rgba(255, 240, 100, 0.8) 30%,
+      rgba(255, 220, 50, 0.4) 60%,
+      transparent 100%
+    ),
+    /* Sun rays */
+    radial-gradient(circle 120px at 85% 12%,
+      rgba(255, 255, 200, 0.4) 0%,
+      rgba(255, 240, 150, 0.2) 50%,
+      transparent 100%
+    ),
+    /* Fluffy white clouds */
+    radial-gradient(ellipse 180px 80px at 15% 18%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.5) 40%, transparent 70%),
+    radial-gradient(ellipse 140px 60px at 45% 12%, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.4) 45%, transparent 70%),
+    radial-gradient(ellipse 160px 70px at 70% 22%, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0.35) 40%, transparent 70%),
+    /* Red barn silhouette */
+    linear-gradient(180deg, transparent 60%, rgba(139, 69, 19, 0.15) 60%, rgba(139, 69, 19, 0.15) 65%, transparent 65%),
+    /* Fence posts suggestion */
+    repeating-linear-gradient(
+      90deg,
+      transparent 0px,
+      transparent 80px,
+      rgba(139, 90, 43, 0.12) 80px,
+      rgba(139, 90, 43, 0.12) 85px
+    ),
+    /* Rolling hills */
+    radial-gradient(ellipse 200% 40% at 30% 95%, rgba(100, 180, 100, 0.5) 0%, transparent 50%),
+    radial-gradient(ellipse 180% 35% at 70% 100%, rgba(80, 160, 80, 0.4) 0%, transparent 45%);
+  pointer-events: none;
+  z-index: 0;
+  animation: farm-clouds 30s ease-in-out infinite;
+}
+
+@keyframes farm-clouds {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(20px); }
+}
+
+/* Animated farm animals */
+body.theme-farm::after {
+  content: '🐮';
+  position: fixed;
+  font-size: 36px;
+  bottom: 18%;
+  left: 8%;
+  animation: cow-graze 6s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+}
+
+.theme-farm::before {
+  content: '🐷';
+  position: fixed;
+  font-size: 30px;
+  bottom: 22%;
+  right: 12%;
+  animation: pig-bounce 3s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+}
+
+.theme-farm::after {
+  content: '🐔';
+  position: fixed;
+  font-size: 26px;
+  bottom: 15%;
+  left: 45%;
+  animation: chicken-peck 2s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+}
+
+@keyframes cow-graze {
+  0%, 100% { transform: translateX(0) rotate(-2deg); }
+  25% { transform: translateX(15px) rotate(0deg); }
+  50% { transform: translateX(10px) rotate(2deg); }
+  75% { transform: translateX(-5px) rotate(-1deg); }
+}
+
+@keyframes pig-bounce {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-8px) rotate(5deg); }
+  50% { transform: translateY(0) rotate(0deg); }
+  75% { transform: translateY(-5px) rotate(-3deg); }
+}
+
+@keyframes chicken-peck {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  20% { transform: translateY(5px) rotate(15deg); }
+  40% { transform: translateY(0) rotate(0deg); }
+  60% { transform: translateY(5px) rotate(15deg); }
+  80% { transform: translateY(0) rotate(0deg); }
+}
+
+.theme-farm .cute-button {
+  background: linear-gradient(145deg, #FF9966, #FF7744);
+  box-shadow: 0 4px 20px rgba(255, 119, 68, 0.5);
+}
+
+/* ============================================
+   DARK THEME - Clean Modern Dark Mode
+   Sophisticated dark with liquid glass
+   ============================================ */
+body.theme-dark {
+  background: linear-gradient(180deg,
+    #0d0d0f 0%,
+    #121215 15%,
+    #16161a 30%,
+    #1a1a1f 50%,
+    #1e1e24 70%,
+    #222228 85%,
+    #26262d 100%
+  );
+  background-attachment: fixed;
+}
+
+body.theme-dark::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Subtle gradient orbs */
+    radial-gradient(ellipse 60% 40% at 20% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse 50% 35% at 80% 70%, rgba(139, 92, 246, 0.06) 0%, transparent 45%),
+    radial-gradient(ellipse 70% 50% at 50% 90%, rgba(59, 130, 246, 0.05) 0%, transparent 55%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+body.theme-dark::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    /* Subtle stars */
+    radial-gradient(circle 1px at 10% 15%, rgba(255, 255, 255, 0.3) 0%, transparent 100%),
+    radial-gradient(circle 1px at 25% 35%, rgba(255, 255, 255, 0.25) 0%, transparent 100%),
+    radial-gradient(circle 1px at 45% 20%, rgba(255, 255, 255, 0.2) 0%, transparent 100%),
+    radial-gradient(circle 1px at 65% 45%, rgba(255, 255, 255, 0.25) 0%, transparent 100%),
+    radial-gradient(circle 1px at 85% 25%, rgba(255, 255, 255, 0.3) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: dark-twinkle 4s ease-in-out infinite;
+}
+
+@keyframes dark-twinkle {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+body.theme-dark .game-title,
+body.theme-dark .greeting-text {
+  color: #e0e7ff !important;
+  -webkit-text-fill-color: #e0e7ff !important;
+  text-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+}
+
+body.theme-dark .game-subtitle {
+  color: #a1a1aa !important;
+}
+
+.theme-dark .cute-button {
+  background: linear-gradient(145deg, #6366f1, #4f46e5);
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+}
+
+/* ============================================
+   NEON THEME - Cyberpunk Neon Glow
+   Electric neon with pulsing lights
+   ============================================ */
+body.theme-neon {
+  background: linear-gradient(180deg,
+    #0a0010 0%,
+    #0d0018 15%,
+    #100020 30%,
+    #130028 50%,
+    #160030 70%,
+    #1a0038 85%,
+    #1d0040 100%
+  );
+  background-attachment: fixed;
+}
+
+body.theme-neon::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Neon glow streaks */
+    linear-gradient(90deg, transparent 0%, rgba(255, 0, 128, 0.1) 20%, transparent 40%),
+    linear-gradient(90deg, transparent 60%, rgba(0, 255, 255, 0.08) 80%, transparent 100%),
+    /* Glow orbs */
+    radial-gradient(ellipse 40% 30% at 15% 40%, rgba(255, 0, 128, 0.2) 0%, transparent 60%),
+    radial-gradient(ellipse 35% 25% at 85% 60%, rgba(0, 255, 255, 0.18) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 35% at 50% 80%, rgba(128, 0, 255, 0.15) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+  animation: neon-pulse 4s ease-in-out infinite;
+}
+
+@keyframes neon-pulse {
+  0%, 100% { opacity: 0.8; filter: brightness(1); }
+  50% { opacity: 1; filter: brightness(1.2); }
+}
+
+body.theme-neon::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Grid lines */
+    linear-gradient(0deg, transparent 94%, rgba(255, 0, 128, 0.1) 94%, rgba(255, 0, 128, 0.1) 95%, transparent 95%),
+    linear-gradient(90deg, transparent 94%, rgba(0, 255, 255, 0.08) 94%, rgba(0, 255, 255, 0.08) 95%, transparent 95%);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 0;
+  animation: neon-grid 20s linear infinite;
+}
+
+@keyframes neon-grid {
+  0% { transform: perspective(500px) rotateX(60deg) translateY(0); }
+  100% { transform: perspective(500px) rotateX(60deg) translateY(60px); }
+}
+
+body.theme-neon .game-title,
+body.theme-neon .greeting-text {
+  color: #ff0080 !important;
+  -webkit-text-fill-color: #ff0080 !important;
+  text-shadow: 0 0 10px #ff0080, 0 0 20px #ff0080, 0 0 40px #ff0080, 0 0 80px #ff0080;
+  animation: neon-text-flicker 2s ease-in-out infinite;
+}
+
+@keyframes neon-text-flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.9; }
+  51% { opacity: 1; }
+  52% { opacity: 0.95; }
+}
+
+body.theme-neon .game-subtitle {
+  color: #00ffff !important;
+  text-shadow: 0 0 10px #00ffff;
+}
+
+.theme-neon .cute-button {
+  background: linear-gradient(145deg, #ff0080, #8000ff);
+  box-shadow: 0 0 20px rgba(255, 0, 128, 0.6), 0 0 40px rgba(128, 0, 255, 0.4);
+  animation: neon-button-glow 2s ease-in-out infinite;
+}
+
+@keyframes neon-button-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(255, 0, 128, 0.6), 0 0 40px rgba(128, 0, 255, 0.4); }
+  50% { box-shadow: 0 0 30px rgba(255, 0, 128, 0.8), 0 0 60px rgba(128, 0, 255, 0.6); }
+}
+
+/* ============================================
+   LIQUID GLASS EFFECTS - Global Styles
+   Premium glass morphism for all themes
+   ============================================ */
+.glass-card,
+.theme-wrapper .glass-effect {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.05);
+}
+
+/* Dark theme glass */
+body.theme-dark .glass-card,
+body.theme-night .glass-card,
+body.theme-galaxy .glass-card,
+body.theme-aurora .glass-card,
+body.theme-forest .glass-card,
+body.theme-neon .glass-card,
+body.theme-ocean .glass-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* ============================================
+   SMOOTH TRANSITIONS
+   ============================================ */
+body {
+  transition: background 1.2s ease, background-color 1.2s ease;
+}
+
+body::before,
+body::after {
+  transition: opacity 0.8s ease;
+}
+
+/* ============================================
+   DARK THEME TEXT ADJUSTMENTS
+   For themes with dark backgrounds
+   ============================================ */
+body.theme-night .player-header,
+body.theme-night .number-caller,
+body.theme-galaxy .player-header,
+body.theme-galaxy .number-caller,
+body.theme-aurora .player-header,
+body.theme-aurora .number-caller,
+body.theme-forest .player-header,
+body.theme-forest .number-caller,
+body.theme-dark .player-header,
+body.theme-dark .number-caller,
+body.theme-neon .player-header,
+body.theme-neon .number-caller {
+  background: rgba(255, 255, 255, 0.95) !important;
+}
+
+/* Dark theme specific text colors */
+body.theme-dark,
+body.theme-night,
+body.theme-galaxy,
+body.theme-aurora,
+body.theme-forest,
+body.theme-neon,
+body.theme-ocean {
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-muted: rgba(255, 255, 255, 0.5);
+}
+
+body.theme-default,
+body.theme-pastel,
+body.theme-sakura,
+body.theme-candy,
+body.theme-lavender,
+body.theme-mint,
+body.theme-rose,
+body.theme-peach,
+body.theme-butterfly,
+body.theme-coral,
+body.theme-strawberry,
+body.theme-farm,
+body.theme-sunset,
+body.theme-rainbow {
+  --text-primary: #1a1a2e;
+  --text-secondary: rgba(26, 26, 46, 0.7);
+  --text-muted: rgba(26, 26, 46, 0.5);
+}

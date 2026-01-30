@@ -1,0 +1,880 @@
+.tanks-game-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #1a1a3e 0%, #2d2d5a 50%, #4a4a7a 100%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tanks-game-container {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  height: 100%;
+  max-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  touch-action: none;
+}
+
+.tanks-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 10px 16px;
+  padding-top: max(10px, env(safe-area-inset-top, 0px));
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.3) 100%);
+  border-radius: 16px;
+  z-index: 200;
+}
+
+.tanks-player-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  min-width: 80px;
+  transition: all 0.3s ease;
+}
+
+.tanks-player-stat.active {
+  background: linear-gradient(135deg, rgba(74, 159, 255, 0.4), rgba(42, 95, 159, 0.3));
+  border-color: rgba(74, 159, 255, 0.6);
+  box-shadow: 0 0 20px rgba(74, 159, 255, 0.3);
+}
+
+.tanks-player-stat.cpu {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.tanks-player-stat.cpu.active {
+  background: linear-gradient(135deg, rgba(255, 107, 107, 0.4), rgba(159, 58, 58, 0.3));
+  border-color: rgba(255, 107, 107, 0.6);
+  box-shadow: 0 0 20px rgba(255, 107, 107, 0.3);
+}
+
+.player-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.health-bar {
+  width: 60px;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.health-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.health-fill.player {
+  background: linear-gradient(90deg, #4a9fff, #7ab8ff);
+}
+
+.health-fill.cpu {
+  background: linear-gradient(90deg, #ff6b6b, #ff9b9b);
+}
+
+.health-text {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: white;
+}
+
+.tanks-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 8px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.tanks-stat.timer {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 165, 0, 0.2));
+  border-color: rgba(255, 215, 0, 0.4);
+}
+
+.stat-icon {
+  font-size: 1rem;
+}
+
+.stat-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #FFD700;
+}
+
+.tanks-message {
+  position: absolute;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-weight: 600;
+  z-index: 300;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.tanks-canvas {
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  border: 3px solid rgba(255, 255, 255, 0.1);
+}
+
+.tanks-streak {
+  position: absolute;
+  top: 85px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, rgba(255, 100, 50, 0.95), rgba(255, 50, 0, 0.9));
+  padding: 8px 20px;
+  border-radius: 25px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 350;
+  box-shadow: 0 4px 20px rgba(255, 100, 50, 0.5);
+  border: 2px solid rgba(255, 200, 100, 0.5);
+  animation: streak-glow 0.5s ease-out;
+}
+
+@keyframes streak-glow {
+  0% { transform: translateX(-50%) scale(0.5); opacity: 0; }
+  50% { transform: translateX(-50%) scale(1.1); }
+  100% { transform: translateX(-50%) scale(1); opacity: 1; }
+}
+
+.streak-fire {
+  font-size: 1.2rem;
+}
+
+.streak-count {
+  font-size: 1.3rem;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 0 10px rgba(255, 200, 100, 0.8);
+}
+
+.streak-text {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.tanks-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.8) 100%);
+  padding: 14px;
+  border-radius: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.weapon-selector {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.weapon-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 70px;
+}
+
+.weapon-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.weapon-btn.selected {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), var(--weapon-color, rgba(255, 107, 107, 0.3)));
+  border-color: var(--weapon-color, #ff6b6b);
+  box-shadow: 0 0 15px color-mix(in srgb, var(--weapon-color, #ff6b6b) 50%, transparent);
+}
+
+.weapon-emoji {
+  font-size: 1.3rem;
+}
+
+.weapon-name {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.controls-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.control-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.control-icon {
+  font-size: 1rem;
+}
+
+.control-value {
+  margin-left: auto;
+  background: rgba(74, 159, 255, 0.3);
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-weight: 700;
+  color: #7ab8ff;
+  min-width: 50px;
+  text-align: center;
+}
+
+.control-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.adjust-btn {
+  background: linear-gradient(135deg, rgba(74, 159, 255, 0.3), rgba(42, 95, 159, 0.3));
+  color: white;
+  border: 2px solid rgba(74, 159, 255, 0.5);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-width: 44px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.adjust-btn.small {
+  padding: 8px 8px;
+  min-width: 36px;
+  font-size: 0.75rem;
+}
+
+.adjust-btn:active {
+  background: linear-gradient(135deg, rgba(74, 159, 255, 0.6), rgba(42, 95, 159, 0.5));
+  transform: scale(0.95);
+}
+
+.control-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  outline: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.control-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, #4a9fff, #2a5f9f);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(74, 159, 255, 0.5);
+  border: 2px solid white;
+}
+
+.control-slider::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, #4a9fff, #2a5f9f);
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 10px rgba(74, 159, 255, 0.5);
+}
+
+.preset-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.preset-btn {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 165, 0, 0.2));
+  color: #FFD700;
+  border: 2px solid rgba(255, 215, 0, 0.4);
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.preset-btn:active {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.4), rgba(255, 165, 0, 0.4));
+  transform: scale(0.95);
+}
+
+.fire-button {
+  background: linear-gradient(135deg, #ff6b6b, #ff4757);
+  color: white;
+  border: none;
+  padding: 16px 32px;
+  border-radius: 30px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(255, 71, 87, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-top: 8px;
+}
+
+.fire-button:active {
+  transform: scale(0.95);
+}
+
+.tanks-countdown {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 400;
+}
+
+.countdown-number {
+  font-size: 5rem;
+  font-weight: 900;
+  color: white;
+  text-shadow: 0 0 30px rgba(255, 107, 107, 0.8),
+               0 0 60px rgba(255, 107, 107, 0.4);
+  animation: pulse 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes pulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.1); }
+}
+
+.tanks-gameover {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 500;
+  border-radius: 16px;
+}
+
+.gameover-content {
+  text-align: center;
+  padding: 30px;
+}
+
+.gameover-content h2 {
+  font-size: 2.5rem;
+  color: white;
+  margin-bottom: 20px;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+}
+
+.final-stats {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  color: rgba(255, 255, 255, 0.9);
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 1rem;
+}
+
+.stat-row:last-child {
+  border-bottom: none;
+}
+
+.final-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.score-label {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.score-value {
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: #FFD700;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+}
+
+.collect-button {
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  color: #1a1a3e;
+  border: none;
+  padding: 16px 40px;
+  border-radius: 30px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(255, 215, 0, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.tanks-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 600;
+  transition: all 0.2s ease;
+}
+
+.tanks-close-btn:hover {
+  background: rgba(255, 100, 100, 0.6);
+  border-color: rgba(255, 100, 100, 0.6);
+}
+
+/* Responsive */
+@media (max-height: 700px) {
+  .tanks-game-container {
+    gap: 6px;
+  }
+
+  .tanks-header {
+    padding: 8px 12px;
+  }
+
+  .tanks-controls {
+    padding: 10px;
+    gap: 6px;
+  }
+
+  .control-buttons {
+    gap: 4px;
+  }
+
+  .adjust-btn {
+    padding: 6px 8px;
+    min-width: 38px;
+    font-size: 0.75rem;
+  }
+
+  .adjust-btn.small {
+    padding: 6px 6px;
+    min-width: 30px;
+    font-size: 0.7rem;
+  }
+
+  .preset-buttons {
+    gap: 6px;
+  }
+
+  .preset-btn {
+    padding: 6px 10px;
+    font-size: 0.7rem;
+  }
+
+  .fire-button {
+    padding: 12px 24px;
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .adjust-btn.small {
+    display: none;
+  }
+
+  .preset-btn {
+    padding: 6px 8px;
+    font-size: 0.65rem;
+  }
+}
+
+/* ============================================
+   TOUCH-BASED CONTROLS (Apple-style)
+   ============================================ */
+
+.tanks-canvas {
+  flex: 1;
+  max-height: calc(100vh - 200px);
+  width: 100%;
+  object-fit: contain;
+}
+
+/* Touch HUD - Stats overlay */
+.tanks-touch-hud {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 100;
+}
+
+.touch-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.touch-stat-icon {
+  font-size: 1rem;
+}
+
+.touch-stat-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: white;
+}
+
+.touch-stat.weapon {
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  padding-left: 16px;
+}
+
+/* Weapon selector bar */
+.tanks-weapon-bar {
+  position: absolute;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 6px 10px;
+  border-radius: 25px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  z-index: 100;
+}
+
+.weapon-pill {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.weapon-pill:active {
+  transform: scale(0.95);
+}
+
+.weapon-pill.selected {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.25), var(--weapon-color, rgba(255, 107, 107, 0.4)));
+  border-color: var(--weapon-color, #ff6b6b);
+  box-shadow: 0 0 15px color-mix(in srgb, var(--weapon-color, #ff6b6b) 50%, transparent);
+  transform: scale(1.1);
+}
+
+/* Touch hint */
+.touch-hint {
+  position: absolute;
+  bottom: 130px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* Aim indicator */
+.aim-indicator {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 200;
+}
+
+.aim-crosshair {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(74, 159, 255, 0.8);
+  border-radius: 50%;
+  position: relative;
+  animation: pulse-aim 0.8s ease-in-out infinite;
+}
+
+.aim-crosshair::before,
+.aim-crosshair::after {
+  content: '';
+  position: absolute;
+  background: rgba(74, 159, 255, 0.8);
+}
+
+.aim-crosshair::before {
+  width: 2px;
+  height: 12px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.aim-crosshair::after {
+  width: 12px;
+  height: 2px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+@keyframes pulse-aim {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.7; }
+}
+
+/* Floating fire button */
+.fire-button-floating {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff6b6b, #ff4757);
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  font-size: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 25px rgba(255, 71, 87, 0.5);
+  z-index: 150;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fire-button-floating:active {
+  transform: scale(0.9);
+  box-shadow: 0 2px 15px rgba(255, 71, 87, 0.6);
+}
+
+/* Hide old controls on mobile */
+.tanks-controls {
+  display: none;
+}
+
+/* Show old controls only on larger screens if needed */
+@media (min-width: 768px) and (min-height: 900px) {
+  .tanks-touch-hud,
+  .tanks-weapon-bar,
+  .touch-hint,
+  .fire-button-floating {
+    display: none;
+  }
+
+  .tanks-controls {
+    display: flex;
+  }
+}
+
+/* Adjust canvas for full-screen touch experience */
+@media (max-height: 800px) {
+  .tanks-header {
+    padding: 6px 12px;
+  }
+
+  .tanks-player-stat {
+    padding: 6px 10px;
+    min-width: 70px;
+  }
+
+  .player-label {
+    font-size: 0.65rem;
+  }
+
+  .health-bar {
+    width: 50px;
+    height: 6px;
+  }
+
+  .health-text {
+    font-size: 0.7rem;
+  }
+
+  .tanks-touch-hud {
+    bottom: 70px;
+    padding: 6px 12px;
+  }
+
+  .tanks-weapon-bar {
+    top: 70px;
+  }
+
+  .weapon-pill {
+    width: 36px;
+    height: 36px;
+    font-size: 1rem;
+  }
+
+  .fire-button-floating {
+    width: 60px;
+    height: 60px;
+    font-size: 1.6rem;
+    bottom: 15px;
+    right: 15px;
+  }
+
+  .touch-hint {
+    bottom: 115px;
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-height: 650px) {
+  .tanks-header {
+    padding: 4px 10px;
+  }
+
+  .tanks-stat.timer {
+    padding: 4px 8px;
+  }
+
+  .tanks-weapon-bar {
+    top: 60px;
+    padding: 4px 8px;
+  }
+
+  .weapon-pill {
+    width: 32px;
+    height: 32px;
+    font-size: 0.9rem;
+  }
+
+  .tanks-touch-hud {
+    bottom: 60px;
+    padding: 4px 10px;
+    gap: 10px;
+  }
+
+  .touch-stat-icon {
+    font-size: 0.85rem;
+  }
+
+  .touch-stat-value {
+    font-size: 0.8rem;
+  }
+
+  .fire-button-floating {
+    width: 55px;
+    height: 55px;
+    font-size: 1.4rem;
+    bottom: 10px;
+    right: 10px;
+  }
+
+  .touch-hint {
+    bottom: 100px;
+    font-size: 0.7rem;
+    padding: 6px 12px;
+  }
+}

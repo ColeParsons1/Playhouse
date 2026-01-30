@@ -1,0 +1,185 @@
+/* Carrom Game Styles */
+
+.carrom-overlay {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #1a1a2e 0%, #2d2d44 50%, #1a1a2e 100%);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.carrom-container {
+  width: 100%;
+  height: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  padding-top: max(16px, env(safe-area-inset-top, 0px));
+  position: relative;
+}
+
+.carrom-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.carrom-score-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  transition: all 0.3s;
+}
+
+.carrom-score-box.active {
+  background: rgba(46, 204, 113, 0.3);
+  box-shadow: 0 0 15px rgba(46, 204, 113, 0.3);
+}
+
+.carrom-score-box.ai.active {
+  background: rgba(231, 76, 60, 0.3);
+  box-shadow: 0 0 15px rgba(231, 76, 60, 0.3);
+}
+
+.carrom-score-box span:first-child {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.carrom-score-box .score-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: white;
+}
+
+.carrom-turn {
+  font-weight: 600;
+  color: white;
+  font-size: 1rem;
+}
+
+.carrom-message {
+  text-align: center;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 20px;
+  color: white;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.carrom-game-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
+.carrom-game-area canvas {
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.carrom-countdown {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 5rem;
+  font-weight: 900;
+  color: white;
+  text-shadow: 0 0 30px rgba(222, 184, 135, 0.8);
+  animation: carrom-pulse 0.5s ease-in-out infinite alternate;
+  z-index: 100;
+}
+
+@keyframes carrom-pulse {
+  from { transform: translate(-50%, -50%) scale(1); }
+  to { transform: translate(-50%, -50%) scale(1.1); }
+}
+
+.carrom-game-over {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 200;
+}
+
+.carrom-game-over-content {
+  background: linear-gradient(145deg, #2d3748, #1a202c);
+  border-radius: 24px;
+  padding: 30px;
+  text-align: center;
+  max-width: 320px;
+  width: 90%;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.carrom-game-over-content h2 {
+  font-size: 1.8rem;
+  color: white;
+  margin: 0 0 20px 0;
+}
+
+.carrom-final-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.carrom-final-stat {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  color: white;
+  font-weight: 600;
+}
+
+.carrom-claim-btn {
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, #4CAF50, #2E7D32);
+  border: none;
+  border-radius: 30px;
+  color: white;
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.carrom-claim-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
+}
+
+.carrom-close-btn {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top, 0px));
+  right: 16px;
+  width: 44px;
+  height: 44px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  z-index: 100;
+}

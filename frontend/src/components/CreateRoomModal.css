@@ -1,0 +1,579 @@
+.create-room-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.create-room-modal {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 24px 24px 0 0;
+  width: 100%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding-bottom: 30px;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.1);
+}
+
+/* Header */
+.create-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+  position: sticky;
+  top: 0;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 10;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.create-modal-header .back-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: transparent;
+  font-size: 1.3rem;
+  cursor: pointer;
+}
+
+.create-modal-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-primary, #1a1a2e);
+}
+
+.step-indicator {
+  display: flex;
+  gap: 8px;
+}
+
+.step-indicator span {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #eee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #888;
+}
+
+.step-indicator span.active {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+}
+
+/* Step Container */
+.create-step {
+  padding: 20px;
+}
+
+.step-section {
+  margin-bottom: 24px;
+}
+
+.step-section h3 {
+  margin: 0 0 12px 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary, #333);
+}
+
+/* Room Name Input */
+.room-name-input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 2px solid #eee;
+  border-radius: 12px;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.room-name-input:focus {
+  border-color: #667eea;
+}
+
+/* Option Grid (Room Types) */
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.option-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+}
+
+.option-card:hover {
+  background: rgba(255, 255, 255, 0.9);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+}
+
+.option-card.selected {
+  border-color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.2);
+}
+
+.option-emoji {
+  font-size: 2rem;
+  margin-bottom: 8px;
+}
+
+.option-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary, #333);
+  margin-bottom: 4px;
+}
+
+.option-desc {
+  font-size: 0.7rem;
+  color: var(--text-secondary, #888);
+  text-align: center;
+}
+
+/* Game Mode Grid */
+.game-mode-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.game-mode-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: left;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+}
+
+.game-mode-card:hover {
+  background: rgba(255, 255, 255, 0.9);
+  transform: translateY(-2px);
+}
+
+.game-mode-card.selected {
+  border-color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.2);
+}
+
+.mode-emoji {
+  font-size: 1.8rem;
+}
+
+.mode-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mode-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary, #333);
+}
+
+.mode-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #888);
+}
+
+/* Prize Presets */
+.prize-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prize-preset {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+}
+
+.prize-preset:hover {
+  background: rgba(255, 255, 255, 0.9);
+  transform: translateY(-2px);
+}
+
+.prize-preset.selected {
+  border-color: #ffc107;
+  background: rgba(255, 193, 7, 0.1);
+  box-shadow: 0 4px 20px rgba(255, 193, 7, 0.2);
+}
+
+.preset-label {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary, #333);
+  margin-bottom: 8px;
+}
+
+.preset-prizes {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.preset-prizes span {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #666);
+}
+
+.preset-entry {
+  font-size: 0.85rem;
+  color: #f9a825;
+  font-weight: 600;
+}
+
+/* Settings */
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.setting-row span {
+  font-size: 0.95rem;
+  color: var(--text-primary, #333);
+}
+
+.setting-row select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  font-size: 0.9rem;
+}
+
+.setting-row.password {
+  padding: 0;
+  background: transparent;
+}
+
+.setting-row.password input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #eee;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.setting-row.password input:focus {
+  border-color: #667eea;
+}
+
+/* Toggle */
+.toggle {
+  position: relative;
+  width: 50px;
+  height: 28px;
+}
+
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: #ccc;
+  border-radius: 28px;
+  transition: 0.3s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+.toggle input:checked + .toggle-slider {
+  background: #667eea;
+}
+
+.toggle input:checked + .toggle-slider::before {
+  transform: translateX(22px);
+}
+
+/* Buttons */
+.next-btn,
+.create-btn {
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.next-btn {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+}
+
+.create-btn {
+  background: linear-gradient(135deg, #ff9800, #f57c00);
+  color: white;
+}
+
+.next-btn:active,
+.create-btn:active {
+  transform: scale(0.98);
+}
+
+/* Responsive */
+@media (max-width: 380px) {
+  .option-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .preset-prizes {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
+
+/* ============================================
+   DARK THEME SUPPORT
+   ============================================ */
+
+body.theme-dark .create-room-modal,
+body.theme-night .create-room-modal,
+body.theme-galaxy .create-room-modal,
+body.theme-aurora .create-room-modal,
+body.theme-forest .create-room-modal,
+body.theme-neon .create-room-modal,
+body.theme-ocean .create-room-modal {
+  background: rgba(25, 25, 40, 0.98);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+body.theme-dark .create-modal-header,
+body.theme-night .create-modal-header,
+body.theme-galaxy .create-modal-header,
+body.theme-aurora .create-modal-header,
+body.theme-forest .create-modal-header,
+body.theme-neon .create-modal-header,
+body.theme-ocean .create-modal-header {
+  background: rgba(25, 25, 40, 0.95);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+body.theme-dark .step-indicator span,
+body.theme-night .step-indicator span,
+body.theme-galaxy .step-indicator span,
+body.theme-aurora .step-indicator span,
+body.theme-forest .step-indicator span,
+body.theme-neon .step-indicator span,
+body.theme-ocean .step-indicator span {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+body.theme-dark .room-name-input,
+body.theme-night .room-name-input,
+body.theme-galaxy .room-name-input,
+body.theme-aurora .room-name-input,
+body.theme-forest .room-name-input,
+body.theme-neon .room-name-input,
+body.theme-ocean .room-name-input {
+  background: rgba(40, 40, 55, 0.8);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+body.theme-dark .option-card,
+body.theme-night .option-card,
+body.theme-galaxy .option-card,
+body.theme-aurora .option-card,
+body.theme-forest .option-card,
+body.theme-neon .option-card,
+body.theme-ocean .option-card {
+  background: rgba(40, 40, 55, 0.7);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+body.theme-dark .option-card:hover,
+body.theme-night .option-card:hover,
+body.theme-galaxy .option-card:hover,
+body.theme-aurora .option-card:hover,
+body.theme-forest .option-card:hover,
+body.theme-neon .option-card:hover,
+body.theme-ocean .option-card:hover {
+  background: rgba(50, 50, 65, 0.8);
+}
+
+body.theme-dark .option-card.selected,
+body.theme-night .option-card.selected,
+body.theme-galaxy .option-card.selected,
+body.theme-aurora .option-card.selected,
+body.theme-forest .option-card.selected,
+body.theme-neon .option-card.selected,
+body.theme-ocean .option-card.selected {
+  background: rgba(102, 126, 234, 0.2);
+  border-color: #667eea;
+}
+
+body.theme-dark .game-mode-card,
+body.theme-night .game-mode-card,
+body.theme-galaxy .game-mode-card,
+body.theme-aurora .game-mode-card,
+body.theme-forest .game-mode-card,
+body.theme-neon .game-mode-card,
+body.theme-ocean .game-mode-card {
+  background: rgba(40, 40, 55, 0.7);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+body.theme-dark .game-mode-card.selected,
+body.theme-night .game-mode-card.selected,
+body.theme-galaxy .game-mode-card.selected,
+body.theme-aurora .game-mode-card.selected,
+body.theme-forest .game-mode-card.selected,
+body.theme-neon .game-mode-card.selected,
+body.theme-ocean .game-mode-card.selected {
+  background: rgba(102, 126, 234, 0.2);
+}
+
+body.theme-dark .prize-preset,
+body.theme-night .prize-preset,
+body.theme-galaxy .prize-preset,
+body.theme-aurora .prize-preset,
+body.theme-forest .prize-preset,
+body.theme-neon .prize-preset,
+body.theme-ocean .prize-preset {
+  background: rgba(40, 40, 55, 0.7);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+body.theme-dark .prize-preset.selected,
+body.theme-night .prize-preset.selected,
+body.theme-galaxy .prize-preset.selected,
+body.theme-aurora .prize-preset.selected,
+body.theme-forest .prize-preset.selected,
+body.theme-neon .prize-preset.selected,
+body.theme-ocean .prize-preset.selected {
+  background: rgba(255, 193, 7, 0.15);
+}
+
+body.theme-dark .setting-row,
+body.theme-night .setting-row,
+body.theme-galaxy .setting-row,
+body.theme-aurora .setting-row,
+body.theme-forest .setting-row,
+body.theme-neon .setting-row,
+body.theme-ocean .setting-row {
+  background: rgba(40, 40, 55, 0.5);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+body.theme-dark .setting-row select,
+body.theme-night .setting-row select,
+body.theme-galaxy .setting-row select,
+body.theme-aurora .setting-row select,
+body.theme-forest .setting-row select,
+body.theme-neon .setting-row select,
+body.theme-ocean .setting-row select {
+  background: rgba(30, 30, 45, 0.8);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+body.theme-dark .setting-row.password input,
+body.theme-night .setting-row.password input,
+body.theme-galaxy .setting-row.password input,
+body.theme-aurora .setting-row.password input,
+body.theme-forest .setting-row.password input,
+body.theme-neon .setting-row.password input,
+body.theme-ocean .setting-row.password input {
+  background: rgba(40, 40, 55, 0.8);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Neon theme special effects */
+body.theme-neon .option-card.selected,
+body.theme-neon .game-mode-card.selected {
+  border-color: #FF2D20;
+  box-shadow: 0 0 20px rgba(255, 45, 32, 0.3);
+}
+
+body.theme-neon .next-btn {
+  background: linear-gradient(135deg, #FF2D20, #9B30FF);
+  box-shadow: 0 0 20px rgba(255, 45, 32, 0.4);
+}
+
+body.theme-neon .create-btn {
+  background: linear-gradient(135deg, #00ffff, #0080ff);
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
+}
