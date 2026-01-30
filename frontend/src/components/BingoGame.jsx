@@ -23,6 +23,9 @@ const MOCK_CHAT = [
   { id: 4, player: 'CoolDude', message: "Let's go! 🔥", isSystem: false },
 ];
 
+const CALL_INTERVAL = 5000; // Call a number every 5 seconds
+const COUNTDOWN_START = 10; // 10 second countdown before game starts
+
 const BingoGame = ({ player, onGameEnd, onClose, onPlayerUpdate }) => {
   const [game, setGame] = useState(null);
   const [playerCards, setPlayerCards] = useState([]);
@@ -37,6 +40,13 @@ const BingoGame = ({ player, onGameEnd, onClose, onPlayerUpdate }) => {
   const [showConfetti, setShowConfetti] = useState(false);
   const [lastMarkedNumber, setLastMarkedNumber] = useState(null);
   const [cpuProgress, setCpuProgress] = useState(0);
+
+  // Countdown and auto-call state
+  const [countdown, setCountdown] = useState(null);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [nextCallIn, setNextCallIn] = useState(null);
+  const autoCallRef = useRef(null);
+  const nextCallTimerRef = useRef(null);
 
   // Voice room features
   const [players, setPlayers] = useState(MOCK_PLAYERS);
@@ -97,6 +107,10 @@ const BingoGame = ({ player, onGameEnd, onClose, onPlayerUpdate }) => {
   const startNewGame = useCallback(async () => {
     if (!player?.id) return;
 
+    // Clear any existing timers
+    if (autoCallRef.current) clearInterval(autoCallRef.current);
+    if (nextCallTimerRef.current) clearInterval(nextCallTimerRef.current);
+
     setIsLoading(true);
     try {
       const response = await gameApi.newGame(player.id);
@@ -115,12 +129,17 @@ const BingoGame = ({ player, onGameEnd, onClose, onPlayerUpdate }) => {
       setShowConfetti(false);
       setLastMarkedNumber(null);
       setCpuProgress(0);
+      setGameStarted(false);
+      setNextCallIn(null);
+
+      // Start countdown
+      setCountdown(COUNTDOWN_START);
 
       // Add system message
       setChat(prev => [...prev, {
         id: Date.now(),
         player: 'System',
-        message: 'New game started! Good luck! 🍀',
+        message: 'Game starting in 10 seconds! Get ready! 🎲',
         isSystem: true
       }]);
     } catch (error) {
@@ -132,7 +151,100 @@ const BingoGame = ({ player, onGameEnd, onClose, onPlayerUpdate }) => {
 
   useEffect(() => {
     startNewGame();
+
+    // Cleanup on unmount
+    return () => {
+      if (autoCallRef.current) clearInterval(autoCallRef.current);
+      if (nextCallTimerRef.current) clearInterval(nextCallTimerRef.current);
+    };
   }, [startNewGame]);
+
+  // Countdown timer effect
+  useEffect(() => {
+    if (countdown === null || countdown < 0) return;
+
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    } else if (countdown === 0) {
+      // Countdown finished - start the game!
+      setGameStarted(true);
+      setCountdown(null);
+      setChat(prev => [...prev, {
+        id: Date.now(),
+        player: 'System',
+        message: 'Game started! Numbers will be called automatically. Good luck! 🍀',
+        isSystem: true
+      }]);
+    }
+  }, [countdown]);
+
+  // Auto-call numbers effect
+  useEffect(() => {
+    if (!gameStarted || gameOver || !game) return;
+
+    // Function to call the next number
+    const callNextNumber = async () => {
+      if (gameOver) return;
+
+      setIsCallingNumber(true);
+      try {
+        const response = await gameApi.callNumber(game.id);
+        const data = response.data;
+
+        setGame(prev => ({
+          ...prev,
+          current_number: data.number,
+          called_numbers: data.called_numbers,
+          status: data.game_over ? 'completed' : 'in_progress'
+        }));
+
+        setCpuProgress(prev => Math.min(5, prev + Math.floor(Math.random() * 2)));
+
+        if (data.game_over) {
+          setIsPlayerWin(false);
+          setWinData({ winner: data.winner });
+          setGameOver(true);
+          setCoinsEarned(10);
+
+          setChat(prev => [...prev, {
+            id: Date.now(),
+            player: 'System',
+            message: `${data.winner} got BINGO! 🎉`,
+            isSystem: true
+          }]);
+
+          // Clear auto-call timer
+          if (autoCallRef.current) clearInterval(autoCallRef.current);
+          if (nextCallTimerRef.current) clearInterval(nextCallTimerRef.current);
+        }
+      } catch (error) {
+        console.error('Failed to call number:', error);
+      } finally {
+        setIsCallingNumber(false);
+      }
+    };
+
+    // Call first number immediately
+    callNextNumber();
+    setNextCallIn(CALL_INTERVAL / 1000);
+
+    // Set up interval for auto-calling
+    autoCallRef.current = setInterval(callNextNumber, CALL_INTERVAL);
+
+    // Set up countdown to next call
+    nextCallTimerRef.current = setInterval(() => {
+      setNextCallIn(prev => {
+        if (prev <= 1) return CALL_INTERVAL / 1000;
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (autoCallRef.current) clearInterval(autoCallRef.current);
+      if (nextCallTimerRef.current) clearInterval(nextCallTimerRef.current);
+    };
+  }, [gameStarted, game?.id, gameOver]);
 
   const checkProgress = useCallback((card) => {
     const markedSet = new Set(card.marked?.map(pos => `${pos[0]}-${pos[1]}`) || []);
@@ -381,6 +493,33 @@ const BingoGame = ({ player, onGameEnd, onClose, onPlayerUpdate }) => {
         )}
       </AnimatePresence>
 
+      {/* Countdown Overlay */}
+      <AnimatePresence>
+        {countdown !== null && countdown > 0 && (
+          <motion.div
+            className="countdown-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div className="countdown-content">
+              <div className="countdown-title">🎱 Get Ready! 🎱</div>
+              <motion.div
+                className="countdown-number"
+                key={countdown}
+                initial={{ scale: 2, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.5, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+              >
+                {countdown}
+              </motion.div>
+              <div className="countdown-subtitle">Numbers will be called automatically!</div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="bingo-game-container">
         {/* Voice Room Header */}
         <div className="voice-room-header">
@@ -486,6 +625,8 @@ const BingoGame = ({ player, onGameEnd, onClose, onPlayerUpdate }) => {
             isLoading={isCallingNumber}
             gameOver={gameOver}
             lastMarkedNumber={lastMarkedNumber}
+            nextCallIn={nextCallIn}
+            gameStarted={gameStarted}
           />
         </div>
 

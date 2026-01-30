@@ -290,6 +290,58 @@
   font-weight: 600;
 }
 
+/* Auto-call indicator */
+.auto-call-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 24px;
+  background: rgba(255, 215, 0, 0.15);
+  border: 2px solid rgba(255, 215, 0, 0.3);
+  border-radius: 25px;
+  min-width: 150px;
+}
+
+.next-call-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.next-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.next-countdown {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #ffd700;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+.game-over-text {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #ff6b6b;
+}
+
+.waiting-to-start {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  animation: pulse-text 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-text {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
 @media (max-width: 768px) {
   .number-caller {
     padding: 12px;

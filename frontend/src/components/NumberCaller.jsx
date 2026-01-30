@@ -14,7 +14,9 @@ const NumberCaller = ({
   calledNumbers = [],
   onCallNumber,
   isLoading = false,
-  gameOver = false
+  gameOver = false,
+  nextCallIn = null,
+  gameStarted = false
 }) => {
   // Show last 6 called numbers as balls at the top
   const displayBalls = calledNumbers.slice(-6).reverse();
@@ -74,25 +76,26 @@ const NumberCaller = ({
         </AnimatePresence>
       </div>
 
-      {/* Call Button */}
-      <motion.button
-        className="call-button"
-        onClick={onCallNumber}
-        disabled={isLoading || gameOver}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-      >
-        {isLoading ? (
-          <span className="loading-spinner">Calling...</span>
-        ) : gameOver ? (
-          'Game Over!'
+      {/* Auto-call indicator or Game Over */}
+      <div className="auto-call-indicator">
+        {gameOver ? (
+          <div className="game-over-text">Game Over!</div>
+        ) : gameStarted ? (
+          <div className="next-call-display">
+            <span className="next-label">Next number in</span>
+            <motion.span
+              className="next-countdown"
+              key={nextCallIn}
+              initial={{ scale: 1.2 }}
+              animate={{ scale: 1 }}
+            >
+              {nextCallIn}s
+            </motion.span>
+          </div>
         ) : (
-          <>
-            Call Number
-            <span className="sparkle">✨</span>
-          </>
+          <div className="waiting-to-start">Waiting to start...</div>
         )}
-      </motion.button>
+      </div>
 
       {/* Recent Numbers */}
       <div className="recent-numbers">
