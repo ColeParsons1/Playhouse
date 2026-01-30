@@ -190,10 +190,10 @@ const AnniversaryCard = ({ onClose }) => {
 
                   <div className="message-text">
                     <p>
-                      I've really enjoyed this past year and I'm excited to see our bright future.
+                      I've really enjoyed this past year and I'm excited for you to see this!
                     </p>
                     <p>
-                      I know Mittens has enjoyed it too!
+                      Although it's not quite complete, I've been working very hard on this, and I want it to be something you actually enjoy!
                     </p>
                     <p>
                       Thank you for being such a joy to us both.
