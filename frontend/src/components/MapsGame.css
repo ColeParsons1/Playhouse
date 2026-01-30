@@ -7,7 +7,7 @@
   height: 100vh;
   height: 100dvh;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-  z-index: 10000;
+  z-index: 100000; /* Higher than bottom nav (z-index: 100) */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -243,6 +243,7 @@
 /* Answer Section */
 .answer-section {
   padding: 20px;
+  padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
   background: rgba(0, 0, 0, 0.3);
 }
 
@@ -316,6 +317,7 @@
 /* Result Section */
 .result-section {
   padding: 25px 20px;
+  padding-bottom: max(25px, env(safe-area-inset-bottom, 0px));
   background: rgba(0, 0, 0, 0.4);
   text-align: center;
 }
