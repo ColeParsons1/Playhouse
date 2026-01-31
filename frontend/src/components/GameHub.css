@@ -114,12 +114,12 @@
 }
 
 .featured-icon-wrapper svg {
-  width: 108px;
-  height: 108px;
+  width: 135px;
+  height: 135px;
 }
 
 .featured-emoji-fallback {
-  font-size: 4rem;
+  font-size: 5rem;
 }
 
 .featured-game-card:hover .featured-icon-wrapper {
@@ -172,9 +172,9 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 12px 8px;
-  min-height: 130px;
+  gap: 4px;
+  padding: 10px 6px;
+  min-height: 145px;
   aspect-ratio: 1 / 1;
   background: linear-gradient(
     145deg,
@@ -232,16 +232,16 @@
   filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.25));
   transition: transform 0.2s ease;
   flex: 1;
-  min-height: 84px;
+  min-height: 105px;
 }
 
 .game-icon-wrapper svg {
-  width: 84px;
-  height: 84px;
+  width: 105px;
+  height: 105px;
 }
 
 .game-emoji-fallback {
-  font-size: 3.75rem;
+  font-size: 4.7rem;
 }
 
 .game-card:hover .game-icon-wrapper {
@@ -425,18 +425,18 @@
   }
 
   .game-card {
-    padding: 12px 8px;
-    min-height: 130px;
+    padding: 10px 6px;
+    min-height: 145px;
     border-radius: 16px;
   }
 
   .game-icon-wrapper svg {
-    width: 78px;
-    height: 78px;
+    width: 98px;
+    height: 98px;
   }
 
   .game-emoji-fallback {
-    font-size: 3.3rem;
+    font-size: 4.1rem;
   }
 
   .game-name {
@@ -444,12 +444,12 @@
   }
 
   .featured-icon-wrapper svg {
-    width: 96px;
-    height: 96px;
+    width: 120px;
+    height: 120px;
   }
 
   .featured-emoji-fallback {
-    font-size: 3.75rem;
+    font-size: 4.7rem;
   }
 
   .featured-name {
@@ -474,12 +474,12 @@
   }
 
   .game-card {
-    min-height: 140px;
+    min-height: 155px;
   }
 
   .game-icon-wrapper svg {
-    width: 90px;
-    height: 90px;
+    width: 112px;
+    height: 112px;
   }
 }
 

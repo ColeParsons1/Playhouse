@@ -211,7 +211,7 @@ const GameCard = memo(({ game, onSelect }) => {
       whileTap={{ scale: 0.95 }}
     >
       <div className="game-icon-wrapper">
-        {IconComponent ? <IconComponent size={84} /> : <span className="game-emoji-fallback">{game.emoji}</span>}
+        {IconComponent ? <IconComponent size={105} /> : <span className="game-emoji-fallback">{game.emoji}</span>}
       </div>
       <span className="game-name">{game.name}</span>
     </motion.button>
@@ -356,7 +356,7 @@ const GameHub = ({ player, onPlayerUpdate }) => {
           <div className="featured-badge">Featured</div>
           <div className="featured-icon-wrapper">
             {GameIconMap[featuredGame.id] ?
-              React.createElement(GameIconMap[featuredGame.id], { size: 108 }) :
+              React.createElement(GameIconMap[featuredGame.id], { size: 135 }) :
               <span className="featured-emoji-fallback">{featuredGame.emoji}</span>
             }
           </div>
