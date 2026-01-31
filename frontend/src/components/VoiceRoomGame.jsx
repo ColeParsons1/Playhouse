@@ -63,7 +63,10 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   const [myProgress, setMyProgress] = useState(0);
 
   // Check if current player is the host
-  const isHost = room?.host?.id === player?.id || room?.host_id === player?.id;
+  // Handles both cases: when room has host object (created locally) or host_id (from API)
+  const isHost = room?.host?.id === player?.id ||
+                 room?.host_id === player?.id ||
+                 room?.host === player?.id;
 
   const wsRef = useRef(null);
   const chatRef = useRef(null);

@@ -66,6 +66,7 @@ class VoiceRoomSerializer(serializers.ModelSerializer):
 
 class VoiceRoomListSerializer(serializers.ModelSerializer):
     """Lighter serializer for room listings"""
+    host_id = serializers.IntegerField(source='host.id', read_only=True)
     host_name = serializers.CharField(source='host.name', read_only=True)
     host_avatar = AvatarSerializer(source='host.avatar', read_only=True)
     host_followers = serializers.IntegerField(source='host.followers', read_only=True)
@@ -75,7 +76,7 @@ class VoiceRoomListSerializer(serializers.ModelSerializer):
     class Meta:
         model = VoiceRoom
         fields = [
-            'id', 'room_id', 'name', 'host_name', 'host_avatar', 'host_followers',
+            'id', 'room_id', 'name', 'host_id', 'host_name', 'host_avatar', 'host_followers',
             'host_country', 'room_type', 'game_mode', 'player_count', 'is_active',
             'first_prize', 'entry_fee'
         ]
