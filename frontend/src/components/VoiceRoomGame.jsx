@@ -88,6 +88,13 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   const peerConnectionsRef = useRef({}); // { peerId: RTCPeerConnection }
   const audioElementsRef = useRef({}); // { peerId: HTMLAudioElement }
 
+  // Refs for WebRTC handlers to avoid circular dependencies
+  const handlePeerReadyRef = useRef(null);
+  const handleWebRTCOfferRef = useRef(null);
+  const handleWebRTCAnswerRef = useRef(null);
+  const handleWebRTCIceCandidateRef = useRef(null);
+  const cleanupPeerConnectionRef = useRef(null);
+
   // Initialize bingo cards
   useEffect(() => {
     setBingoCards([generateBingoCard()]);
@@ -182,8 +189,8 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
         break;
 
       case 'player_left':
-        if (data.player?.id) {
-          cleanupPeerConnection(data.player.id);
+        if (data.player?.id && cleanupPeerConnectionRef.current) {
+          cleanupPeerConnectionRef.current(data.player.id);
         }
         setPlayers(prev => prev.filter(p => p.id !== data.player?.id));
         setChat(prev => [...prev, {
@@ -243,33 +250,33 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
 
       // WebRTC signaling messages
       case 'webrtc_ready':
-        if (data.player && data.player.id !== player?.id) {
-          handlePeerReady(data.player);
+        if (data.player && data.player.id !== player?.id && handlePeerReadyRef.current) {
+          handlePeerReadyRef.current(data.player);
         }
         break;
 
       case 'webrtc_offer':
-        if (data.from_player) {
-          handleWebRTCOffer(data.from_player, data.offer);
+        if (data.from_player && handleWebRTCOfferRef.current) {
+          handleWebRTCOfferRef.current(data.from_player, data.offer);
         }
         break;
 
       case 'webrtc_answer':
-        if (data.from_player) {
-          handleWebRTCAnswer(data.from_player, data.answer);
+        if (data.from_player && handleWebRTCAnswerRef.current) {
+          handleWebRTCAnswerRef.current(data.from_player, data.answer);
         }
         break;
 
       case 'webrtc_ice_candidate':
-        if (data.from_player) {
-          handleWebRTCIceCandidate(data.from_player, data.candidate);
+        if (data.from_player && handleWebRTCIceCandidateRef.current) {
+          handleWebRTCIceCandidateRef.current(data.from_player, data.candidate);
         }
         break;
 
       default:
         console.log('Unknown message type:', data.type);
     }
-  }, [player?.id, handlePeerReady, handleWebRTCOffer, handleWebRTCAnswer, handleWebRTCIceCandidate, cleanupPeerConnection]);
+  }, [player?.id]);
 
   // Initialize mock mode for offline/fallback
   const initializeMockMode = useCallback(() => {
@@ -495,6 +502,15 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
       console.error('Error creating offer:', error);
     }
   }, [createPeerConnection, player?.id]);
+
+  // Keep refs updated with latest handlers
+  useEffect(() => {
+    handlePeerReadyRef.current = handlePeerReady;
+    handleWebRTCOfferRef.current = handleWebRTCOffer;
+    handleWebRTCAnswerRef.current = handleWebRTCAnswer;
+    handleWebRTCIceCandidateRef.current = handleWebRTCIceCandidate;
+    cleanupPeerConnectionRef.current = cleanupPeerConnection;
+  }, [handlePeerReady, handleWebRTCOffer, handleWebRTCAnswer, handleWebRTCIceCandidate, cleanupPeerConnection]);
 
   // Initialize microphone when connected
   useEffect(() => {
