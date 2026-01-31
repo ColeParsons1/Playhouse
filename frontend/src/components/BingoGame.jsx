@@ -7,12 +7,12 @@ import './BingoGame.css';
 
 // Mock players for voice room
 const MOCK_PLAYERS = [
-  { id: 1, name: 'Host', avatar: '👸', isHost: true, isSpeaking: true },
-  { id: 2, name: 'Player2', avatar: '🧑', isHost: false, isSpeaking: false },
-  { id: 3, name: 'GamerGirl', avatar: '👧', isHost: false, isSpeaking: true },
-  { id: 4, name: 'CoolDude', avatar: '🧔', isHost: false, isSpeaking: false },
-  { id: 5, name: 'StarPlayer', avatar: '👨', isHost: false, isSpeaking: false },
-  { id: 6, name: 'LuckyOne', avatar: '👩', isHost: false, isSpeaking: false },
+  { id: 1, name: 'Host', avatar: '👸', isHost: true, isSpeaking: true, progress: 0 },
+  { id: 2, name: 'Player2', avatar: '🧑', isHost: false, isSpeaking: false, progress: 0 },
+  { id: 3, name: 'GamerGirl', avatar: '👧', isHost: false, isSpeaking: true, progress: 0 },
+  { id: 4, name: 'CoolDude', avatar: '🧔', isHost: false, isSpeaking: false, progress: 0 },
+  { id: 5, name: 'StarPlayer', avatar: '👨', isHost: false, isSpeaking: false, progress: 0 },
+  { id: 6, name: 'LuckyOne', avatar: '👩', isHost: false, isSpeaking: false, progress: 0 },
 ];
 
 // Mock chat messages
@@ -55,6 +55,7 @@ const BingoGame = ({ player, onGameEnd, onClose, onPlayerUpdate }) => {
   const [showChat, setShowChat] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [prizePool] = useState(2500);
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
 
   const confettiRef = useRef(null);
   const chatMessagesRef = useRef(null);
@@ -66,16 +67,20 @@ const BingoGame = ({ player, onGameEnd, onClose, onPlayerUpdate }) => {
     }
   }, [chat]);
 
-  // Simulate players joining/speaking
+  // Simulate players joining/speaking and progress
   useEffect(() => {
     const interval = setInterval(() => {
       setPlayers(prev => prev.map(p => ({
         ...p,
-        isSpeaking: Math.random() > 0.7
+        isSpeaking: Math.random() > 0.7,
+        // Update progress randomly during game (simulating other players marking numbers)
+        progress: gameStarted && !gameOver
+          ? Math.min(5, p.progress + (Math.random() > 0.7 ? 1 : 0))
+          : p.progress
       })));
     }, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [gameStarted, gameOver]);
 
   // Simulate incoming chat messages
   useEffect(() => {
@@ -131,6 +136,10 @@ const BingoGame = ({ player, onGameEnd, onClose, onPlayerUpdate }) => {
       setCpuProgress(0);
       setGameStarted(false);
       setNextCallIn(null);
+      setSelectedPlayer(null);
+
+      // Reset all player progress
+      setPlayers(prev => prev.map(p => ({ ...p, progress: 0 })));
 
       // Start countdown
       setCountdown(COUNTDOWN_START);
@@ -559,16 +568,66 @@ const BingoGame = ({ player, onGameEnd, onClose, onPlayerUpdate }) => {
         {/* Players Strip */}
         <div className="players-strip">
           {players.map((p) => (
-            <div key={p.id} className={`player-bubble ${p.isSpeaking ? 'speaking' : ''}`}>
+            <motion.div
+              key={p.id}
+              className={`player-bubble ${p.isSpeaking ? 'speaking' : ''} ${selectedPlayer?.id === p.id ? 'selected' : ''}`}
+              onClick={() => setSelectedPlayer(selectedPlayer?.id === p.id ? null : p)}
+              whileTap={{ scale: 0.95 }}
+            >
               <div className="player-avatar-bubble">
                 {p.avatar}
                 {p.isHost && <span className="host-badge">👑</span>}
               </div>
               <span className="player-name-small">{p.name}</span>
               {p.isSpeaking && <div className="speaking-indicator" />}
-            </div>
+              <div className="player-progress-mini">
+                <span className="progress-mini-text">{p.progress}/5</span>
+              </div>
+            </motion.div>
           ))}
         </div>
+
+        {/* Selected Player Modal */}
+        <AnimatePresence>
+          {selectedPlayer && (
+            <motion.div
+              className="player-modal-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedPlayer(null)}
+            >
+              <motion.div
+                className="player-modal"
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="player-modal-header">
+                  <div className="player-modal-avatar">{selectedPlayer.avatar}</div>
+                  <h3>{selectedPlayer.name}</h3>
+                  {selectedPlayer.isHost && <span className="host-tag">👑 Host</span>}
+                </div>
+                <div className="player-modal-progress">
+                  <span className="progress-title">Bingo Progress</span>
+                  <div className="progress-dots-large">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <div
+                        key={i}
+                        className={`progress-dot-large ${i <= selectedPlayer.progress ? 'filled' : ''}`}
+                      />
+                    ))}
+                  </div>
+                  <span className="progress-value">{selectedPlayer.progress}/5 in a row</span>
+                </div>
+                <button className="player-modal-close" onClick={() => setSelectedPlayer(null)}>
+                  Close
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Progress Indicators */}
         <div className="bingo-progress-section">
