@@ -88,18 +88,11 @@ const VoiceRoomsLobby = ({ player, onJoinRoom, onCreateRoom }) => {
     setLoading(true);
     try {
       const response = await roomApi.getLobby(activeTab);
-      setRooms(response.data || []);
+      const roomsData = response.data || [];
+      setRooms(roomsData);
     } catch (error) {
       console.error('Failed to fetch rooms:', error);
-      // Set some mock data for development
-      setRooms([
-        { id: 1, name: 'bingoooo🎰🎰', host_name: 'Bunny', host_country: 'US', player_count: 22, game_mode: 'bingo_normal', room_type: 'music', host_followers: 53800 },
-        { id: 2, name: 'lottery bingooo🏠', host_name: 'Kitty', host_country: 'US', player_count: 36, game_mode: 'bingo_normal', room_type: 'music', host_followers: 7300 },
-        { id: 3, name: 'Mini AI Comp', host_name: 'Panda', host_country: 'US', player_count: 18, game_mode: 'bingo_powerup', room_type: 'music', host_followers: 6600 },
-        { id: 4, name: "Cerrrttyyy's 🏠", host_name: 'Fox', host_country: 'UK', player_count: 31, game_mode: 'bingo_blackout', room_type: 'friends', host_followers: 4200 },
-        { id: 5, name: '(≧∪≦) ♡ GLITCHY ♡', host_name: 'Owl', host_country: 'CA', player_count: 7, game_mode: 'bingo_normal', room_type: 'music', host_followers: 1500 },
-        { id: 6, name: '🎀🎀○ Bingo🎀🎀⭐⭐', host_name: 'Deer', host_country: 'UK', player_count: 24, game_mode: 'bingo_powerup', room_type: 'music', host_followers: 2800 },
-      ]);
+      setRooms([]);
     } finally {
       setLoading(false);
     }
@@ -109,9 +102,26 @@ const VoiceRoomsLobby = ({ player, onJoinRoom, onCreateRoom }) => {
     fetchRooms();
   }, [fetchRooms]);
 
-  const handleJoinRoom = useCallback((room) => {
+  // Auto-refresh rooms every 10 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchRooms();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [fetchRooms]);
+
+  const handleJoinRoom = useCallback(async (room) => {
+    // Call the join API if player exists
+    if (player?.id && room.id) {
+      try {
+        await roomApi.join(room.id, player.id);
+      } catch (error) {
+        console.error('Failed to join room:', error);
+        // Continue anyway - the WebSocket will handle the actual join
+      }
+    }
     onJoinRoom?.(room);
-  }, [onJoinRoom]);
+  }, [onJoinRoom, player?.id]);
 
   const filteredRooms = rooms.filter(room =>
     room.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||

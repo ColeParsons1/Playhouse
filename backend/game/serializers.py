@@ -70,14 +70,21 @@ class VoiceRoomListSerializer(serializers.ModelSerializer):
     host_avatar = AvatarSerializer(source='host.avatar', read_only=True)
     host_followers = serializers.IntegerField(source='host.followers', read_only=True)
     host_country = serializers.CharField(source='host.country_code', read_only=True)
-    player_count = serializers.IntegerField(read_only=True)
+    player_count = serializers.SerializerMethodField()
 
     class Meta:
         model = VoiceRoom
         fields = [
             'id', 'room_id', 'name', 'host_name', 'host_avatar', 'host_followers',
-            'host_country', 'room_type', 'game_mode', 'player_count', 'is_active'
+            'host_country', 'room_type', 'game_mode', 'player_count', 'is_active',
+            'first_prize', 'entry_fee'
         ]
+
+    def get_player_count(self, obj):
+        # Use annotated count if available, otherwise query
+        if hasattr(obj, 'participant_count'):
+            return obj.participant_count
+        return obj.participants.filter(is_active=True).count()
 
 
 class RoomGameSerializer(serializers.ModelSerializer):

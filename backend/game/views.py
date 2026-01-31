@@ -614,6 +614,9 @@ class VoiceRoomViewSet(viewsets.ModelViewSet):
         player_id = request.data.get('player_id')
         name = request.data.get('name', 'My Room')
         game_mode = request.data.get('game_mode', 'bingo_normal')
+        room_type = request.data.get('room_type', 'music')
+        entry_fee = request.data.get('entry_fee', 200)
+        first_prize = request.data.get('first_prize', 1000)
 
         try:
             player = Player.objects.get(id=player_id)
@@ -624,11 +627,14 @@ class VoiceRoomViewSet(viewsets.ModelViewSet):
             name=name,
             host=player,
             game_mode=game_mode,
+            room_type=room_type,
+            entry_fee=entry_fee,
+            first_prize=first_prize,
             room_id=str(uuid.uuid4())[:8].upper()
         )
 
         # Host automatically joins
-        RoomParticipant.objects.create(room=room, player=player)
+        RoomParticipant.objects.create(room=room, player=player, is_active=True)
 
         return Response(VoiceRoomSerializer(room).data)
 

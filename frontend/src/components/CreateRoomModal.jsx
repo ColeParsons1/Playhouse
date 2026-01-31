@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
+import { roomApi } from '../api/client';
 import './CreateRoomModal.css';
 
 const ROOM_TYPES = [
@@ -32,26 +33,44 @@ const CreateRoomModal = ({ player, onClose, onCreated }) => {
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState('');
   const [maxPlayers, setMaxPlayers] = useState(50);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState(null);
 
-  const handleCreate = () => {
-    const prize = PRIZE_PRESETS[prizePreset];
-    const room = {
-      id: Date.now(),
-      room_id: `room_${Date.now()}`,
-      name: roomName || `${player?.name || 'Host'}'s Room`,
-      room_type: roomType,
-      game_mode: gameMode,
-      entry_fee: prize.entryFee,
-      first_prize: prize.first,
-      second_prize: prize.second,
-      third_prize: prize.third,
-      max_players: maxPlayers,
-      is_private: isPrivate,
-      password: isPrivate ? password : null,
-      host: player,
-      player_count: 1,
-    };
-    onCreated(room);
+  const handleCreate = async () => {
+    if (!player?.id) {
+      setError('You must be logged in to create a room');
+      return;
+    }
+
+    setCreating(true);
+    setError(null);
+
+    try {
+      const name = roomName.trim() || `${player?.name || 'Host'}'s Room`;
+      const response = await roomApi.createRoom(player.id, name, gameMode);
+
+      // Add extra data to the room response
+      const prize = PRIZE_PRESETS[prizePreset];
+      const room = {
+        ...response.data,
+        room_type: roomType,
+        entry_fee: prize.entryFee,
+        first_prize: prize.first,
+        second_prize: prize.second,
+        third_prize: prize.third,
+        max_players: maxPlayers,
+        is_private: isPrivate,
+        host: player,
+        host_name: player.name,
+        player_count: 1,
+      };
+
+      onCreated(room);
+    } catch (err) {
+      console.error('Failed to create room:', err);
+      setError(err.response?.data?.error || 'Failed to create room. Please try again.');
+      setCreating(false);
+    }
   };
 
   const canCreate = roomName.trim() || step === 1;
@@ -207,8 +226,14 @@ const CreateRoomModal = ({ player, onClose, onCreated }) => {
               </div>
             </div>
 
-            <button className="create-btn" onClick={handleCreate}>
-              Create Room 🎉
+            {error && (
+              <div className="create-error">
+                <span>⚠️</span> {error}
+              </div>
+            )}
+
+            <button className="create-btn" onClick={handleCreate} disabled={creating}>
+              {creating ? 'Creating...' : 'Create Room 🎉'}
             </button>
           </div>
         )}
