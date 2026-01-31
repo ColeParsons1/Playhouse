@@ -113,43 +113,7 @@ const AngryDucksGame = ({ onGameEnd, onClose }) => {
   const canvasSize = useRef({ width: 400, height: 380 });
   const levelLoadedRef = useRef(false);
 
-  // Initialize canvas when playing state is entered
-  useEffect(() => {
-    if (gameState !== 'playing') return;
-
-    // Use a small delay to ensure DOM is ready
-    const initTimeout = setTimeout(() => {
-      const canvas = canvasRef.current;
-      const container = gameAreaRef.current;
-      if (!canvas || !container) return;
-
-      const dpr = window.devicePixelRatio || 1;
-      const rect = container.getBoundingClientRect();
-      const width = Math.min(rect.width, 450);
-      const height = Math.min(rect.height - 80, 400);
-
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-
-      canvasSize.current = { width, height };
-      groundY.current = height - 40;
-      slingshotPos.current = { x: width * 0.18, y: groundY.current - 60 };
-
-      const ctx = canvas.getContext('2d');
-      ctx.scale(dpr, dpr);
-
-      // Now load the level with correct canvas dimensions
-      if (!levelLoadedRef.current) {
-        loadLevel(currentLevel);
-      }
-    }, 50);
-
-    return () => clearTimeout(initTimeout);
-  }, [gameState, currentLevel, loadLevel]);
-
-  // Load level
+  // Load level function - defined before useEffect that uses it
   const loadLevel = useCallback((levelIndex) => {
     if (levelIndex >= LEVELS.length) {
       setGameState('gameOver');
@@ -194,6 +158,42 @@ const AngryDucksGame = ({ onGameEnd, onClose }) => {
     duckRef.current = null;
     levelLoadedRef.current = true;
   }, []);
+
+  // Initialize canvas when playing state is entered
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+
+    // Use a small delay to ensure DOM is ready
+    const initTimeout = setTimeout(() => {
+      const canvas = canvasRef.current;
+      const container = gameAreaRef.current;
+      if (!canvas || !container) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const rect = container.getBoundingClientRect();
+      const width = Math.min(rect.width, 450);
+      const height = Math.min(rect.height - 80, 400);
+
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+
+      canvasSize.current = { width, height };
+      groundY.current = height - 40;
+      slingshotPos.current = { x: width * 0.18, y: groundY.current - 60 };
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      // Now load the level with correct canvas dimensions
+      if (!levelLoadedRef.current) {
+        loadLevel(currentLevel);
+      }
+    }, 50);
+
+    return () => clearTimeout(initTimeout);
+  }, [gameState, currentLevel, loadLevel]);
 
   // Start game
   const startGame = useCallback((levelIndex = 0) => {
