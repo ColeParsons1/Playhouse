@@ -348,9 +348,18 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
       }]);
 
       // Announce we're ready for WebRTC connections
+      // Send multiple times with delay to ensure other peers receive it
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         console.log('Sending webrtc_ready message');
         wsRef.current.send(JSON.stringify({ type: 'webrtc_ready' }));
+
+        // Send again after a short delay in case other player is still initializing
+        setTimeout(() => {
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            console.log('Sending webrtc_ready message (retry)');
+            wsRef.current.send(JSON.stringify({ type: 'webrtc_ready' }));
+          }
+        }, 2000);
       }
 
       return stream;
@@ -498,7 +507,20 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
 
   // Handle incoming WebRTC offer
   const handleWebRTCOffer = useCallback(async (fromPlayer, offer) => {
-    console.log('Received offer from:', fromPlayer.id);
+    console.log('Received offer from:', fromPlayer.id, fromPlayer.name);
+
+    // Wait for local stream if not ready
+    if (!localStreamRef.current) {
+      console.log('Waiting for local stream before handling offer...');
+      // Retry after a short delay
+      setTimeout(() => {
+        if (handleWebRTCOfferRef.current) {
+          handleWebRTCOfferRef.current(fromPlayer, offer);
+        }
+      }, 1000);
+      return;
+    }
+
     const pc = createPeerConnection(fromPlayer.id, false);
 
     try {
@@ -506,6 +528,7 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
+      console.log('Sending answer to:', fromPlayer.id);
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({
           type: 'webrtc_answer',
@@ -513,6 +536,13 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
           answer: answer
         }));
       }
+
+      setChat(prev => [...prev, {
+        id: Date.now(),
+        player: 'System',
+        message: `📞 Connecting voice with ${fromPlayer.name}...`,
+        isSystem: true
+      }]);
     } catch (error) {
       console.error('Error handling offer:', error);
     }
@@ -520,15 +550,25 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
 
   // Handle incoming WebRTC answer
   const handleWebRTCAnswer = useCallback(async (fromPlayer, answer) => {
-    console.log('Received answer from:', fromPlayer.id);
+    console.log('Received answer from:', fromPlayer.id, fromPlayer.name);
     const pc = peerConnectionsRef.current[fromPlayer.id];
 
     if (pc) {
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        console.log('Answer processed successfully, connection should establish');
+
+        setChat(prev => [...prev, {
+          id: Date.now(),
+          player: 'System',
+          message: `🤝 Voice handshake complete with ${fromPlayer.name}!`,
+          isSystem: true
+        }]);
       } catch (error) {
         console.error('Error handling answer:', error);
       }
+    } else {
+      console.error('No peer connection found for:', fromPlayer.id);
     }
   }, []);
 
@@ -549,7 +589,19 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   const handlePeerReady = useCallback(async (peerPlayer) => {
     if (peerPlayer.id === player?.id) return; // Skip self
 
-    console.log('Peer ready:', peerPlayer.name);
+    console.log('Peer ready:', peerPlayer.name, 'Local stream:', !!localStreamRef.current);
+
+    // Only initiate if we have our local stream ready
+    if (!localStreamRef.current) {
+      console.log('Local stream not ready yet, waiting...');
+      return;
+    }
+
+    // Check if we already have a connection to this peer
+    if (peerConnectionsRef.current[peerPlayer.id]) {
+      console.log('Already have connection to peer:', peerPlayer.id);
+      return;
+    }
 
     // As the existing peer, initiate connection to new peer
     const pc = createPeerConnection(peerPlayer.id, true);
@@ -558,6 +610,7 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
+      console.log('Sending offer to peer:', peerPlayer.id);
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({
           type: 'webrtc_offer',
