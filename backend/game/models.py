@@ -62,6 +62,20 @@ class Player(models.Model):
         self.save()
 
 
+class Follow(models.Model):
+    """Track follow relationships between players"""
+    follower = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='following')
+    following = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='followers_set')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ['follower', 'following']
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.follower.name} follows {self.following.name}"
+
+
 class Avatar(models.Model):
     """Player's customizable avatar"""
     player = models.OneToOneField(Player, on_delete=models.CASCADE, related_name='avatar')

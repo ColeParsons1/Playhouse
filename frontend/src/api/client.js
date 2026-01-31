@@ -95,6 +95,19 @@ export const playerApi = {
     client.post(`/players/${playerId}/claim_daily_bonus/`, { game_coins: gameCoins }),
   addCoins: (playerId, coins) =>
     client.post(`/players/${playerId}/add_coins/`, { coins }),
+  // User discovery and follow system
+  getUsers: (playerId, search = '') =>
+    client.get(`/players/users/?player_id=${playerId}&search=${encodeURIComponent(search)}`),
+  getProfile: (userId, requesterId) =>
+    client.get(`/players/${userId}/profile/?player_id=${requesterId}`),
+  follow: (userId, playerId) =>
+    client.post(`/players/${userId}/follow/`, { player_id: playerId }),
+  unfollow: (userId, playerId) =>
+    client.post(`/players/${userId}/unfollow/`, { player_id: playerId }),
+  getFollowers: (userId, requesterId) =>
+    client.get(`/players/${userId}/followers/?player_id=${requesterId}`),
+  getFollowing: (userId, requesterId) =>
+    client.get(`/players/${userId}/following_list/?player_id=${requesterId}`),
 };
 
 export const avatarApi = {

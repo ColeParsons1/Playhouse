@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Player, GameSession, BingoCard, Reward, PlayerReward, DailyBonus,
     Avatar, AvatarItem, PlayerAvatarItem, VoiceRoom, RoomParticipant,
-    RoomGame, ChatMessage, ShopItem, PlayerShopItem
+    RoomGame, ChatMessage, ShopItem, PlayerShopItem, Follow
 )
 
 
@@ -148,3 +148,40 @@ class DailyBonusSerializer(serializers.ModelSerializer):
     class Meta:
         model = DailyBonus
         fields = '__all__'
+
+
+class FollowSerializer(serializers.ModelSerializer):
+    follower = PlayerSerializer(read_only=True)
+    following = PlayerSerializer(read_only=True)
+
+    class Meta:
+        model = Follow
+        fields = ['id', 'follower', 'following', 'created_at']
+
+
+class UserListSerializer(serializers.ModelSerializer):
+    """Serializer for user listings with avatar and follow status"""
+    avatar = AvatarSerializer(read_only=True)
+    followers_count = serializers.SerializerMethodField()
+    following_count = serializers.SerializerMethodField()
+    is_following = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Player
+        fields = [
+            'id', 'name', 'username', 'level', 'xp', 'total_wins', 'total_games',
+            'current_streak', 'best_streak', 'country_code', 'avatar',
+            'followers_count', 'following_count', 'is_following', 'created_at'
+        ]
+
+    def get_followers_count(self, obj):
+        return obj.followers_set.count()
+
+    def get_following_count(self, obj):
+        return obj.following.count()
+
+    def get_is_following(self, obj):
+        request_player_id = self.context.get('request_player_id')
+        if not request_player_id:
+            return False
+        return Follow.objects.filter(follower_id=request_player_id, following=obj).exists()

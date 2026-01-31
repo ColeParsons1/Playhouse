@@ -17,6 +17,7 @@ const ShopScreen = lazy(() => import('./components/ShopScreen'));
 const AvatarEditor = lazy(() => import('./components/AvatarEditor'));
 const StatsModal = lazy(() => import('./components/StatsModal'));
 const CreateRoomModal = lazy(() => import('./components/CreateRoomModal'));
+const FollowScreen = lazy(() => import('./components/FollowScreen'));
 
 // Loading component
 const ScreenLoading = () => (
@@ -39,6 +40,7 @@ function App() {
   const [showAvatar, setShowAvatar] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showCreateRoom, setShowCreateRoom] = useState(false);
+  const [showFollow, setShowFollow] = useState(false);
   const [currentRoom, setCurrentRoom] = useState(null);
   const [inGame, setInGame] = useState(false);
   const [activeTheme, setActiveTheme] = useState('default');
@@ -252,13 +254,14 @@ function App() {
             </div>
           </Suspense>
         );
-      case 'messages':
+      case 'follow':
         return (
-          <div className="coming-soon-screen">
-            <span className="coming-soon-icon">💬</span>
-            <h2>Messages</h2>
-            <p>Coming soon!</p>
-          </div>
+          <Suspense fallback={<ScreenLoading />}>
+            <FollowScreen
+              player={player}
+              onClose={() => setActiveTab('rooms')}
+            />
+          </Suspense>
         );
       case 'create':
         return (

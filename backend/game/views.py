@@ -12,7 +12,7 @@ import hashlib
 from .models import (
     Player, GameSession, BingoCard, Reward, PlayerReward, DailyBonus,
     Avatar, AvatarItem, PlayerAvatarItem, VoiceRoom, RoomParticipant,
-    RoomGame, ChatMessage, ShopItem, PlayerShopItem
+    RoomGame, ChatMessage, ShopItem, PlayerShopItem, Follow
 )
 from .serializers import (
     PlayerSerializer, GameSessionSerializer, BingoCardSerializer,
@@ -20,7 +20,7 @@ from .serializers import (
     AvatarSerializer, AvatarItemSerializer, PlayerAvatarItemSerializer,
     PlayerWithAvatarSerializer, VoiceRoomSerializer, VoiceRoomListSerializer,
     RoomParticipantSerializer, RoomGameSerializer, ChatMessageSerializer,
-    ShopItemSerializer, PlayerShopItemSerializer
+    ShopItemSerializer, PlayerShopItemSerializer, FollowSerializer, UserListSerializer
 )
 
 
@@ -281,6 +281,163 @@ class PlayerViewSet(viewsets.ModelViewSet):
             player.add_coins(coins)
 
         return Response(PlayerSerializer(player).data)
+
+    @action(detail=False, methods=['get'])
+    def users(self, request):
+        """Get list of all users for the follow screen."""
+        player_id = request.query_params.get('player_id')
+        search = request.query_params.get('search', '').strip()
+
+        # Get all non-CPU players except the current user
+        users = Player.objects.filter(is_cpu=False).exclude(id=player_id)
+
+        # Apply search filter if provided
+        if search:
+            users = users.filter(
+                Q(name__icontains=search) | Q(username__icontains=search)
+            )
+
+        # Order by level and total wins
+        users = users.order_by('-level', '-total_wins')[:50]
+
+        serializer = UserListSerializer(
+            users, many=True,
+            context={'request_player_id': int(player_id) if player_id else None}
+        )
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def follow(self, request, pk=None):
+        """Follow a user."""
+        target_player = self.get_object()
+        follower_id = request.data.get('player_id')
+
+        if not follower_id:
+            return Response({'error': 'player_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if int(follower_id) == target_player.id:
+            return Response({'error': 'Cannot follow yourself'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            follower = Player.objects.get(id=follower_id)
+        except Player.DoesNotExist:
+            return Response({'error': 'Follower not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Create follow relationship if it doesn't exist
+        follow, created = Follow.objects.get_or_create(
+            follower=follower,
+            following=target_player
+        )
+
+        if created:
+            return Response({
+                'success': True,
+                'message': f'Now following {target_player.name}',
+                'followers_count': target_player.followers_set.count()
+            })
+        else:
+            return Response({
+                'success': True,
+                'message': 'Already following',
+                'followers_count': target_player.followers_set.count()
+            })
+
+    @action(detail=True, methods=['post'])
+    def unfollow(self, request, pk=None):
+        """Unfollow a user."""
+        target_player = self.get_object()
+        follower_id = request.data.get('player_id')
+
+        if not follower_id:
+            return Response({'error': 'player_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        deleted, _ = Follow.objects.filter(
+            follower_id=follower_id,
+            following=target_player
+        ).delete()
+
+        return Response({
+            'success': True,
+            'message': f'Unfollowed {target_player.name}' if deleted else 'Was not following',
+            'followers_count': target_player.followers_set.count()
+        })
+
+    @action(detail=True, methods=['get'])
+    def followers(self, request, pk=None):
+        """Get list of followers for a user."""
+        player = self.get_object()
+        request_player_id = request.query_params.get('player_id')
+
+        followers = Player.objects.filter(
+            following__following=player
+        ).distinct()
+
+        serializer = UserListSerializer(
+            followers, many=True,
+            context={'request_player_id': int(request_player_id) if request_player_id else None}
+        )
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def following_list(self, request, pk=None):
+        """Get list of users that a player is following."""
+        player = self.get_object()
+        request_player_id = request.query_params.get('player_id')
+
+        following = Player.objects.filter(
+            followers_set__follower=player
+        ).distinct()
+
+        serializer = UserListSerializer(
+            following, many=True,
+            context={'request_player_id': int(request_player_id) if request_player_id else None}
+        )
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def profile(self, request, pk=None):
+        """Get detailed profile for a user including stats."""
+        player = self.get_object()
+        request_player_id = request.query_params.get('player_id')
+
+        # Get follow counts
+        followers_count = player.followers_set.count()
+        following_count = player.following.count()
+
+        # Check if requester is following this user
+        is_following = False
+        if request_player_id:
+            is_following = Follow.objects.filter(
+                follower_id=request_player_id,
+                following=player
+            ).exists()
+
+        # Get avatar
+        avatar_data = None
+        if hasattr(player, 'avatar'):
+            avatar_data = AvatarSerializer(player.avatar).data
+
+        # Calculate win rate
+        win_rate = round(player.total_wins / max(player.total_games, 1) * 100, 1)
+
+        return Response({
+            'id': player.id,
+            'name': player.name,
+            'username': player.username,
+            'level': player.level,
+            'xp': player.xp,
+            'total_wins': player.total_wins,
+            'total_games': player.total_games,
+            'win_rate': win_rate,
+            'current_streak': player.current_streak,
+            'best_streak': player.best_streak,
+            'country_code': player.country_code,
+            'avatar': avatar_data,
+            'followers_count': followers_count,
+            'following_count': following_count,
+            'is_following': is_following,
+            'created_at': player.created_at,
+        })
 
 
 class AvatarViewSet(viewsets.ModelViewSet):

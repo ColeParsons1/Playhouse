@@ -5,7 +5,7 @@ import './BottomNav.css';
 const NAV_ITEMS = [
   { id: 'create', icon: '🎤', label: 'Create', hasNotification: false },
   { id: 'rooms', icon: '🎙️', label: 'Rooms', hasNotification: false },
-  { id: 'messages', icon: '💬', label: 'Messages', hasNotification: false },
+  { id: 'follow', icon: '👥', label: 'Follow', hasNotification: false },
   { id: 'games', icon: '🎮', label: 'Games', hasNotification: false },
   { id: 'profile', icon: '👤', label: 'Me', hasNotification: false },
 ];
