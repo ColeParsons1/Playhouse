@@ -2,6 +2,7 @@ import React, { useState, lazy, Suspense, memo, useCallback, useMemo } from 'rea
 import { motion, AnimatePresence } from 'framer-motion';
 import { playerApi } from '../api/client';
 import Leaderboard, { saveHighScore, getHighScore } from './Leaderboard';
+import GameIconMap from './GameIcons';
 import './GameHub.css';
 
 // Lazy load all games for better initial load performance
@@ -199,19 +200,23 @@ const GameLoading = () => (
 );
 
 // Memoized game card component to prevent re-renders
-const GameCard = memo(({ game, onSelect }) => (
-  <motion.button
-    className="game-card"
-    onClick={() => onSelect(game.id)}
-    style={{ '--game-color': game.color }}
-    whileHover={{ scale: 1.05 }}
-    whileTap={{ scale: 0.95 }}
-  >
-    <span className="game-emoji">{game.emoji}</span>
-    <span className="game-name">{game.name}</span>
-    <span className="game-desc">{game.description}</span>
-  </motion.button>
-));
+const GameCard = memo(({ game, onSelect }) => {
+  const IconComponent = GameIconMap[game.id];
+  return (
+    <motion.button
+      className="game-card"
+      onClick={() => onSelect(game.id)}
+      style={{ '--game-color': game.color }}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+    >
+      <div className="game-icon-wrapper">
+        {IconComponent ? <IconComponent size={56} /> : <span className="game-emoji-fallback">{game.emoji}</span>}
+      </div>
+      <span className="game-name">{game.name}</span>
+    </motion.button>
+  );
+});
 
 GameCard.displayName = 'GameCard';
 
@@ -348,8 +353,13 @@ const GameHub = ({ player, onPlayerUpdate }) => {
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >
-          <div className="featured-badge">⭐ Featured</div>
-          <span className="featured-emoji">{featuredGame.emoji}</span>
+          <div className="featured-badge">Featured</div>
+          <div className="featured-icon-wrapper">
+            {GameIconMap[featuredGame.id] ?
+              React.createElement(GameIconMap[featuredGame.id], { size: 72 }) :
+              <span className="featured-emoji-fallback">{featuredGame.emoji}</span>
+            }
+          </div>
           <div className="featured-info">
             <span className="featured-name">{featuredGame.name}</span>
             <span className="featured-desc">{featuredGame.description}</span>
