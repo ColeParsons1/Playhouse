@@ -382,13 +382,108 @@
   box-shadow: 0 0 10px rgba(76, 175, 80, 0.8);
 }
 
-/* Bingo Card - Liquid Glass */
-.bingo-card-container {
-  flex: 1;
+/* Bingo Cards Wrapper */
+.bingo-cards-wrapper {
   display: flex;
   flex-direction: column;
   padding: 0 16px;
-  max-height: 340px;
+  gap: 12px;
+}
+
+/* Card selector tabs */
+.card-tabs {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.card-tab {
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.card-tab.active {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: white;
+}
+
+.card-tab.has-bingo {
+  background: rgba(76, 175, 80, 0.5);
+  border-color: rgba(76, 175, 80, 0.8);
+  animation: bingoTabGlow 1s ease-in-out infinite;
+}
+
+.card-tab .bingo-indicator {
+  margin-left: 6px;
+}
+
+@keyframes bingoTabGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(76, 175, 80, 0); }
+}
+
+/* Scrollable cards container */
+.bingo-cards-scroll {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 4px;
+  scroll-snap-type: x mandatory;
+}
+
+.bingo-cards-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.bingo-cards-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.bingo-cards-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+/* Bingo Card - Liquid Glass */
+.bingo-card-container {
+  flex: 0 0 auto;
+  width: calc(100vw - 48px);
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  scroll-snap-align: center;
+  transition: all 0.3s ease;
+}
+
+.bingo-card-container.has-bingo {
+  box-shadow: 0 0 20px rgba(76, 175, 80, 0.5);
+}
+
+.card-label {
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 8px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  align-self: center;
 }
 
 .card-header-row {

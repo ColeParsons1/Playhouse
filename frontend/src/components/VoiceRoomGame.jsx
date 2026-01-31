@@ -45,8 +45,8 @@ const getWebSocketUrl = (roomId, playerId) => {
 
 const VoiceRoomGame = ({ room, player, onLeave }) => {
   const [gameState, setGameState] = useState('waiting'); // waiting, countdown, playing, ended
-  const [bingoCard, setBingoCard] = useState(null);
-  const [markedNumbers, setMarkedNumbers] = useState(new Set(['FREE']));
+  const [bingoCards, setBingoCards] = useState([]); // Array of cards
+  const [markedNumbersByCard, setMarkedNumbersByCard] = useState([new Set(['FREE'])]); // Array of Sets
   const [calledNumbers, setCalledNumbers] = useState([]);
   const [currentNumber, setCurrentNumber] = useState(null);
   const [players, setPlayers] = useState([]);
@@ -61,6 +61,7 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
   const [myProgress, setMyProgress] = useState(0);
+  const [activeCardIndex, setActiveCardIndex] = useState(0); // For card selector
 
   // Check if current player is the host
   // Handles both cases: when room has host object (created locally) or host_id (from API)
@@ -73,9 +74,10 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   const autoCallRef = useRef(null);
   const countdownRef = useRef(null);
 
-  // Initialize bingo card
+  // Initialize bingo cards
   useEffect(() => {
-    setBingoCard(generateBingoCard());
+    setBingoCards([generateBingoCard()]);
+    setMarkedNumbersByCard([new Set(['FREE'])]);
   }, []);
 
   // WebSocket connection
@@ -348,31 +350,37 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     return 'O';
   };
 
-  // Handle marking a number on the card
-  const handleMarkNumber = (number) => {
+  // Handle marking a number on a specific card
+  const handleMarkNumber = (cardIndex, number) => {
     if (number === 'FREE' || calledNumbers.includes(number)) {
-      setMarkedNumbers(prev => {
-        const newSet = new Set([...prev, number]);
-        // Calculate progress
-        const progress = calculateProgress(newSet);
-        setMyProgress(progress);
+      setMarkedNumbersByCard(prev => {
+        const newMarkedNumbers = [...prev];
+        newMarkedNumbers[cardIndex] = new Set([...prev[cardIndex], number]);
+
+        // Calculate best progress across all cards
+        let bestProgress = 0;
+        bingoCards.forEach((card, idx) => {
+          const progress = calculateProgressForCard(card, newMarkedNumbers[idx]);
+          bestProgress = Math.max(bestProgress, progress);
+        });
+        setMyProgress(bestProgress);
 
         // Broadcast progress update
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({
             type: 'player_progress',
-            progress: progress
+            progress: bestProgress
           }));
         }
 
-        return newSet;
+        return newMarkedNumbers;
       });
     }
   };
 
-  // Calculate progress (max in any line)
-  const calculateProgress = (marked) => {
-    if (!bingoCard) return 0;
+  // Calculate progress for a specific card
+  const calculateProgressForCard = (card, marked) => {
+    if (!card || !marked) return 0;
 
     let maxInLine = 0;
 
@@ -380,7 +388,7 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     for (let row = 0; row < 5; row++) {
       let count = 0;
       for (let col = 0; col < 5; col++) {
-        if (marked.has(bingoCard[col][row])) count++;
+        if (marked.has(card[col][row])) count++;
       }
       maxInLine = Math.max(maxInLine, count);
     }
@@ -389,7 +397,7 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     for (let col = 0; col < 5; col++) {
       let count = 0;
       for (let row = 0; row < 5; row++) {
-        if (marked.has(bingoCard[col][row])) count++;
+        if (marked.has(card[col][row])) count++;
       }
       maxInLine = Math.max(maxInLine, count);
     }
@@ -397,23 +405,23 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     // Check diagonals
     let diag1 = 0, diag2 = 0;
     for (let i = 0; i < 5; i++) {
-      if (marked.has(bingoCard[i][i])) diag1++;
-      if (marked.has(bingoCard[i][4 - i])) diag2++;
+      if (marked.has(card[i][i])) diag1++;
+      if (marked.has(card[i][4 - i])) diag2++;
     }
     maxInLine = Math.max(maxInLine, diag1, diag2);
 
     return maxInLine;
   };
 
-  // Check for bingo
-  const checkBingo = () => {
-    if (!bingoCard) return false;
+  // Check for bingo on a specific card
+  const checkBingoForCard = (card, marked) => {
+    if (!card || !marked) return false;
 
     // Check rows
     for (let row = 0; row < 5; row++) {
       let rowComplete = true;
       for (let col = 0; col < 5; col++) {
-        if (!markedNumbers.has(bingoCard[col][row])) {
+        if (!marked.has(card[col][row])) {
           rowComplete = false;
           break;
         }
@@ -425,7 +433,7 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     for (let col = 0; col < 5; col++) {
       let colComplete = true;
       for (let row = 0; row < 5; row++) {
-        if (!markedNumbers.has(bingoCard[col][row])) {
+        if (!marked.has(card[col][row])) {
           colComplete = false;
           break;
         }
@@ -436,11 +444,18 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     // Check diagonals
     let diag1 = true, diag2 = true;
     for (let i = 0; i < 5; i++) {
-      if (!markedNumbers.has(bingoCard[i][i])) diag1 = false;
-      if (!markedNumbers.has(bingoCard[i][4 - i])) diag2 = false;
+      if (!marked.has(card[i][i])) diag1 = false;
+      if (!marked.has(card[i][4 - i])) diag2 = false;
     }
 
     return diag1 || diag2;
+  };
+
+  // Check if any card has bingo
+  const checkBingo = () => {
+    return bingoCards.some((card, idx) =>
+      checkBingoForCard(card, markedNumbersByCard[idx])
+    );
   };
 
   // Handle claiming bingo
@@ -505,6 +520,10 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   // Handle buying more cards
   const handleBuyCard = () => {
     if (purchasedCards < 4) {
+      // Generate a new card and add it
+      const newCard = generateBingoCard();
+      setBingoCards(prev => [...prev, newCard]);
+      setMarkedNumbersByCard(prev => [...prev, new Set(['FREE'])]);
       setPurchasedCards(prev => prev + 1);
       setShowBuyCards(false);
     }
@@ -654,33 +673,60 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
         ))}
       </div>
 
-      {/* Bingo Card */}
-      {bingoCard && (
-        <div className="bingo-card-container">
-          <div className="card-header-row">
-            {['B', 'I', 'N', 'G', 'O'].map(letter => (
-              <div key={letter} className="bingo-letter">{letter}</div>
-            ))}
-          </div>
-          <div className="bingo-grid">
-            {[0, 1, 2, 3, 4].map(row => (
-              <div key={row} className="bingo-row">
-                {[0, 1, 2, 3, 4].map(col => {
-                  const number = bingoCard[col][row];
-                  const isMarked = markedNumbers.has(number);
-                  const isCalled = number === 'FREE' || calledNumbers.includes(number);
+      {/* Bingo Cards */}
+      {bingoCards.length > 0 && (
+        <div className="bingo-cards-wrapper">
+          {/* Card selector tabs */}
+          {bingoCards.length > 1 && (
+            <div className="card-tabs">
+              {bingoCards.map((_, idx) => (
+                <button
+                  key={idx}
+                  className={`card-tab ${activeCardIndex === idx ? 'active' : ''} ${checkBingoForCard(bingoCards[idx], markedNumbersByCard[idx]) ? 'has-bingo' : ''}`}
+                  onClick={() => setActiveCardIndex(idx)}
+                >
+                  Card {idx + 1}
+                  {checkBingoForCard(bingoCards[idx], markedNumbersByCard[idx]) && <span className="bingo-indicator">🎉</span>}
+                </button>
+              ))}
+            </div>
+          )}
 
-                  return (
-                    <motion.button
-                      key={`${col}-${row}`}
-                      className={`bingo-cell ${isMarked ? 'marked' : ''} ${isCalled ? 'called' : ''}`}
-                      onClick={() => handleMarkNumber(number)}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      {number === 'FREE' ? '⭐' : number}
-                    </motion.button>
-                  );
-                })}
+          {/* All cards in a scrollable container */}
+          <div className="bingo-cards-scroll">
+            {bingoCards.map((card, cardIndex) => (
+              <div
+                key={cardIndex}
+                className={`bingo-card-container ${cardIndex === activeCardIndex ? 'active' : ''} ${checkBingoForCard(card, markedNumbersByCard[cardIndex]) ? 'has-bingo' : ''}`}
+              >
+                <div className="card-label">Card {cardIndex + 1}</div>
+                <div className="card-header-row">
+                  {['B', 'I', 'N', 'G', 'O'].map(letter => (
+                    <div key={letter} className="bingo-letter">{letter}</div>
+                  ))}
+                </div>
+                <div className="bingo-grid">
+                  {[0, 1, 2, 3, 4].map(row => (
+                    <div key={row} className="bingo-row">
+                      {[0, 1, 2, 3, 4].map(col => {
+                        const number = card[col][row];
+                        const isMarked = markedNumbersByCard[cardIndex]?.has(number);
+                        const isCalled = number === 'FREE' || calledNumbers.includes(number);
+
+                        return (
+                          <motion.button
+                            key={`${cardIndex}-${col}-${row}`}
+                            className={`bingo-cell ${isMarked ? 'marked' : ''} ${isCalled ? 'called' : ''}`}
+                            onClick={() => handleMarkNumber(cardIndex, number)}
+                            whileTap={{ scale: 0.95 }}
+                          >
+                            {number === 'FREE' ? '⭐' : number}
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
