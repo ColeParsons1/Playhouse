@@ -43,6 +43,12 @@
   margin: 0;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .currency-display {
   display: flex;
   align-items: center;
@@ -50,6 +56,25 @@
   background: #f8f9ff;
   padding: 8px 14px;
   border-radius: 20px;
+}
+
+.logout-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: #fee2e2;
+  border-radius: 10px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.logout-btn:hover {
+  background: #fecaca;
+  transform: scale(1.05);
 }
 
 .currency {

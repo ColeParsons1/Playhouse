@@ -344,7 +344,7 @@ const ThemeCard = memo(({ theme, isSelected, isOwned, onSelect, price = 500 }) =
 ThemeCard.displayName = 'ThemeCard';
 
 // Main Avatar Editor Component
-const AvatarEditor = ({ player, onClose, onSave, onThemeChange }) => {
+const AvatarEditor = ({ player, onClose, onSave, onThemeChange, onLogout }) => {
   const [activeTab, setActiveTab] = useState('face');
   const [activeCategory, setActiveCategory] = useState('skinTone');
   const [avatar, setAvatar] = useState({
@@ -591,9 +591,16 @@ const AvatarEditor = ({ player, onClose, onSave, onThemeChange }) => {
           ←
         </button>
         <h2 className="editor-title">Customize Avatar</h2>
-        <div className="currency-display">
-          <span className="currency gems">💎 {localPlayer?.gems || 0}</span>
-          <span className="currency coins">🪙 {localPlayer?.coins?.toLocaleString() || 0}</span>
+        <div className="header-actions">
+          <div className="currency-display">
+            <span className="currency gems">💎 {localPlayer?.gems || 0}</span>
+            <span className="currency coins">🪙 {localPlayer?.coins?.toLocaleString() || 0}</span>
+          </div>
+          {onLogout && (
+            <button className="logout-btn" onClick={onLogout} title="Sign Out">
+              🚪
+            </button>
+          )}
         </div>
       </div>
 

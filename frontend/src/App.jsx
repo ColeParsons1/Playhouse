@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { playerApi } from './api/client';
+import { playerApi, authApi } from './api/client';
 import ThemeProvider from './components/ThemeProvider';
 import FloatingAnimals from './components/FloatingAnimals';
 import BottomNav from './components/BottomNav';
 import VoiceRoomsLobby from './components/VoiceRoomsLobby';
 import VoiceRoomGame from './components/VoiceRoomGame';
+import AuthPage from './components/AuthPage';
 import './App.css';
 
-// AnniversaryCard removed - Tanvi loved it! 💕
+// AnniversaryCard removed - Tanvi loved it!
 
 // Lazy load screens and modals
 const GameHub = lazy(() => import('./components/GameHub'));
@@ -25,9 +26,14 @@ const ScreenLoading = () => (
   </div>
 );
 
+// Session storage key
+const SESSION_KEY = 'playhouse_session';
+
 function App() {
   const [player, setPlayer] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState('rooms');
   const [showShop, setShowShop] = useState(false);
   const [showAvatar, setShowAvatar] = useState(false);
@@ -38,36 +44,97 @@ function App() {
   const [activeTheme, setActiveTheme] = useState('default');
 
   useEffect(() => {
-    initializePlayer();
+    initializeApp();
   }, []);
 
-  const initializePlayer = async () => {
+  const initializeApp = async () => {
     // Load saved theme from localStorage first
     const savedTheme = localStorage.getItem('active_theme');
     if (savedTheme) {
       setActiveTheme(savedTheme);
     }
 
-    // Stop loading immediately so users can play games
+    // Check for existing session
+    const savedSession = localStorage.getItem(SESSION_KEY);
+    if (savedSession) {
+      try {
+        const sessionData = JSON.parse(savedSession);
+        if (sessionData?.player?.id) {
+          // Verify player still exists by fetching fresh data
+          const response = await playerApi.getWithAvatar(sessionData.player.id);
+          setPlayer(response.data);
+          setIsAuthenticated(true);
+
+          // Update theme if player has one saved
+          const playerTheme = localStorage.getItem(`active_theme_${response.data.id}`);
+          if (playerTheme) {
+            setActiveTheme(playerTheme);
+          }
+        }
+      } catch (error) {
+        console.error('Session invalid, clearing:', error);
+        localStorage.removeItem(SESSION_KEY);
+      }
+    }
+
     setLoading(false);
+  };
 
-    // Try to get player data in background (optional)
+  const handleAuth = async (mode, formData) => {
+    setAuthLoading(true);
+
     try {
-      const response = await playerApi.getOrCreateTanvi();
-      setPlayer(response.data);
+      let response;
 
-      // Update theme if player has one saved
-      if (response.data?.id) {
-        const playerTheme = localStorage.getItem(`active_theme_${response.data.id}`);
+      if (mode === 'guest') {
+        // Guest mode - create a temporary player or use Tanvi
+        response = await playerApi.getOrCreateTanvi();
+        setPlayer(response.data);
+        setIsAuthenticated(true);
+        // Don't save guest session
+        return;
+      }
+
+      if (mode === 'login') {
+        response = await authApi.login(formData.email, formData.password);
+      } else if (mode === 'register') {
+        response = await authApi.register(formData.name, formData.email, formData.password);
+      }
+
+      if (response.data.success) {
+        const playerData = response.data.player;
+        setPlayer(playerData);
+        setIsAuthenticated(true);
+
+        // Save session
+        localStorage.setItem(SESSION_KEY, JSON.stringify({
+          player: playerData,
+          timestamp: Date.now(),
+        }));
+
+        // Load player theme
+        const playerTheme = localStorage.getItem(`active_theme_${playerData.id}`);
         if (playerTheme) {
           setActiveTheme(playerTheme);
         }
+      } else {
+        throw new Error(response.data.error || 'Authentication failed');
       }
     } catch (error) {
-      console.error('Failed to initialize player (playing as guest):', error);
-      // Player stays null - guest mode
+      const message = error.response?.data?.error || error.message || 'Something went wrong';
+      throw new Error(message);
+    } finally {
+      setAuthLoading(false);
     }
   };
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem(SESSION_KEY);
+    setPlayer(null);
+    setIsAuthenticated(false);
+    setCurrentRoom(null);
+    setInGame(false);
+  }, []);
 
   const handleThemeChange = useCallback((themeName) => {
     setActiveTheme(themeName);
@@ -78,6 +145,13 @@ function App() {
 
   const handlePlayerUpdate = useCallback((updatedPlayer) => {
     setPlayer(updatedPlayer);
+    // Update session with new player data
+    const savedSession = localStorage.getItem(SESSION_KEY);
+    if (savedSession) {
+      const sessionData = JSON.parse(savedSession);
+      sessionData.player = updatedPlayer;
+      localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData));
+    }
   }, []);
 
   const handleTabChange = useCallback((tab) => {
@@ -108,6 +182,7 @@ function App() {
     setInGame(true);
   }, []);
 
+  // Show loading screen
   if (loading) {
     return (
       <div className="app-loading">
@@ -121,6 +196,11 @@ function App() {
         </div>
       </div>
     );
+  }
+
+  // Show auth page if not authenticated
+  if (!isAuthenticated) {
+    return <AuthPage onLogin={handleAuth} isLoading={authLoading} />;
   }
 
   const renderScreen = () => {
@@ -245,6 +325,7 @@ function App() {
                   setShowAvatar(false);
                 }}
                 onThemeChange={handleThemeChange}
+                onLogout={handleLogout}
               />
             </Suspense>
           )}

@@ -7,6 +7,7 @@ from django.db.models import Count, Q
 from datetime import timedelta
 import random
 import uuid
+import hashlib
 
 from .models import (
     Player, GameSession, BingoCard, Reward, PlayerReward, DailyBonus,
@@ -106,6 +107,90 @@ class PlayerViewSet(viewsets.ModelViewSet):
         """List all non-CPU players for testing."""
         players = Player.objects.filter(is_cpu=False)
         return Response(PlayerSerializer(players, many=True).data)
+
+    @action(detail=False, methods=['post'])
+    def register(self, request):
+        """Register a new player account."""
+        name = request.data.get('name', '').strip()
+        email = request.data.get('email', '').strip().lower()
+        password = request.data.get('password', '')
+
+        # Validation
+        if not name or len(name) < 2:
+            return Response({'error': 'Name must be at least 2 characters'}, status=status.HTTP_400_BAD_REQUEST)
+        if not email or '@' not in email:
+            return Response({'error': 'Valid email is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not password or len(password) < 4:
+            return Response({'error': 'Password must be at least 4 characters'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if email already exists
+        if Player.objects.filter(email=email).exists():
+            return Response({'error': 'Email already registered'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create username from name
+        base_username = name.lower().replace(' ', '_')
+        username = base_username
+        counter = 1
+        while Player.objects.filter(username=username).exists():
+            username = f"{base_username}{counter}"
+            counter += 1
+
+        # Hash password (simple hash for demo - use proper bcrypt in production)
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+        # Create player
+        player = Player.objects.create(
+            name=name,
+            username=username,
+            email=email,
+            password_hash=password_hash,
+            is_cpu=False,
+            coins=500,
+            gems=10,
+            level=1,
+            unlocked_themes=['default'],
+            unlocked_daubers=['heart'],
+            unlocked_card_backs=['default'],
+        )
+
+        # Create avatar
+        Avatar.objects.create(player=player)
+
+        return Response({
+            'success': True,
+            'player': PlayerWithAvatarSerializer(player).data
+        })
+
+    @action(detail=False, methods=['post'])
+    def login(self, request):
+        """Login with email and password."""
+        email = request.data.get('email', '').strip().lower()
+        password = request.data.get('password', '')
+
+        if not email or not password:
+            return Response({'error': 'Email and password are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Hash password to compare
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+        # Find player by email
+        try:
+            player = Player.objects.get(email=email)
+        except Player.DoesNotExist:
+            return Response({'error': 'Invalid email or password'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Check password
+        if player.password_hash != password_hash:
+            return Response({'error': 'Invalid email or password'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Create avatar if doesn't exist (for legacy accounts)
+        if not hasattr(player, 'avatar'):
+            Avatar.objects.create(player=player)
+
+        return Response({
+            'success': True,
+            'player': PlayerWithAvatarSerializer(player).data
+        })
 
     @action(detail=True, methods=['get'])
     def with_avatar(self, request, pk=None):

@@ -80,6 +80,13 @@ export const clearCache = (urlPattern) => {
   }
 };
 
+export const authApi = {
+  register: (name, email, password) =>
+    client.post('/players/register/', { name, email, password }),
+  login: (email, password) =>
+    client.post('/players/login/', { email, password }),
+};
+
 export const playerApi = {
   getOrCreateTanvi: () => client.post('/players/get_or_create_tanvi/'),
   getWithAvatar: (playerId) => client.get(`/players/${playerId}/with_avatar/`),

@@ -6,6 +6,8 @@ import uuid
 class Player(models.Model):
     name = models.CharField(max_length=100)
     username = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    email = models.EmailField(unique=True, null=True, blank=True)
+    password_hash = models.CharField(max_length=128, null=True, blank=True)  # Simple hash for demo
     is_cpu = models.BooleanField(default=False)
     coins = models.IntegerField(default=100)
     gems = models.IntegerField(default=5)
