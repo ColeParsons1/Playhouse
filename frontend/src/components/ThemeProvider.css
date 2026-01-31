@@ -1715,15 +1715,7 @@ body.theme-farm::after {
    Sophisticated dark with liquid glass
    ============================================ */
 body.theme-dark {
-  background: linear-gradient(180deg,
-    #0d0d0f 0%,
-    #121215 15%,
-    #16161a 30%,
-    #1a1a1f 50%,
-    #1e1e24 70%,
-    #222228 85%,
-    #26262d 100%
-  );
+  background: #0a0a0c;
   background-attachment: fixed;
 }
 
@@ -1731,11 +1723,7 @@ body.theme-dark::before {
   content: '';
   position: fixed;
   inset: 0;
-  background:
-    /* Subtle gradient orbs */
-    radial-gradient(ellipse 60% 40% at 20% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse 50% 35% at 80% 70%, rgba(139, 92, 246, 0.06) 0%, transparent 45%),
-    radial-gradient(ellipse 70% 50% at 50% 90%, rgba(59, 130, 246, 0.05) 0%, transparent 55%);
+  background: none;
   pointer-events: none;
   z-index: 0;
 }
@@ -1744,21 +1732,9 @@ body.theme-dark::after {
   content: '';
   position: fixed;
   inset: 0;
-  background-image:
-    /* Subtle stars */
-    radial-gradient(circle 1px at 10% 15%, rgba(255, 255, 255, 0.3) 0%, transparent 100%),
-    radial-gradient(circle 1px at 25% 35%, rgba(255, 255, 255, 0.25) 0%, transparent 100%),
-    radial-gradient(circle 1px at 45% 20%, rgba(255, 255, 255, 0.2) 0%, transparent 100%),
-    radial-gradient(circle 1px at 65% 45%, rgba(255, 255, 255, 0.25) 0%, transparent 100%),
-    radial-gradient(circle 1px at 85% 25%, rgba(255, 255, 255, 0.3) 0%, transparent 100%);
+  background: none;
   pointer-events: none;
   z-index: 0;
-  animation: dark-twinkle 4s ease-in-out infinite;
-}
-
-@keyframes dark-twinkle {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
 }
 
 body.theme-dark .game-title,
