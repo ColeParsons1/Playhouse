@@ -62,6 +62,9 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   const [connectionError, setConnectionError] = useState(null);
   const [myProgress, setMyProgress] = useState(0);
 
+  // Check if current player is the host
+  const isHost = room?.host?.id === player?.id || room?.host_id === player?.id;
+
   const wsRef = useRef(null);
   const chatRef = useRef(null);
   const autoCallRef = useRef(null);
@@ -243,23 +246,28 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     }
   }, [chat]);
 
-  // Start game countdown when enough players
-  useEffect(() => {
-    if (gameState === 'waiting' && players.length >= 2) {
-      const timer = setTimeout(() => {
-        setCountdown(10);
-        setGameState('countdown');
+  // Host manually starts the game
+  const handleStartGame = useCallback(() => {
+    if (!isHost || gameState !== 'waiting') return;
 
-        // Broadcast game starting
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            type: 'start_game'
-          }));
-        }
-      }, 3000);
-      return () => clearTimeout(timer);
+    setCountdown(10);
+    setGameState('countdown');
+
+    // Broadcast game starting
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'start_game'
+      }));
     }
-  }, [gameState, players.length]);
+
+    // Add system message
+    setChat(prev => [...prev, {
+      id: Date.now(),
+      player: 'System',
+      message: '🎮 The host has started the game! Get ready!',
+      isSystem: true
+    }]);
+  }, [isHost, gameState]);
 
   // Countdown logic
   useEffect(() => {
@@ -586,6 +594,43 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Host Start Game Button */}
+      {gameState === 'waiting' && isHost && (
+        <motion.div
+          className="start-game-section"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div className="waiting-info">
+            <span className="waiting-icon">👥</span>
+            <span className="waiting-text">{players.length} player{players.length !== 1 ? 's' : ''} in room</span>
+          </div>
+          <motion.button
+            className="start-game-btn"
+            onClick={handleStartGame}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <span className="start-icon">🎮</span>
+            <span>Start Game</span>
+          </motion.button>
+          <p className="start-hint">Press to begin the bingo game!</p>
+        </motion.div>
+      )}
+
+      {/* Waiting for Host (non-host view) */}
+      {gameState === 'waiting' && !isHost && (
+        <motion.div
+          className="waiting-for-host"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          <div className="waiting-spinner"></div>
+          <p>Waiting for host to start the game...</p>
+          <span className="player-count-waiting">{players.length} player{players.length !== 1 ? 's' : ''} in room</span>
+        </motion.div>
+      )}
 
       {/* Players Strip with Progress */}
       <div className="players-strip">
