@@ -5,7 +5,6 @@ import {
   Elements,
   PaymentRequestButtonElement,
   useStripe,
-  useElements,
 } from '@stripe/react-stripe-js';
 import './BuyCoinsModal.css';
 
@@ -30,10 +29,10 @@ const getApiUrl = () => {
 };
 
 // Payment Button Component (handles Apple Pay / Google Pay)
-const PaymentButton = ({ pkg, player, onSuccess, onError, onProcessing }) => {
+const PaymentButton = ({ pkg, player, onSuccess, onError, onProcessing, onAvailabilityChange }) => {
   const stripe = useStripe();
   const [paymentRequest, setPaymentRequest] = useState(null);
-  const [canMakePayment, setCanMakePayment] = useState(false);
+  const [canMakePayment, setCanMakePayment] = useState(null); // null = loading, false = not available, true = available
 
   useEffect(() => {
     if (!stripe || !pkg) return;
@@ -51,9 +50,14 @@ const PaymentButton = ({ pkg, player, onSuccess, onError, onProcessing }) => {
 
     // Check if Apple Pay / Google Pay is available
     pr.canMakePayment().then((result) => {
+      console.log('canMakePayment result:', result);
       if (result) {
         setPaymentRequest(pr);
         setCanMakePayment(true);
+        onAvailabilityChange?.(true, result.applePay ? 'apple' : 'google');
+      } else {
+        setCanMakePayment(false);
+        onAvailabilityChange?.(false, null);
       }
     });
 
@@ -132,10 +136,28 @@ const PaymentButton = ({ pkg, player, onSuccess, onError, onProcessing }) => {
     return () => {
       pr.off('paymentmethod');
     };
-  }, [stripe, pkg, player, onSuccess, onError, onProcessing]);
+  }, [stripe, pkg, player, onSuccess, onError, onProcessing, onAvailabilityChange]);
 
+  // Still checking
+  if (canMakePayment === null) {
+    return (
+      <div className="payment-checking">
+        <div className="mini-spinner"></div>
+        <span>Checking payment options...</span>
+      </div>
+    );
+  }
+
+  // Not available
   if (!canMakePayment || !paymentRequest) {
-    return null;
+    return (
+      <div className="payment-not-available">
+        <p>Apple Pay / Google Pay not available on this device.</p>
+        <p className="payment-setup-hint">
+          Make sure you have Apple Pay or Google Pay set up in your device settings.
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -162,6 +184,7 @@ const BuyCoinsModalContent = ({ player, onClose, onPurchaseComplete }) => {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [paymentType, setPaymentType] = useState(null);
 
   const handleSuccess = (data) => {
     setSuccess({
@@ -174,12 +197,16 @@ const BuyCoinsModalContent = ({ player, onClose, onPurchaseComplete }) => {
 
   const handleError = (message) => {
     setError(message);
-    setTimeout(() => setError(null), 3000);
+    setTimeout(() => setError(null), 5000);
   };
 
   const handleSelectPackage = (pkg) => {
     setSelectedPackage(pkg);
     setError(null);
+  };
+
+  const handleAvailabilityChange = (available, type) => {
+    setPaymentType(type);
   };
 
   return (
@@ -287,16 +314,15 @@ const BuyCoinsModalContent = ({ player, onClose, onPurchaseComplete }) => {
             onSuccess={handleSuccess}
             onError={handleError}
             onProcessing={setProcessing}
+            onAvailabilityChange={handleAvailabilityChange}
           />
-
-          <p className="payment-fallback-note">
-            Use Apple Pay or Google Pay to complete your purchase
-          </p>
         </motion.div>
       )}
 
       <p className="purchase-note">
-        Secure payment powered by Stripe
+        {paymentType === 'apple' ? ' Pay with Apple Pay' :
+         paymentType === 'google' ? ' Pay with Google Pay' :
+         'Secure payment powered by Stripe'}
       </p>
     </motion.div>
   );

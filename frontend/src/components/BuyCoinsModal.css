@@ -297,3 +297,41 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* Payment checking state */
+.payment-checking {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 15px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.mini-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #FFD700;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* Payment not available state */
+.payment-not-available {
+  text-align: center;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  margin: 10px 0;
+}
+
+.payment-not-available p {
+  margin: 0 0 8px 0;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.payment-setup-hint {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5) !important;
+}
