@@ -43,6 +43,8 @@ const RoomCard = memo(({ room, onJoin }) => {
   return (
     <motion.div
       className="room-card"
+      data-room-type={room.room_type || 'music'}
+      data-game-mode={room.game_mode || 'bingo_normal'}
       onClick={() => onJoin(room)}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}

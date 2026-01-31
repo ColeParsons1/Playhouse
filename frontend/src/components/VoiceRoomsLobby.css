@@ -307,53 +307,111 @@
     0 0 60px rgba(255, 45, 32, 0.3);
 }
 
-/* Room Card - Gaming Style */
+/* Room Card - Vibrant Style (matching Games tab) */
 .room-card {
+  --room-color: #8b5cf6; /* Default purple, will be overridden by data-room-type */
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 16px 18px;
-  background: var(--bg-card);
-  backdrop-filter: blur(15px);
-  -webkit-backdrop-filter: blur(15px);
-  border: 1px solid var(--border-glow);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--room-color) 80%, white),
+    color-mix(in srgb, var(--room-color) 95%, black)
+  );
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border: 2px solid color-mix(in srgb, var(--room-color) 50%, white);
   border-radius: 18px;
   box-shadow:
-    0 6px 25px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    0 6px 25px color-mix(in srgb, var(--room-color) 35%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
   cursor: pointer;
   transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
 }
 
-/* Hexagon pattern on room cards */
+/* Glossy overlay effect */
 .room-card::before {
   content: '';
   position: absolute;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='35'%3E%3Cpath d='M20 0l20 10v15l-20 10L0 25V10z' fill='none' stroke='%23ffffff' stroke-opacity='0.02' stroke-width='0.5'/%3E%3C/svg%3E");
-  background-size: 40px 35px;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.05) 30%,
+    transparent 60%
+  );
   pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.3s ease;
 }
 
 .room-card:hover::before {
-  opacity: 1;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.25) 0%,
+    rgba(255, 255, 255, 0.08) 30%,
+    transparent 60%
+  );
 }
 
 .room-card:hover {
-  background: var(--bg-card-hover);
-  border-color: rgba(255, 45, 32, 0.5);
+  transform: translateY(-4px) scale(1.01);
   box-shadow:
-    0 10px 40px rgba(0, 0, 0, 0.4),
-    0 0 30px rgba(255, 45, 32, 0.15);
-  transform: translateY(-3px);
+    0 12px 40px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 .room-card:active {
-  transform: translateY(-1px);
+  transform: translateY(-1px) scale(0.98);
+}
+
+/* Room type color variants */
+.room-card[data-room-type="music"] {
+  --room-color: #ec4899; /* Pink */
+}
+
+.room-card[data-room-type="friends"] {
+  --room-color: #8b5cf6; /* Purple */
+}
+
+.room-card[data-room-type="video"] {
+  --room-color: #3b82f6; /* Blue */
+}
+
+.room-card[data-room-type="popular"] {
+  --room-color: #f59e0b; /* Amber */
+}
+
+/* Game mode color variants */
+.room-card[data-game-mode="bingo_normal"] {
+  --room-color: #10b981; /* Emerald */
+}
+
+.room-card[data-game-mode="bingo_powerup"] {
+  --room-color: #f97316; /* Orange */
+}
+
+.room-card[data-game-mode="bingo_blackout"] {
+  --room-color: #6366f1; /* Indigo */
+}
+
+.room-card[data-game-mode="connect4"] {
+  --room-color: #ef4444; /* Red */
+}
+
+.room-card[data-game-mode="ludo"] {
+  --room-color: #eab308; /* Yellow */
+}
+
+.room-card[data-game-mode="carrom"] {
+  --room-color: #14b8a6; /* Teal */
 }
 
 .room-avatar {
@@ -364,16 +422,18 @@
   width: 58px;
   height: 58px;
   border-radius: 14px;
-  background: var(--gradient-purple);
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.6rem;
   font-weight: 700;
   color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow:
-    0 0 15px rgba(155, 48, 255, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
 .room-info {
@@ -389,26 +449,29 @@
 }
 
 .room-type-badge {
-  padding: 3px 10px;
-  background: rgba(0, 255, 255, 0.15);
-  color: var(--accent-cyan);
-  border: 1px solid rgba(0, 255, 255, 0.3);
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: 'Inter', 'Nunito', sans-serif;
   font-size: 0.65rem;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .room-name {
-  font-family: 'Nunito', sans-serif;
+  font-family: 'Space Grotesk', 'Inter', 'Nunito', sans-serif;
   font-size: 1.05rem;
   font-weight: 700;
-  color: var(--text-primary);
+  color: white;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: -0.01em;
 }
 
 .room-details {
@@ -416,7 +479,8 @@
   align-items: center;
   gap: 14px;
   font-size: 0.8rem;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.75);
+  font-weight: 500;
 }
 
 .room-flag {
@@ -432,7 +496,7 @@
 }
 
 .room-player-count {
-  color: var(--accent-green);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .room-ranking {
@@ -444,13 +508,15 @@
   align-items: center;
   gap: 5px;
   padding: 6px 12px;
-  background: var(--gradient-gold);
-  color: #1a1a2e;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 20px;
-  font-family: 'Orbitron', 'Nunito', sans-serif;
+  font-family: 'Inter', 'Nunito', sans-serif;
   font-size: 0.7rem;
-  font-weight: 800;
-  box-shadow: var(--glow-yellow);
+  font-weight: 700;
 }
 
 /* Live indicator */
