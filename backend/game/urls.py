@@ -2,7 +2,8 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     PlayerViewSet, GameSessionViewSet, RewardViewSet, PlayerRewardViewSet,
-    AvatarViewSet, AvatarItemViewSet, VoiceRoomViewSet, ShopItemViewSet
+    AvatarViewSet, AvatarItemViewSet, VoiceRoomViewSet, ShopItemViewSet,
+    create_payment_intent, confirm_payment
 )
 
 router = DefaultRouter()
@@ -17,4 +18,6 @@ router.register(r'shop-items', ShopItemViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('payments/create-intent/', create_payment_intent, name='create_payment_intent'),
+    path('payments/confirm/', confirm_payment, name='confirm_payment'),
 ]

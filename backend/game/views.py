@@ -1,13 +1,19 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from django.utils import timezone
 from django.db import models
 from django.db.models import Count, Q
+from django.conf import settings
 from datetime import timedelta
 import random
 import uuid
 import hashlib
+import stripe
+import os
+
+# Configure Stripe
+stripe.api_key = os.environ.get('STRIPE_SECRET_KEY', '')
 
 from .models import (
     Player, GameSession, BingoCard, Reward, PlayerReward, DailyBonus,
@@ -1158,3 +1164,124 @@ class PlayerRewardViewSet(viewsets.ModelViewSet):
 
         player.save()
         return Response(PlayerSerializer(player).data)
+
+
+# Coin package definitions (must match frontend)
+COIN_PACKAGES = {
+    1: {'coins': 800, 'price': 99},      # $0.99
+    2: {'coins': 2800, 'price': 299},    # $2.99
+    3: {'coins': 5000, 'price': 499},    # $4.99
+    4: {'coins': 12000, 'price': 999},   # $9.99
+    5: {'coins': 75000, 'price': 4999},  # $49.99
+}
+
+
+@api_view(['POST'])
+def create_payment_intent(request):
+    """Create a Stripe Payment Intent for coin purchase."""
+    package_id = request.data.get('package_id')
+    player_id = request.data.get('player_id')
+
+    if not package_id or package_id not in COIN_PACKAGES:
+        return Response(
+            {'error': 'Invalid package'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not player_id:
+        return Response(
+            {'error': 'Player ID required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    package = COIN_PACKAGES[package_id]
+
+    try:
+        # Create a Payment Intent
+        intent = stripe.PaymentIntent.create(
+            amount=package['price'],  # Amount in cents
+            currency='usd',
+            automatic_payment_methods={
+                'enabled': True,
+            },
+            metadata={
+                'player_id': str(player_id),
+                'package_id': str(package_id),
+                'coins': str(package['coins']),
+            }
+        )
+
+        return Response({
+            'clientSecret': intent.client_secret,
+            'amount': package['price'],
+            'coins': package['coins'],
+        })
+
+    except stripe.error.StripeError as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['POST'])
+def confirm_payment(request):
+    """Confirm payment was successful and add coins to player."""
+    payment_intent_id = request.data.get('payment_intent_id')
+    player_id = request.data.get('player_id')
+
+    if not payment_intent_id or not player_id:
+        return Response(
+            {'error': 'Missing required fields'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        # Verify the payment intent
+        intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+
+        if intent.status != 'succeeded':
+            return Response(
+                {'error': 'Payment not completed'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Verify player ID matches
+        if intent.metadata.get('player_id') != str(player_id):
+            return Response(
+                {'error': 'Player mismatch'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get coins from metadata
+        coins = int(intent.metadata.get('coins', 0))
+
+        if coins <= 0:
+            return Response(
+                {'error': 'Invalid coin amount'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Add coins to player
+        try:
+            player = Player.objects.get(id=player_id)
+            player.add_coins(coins)
+
+            return Response({
+                'success': True,
+                'coins_added': coins,
+                'new_balance': player.coins,
+                'player': PlayerSerializer(player).data
+            })
+
+        except Player.DoesNotExist:
+            return Response(
+                {'error': 'Player not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    except stripe.error.StripeError as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
