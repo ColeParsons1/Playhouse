@@ -2,13 +2,32 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import './VoiceRoomGame.css';
 
-// WebRTC configuration with STUN servers for NAT traversal
+// WebRTC configuration with STUN and TURN servers for NAT traversal
 const RTC_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-  ]
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    // Free TURN servers from OpenRelay
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
+  ],
+  iceCandidatePoolSize: 10
 };
 
 // Generate a random bingo card
@@ -71,6 +90,8 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   const [connectionError, setConnectionError] = useState(null);
   const [myProgress, setMyProgress] = useState(0);
   const [activeCardIndex, setActiveCardIndex] = useState(0); // For card selector
+  const [voiceStatus, setVoiceStatus] = useState('initializing'); // initializing, ready, connected, error
+  const [connectedPeers, setConnectedPeers] = useState(0);
 
   // Check if current player is the host
   // Handles both cases: when room has host object (created locally) or host_id (from API)
@@ -297,7 +318,9 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
 
   // Initialize local microphone stream
   const initializeLocalStream = useCallback(async () => {
+    setVoiceStatus('initializing');
     try {
+      console.log('Requesting microphone access...');
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -308,6 +331,7 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
       });
       localStreamRef.current = stream;
       console.log('Microphone initialized successfully');
+      setVoiceStatus('ready');
 
       // If muted by default, disable audio tracks
       if (isMuted) {
@@ -316,18 +340,27 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
         });
       }
 
+      setChat(prev => [...prev, {
+        id: Date.now(),
+        player: 'System',
+        message: '🎤 Microphone connected! Voice chat is ready.',
+        isSystem: true
+      }]);
+
       // Announce we're ready for WebRTC connections
       if (wsRef.current?.readyState === WebSocket.OPEN) {
+        console.log('Sending webrtc_ready message');
         wsRef.current.send(JSON.stringify({ type: 'webrtc_ready' }));
       }
 
       return stream;
     } catch (error) {
       console.error('Failed to get microphone access:', error);
+      setVoiceStatus('error');
       setChat(prev => [...prev, {
         id: Date.now(),
         player: 'System',
-        message: 'Microphone access denied. Voice chat unavailable.',
+        message: '❌ Microphone access denied. Voice chat unavailable.',
         isSystem: true
       }]);
       return null;
@@ -346,14 +379,17 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
 
     // Add local audio track to the connection
     if (localStreamRef.current) {
+      console.log('Adding local tracks to peer connection');
       localStreamRef.current.getTracks().forEach(track => {
         pc.addTrack(track, localStreamRef.current);
       });
+    } else {
+      console.warn('No local stream available when creating peer connection');
     }
 
     // Handle incoming audio stream from peer
     pc.ontrack = (event) => {
-      console.log('Received remote track from:', peerId);
+      console.log('Received remote track from:', peerId, event.streams);
       const remoteStream = event.streams[0];
 
       // Create or reuse audio element for this peer
@@ -361,26 +397,56 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
         const audio = new Audio();
         audio.autoplay = true;
         audio.playsInline = true;
+        audio.volume = 1.0;
         audioElementsRef.current[peerId] = audio;
       }
 
       audioElementsRef.current[peerId].srcObject = remoteStream;
-      audioElementsRef.current[peerId].play().catch(e => console.log('Audio play error:', e));
+      audioElementsRef.current[peerId].play()
+        .then(() => console.log('Audio playback started for peer:', peerId))
+        .catch(e => console.error('Audio play error:', e));
 
       // Update player speaking state based on audio activity
       setPlayers(prev => prev.map(p =>
         p.id === peerId ? { ...p, isSpeaking: true } : p
       ));
+
+      setChat(prev => [...prev, {
+        id: Date.now(),
+        player: 'System',
+        message: `🔊 Voice connected with another player!`,
+        isSystem: true
+      }]);
     };
 
     // Handle ICE candidates
     pc.onicecandidate = (event) => {
-      if (event.candidate && wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({
-          type: 'webrtc_ice_candidate',
-          target_id: peerId,
-          candidate: event.candidate
-        }));
+      if (event.candidate) {
+        console.log('ICE candidate generated for peer:', peerId);
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: 'webrtc_ice_candidate',
+            target_id: peerId,
+            candidate: event.candidate
+          }));
+        }
+      }
+    };
+
+    // Handle ICE connection state changes
+    pc.oniceconnectionstatechange = () => {
+      console.log(`ICE connection state with ${peerId}:`, pc.iceConnectionState);
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        setVoiceStatus('connected');
+        setConnectedPeers(prev => prev + 1);
+      } else if (pc.iceConnectionState === 'failed') {
+        console.error('ICE connection failed with peer:', peerId);
+        setChat(prev => [...prev, {
+          id: Date.now(),
+          player: 'System',
+          message: '⚠️ Voice connection failed. Try refreshing.',
+          isSystem: true
+        }]);
       }
     };
 
@@ -388,7 +454,8 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     pc.onconnectionstatechange = () => {
       console.log(`Connection state with ${peerId}:`, pc.connectionState);
       if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-        cleanupPeerConnection(peerId);
+        setConnectedPeers(prev => Math.max(0, prev - 1));
+        cleanupPeerConnectionRef.current?.(peerId);
       }
     };
 
@@ -841,9 +908,16 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
           </span>
         </div>
         <div className="header-actions">
+          <div className="voice-status-indicator">
+            {voiceStatus === 'initializing' && <span className="voice-dot initializing">●</span>}
+            {voiceStatus === 'ready' && <span className="voice-dot ready">●</span>}
+            {voiceStatus === 'connected' && <span className="voice-dot connected">●</span>}
+            {voiceStatus === 'error' && <span className="voice-dot error">●</span>}
+          </div>
           <button
             className={`mute-btn ${isMuted ? 'muted' : ''}`}
             onClick={handleMuteToggle}
+            title={voiceStatus === 'error' ? 'Mic unavailable' : (isMuted ? 'Unmute' : 'Mute')}
           >
             {isMuted ? '🔇' : '🎤'}
           </button>

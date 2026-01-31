@@ -97,7 +97,49 @@
 
 .header-actions {
   display: flex;
+  align-items: center;
   gap: 10px;
+}
+
+.voice-status-indicator {
+  display: flex;
+  align-items: center;
+  margin-right: 4px;
+}
+
+.voice-dot {
+  font-size: 12px;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.voice-dot.initializing {
+  color: #FFD000;
+}
+
+.voice-dot.ready {
+  color: #4CAF50;
+  animation: none;
+}
+
+.voice-dot.connected {
+  color: #00FF00;
+  animation: pulse-connected 1s ease-in-out infinite;
+  text-shadow: 0 0 8px #00FF00;
+}
+
+.voice-dot.error {
+  color: #F44336;
+  animation: none;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes pulse-connected {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.2); }
 }
 
 .mute-btn,
