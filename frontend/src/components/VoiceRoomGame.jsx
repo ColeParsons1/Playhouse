@@ -1,23 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import './VoiceRoomGame.css';
-
-// Mock data for development
-const MOCK_PLAYERS = [
-  { id: 1, name: 'Host', avatar: '👸', isHost: true, isSpeaking: true },
-  { id: 2, name: 'Player2', avatar: '🧑', isHost: false, isSpeaking: false },
-  { id: 3, name: 'GamerGirl', avatar: '👧', isHost: false, isSpeaking: true },
-  { id: 4, name: 'CoolDude', avatar: '🧔', isHost: false, isSpeaking: false },
-  { id: 5, name: 'StarPlayer', avatar: '👨', isHost: false, isSpeaking: false },
-  { id: 6, name: 'LuckyOne', avatar: '👩', isHost: false, isSpeaking: false },
-];
-
-const MOCK_CHAT = [
-  { id: 1, player: 'Host', message: 'Welcome everyone! 🎉', isSystem: false },
-  { id: 2, player: 'System', message: 'Game starting in 30 seconds...', isSystem: true },
-  { id: 3, player: 'GamerGirl', message: 'Good luck all!', isSystem: false },
-  { id: 4, player: 'CoolDude', message: 'Let\'s go! 🔥', isSystem: false },
-];
 
 // Generate a random bingo card
 const generateBingoCard = () => {
@@ -49,32 +32,230 @@ const generateBingoCard = () => {
   return card;
 };
 
+// Get WebSocket URL based on environment
+const getWebSocketUrl = (roomId, playerId) => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  // For production, use the same host; for local, it might be different
+  if (host.includes('localhost') || host.includes('127.0.0.1')) {
+    return `ws://localhost:8000/ws/room/${roomId}/${playerId}/`;
+  }
+  return `${protocol}//${host}/ws/room/${roomId}/${playerId}/`;
+};
+
 const VoiceRoomGame = ({ room, player, onLeave }) => {
-  const [gameState, setGameState] = useState('waiting'); // waiting, playing, ended
+  const [gameState, setGameState] = useState('waiting'); // waiting, countdown, playing, ended
   const [bingoCard, setBingoCard] = useState(null);
   const [markedNumbers, setMarkedNumbers] = useState(new Set(['FREE']));
   const [calledNumbers, setCalledNumbers] = useState([]);
   const [currentNumber, setCurrentNumber] = useState(null);
-  const [players, setPlayers] = useState(MOCK_PLAYERS);
-  const [chat, setChat] = useState(MOCK_CHAT);
+  const [players, setPlayers] = useState([]);
+  const [chat, setChat] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [showChat, setShowChat] = useState(false);
   const [countdown, setCountdown] = useState(null);
-  const [prizePool, setPrizePool] = useState(2500);
+  const [prizePool] = useState(room?.first_prize || 2500);
   const [isMuted, setIsMuted] = useState(false);
   const [purchasedCards, setPurchasedCards] = useState(1);
   const [showBuyCards, setShowBuyCards] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
+  const [myProgress, setMyProgress] = useState(0);
+
+  const wsRef = useRef(null);
+  const chatRef = useRef(null);
+  const autoCallRef = useRef(null);
+  const countdownRef = useRef(null);
 
   // Initialize bingo card
   useEffect(() => {
     setBingoCard(generateBingoCard());
   }, []);
 
-  // Simulate game start countdown
+  // WebSocket connection
+  useEffect(() => {
+    if (!room?.room_id || !player?.id) return;
+
+    const wsUrl = getWebSocketUrl(room.room_id, player.id);
+    console.log('Connecting to WebSocket:', wsUrl);
+
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log('WebSocket connected');
+      setIsConnected(true);
+      setConnectionError(null);
+
+      // Add self to players list
+      setPlayers(prev => {
+        const exists = prev.some(p => p.id === player.id);
+        if (!exists) {
+          return [...prev, {
+            id: player.id,
+            name: player.name,
+            avatar: '👤',
+            isHost: false,
+            isSpeaking: false,
+            progress: 0
+          }];
+        }
+        return prev;
+      });
+
+      // Add system message
+      setChat(prev => [...prev, {
+        id: Date.now(),
+        player: 'System',
+        message: 'Connected to room!',
+        isSystem: true
+      }]);
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      handleWebSocketMessage(data);
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket disconnected');
+      setIsConnected(false);
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      setConnectionError('Connection failed. Using offline mode.');
+      // Fall back to mock mode
+      initializeMockMode();
+    };
+
+    return () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    };
+  }, [room?.room_id, player?.id]);
+
+  // Handle incoming WebSocket messages
+  const handleWebSocketMessage = useCallback((data) => {
+    switch (data.type) {
+      case 'player_joined':
+        setPlayers(prev => {
+          const exists = prev.some(p => p.id === data.player?.id);
+          if (!exists && data.player) {
+            return [...prev, {
+              ...data.player,
+              isSpeaking: false,
+              progress: 0
+            }];
+          }
+          return prev;
+        });
+        setChat(prev => [...prev, {
+          id: Date.now(),
+          player: 'System',
+          message: `${data.player?.name || 'Someone'} joined the room!`,
+          isSystem: true
+        }]);
+        break;
+
+      case 'player_left':
+        setPlayers(prev => prev.filter(p => p.id !== data.player?.id));
+        setChat(prev => [...prev, {
+          id: Date.now(),
+          player: 'System',
+          message: `${data.player?.name || 'Someone'} left the room`,
+          isSystem: true
+        }]);
+        break;
+
+      case 'chat_message':
+        setChat(prev => [...prev, {
+          id: Date.now(),
+          player: data.player?.name || 'Unknown',
+          message: data.message,
+          isSystem: data.is_system
+        }]);
+        break;
+
+      case 'game_starting':
+        setCountdown(data.countdown);
+        setGameState('countdown');
+        break;
+
+      case 'number_called':
+        setCurrentNumber(data.number);
+        setCalledNumbers(data.called_numbers || []);
+        break;
+
+      case 'progress_update':
+        setPlayers(prev => prev.map(p =>
+          p.id === data.player?.id
+            ? { ...p, progress: data.progress }
+            : p
+        ));
+        break;
+
+      case 'bingo_claimed':
+        if (data.valid) {
+          setGameState('ended');
+          setChat(prev => [...prev, {
+            id: Date.now(),
+            player: 'System',
+            message: `🎉 ${data.player?.name || 'Someone'} got BINGO! 🎉`,
+            isSystem: true
+          }]);
+        }
+        break;
+
+      case 'mute_changed':
+        setPlayers(prev => prev.map(p =>
+          p.id === data.player?.id
+            ? { ...p, isMuted: data.is_muted }
+            : p
+        ));
+        break;
+
+      default:
+        console.log('Unknown message type:', data.type);
+    }
+  }, []);
+
+  // Initialize mock mode for offline/fallback
+  const initializeMockMode = useCallback(() => {
+    setPlayers([
+      { id: player?.id || 1, name: player?.name || 'You', avatar: '👤', isHost: false, isSpeaking: false, progress: 0 },
+      { id: 99, name: 'AI Player', avatar: '🤖', isHost: true, isSpeaking: true, progress: 0 },
+      { id: 100, name: 'Bot1', avatar: '🎮', isHost: false, isSpeaking: false, progress: 0 },
+    ]);
+    setChat([{
+      id: Date.now(),
+      player: 'System',
+      message: 'Running in offline mode',
+      isSystem: true
+    }]);
+  }, [player]);
+
+  // Auto-scroll chat
+  useEffect(() => {
+    if (chatRef.current) {
+      chatRef.current.scrollTop = chatRef.current.scrollHeight;
+    }
+  }, [chat]);
+
+  // Start game countdown when enough players
   useEffect(() => {
     if (gameState === 'waiting' && players.length >= 2) {
       const timer = setTimeout(() => {
         setCountdown(10);
+        setGameState('countdown');
+
+        // Broadcast game starting
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: 'start_game'
+          }));
+        }
       }, 3000);
       return () => clearTimeout(timer);
     }
@@ -82,38 +263,70 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
 
   // Countdown logic
   useEffect(() => {
-    if (countdown === null) return;
+    if (countdown === null || countdown < 0) return;
 
     if (countdown > 0) {
-      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-      return () => clearTimeout(timer);
-    } else {
+      countdownRef.current = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(countdownRef.current);
+    } else if (countdown === 0) {
       setGameState('playing');
+      setCountdown(null);
       startCallingNumbers();
     }
   }, [countdown]);
 
-  // Start calling numbers (simulation)
+  // Start calling numbers
   const startCallingNumbers = useCallback(() => {
+    const allNumbers = Array.from({ length: 75 }, (_, i) => i + 1);
+    let numbersToCall = [...allNumbers];
+    let called = [];
+
     const callNumber = () => {
-      const available = Array.from({ length: 75 }, (_, i) => i + 1)
-        .filter(n => !calledNumbers.includes(n));
+      if (numbersToCall.length === 0 || gameState === 'ended') {
+        clearInterval(autoCallRef.current);
+        return;
+      }
 
-      if (available.length === 0) return;
-
-      const randomIndex = Math.floor(Math.random() * available.length);
-      const newNumber = available[randomIndex];
+      const randomIndex = Math.floor(Math.random() * numbersToCall.length);
+      const newNumber = numbersToCall.splice(randomIndex, 1)[0];
+      called.push(newNumber);
 
       setCurrentNumber(newNumber);
-      setCalledNumbers(prev => [...prev, newNumber]);
+      setCalledNumbers([...called]);
+
+      // Broadcast number called
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'call_number',
+          number: newNumber,
+          called_numbers: called
+        }));
+      }
+
+      // Simulate AI progress
+      setPlayers(prev => prev.map(p =>
+        p.id !== player?.id && Math.random() > 0.6
+          ? { ...p, progress: Math.min(5, p.progress + 1) }
+          : p
+      ));
     };
 
-    // Call a number every 5 seconds
-    const interval = setInterval(callNumber, 5000);
-    callNumber(); // Call first number immediately
+    // Call first number immediately
+    callNumber();
 
-    return () => clearInterval(interval);
-  }, [calledNumbers]);
+    // Then call every 5 seconds
+    autoCallRef.current = setInterval(callNumber, 5000);
+
+    return () => clearInterval(autoCallRef.current);
+  }, [gameState, player?.id]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (autoCallRef.current) clearInterval(autoCallRef.current);
+      if (countdownRef.current) clearTimeout(countdownRef.current);
+    };
+  }, []);
 
   // Get letter for bingo number
   const getBingoLetter = (num) => {
@@ -127,8 +340,58 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   // Handle marking a number on the card
   const handleMarkNumber = (number) => {
     if (number === 'FREE' || calledNumbers.includes(number)) {
-      setMarkedNumbers(prev => new Set([...prev, number]));
+      setMarkedNumbers(prev => {
+        const newSet = new Set([...prev, number]);
+        // Calculate progress
+        const progress = calculateProgress(newSet);
+        setMyProgress(progress);
+
+        // Broadcast progress update
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: 'player_progress',
+            progress: progress
+          }));
+        }
+
+        return newSet;
+      });
     }
+  };
+
+  // Calculate progress (max in any line)
+  const calculateProgress = (marked) => {
+    if (!bingoCard) return 0;
+
+    let maxInLine = 0;
+
+    // Check rows
+    for (let row = 0; row < 5; row++) {
+      let count = 0;
+      for (let col = 0; col < 5; col++) {
+        if (marked.has(bingoCard[col][row])) count++;
+      }
+      maxInLine = Math.max(maxInLine, count);
+    }
+
+    // Check columns
+    for (let col = 0; col < 5; col++) {
+      let count = 0;
+      for (let row = 0; row < 5; row++) {
+        if (marked.has(bingoCard[col][row])) count++;
+      }
+      maxInLine = Math.max(maxInLine, count);
+    }
+
+    // Check diagonals
+    let diag1 = 0, diag2 = 0;
+    for (let i = 0; i < 5; i++) {
+      if (marked.has(bingoCard[i][i])) diag1++;
+      if (marked.has(bingoCard[i][4 - i])) diag2++;
+    }
+    maxInLine = Math.max(maxInLine, diag1, diag2);
+
+    return maxInLine;
   };
 
   // Check for bingo
@@ -169,17 +432,63 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     return diag1 || diag2;
   };
 
+  // Handle claiming bingo
+  const handleClaimBingo = () => {
+    if (!checkBingo()) return;
+
+    // Stop auto-calling
+    if (autoCallRef.current) clearInterval(autoCallRef.current);
+
+    // Broadcast bingo claim
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'claim_bingo',
+        valid: true
+      }));
+    }
+
+    setGameState('ended');
+    setChat(prev => [...prev, {
+      id: Date.now(),
+      player: 'System',
+      message: `🎉 ${player?.name || 'You'} got BINGO! 🎉`,
+      isSystem: true
+    }]);
+  };
+
   // Handle sending chat message
   const handleSendMessage = () => {
     if (!newMessage.trim()) return;
 
-    setChat(prev => [...prev, {
-      id: Date.now(),
-      player: player?.name || 'You',
-      message: newMessage.trim(),
-      isSystem: false
-    }]);
+    // Send via WebSocket
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'chat_message',
+        message: newMessage.trim()
+      }));
+    } else {
+      // Fallback for offline mode
+      setChat(prev => [...prev, {
+        id: Date.now(),
+        player: player?.name || 'You',
+        message: newMessage.trim(),
+        isSystem: false
+      }]);
+    }
+
     setNewMessage('');
+  };
+
+  // Handle mute toggle
+  const handleMuteToggle = () => {
+    setIsMuted(!isMuted);
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'mute_toggle',
+        is_muted: !isMuted
+      }));
+    }
   };
 
   // Handle buying more cards
@@ -192,6 +501,13 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
 
   return (
     <div className="voice-room-game">
+      {/* Connection Status */}
+      {connectionError && (
+        <div className="connection-error">
+          {connectionError}
+        </div>
+      )}
+
       {/* Header */}
       <div className="room-game-header">
         <button className="leave-btn" onClick={onLeave}>
@@ -199,12 +515,15 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
         </button>
         <div className="room-info">
           <h3>{room?.name || "🎵 Music Bingo Party"}</h3>
-          <span className="player-count">{players.length} players</span>
+          <span className="player-count">
+            {players.length} players
+            {isConnected && <span className="connected-dot">●</span>}
+          </span>
         </div>
         <div className="header-actions">
           <button
             className={`mute-btn ${isMuted ? 'muted' : ''}`}
-            onClick={() => setIsMuted(!isMuted)}
+            onClick={handleMuteToggle}
           >
             {isMuted ? '🔇' : '🎤'}
           </button>
@@ -245,27 +564,30 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
       )}
 
       {/* Countdown */}
-      {countdown !== null && countdown > 0 && (
-        <motion.div
-          className="countdown-overlay"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-        >
-          <div className="countdown-content">
-            <span className="countdown-label">Game starting in</span>
-            <motion.span
-              className="countdown-number"
-              key={countdown}
-              initial={{ scale: 1.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-            >
-              {countdown}
-            </motion.span>
-          </div>
-        </motion.div>
-      )}
+      <AnimatePresence>
+        {countdown !== null && countdown > 0 && (
+          <motion.div
+            className="countdown-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div className="countdown-content">
+              <span className="countdown-label">Game starting in</span>
+              <motion.span
+                className="countdown-number"
+                key={countdown}
+                initial={{ scale: 1.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+              >
+                {countdown}
+              </motion.span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Players Strip */}
+      {/* Players Strip with Progress */}
       <div className="players-strip">
         {players.map((p) => (
           <div key={p.id} className={`player-bubble ${p.isSpeaking ? 'speaking' : ''}`}>
@@ -275,6 +597,11 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
             </div>
             <span className="player-name-small">{p.name}</span>
             {p.isSpeaking && <div className="speaking-indicator" />}
+            <div className="player-progress-mini">
+              <span className="progress-mini-text">
+                {p.id === player?.id ? myProgress : p.progress}/5
+              </span>
+            </div>
           </div>
         ))}
       </div>
@@ -323,6 +650,7 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
         </button>
         <button
           className={`action-btn bingo-btn ${checkBingo() ? 'has-bingo' : ''}`}
+          onClick={handleClaimBingo}
           disabled={!checkBingo()}
         >
           <span>🎉</span>
@@ -361,7 +689,7 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
               <h4>Room Chat</h4>
               <button onClick={() => setShowChat(false)}>✕</button>
             </div>
-            <div className="chat-messages">
+            <div className="chat-messages" ref={chatRef}>
               {chat.map(msg => (
                 <div key={msg.id} className={`chat-message ${msg.isSystem ? 'system' : ''}`}>
                   {!msg.isSystem && <span className="chat-player">{msg.player}:</span>}
@@ -419,6 +747,30 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
                   Cancel
                 </button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Game Over Modal */}
+      <AnimatePresence>
+        {gameState === 'ended' && (
+          <motion.div
+            className="game-over-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="game-over-modal"
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+            >
+              <h2>🎉 Game Over! 🎉</h2>
+              <p>Thanks for playing!</p>
+              <button className="play-again-btn" onClick={onLeave}>
+                Back to Lobby
+              </button>
             </motion.div>
           </motion.div>
         )}

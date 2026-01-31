@@ -25,22 +25,34 @@ SECRET_KEY = 'placeholder-secret-key'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['172.20.4.93', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['172.20.4.93', 'localhost', '127.0.0.1', 'tfplayhouse.com', 'www.tfplayhouse.com', 'GAME_SERVER_IP']
 
 
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',
     'rest_framework',
     'corsheaders',
     'game',
 ]
+
+# Channels configuration
+ASGI_APPLICATION = 'bingo_project.asgi.application'
+
+# Channel layers - use in-memory for development, Redis for production
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer"
+    }
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -128,6 +140,10 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5174",
     "http://172.20.4.93:5173",
     "http://172.20.4.93:5174",
+    "https://tfplayhouse.com",
+    "https://www.tfplayhouse.com",
+    "http://tfplayhouse.com",
+    "http://www.tfplayhouse.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True

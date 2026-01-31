@@ -73,6 +73,40 @@ class PlayerViewSet(viewsets.ModelViewSet):
 
         return Response(PlayerWithAvatarSerializer(player).data)
 
+    @action(detail=False, methods=['post'])
+    def get_or_create_test_user(self, request):
+        """Get or create a test user for multiplayer testing."""
+        test_name = request.data.get('name', 'TestPlayer')
+
+        # Try to find existing test user
+        existing = Player.objects.filter(name=test_name, is_cpu=False)
+        if existing.exists():
+            player = existing.first()
+        else:
+            player = Player.objects.create(
+                name=test_name,
+                username=test_name.lower().replace(' ', '_'),
+                is_cpu=False,
+                coins=500,
+                gems=10,
+                level=1,
+                unlocked_themes=['default'],
+                unlocked_daubers=['heart'],
+                unlocked_card_backs=['default'],
+            )
+
+        # Create avatar if doesn't exist
+        if not hasattr(player, 'avatar'):
+            Avatar.objects.create(player=player)
+
+        return Response(PlayerWithAvatarSerializer(player).data)
+
+    @action(detail=False, methods=['get'])
+    def list_all(self, request):
+        """List all non-CPU players for testing."""
+        players = Player.objects.filter(is_cpu=False)
+        return Response(PlayerSerializer(players, many=True).data)
+
     @action(detail=True, methods=['get'])
     def with_avatar(self, request, pk=None):
         """Get player with avatar data."""
