@@ -1,107 +1,182 @@
+/* ============================================
+   VOICE ROOM BINGO GAME - LIQUID GLASS DESIGN
+   ============================================ */
+
 .voice-room-game {
   position: fixed;
   inset: 0;
-  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  background: linear-gradient(
+    135deg,
+    #667eea 0%,
+    #764ba2 25%,
+    #f093fb 50%,
+    #f5576c 75%,
+    #4facfe 100%
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
   z-index: 1000;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-/* Header */
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Liquid Glass Card Mixin Style */
+.glass-card {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Header - Liquid Glass */
 .room-game-header {
   display: flex;
   align-items: center;
-  padding: 12px 16px;
-  background: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
 }
 
 .leave-btn {
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   border: none;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
   color: white;
   font-size: 1.2rem;
   cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.leave-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
 }
 
 .room-info {
   flex: 1;
-  margin-left: 12px;
+  margin-left: 14px;
 }
 
 .room-info h3 {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 1.1rem;
+  font-weight: 700;
   color: white;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
 }
 
 .player-count {
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
 }
 
 .header-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 .mute-btn,
 .settings-btn {
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   border: none;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
   font-size: 1.1rem;
   cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.mute-btn:hover,
+.settings-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
 }
 
 .mute-btn.muted {
-  background: #f44336;
+  background: rgba(244, 67, 54, 0.6);
+  border-color: rgba(244, 67, 54, 0.8);
 }
 
-/* Prize Pool Banner */
+/* Prize Pool Banner - Liquid Glass */
 .prize-pool-banner {
   display: flex;
   justify-content: center;
-  gap: 20px;
-  padding: 12px 16px;
-  background: linear-gradient(90deg, #ff9800 0%, #ffc107 50%, #ff9800 100%);
+  gap: 12px;
+  padding: 14px 16px;
+  margin: 12px 16px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 20px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .prize-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 14px;
+  transition: all 0.3s ease;
 }
 
 .prize-item.first {
-  background: rgba(255, 255, 255, 0.3);
-  transform: scale(1.1);
+  background: rgba(255, 215, 0, 0.25);
+  border-color: rgba(255, 215, 0, 0.5);
+  transform: scale(1.08);
+  box-shadow: 0 4px 20px rgba(255, 215, 0, 0.3);
 }
 
 .prize-label {
   font-size: 0.7rem;
   font-weight: 600;
-  color: rgba(0, 0, 0, 0.7);
+  color: rgba(255, 255, 255, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .prize-amount {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #333;
+  font-size: 1rem;
+  font-weight: 800;
+  color: white;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-/* Current Number Display */
+/* Current Number Display - Liquid Glass Ball */
 .current-number-display {
   display: flex;
   flex-direction: column;
@@ -110,47 +185,81 @@
 }
 
 .number-ball {
-  width: 80px;
-  height: 80px;
-  background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
+  width: 90px;
+  height: 90px;
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.35),
+    rgba(255, 255, 255, 0.1)
+  );
+  backdrop-filter: blur(20px) saturate(200%);
+  -webkit-backdrop-filter: blur(20px) saturate(200%);
+  border: 2px solid rgba(255, 255, 255, 0.4);
   border-radius: 50%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 20px rgba(255, 107, 107, 0.4);
-  animation: pulse 1s ease-in-out infinite;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.15),
+    inset 0 4px 12px rgba(255, 255, 255, 0.4),
+    inset 0 -4px 12px rgba(0, 0, 0, 0.1);
+  animation: floatBall 3s ease-in-out infinite;
+  position: relative;
 }
 
-@keyframes pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
+.number-ball::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40%;
+  height: 20%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.6), transparent);
+  border-radius: 50%;
+}
+
+@keyframes floatBall {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
 }
 
 .number-ball .letter {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .number-ball .number {
-  font-size: 2rem;
+  font-size: 2.2rem;
   font-weight: 800;
   color: white;
   line-height: 1;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
 .called-count {
-  margin-top: 8px;
+  margin-top: 10px;
+  padding: 6px 16px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
 }
 
-/* Countdown Overlay */
+/* Countdown Overlay - Liquid Glass */
 .countdown-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -161,26 +270,39 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
+  padding: 40px 60px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(25px) saturate(180%);
+  -webkit-backdrop-filter: blur(25px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 30px;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .countdown-label {
   font-size: 1.2rem;
-  color: white;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .countdown-number {
-  font-size: 5rem;
+  font-size: 6rem;
   font-weight: 800;
-  color: #ffc107;
-  text-shadow: 0 0 30px rgba(255, 193, 7, 0.5);
+  color: white;
+  text-shadow:
+    0 0 40px rgba(255, 255, 255, 0.5),
+    0 4px 20px rgba(0, 0, 0, 0.3);
+  line-height: 1;
 }
 
-/* Players Strip */
+/* Players Strip - Liquid Glass */
 .players-strip {
   display: flex;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 14px;
+  padding: 14px 16px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -193,43 +315,55 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   position: relative;
 }
 
 .player-avatar-bubble {
-  width: 48px;
-  height: 48px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  border-radius: 50%;
+  width: 52px;
+  height: 52px;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(15px) saturate(150%);
+  -webkit-backdrop-filter: blur(15px) saturate(150%);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.5rem;
   position: relative;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 4px 15px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
 }
 
 .player-bubble.speaking .player-avatar-bubble {
-  border-color: #4caf50;
-  animation: speakingGlow 1s ease-in-out infinite;
+  border-color: rgba(76, 175, 80, 0.8);
+  box-shadow:
+    0 0 0 3px rgba(76, 175, 80, 0.3),
+    0 4px 15px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  animation: speakingGlow 1.5s ease-in-out infinite;
 }
 
 @keyframes speakingGlow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4); }
-  50% { box-shadow: 0 0 0 8px rgba(76, 175, 80, 0); }
+  0%, 100% { box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.3), 0 4px 15px rgba(0, 0, 0, 0.1); }
+  50% { box-shadow: 0 0 0 6px rgba(76, 175, 80, 0.15), 0 4px 15px rgba(0, 0, 0, 0.1); }
 }
 
 .host-badge {
   position: absolute;
-  bottom: -4px;
-  right: -4px;
-  font-size: 0.8rem;
+  bottom: -2px;
+  right: -2px;
+  font-size: 0.9rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
 }
 
 .player-name-small {
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
   max-width: 60px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -238,14 +372,15 @@
 
 .speaking-indicator {
   position: absolute;
-  bottom: 20px;
-  width: 8px;
-  height: 8px;
+  bottom: 22px;
+  width: 10px;
+  height: 10px;
   background: #4caf50;
   border-radius: 50%;
+  box-shadow: 0 0 10px rgba(76, 175, 80, 0.8);
 }
 
-/* Bingo Card */
+/* Bingo Card - Liquid Glass */
 .bingo-card-container {
   flex: 1;
   display: flex;
@@ -257,29 +392,39 @@
 .card-header-row {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
-  margin-bottom: 4px;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
 .bingo-letter {
   text-align: center;
-  font-size: 1.2rem;
+  font-size: 1.3rem;
   font-weight: 800;
-  color: #ffc107;
+  color: white;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
   padding: 8px;
 }
 
 .bingo-grid {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   flex: 1;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 20px;
+  padding: 10px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 .bingo-row {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
+  gap: 6px;
   flex: 1;
 }
 
@@ -287,35 +432,54 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.9);
-  border: none;
-  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 12px;
   font-size: 1.1rem;
   font-weight: 700;
-  color: #333;
+  color: white;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.bingo-cell:hover {
+  background: rgba(255, 255, 255, 0.35);
+  transform: scale(1.02);
 }
 
 .bingo-cell.called {
-  background: rgba(255, 193, 7, 0.3);
-  color: #ffc107;
+  background: rgba(255, 215, 0, 0.35);
+  border-color: rgba(255, 215, 0, 0.5);
+  box-shadow:
+    0 0 15px rgba(255, 215, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 .bingo-cell.marked {
-  background: linear-gradient(135deg, #4caf50, #45a049);
-  color: white;
+  background: linear-gradient(
+    145deg,
+    rgba(76, 175, 80, 0.7),
+    rgba(56, 142, 60, 0.7)
+  );
+  border-color: rgba(76, 175, 80, 0.8);
+  box-shadow:
+    0 4px 15px rgba(76, 175, 80, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 .bingo-cell:active {
   transform: scale(0.95);
 }
 
-/* Game Actions */
+/* Game Actions - Liquid Glass */
 .game-actions {
   display: flex;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 14px 16px;
 }
 
 .action-btn {
@@ -324,44 +488,65 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 14px;
-  border: none;
-  border-radius: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(15px) saturate(150%);
+  -webkit-backdrop-filter: blur(15px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 16px;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 700;
+  color: white;
   cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
 }
 
 .action-btn.buy-cards {
-  background: linear-gradient(135deg, #9c27b0, #7b1fa2);
-  color: white;
+  background: rgba(156, 39, 176, 0.5);
+  border-color: rgba(156, 39, 176, 0.6);
+}
+
+.action-btn.buy-cards:hover {
+  background: rgba(156, 39, 176, 0.6);
 }
 
 .action-btn.bingo-btn {
-  background: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .action-btn.bingo-btn.has-bingo {
-  background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
+  background: linear-gradient(135deg, rgba(255, 107, 107, 0.8), rgba(238, 90, 90, 0.8));
+  border-color: rgba(255, 107, 107, 0.9);
   color: white;
-  animation: bingoGlow 0.5s ease-in-out infinite;
+  animation: bingoGlow 1s ease-in-out infinite;
 }
 
 @keyframes bingoGlow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.4); }
-  50% { box-shadow: 0 0 0 10px rgba(255, 107, 107, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.5), 0 4px 20px rgba(0, 0, 0, 0.1); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 107, 107, 0), 0 4px 20px rgba(0, 0, 0, 0.1); }
 }
 
-/* Called Numbers Section */
+/* Called Numbers Section - Liquid Glass */
 .called-numbers-section {
   padding: 12px 16px;
 }
 
 .called-numbers-section h4 {
-  margin: 0 0 8px 0;
+  margin: 0 0 10px 0;
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .called-numbers-list {
@@ -369,6 +554,7 @@
   gap: 8px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  padding: 4px 0;
 }
 
 .called-numbers-list::-webkit-scrollbar {
@@ -376,86 +562,112 @@
 }
 
 .called-number {
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
   font-size: 0.8rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
   white-space: nowrap;
 }
 
 .called-number.latest {
-  background: #ff6b6b;
-  color: white;
+  background: rgba(255, 107, 107, 0.6);
+  border-color: rgba(255, 107, 107, 0.8);
+  box-shadow: 0 0 15px rgba(255, 107, 107, 0.4);
 }
 
-/* Chat Toggle */
+/* Chat Toggle - Liquid Glass */
 .chat-toggle {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  padding: 12px 20px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  border: none;
+  padding: 14px 22px;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 25px;
   color: white;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   z-index: 50;
   display: flex;
   align-items: center;
   gap: 8px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.chat-toggle:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-3px);
 }
 
 .chat-badge {
-  background: #f44336;
+  background: rgba(244, 67, 54, 0.8);
   color: white;
   font-size: 0.7rem;
-  padding: 2px 6px;
-  border-radius: 10px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-weight: 700;
 }
 
-/* Chat Panel */
+/* Chat Panel - Liquid Glass */
 .chat-panel {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   height: 60vh;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-radius: 20px 20px 0 0;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border-radius: 28px 28px 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-bottom: none;
   display: flex;
   flex-direction: column;
   z-index: 200;
-  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 -10px 50px rgba(0, 0, 0, 0.2);
 }
 
 .chat-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 18px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .chat-header h4 {
   margin: 0;
-  font-size: 1rem;
-  color: var(--text-primary, #1a1a2e);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: white;
 }
 
 .chat-header button {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border: none;
-  background: #f5f5f5;
-  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
   font-size: 1rem;
+  color: white;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chat-header button:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .chat-messages {
@@ -464,68 +676,90 @@
   padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .chat-message {
-  padding: 8px 12px;
-  background: #f5f5f5;
-  border-radius: 12px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
   max-width: 80%;
 }
 
 .chat-message.system {
-  background: #e3f2fd;
-  color: #1976d2;
+  background: rgba(33, 150, 243, 0.25);
+  border-color: rgba(33, 150, 243, 0.4);
   align-self: center;
   text-align: center;
 }
 
 .chat-player {
-  font-weight: 600;
-  margin-right: 4px;
-  color: #667eea;
+  font-weight: 700;
+  margin-right: 6px;
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .chat-text {
-  color: #333;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .chat-input-area {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   padding: 16px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .chat-input-area input {
   flex: 1;
-  padding: 12px 16px;
-  border: 1px solid #ddd;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 25px;
   font-size: 0.9rem;
+  color: white;
   outline: none;
+  transition: all 0.2s ease;
+}
+
+.chat-input-area input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .chat-input-area input:focus {
-  border-color: #667eea;
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
 .chat-input-area button {
-  padding: 12px 20px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  border: none;
+  padding: 14px 24px;
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 25px;
   color: white;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-/* Buy Cards Modal */
+.chat-input-area button:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* Buy Cards Modal - Liquid Glass */
 .buy-cards-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -534,87 +768,109 @@
 }
 
 .buy-cards-modal {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 20px;
-  padding: 30px;
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 28px;
+  padding: 32px;
   text-align: center;
-  max-width: 320px;
+  max-width: 340px;
   width: 100%;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow:
+    0 25px 80px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .buy-cards-modal h3 {
-  margin: 0 0 8px 0;
-  font-size: 1.3rem;
-  color: var(--text-primary, #1a1a2e);
+  margin: 0 0 10px 0;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: white;
 }
 
 .buy-cards-modal > p {
-  margin: 0 0 20px 0;
-  color: #888;
+  margin: 0 0 24px 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
 }
 
 .card-options {
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .card-option {
   display: flex;
   justify-content: space-between;
-  padding: 16px;
-  background: #f8f9ff;
-  border-radius: 12px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 16px;
 }
 
 .card-count {
-  font-weight: 600;
-  color: #333;
+  font-weight: 700;
+  color: white;
 }
 
 .card-price {
-  font-weight: 700;
-  color: #f9a825;
+  font-weight: 800;
+  color: rgba(255, 215, 0, 0.95);
 }
 
 .cards-owned {
-  font-size: 0.85rem;
-  color: #888;
-  margin-bottom: 20px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 24px;
 }
 
 .modal-actions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .buy-btn {
-  padding: 14px;
-  background: linear-gradient(135deg, #9c27b0, #7b1fa2);
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(156, 39, 176, 0.7), rgba(123, 31, 162, 0.7));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   color: white;
-  border: none;
-  border-radius: 12px;
+  border: 1px solid rgba(156, 39, 176, 0.6);
+  border-radius: 16px;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.buy-btn:hover {
+  background: linear-gradient(135deg, rgba(156, 39, 176, 0.85), rgba(123, 31, 162, 0.85));
 }
 
 .buy-btn:disabled {
-  background: #ccc;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .cancel-btn {
-  padding: 12px;
-  background: transparent;
-  color: #888;
-  border: 1px solid #ddd;
-  border-radius: 12px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
   font-size: 0.95rem;
+  font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 /* Responsive */
@@ -624,177 +880,40 @@
   }
 
   .current-number-display {
-    padding: 8px;
+    padding: 10px;
   }
 
   .number-ball {
-    width: 60px;
-    height: 60px;
+    width: 70px;
+    height: 70px;
   }
 
   .number-ball .number {
-    font-size: 1.5rem;
+    font-size: 1.8rem;
   }
-}
 
-/* ============================================
-   DARK THEME SUPPORT FOR MODALS/CHAT
-   ============================================ */
-
-body.theme-dark .chat-panel,
-body.theme-night .chat-panel,
-body.theme-galaxy .chat-panel,
-body.theme-aurora .chat-panel,
-body.theme-forest .chat-panel,
-body.theme-neon .chat-panel,
-body.theme-ocean .chat-panel {
-  background: rgba(25, 25, 40, 0.98);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-body.theme-dark .chat-header,
-body.theme-night .chat-header,
-body.theme-galaxy .chat-header,
-body.theme-aurora .chat-header,
-body.theme-forest .chat-header,
-body.theme-neon .chat-header,
-body.theme-ocean .chat-header {
-  border-bottom-color: rgba(255, 255, 255, 0.1);
-}
-
-body.theme-dark .chat-header button,
-body.theme-night .chat-header button,
-body.theme-galaxy .chat-header button,
-body.theme-aurora .chat-header button,
-body.theme-forest .chat-header button,
-body.theme-neon .chat-header button,
-body.theme-ocean .chat-header button {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-body.theme-dark .chat-message,
-body.theme-night .chat-message,
-body.theme-galaxy .chat-message,
-body.theme-aurora .chat-message,
-body.theme-forest .chat-message,
-body.theme-neon .chat-message,
-body.theme-ocean .chat-message {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-body.theme-dark .chat-text,
-body.theme-night .chat-text,
-body.theme-galaxy .chat-text,
-body.theme-aurora .chat-text,
-body.theme-forest .chat-text,
-body.theme-neon .chat-text,
-body.theme-ocean .chat-text {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-body.theme-dark .chat-input-area,
-body.theme-night .chat-input-area,
-body.theme-galaxy .chat-input-area,
-body.theme-aurora .chat-input-area,
-body.theme-forest .chat-input-area,
-body.theme-neon .chat-input-area,
-body.theme-ocean .chat-input-area {
-  border-top-color: rgba(255, 255, 255, 0.1);
-}
-
-body.theme-dark .chat-input-area input,
-body.theme-night .chat-input-area input,
-body.theme-galaxy .chat-input-area input,
-body.theme-aurora .chat-input-area input,
-body.theme-forest .chat-input-area input,
-body.theme-neon .chat-input-area input,
-body.theme-ocean .chat-input-area input {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: white;
-}
-
-body.theme-dark .buy-cards-modal,
-body.theme-night .buy-cards-modal,
-body.theme-galaxy .buy-cards-modal,
-body.theme-aurora .buy-cards-modal,
-body.theme-forest .buy-cards-modal,
-body.theme-neon .buy-cards-modal,
-body.theme-ocean .buy-cards-modal {
-  background: rgba(25, 25, 40, 0.98);
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-body.theme-dark .card-option,
-body.theme-night .card-option,
-body.theme-galaxy .card-option,
-body.theme-aurora .card-option,
-body.theme-forest .card-option,
-body.theme-neon .card-option,
-body.theme-ocean .card-option {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-body.theme-dark .card-count,
-body.theme-night .card-count,
-body.theme-galaxy .card-count,
-body.theme-aurora .card-count,
-body.theme-forest .card-count,
-body.theme-neon .card-count,
-body.theme-ocean .card-count {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-body.theme-dark .cards-owned,
-body.theme-night .cards-owned,
-body.theme-galaxy .cards-owned,
-body.theme-aurora .cards-owned,
-body.theme-forest .cards-owned,
-body.theme-neon .cards-owned,
-body.theme-ocean .cards-owned {
-  color: rgba(255, 255, 255, 0.6);
-}
-
-body.theme-dark .cancel-btn,
-body.theme-night .cancel-btn,
-body.theme-galaxy .cancel-btn,
-body.theme-aurora .cancel-btn,
-body.theme-forest .cancel-btn,
-body.theme-neon .cancel-btn,
-body.theme-ocean .cancel-btn {
-  border-color: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.6);
-}
-
-/* Neon theme special effects */
-body.theme-neon .chat-toggle {
-  background: linear-gradient(135deg, #FF2D20, #9B30FF);
-  box-shadow: 0 0 20px rgba(255, 45, 32, 0.4);
-}
-
-body.theme-neon .chat-input-area button {
-  background: linear-gradient(135deg, #FF2D20, #9B30FF);
-  box-shadow: 0 0 15px rgba(255, 45, 32, 0.4);
-}
-
-body.theme-neon .buy-btn {
-  background: linear-gradient(135deg, #00ffff, #0080ff);
-  box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
+  .prize-pool-banner {
+    padding: 10px 12px;
+    margin: 8px 12px;
+  }
 }
 
 /* Connection Status */
 .connection-error {
-  background: rgba(244, 67, 54, 0.9);
+  background: rgba(244, 67, 54, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   color: white;
-  padding: 8px 16px;
+  padding: 10px 16px;
   font-size: 0.85rem;
   text-align: center;
+  font-weight: 600;
 }
 
 .connected-dot {
   color: #4caf50;
   margin-left: 6px;
-  font-size: 0.6rem;
+  font-size: 0.7rem;
   animation: pulse-connected 1.5s ease-in-out infinite;
 }
 
@@ -806,28 +925,30 @@ body.theme-neon .buy-btn {
 /* Player Progress Mini */
 .player-progress-mini {
   position: absolute;
-  bottom: -2px;
+  bottom: -4px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.7);
-  padding: 2px 6px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 215, 0, 0.3);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 215, 0, 0.4);
 }
 
 .progress-mini-text {
-  font-size: 0.55rem;
+  font-size: 0.6rem;
   font-weight: 700;
-  color: #ffd700;
+  color: rgba(255, 215, 0, 0.95);
 }
 
-/* Game Over Overlay */
+/* Game Over Overlay - Liquid Glass */
 .game-over-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -835,71 +956,94 @@ body.theme-neon .buy-btn {
 }
 
 .game-over-modal {
-  background: linear-gradient(145deg, #1a1a2e, #16213e);
-  padding: 30px;
-  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  padding: 36px;
+  border-radius: 28px;
   text-align: center;
-  max-width: 300px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  border: 2px solid rgba(255, 215, 0, 0.3);
+  max-width: 320px;
+  box-shadow:
+    0 25px 80px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .game-over-modal h2 {
-  color: #ffd700;
-  margin: 0 0 15px 0;
-  font-size: 1.5rem;
+  color: white;
+  margin: 0 0 16px 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
 .game-over-modal p {
-  color: rgba(255, 255, 255, 0.8);
-  margin: 0 0 20px 0;
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0 0 24px 0;
+  font-weight: 500;
 }
 
 .play-again-btn {
-  background: linear-gradient(135deg, #4caf50, #45a049);
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.7), rgba(56, 142, 60, 0.7));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   color: white;
-  border: none;
-  padding: 14px 28px;
+  border: 1px solid rgba(76, 175, 80, 0.6);
+  padding: 16px 32px;
   border-radius: 25px;
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 20px rgba(76, 175, 80, 0.4);
+}
+
+.play-again-btn:hover {
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.85), rgba(56, 142, 60, 0.85));
+  transform: translateY(-2px);
 }
 
 /* ============================================
-   HOST START GAME SECTION
+   HOST START GAME SECTION - Liquid Glass
    ============================================ */
 
 .start-game-section {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px 16px;
-  background: linear-gradient(180deg, rgba(255, 193, 7, 0.15) 0%, rgba(255, 152, 0, 0.1) 100%);
-  border-radius: 16px;
+  padding: 28px 20px;
   margin: 12px 16px;
-  border: 2px solid rgba(255, 193, 7, 0.3);
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 24px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .waiting-info {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 25px;
 }
 
 .waiting-icon {
-  font-size: 1.2rem;
+  font-size: 1.3rem;
 }
 
 .waiting-text {
-  font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.9);
-  font-weight: 500;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
 }
 
 .start-game-btn {
@@ -907,21 +1051,28 @@ body.theme-neon .buy-btn {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  padding: 18px 48px;
-  background: linear-gradient(135deg, #4caf50, #45a049);
-  border: none;
+  padding: 20px 56px;
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.7), rgba(56, 142, 60, 0.7));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(76, 175, 80, 0.6);
   border-radius: 50px;
   color: white;
-  font-size: 1.3rem;
-  font-weight: 700;
+  font-size: 1.4rem;
+  font-weight: 800;
   cursor: pointer;
-  box-shadow: 0 6px 25px rgba(76, 175, 80, 0.5);
+  box-shadow:
+    0 8px 30px rgba(76, 175, 80, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transition: all 0.3s ease;
 }
 
 .start-game-btn:hover {
-  box-shadow: 0 8px 35px rgba(76, 175, 80, 0.6);
-  transform: translateY(-2px);
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.85), rgba(56, 142, 60, 0.85));
+  box-shadow:
+    0 12px 40px rgba(76, 175, 80, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transform: translateY(-3px);
 }
 
 .start-game-btn:active {
@@ -929,36 +1080,42 @@ body.theme-neon .buy-btn {
 }
 
 .start-icon {
-  font-size: 1.5rem;
+  font-size: 1.6rem;
 }
 
 .start-hint {
-  margin-top: 12px;
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.6);
+  margin-top: 16px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
   text-align: center;
+  font-weight: 500;
 }
 
-/* Waiting for Host (non-host view) */
+/* Waiting for Host (non-host view) - Liquid Glass */
 .waiting-for-host {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 32px 16px;
+  padding: 36px 20px;
   margin: 12px 16px;
-  background: linear-gradient(180deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.1) 100%);
-  border-radius: 16px;
-  border: 2px solid rgba(102, 126, 234, 0.3);
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 24px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .waiting-spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid rgba(102, 126, 234, 0.2);
-  border-top-color: #667eea;
+  width: 52px;
+  height: 52px;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: rgba(255, 255, 255, 0.8);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 @keyframes spin {
@@ -966,13 +1123,14 @@ body.theme-neon .buy-btn {
 }
 
 .waiting-for-host p {
-  font-size: 1rem;
-  color: rgba(255, 255, 255, 0.9);
-  font-weight: 500;
-  margin: 0 0 8px 0;
+  font-size: 1.05rem;
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+  margin: 0 0 10px 0;
 }
 
 .player-count-waiting {
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
 }
