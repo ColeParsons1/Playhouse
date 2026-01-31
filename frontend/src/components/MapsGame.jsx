@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import './MapsGame.css';
 
 // All countries with their ISO codes for flag display and SVG paths
@@ -206,47 +206,50 @@ const ROUNDS_PER_GAME = 10;
 const POINTS_CORRECT = 100;
 const POINTS_SKIP = 0;
 
+const NUM_CHOICES = 4;
+
 const MapsGame = ({ onGameEnd, onClose }) => {
   const [gameState, setGameState] = useState('menu'); // menu, playing, result, ended
   const [currentRound, setCurrentRound] = useState(0);
   const [score, setScore] = useState(0);
-  const [answer, setAnswer] = useState('');
   const [showResult, setShowResult] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [roundCountries, setRoundCountries] = useState([]);
   const [results, setResults] = useState([]);
-  const inputRef = useRef(null);
+  const [choices, setChoices] = useState([]);
+  const [selectedAnswer, setSelectedAnswer] = useState(null);
+
+  // Generate multiple choice options for a given country
+  const generateChoices = useCallback((correctCountry) => {
+    const otherCountries = COUNTRIES.filter(c => c.code !== correctCountry.code);
+    const shuffledOthers = [...otherCountries].sort(() => Math.random() - 0.5);
+    const wrongChoices = shuffledOthers.slice(0, NUM_CHOICES - 1);
+    const allChoices = [correctCountry, ...wrongChoices];
+    return allChoices.sort(() => Math.random() - 0.5);
+  }, []);
 
   // Select random countries for the game
   const startGame = useCallback(() => {
     const shuffled = [...COUNTRIES].sort(() => Math.random() - 0.5);
-    setRoundCountries(shuffled.slice(0, ROUNDS_PER_GAME));
+    const selectedCountries = shuffled.slice(0, ROUNDS_PER_GAME);
+    setRoundCountries(selectedCountries);
+    setChoices(generateChoices(selectedCountries[0]));
     setCurrentRound(0);
     setScore(0);
-    setAnswer('');
+    setSelectedAnswer(null);
     setShowResult(false);
     setResults([]);
     setGameState('playing');
-  }, []);
+  }, [generateChoices]);
 
-  // Focus input when round starts
-  useEffect(() => {
-    if (gameState === 'playing' && !showResult && inputRef.current) {
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }
-  }, [gameState, showResult, currentRound]);
-
-  // Check answer
-  const checkAnswer = useCallback(() => {
-    if (!answer.trim()) return;
+  // Handle selecting an answer
+  const selectAnswer = useCallback((selectedCountry) => {
+    if (showResult) return;
 
     const currentCountry = roundCountries[currentRound];
-    const userAnswer = answer.trim().toLowerCase();
-    const correctName = currentCountry.name.toLowerCase();
-    const altNames = currentCountry.alt || [];
+    const correct = selectedCountry.code === currentCountry.code;
 
-    const correct = userAnswer === correctName || altNames.some(alt => alt.toLowerCase() === userAnswer);
-
+    setSelectedAnswer(selectedCountry);
     setIsCorrect(correct);
     setShowResult(true);
 
@@ -256,44 +259,23 @@ const MapsGame = ({ onGameEnd, onClose }) => {
 
     setResults(prev => [...prev, {
       country: currentCountry,
-      userAnswer: answer.trim(),
+      userAnswer: selectedCountry.name,
       correct
     }]);
-  }, [answer, roundCountries, currentRound]);
-
-  // Skip current round
-  const skipRound = useCallback(() => {
-    const currentCountry = roundCountries[currentRound];
-    setIsCorrect(false);
-    setShowResult(true);
-    setResults(prev => [...prev, {
-      country: currentCountry,
-      userAnswer: '(skipped)',
-      correct: false
-    }]);
-  }, [roundCountries, currentRound]);
+  }, [roundCountries, currentRound, showResult]);
 
   // Next round
   const nextRound = useCallback(() => {
     if (currentRound + 1 >= ROUNDS_PER_GAME) {
       setGameState('ended');
     } else {
-      setCurrentRound(r => r + 1);
-      setAnswer('');
+      const nextRoundIndex = currentRound + 1;
+      setCurrentRound(nextRoundIndex);
+      setChoices(generateChoices(roundCountries[nextRoundIndex]));
+      setSelectedAnswer(null);
       setShowResult(false);
     }
-  }, [currentRound]);
-
-  // Handle enter key
-  const handleKeyPress = useCallback((e) => {
-    if (e.key === 'Enter') {
-      if (showResult) {
-        nextRound();
-      } else {
-        checkAnswer();
-      }
-    }
-  }, [showResult, nextRound, checkAnswer]);
+  }, [currentRound, generateChoices, roundCountries]);
 
   // Get flag URL
   const getFlagUrl = (code) => {
@@ -337,8 +319,8 @@ const MapsGame = ({ onGameEnd, onClose }) => {
               <h3>How to Play</h3>
               <ul>
                 <li>Look at the country shape</li>
-                <li>Type your answer</li>
-                <li>Not case-sensitive!</li>
+                <li>Pick from 4 choices</li>
+                <li>Each flag is a hint!</li>
               </ul>
             </div>
 
@@ -387,46 +369,49 @@ const MapsGame = ({ onGameEnd, onClose }) => {
               </div>
             </div>
 
-            {/* Answer Input */}
-            {!showResult ? (
-              <div className="answer-section">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  className="answer-input"
-                  placeholder="Type country name..."
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  autoComplete="off"
-                  autoCapitalize="off"
-                />
-                <div className="answer-buttons">
-                  <button className="submit-btn" onClick={checkAnswer} disabled={!answer.trim()}>
-                    Submit
-                  </button>
-                  <button className="skip-btn" onClick={skipRound}>
-                    Skip
-                  </button>
-                </div>
+            {/* Multiple Choice Options */}
+            <div className="choices-section">
+              <div className="choices-grid">
+                {choices.map((choice) => {
+                  const isSelected = selectedAnswer?.code === choice.code;
+                  const isCorrectChoice = choice.code === currentCountry.code;
+                  let buttonClass = 'choice-btn';
+
+                  if (showResult) {
+                    if (isCorrectChoice) {
+                      buttonClass += ' correct';
+                    } else if (isSelected && !isCorrectChoice) {
+                      buttonClass += ' incorrect';
+                    } else {
+                      buttonClass += ' disabled';
+                    }
+                  }
+
+                  return (
+                    <button
+                      key={choice.code}
+                      className={buttonClass}
+                      onClick={() => selectAnswer(choice)}
+                      disabled={showResult}
+                    >
+                      <img src={getFlagUrl(choice.code)} alt="" className="choice-flag" />
+                      <span className="choice-name">{choice.name}</span>
+                    </button>
+                  );
+                })}
               </div>
-            ) : (
-              <div className={`result-section ${isCorrect ? 'correct' : 'incorrect'}`}>
-                <div className="result-icon">
-                  {isCorrect ? '✅' : '❌'}
+
+              {showResult && (
+                <div className="result-feedback">
+                  <div className={`result-message ${isCorrect ? 'correct' : 'incorrect'}`}>
+                    {isCorrect ? '✅ Correct!' : '❌ Incorrect'}
+                  </div>
+                  <button className="next-btn" onClick={nextRound}>
+                    {currentRound + 1 >= ROUNDS_PER_GAME ? 'See Results' : 'Next Country'}
+                  </button>
                 </div>
-                <div className="result-text">
-                  {isCorrect ? 'Correct!' : 'Incorrect'}
-                </div>
-                <div className="correct-answer">
-                  <img src={getFlagUrl(currentCountry.code)} alt="Flag" className="result-flag" />
-                  <span>{currentCountry.name}</span>
-                </div>
-                <button className="next-btn" onClick={nextRound}>
-                  {currentRound + 1 >= ROUNDS_PER_GAME ? 'See Results' : 'Next Country'}
-                </button>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Close button */}
             <button className="maps-close-btn" onClick={onClose}>✕</button>

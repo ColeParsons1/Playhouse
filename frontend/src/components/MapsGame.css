@@ -240,124 +240,114 @@
   font-weight: 700;
 }
 
-/* Answer Section */
-.answer-section {
+/* Multiple Choice Section */
+.choices-section {
   padding: 20px;
   padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
   background: rgba(0, 0, 0, 0.3);
 }
 
-.answer-input {
-  width: 100%;
-  padding: 16px 20px;
-  font-size: 1.1rem;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-  outline: none;
-  transition: all 0.3s;
+.choices-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
   margin-bottom: 15px;
 }
 
-.answer-input::placeholder {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.answer-input:focus {
-  border-color: #00D45F;
-  box-shadow: 0 0 20px rgba(0, 212, 95, 0.3);
-}
-
-.answer-buttons {
+.choice-btn {
   display: flex;
-  gap: 12px;
-}
-
-.submit-btn {
-  flex: 1;
-  padding: 14px 24px;
-  background: linear-gradient(135deg, #00D45F, #00A94A);
-  border: none;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
   color: white;
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 0.95rem;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  text-align: left;
 }
 
-.submit-btn:hover:not(:disabled) {
+.choice-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
   transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(0, 212, 95, 0.4);
 }
 
-.submit-btn:disabled {
+.choice-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.choice-btn.correct {
+  background: rgba(0, 212, 95, 0.3);
+  border-color: #00D45F;
+  animation: pulse-correct 0.5s ease-out;
+}
+
+.choice-btn.incorrect {
+  background: rgba(255, 45, 32, 0.3);
+  border-color: #FF2D20;
+  animation: shake 0.5s ease-out;
+}
+
+.choice-btn.disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.skip-btn {
-  padding: 14px 24px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
+@keyframes pulse-correct {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+  100% { transform: scale(1); }
 }
 
-.skip-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
 }
 
-/* Result Section */
-.result-section {
-  padding: 25px 20px;
-  padding-bottom: max(25px, env(safe-area-inset-bottom, 0px));
-  background: rgba(0, 0, 0, 0.4);
-  text-align: center;
-}
-
-.result-section.correct {
-  background: rgba(0, 212, 95, 0.2);
-}
-
-.result-section.incorrect {
-  background: rgba(255, 45, 32, 0.2);
-}
-
-.result-icon {
-  font-size: 3rem;
-  margin-bottom: 10px;
-}
-
-.result-text {
-  font-size: 1.5rem;
-  font-weight: 800;
-  color: white;
-  margin-bottom: 15px;
-}
-
-.correct-answer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: white;
-  margin-bottom: 20px;
-}
-
-.result-flag {
-  width: 40px;
+.choice-flag {
+  width: 32px;
   height: auto;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  border-radius: 3px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+
+.choice-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Result Feedback */
+.result-feedback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  padding-top: 10px;
+}
+
+.result-message {
+  font-size: 1.3rem;
+  font-weight: 800;
+  padding: 8px 20px;
+  border-radius: 20px;
+}
+
+.result-message.correct {
+  background: rgba(0, 212, 95, 0.2);
+  color: #00D45F;
+}
+
+.result-message.incorrect {
+  background: rgba(255, 45, 32, 0.2);
+  color: #FF2D20;
 }
 
 .next-btn {
@@ -573,6 +563,20 @@
   .maps-score {
     padding: 8px 12px;
     font-size: 0.95rem;
+  }
+
+  .choices-grid {
+    gap: 8px;
+  }
+
+  .choice-btn {
+    padding: 12px 10px;
+    font-size: 0.85rem;
+    gap: 8px;
+  }
+
+  .choice-flag {
+    width: 26px;
   }
 
   .result-row {
