@@ -137,6 +137,7 @@ const AngryDucksGame = ({ onGameEnd, onClose }) => {
       health: 100,
       vx: 0,
       vy: 0,
+      isStatic: true, // Only becomes dynamic after being hit
     }));
 
     // Scale blocks
@@ -152,6 +153,7 @@ const AngryDucksGame = ({ onGameEnd, onClose }) => {
       vy: 0,
       rotation: 0,
       rotationVel: 0,
+      isStatic: true, // Only becomes dynamic after being hit
     }));
 
     debrisRef.current = [];
@@ -339,6 +341,7 @@ const AngryDucksGame = ({ onGameEnd, onClose }) => {
             piggy.health -= damage;
             piggy.vx += duck.vx * 0.5;
             piggy.vy += duck.vy * 0.5;
+            piggy.isStatic = false; // Activate physics
             duck.vx *= 0.5;
             duck.vy *= 0.5;
           }
@@ -352,6 +355,7 @@ const AngryDucksGame = ({ onGameEnd, onClose }) => {
             block.vx += duck.vx * 0.3;
             block.vy += duck.vy * 0.3;
             block.rotationVel += (Math.random() - 0.5) * 0.1;
+            block.isStatic = false; // Activate physics
             duck.vx *= -0.4;
             duck.vy *= -0.4;
           }
@@ -360,15 +364,18 @@ const AngryDucksGame = ({ onGameEnd, onClose }) => {
 
       // Update piggies
       piggiesRef.current.forEach(piggy => {
-        piggy.vy += GRAVITY * 0.5;
-        piggy.x += piggy.vx;
-        piggy.y += piggy.vy;
-        piggy.vx *= 0.95;
+        // Only apply physics if not static
+        if (!piggy.isStatic) {
+          piggy.vy += GRAVITY * 0.5;
+          piggy.x += piggy.vx;
+          piggy.y += piggy.vy;
+          piggy.vx *= 0.95;
 
-        if (piggy.y > ground - piggy.size) {
-          piggy.y = ground - piggy.size;
-          piggy.vy *= -0.3;
-          if (Math.abs(piggy.vy) < 1) piggy.vy = 0;
+          if (piggy.y > ground - piggy.size) {
+            piggy.y = ground - piggy.size;
+            piggy.vy *= -0.3;
+            if (Math.abs(piggy.vy) < 1) piggy.vy = 0;
+          }
         }
 
         // Piggy-block collision
@@ -377,6 +384,7 @@ const AngryDucksGame = ({ onGameEnd, onClose }) => {
             const impact = Math.sqrt(block.vx * block.vx + block.vy * block.vy);
             if (impact > 1) {
               piggy.health -= impact * 8;
+              piggy.isStatic = false; // Activate physics when hit by falling block
             }
           }
         });
@@ -395,27 +403,30 @@ const AngryDucksGame = ({ onGameEnd, onClose }) => {
 
       // Update blocks
       blocksRef.current.forEach(block => {
-        block.vy += GRAVITY * 0.3;
-        block.x += block.vx;
-        block.y += block.vy;
-        block.vx *= 0.95;
-        block.rotation += block.rotationVel;
-        block.rotationVel *= 0.95;
+        // Only apply physics if not static
+        if (!block.isStatic) {
+          block.vy += GRAVITY * 0.3;
+          block.x += block.vx;
+          block.y += block.vy;
+          block.vx *= 0.95;
+          block.rotation += block.rotationVel;
+          block.rotationVel *= 0.95;
 
-        if (block.y > ground - block.height / 2) {
-          block.y = ground - block.height / 2;
-          block.vy *= -0.3;
-          block.rotationVel *= 0.5;
-          if (Math.abs(block.vy) < 1) block.vy = 0;
-        }
+          if (block.y > ground - block.height / 2) {
+            block.y = ground - block.height / 2;
+            block.vy *= -0.3;
+            block.rotationVel *= 0.5;
+            if (Math.abs(block.vy) < 1) block.vy = 0;
+          }
 
-        if (block.x < block.width / 2) {
-          block.x = block.width / 2;
-          block.vx *= -0.5;
-        }
-        if (block.x > width - block.width / 2) {
-          block.x = width - block.width / 2;
-          block.vx *= -0.5;
+          if (block.x < block.width / 2) {
+            block.x = block.width / 2;
+            block.vx *= -0.5;
+          }
+          if (block.x > width - block.width / 2) {
+            block.x = width - block.width / 2;
+            block.vx *= -0.5;
+          }
         }
       });
 
