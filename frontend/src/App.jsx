@@ -7,6 +7,7 @@ import BottomNav from './components/BottomNav';
 import VoiceRoomsLobby from './components/VoiceRoomsLobby';
 import VoiceRoomGame from './components/VoiceRoomGame';
 import AuthPage from './components/AuthPage';
+import BuyCoinsModal from './components/BuyCoinsModal';
 import './App.css';
 
 // AnniversaryCard removed - Tanvi loved it!
@@ -44,6 +45,7 @@ function App() {
   const [currentRoom, setCurrentRoom] = useState(null);
   const [inGame, setInGame] = useState(false);
   const [activeTheme, setActiveTheme] = useState('default');
+  const [showBuyCoins, setShowBuyCoins] = useState(false);
 
   useEffect(() => {
     initializeApp();
@@ -231,9 +233,10 @@ function App() {
                   </div>
                 </div>
                 <div className="header-actions">
-                  <div className="currency-pill" onClick={() => setShowShop(true)}>
+                  <div className="currency-pill">
                     <span>💎 {player?.gems || 0}</span>
                     <span>🪙 {player?.coins?.toLocaleString() || 0}</span>
+                    <button className="add-coins-btn" onClick={() => setShowBuyCoins(true)}>+</button>
                   </div>
                 </div>
               </div>
@@ -357,6 +360,13 @@ function App() {
             </Suspense>
           )}
         </AnimatePresence>
+
+        {/* Buy Coins Modal */}
+        <BuyCoinsModal
+          isOpen={showBuyCoins}
+          onClose={() => setShowBuyCoins(false)}
+          player={player}
+        />
       </div>
     </ThemeProvider>
   );

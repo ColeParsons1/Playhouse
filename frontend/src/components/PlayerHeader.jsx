@@ -1,8 +1,10 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { motion } from 'framer-motion';
+import BuyCoinsModal from './BuyCoinsModal';
 import './PlayerHeader.css';
 
 const PlayerHeader = memo(({ player, onShopClick, onStatsClick }) => {
+  const [showBuyCoins, setShowBuyCoins] = useState(false);
   if (!player) return null;
 
   return (
@@ -39,6 +41,14 @@ const PlayerHeader = memo(({ player, onShopClick, onStatsClick }) => {
           >
             <span className="currency-icon">🪙</span>
             <span className="currency-amount">{player.coins?.toLocaleString() || 0}</span>
+            <motion.button
+              className="add-currency-btn"
+              onClick={() => setShowBuyCoins(true)}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+            >
+              +
+            </motion.button>
           </motion.div>
           <motion.div
             className="currency gems"
@@ -49,6 +59,12 @@ const PlayerHeader = memo(({ player, onShopClick, onStatsClick }) => {
           </motion.div>
         </div>
       </div>
+
+      <BuyCoinsModal
+        isOpen={showBuyCoins}
+        onClose={() => setShowBuyCoins(false)}
+        player={player}
+      />
 
       <div className="header-right">
         <motion.button
