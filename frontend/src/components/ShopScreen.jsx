@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { shopApi } from '../api/client';
+import BuyCoinsModal from './BuyCoinsModal';
 import './ShopScreen.css';
 
 const SHOP_CATEGORIES = [
@@ -72,6 +73,7 @@ const ShopScreen = ({ player, onClose, onPurchase }) => {
   const [items, setItems] = useState(MOCK_ITEMS);
   const [loading, setLoading] = useState(false);
   const [purchaseModal, setPurchaseModal] = useState(null);
+  const [showBuyCoins, setShowBuyCoins] = useState(false);
 
   const fetchItems = useCallback(async () => {
     if (!player?.id) return;
@@ -139,7 +141,7 @@ const ShopScreen = ({ player, onClose, onPurchase }) => {
         <div className="balance-items">
           <span className="balance-item gems">💎 {player?.gems || 0}</span>
           <span className="balance-item coins">🪙 {player?.coins?.toLocaleString() || 0}</span>
-          <button className="add-btn">+</button>
+          <button className="add-btn" onClick={() => setShowBuyCoins(true)}>+</button>
         </div>
       </div>
 
@@ -206,6 +208,13 @@ const ShopScreen = ({ player, onClose, onPurchase }) => {
           View more <span>›</span>
         </button>
       )}
+
+      {/* Buy Coins Modal */}
+      <BuyCoinsModal
+        isOpen={showBuyCoins}
+        onClose={() => setShowBuyCoins(false)}
+        player={player}
+      />
 
       {/* Purchase Modal */}
       <AnimatePresence>

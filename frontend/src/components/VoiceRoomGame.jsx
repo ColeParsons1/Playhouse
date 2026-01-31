@@ -2,32 +2,29 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import './VoiceRoomGame.css';
 
-// WebRTC configuration with STUN and TURN servers for NAT traversal
+// WebRTC configuration with our own TURN server for reliable cross-network connectivity
 const RTC_CONFIG = {
   iceServers: [
+    // Google STUN servers (free, reliable)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    // Free TURN servers from OpenRelay
+    // Our own TURN server (for NAT traversal across different networks)
     {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
+      urls: 'turn:GAME_SERVER_IP:3478',
+      username: 'playhouse',
+      credential: 'PLACEHOLDER_CREDENTIAL'
     },
     {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
+      urls: 'turn:GAME_SERVER_IP:3478?transport=tcp',
+      username: 'playhouse',
+      credential: 'PLACEHOLDER_CREDENTIAL'
     },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
   ],
-  iceCandidatePoolSize: 10
+  iceCandidatePoolSize: 10,
+  iceTransportPolicy: 'all',
+  bundlePolicy: 'max-bundle',
+  rtcpMuxPolicy: 'require'
 };
 
 // Generate a random bingo card
@@ -442,21 +439,72 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
       }
     };
 
+    // Track retry attempts and timeout
+    let retryCount = 0;
+    const maxRetries = 2;
+    let connectionTimeout = null;
+
+    // Set a timeout for the connection attempt
+    connectionTimeout = setTimeout(() => {
+      if (pc.iceConnectionState === 'checking' || pc.iceConnectionState === 'new') {
+        console.log('Connection timeout reached for peer:', peerId);
+        setVoiceStatus('error');
+        setChat(prev => [...prev, {
+          id: Date.now(),
+          player: 'System',
+          message: '⏱️ Voice connection timed out. Your networks may be incompatible for direct voice chat.',
+          isSystem: true
+        }]);
+      }
+    }, 15000); // 15 second timeout
+
     // Handle ICE connection state changes
     pc.oniceconnectionstatechange = () => {
       console.log(`ICE connection state with ${peerId}:`, pc.iceConnectionState);
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        clearTimeout(connectionTimeout);
+        retryCount = 0; // Reset retries on success
         setVoiceStatus('connected');
         setConnectedPeers(prev => prev + 1);
-      } else if (pc.iceConnectionState === 'failed') {
-        console.error('ICE connection failed with peer:', peerId);
         setChat(prev => [...prev, {
           id: Date.now(),
           player: 'System',
-          message: '⚠️ Voice connection failed. Try refreshing.',
+          message: '✅ Voice connected! You can now talk!',
           isSystem: true
         }]);
+      } else if (pc.iceConnectionState === 'checking') {
+        console.log('ICE checking - waiting for connection...');
+      } else if (pc.iceConnectionState === 'failed') {
+        clearTimeout(connectionTimeout);
+        console.error('ICE connection failed with peer:', peerId);
+        retryCount++;
+
+        if (retryCount <= maxRetries) {
+          setChat(prev => [...prev, {
+            id: Date.now(),
+            player: 'System',
+            message: `⚠️ Retrying voice connection (${retryCount}/${maxRetries})...`,
+            isSystem: true
+          }]);
+          // Try to restart ICE
+          pc.restartIce();
+        } else {
+          setVoiceStatus('error');
+          setChat(prev => [...prev, {
+            id: Date.now(),
+            player: 'System',
+            message: '❌ Voice chat unavailable. Try being on the same WiFi network.',
+            isSystem: true
+          }]);
+        }
+      } else if (pc.iceConnectionState === 'disconnected') {
+        console.log('ICE disconnected, may reconnect...');
       }
+    };
+
+    // Handle ICE gathering state
+    pc.onicegatheringstatechange = () => {
+      console.log(`ICE gathering state with ${peerId}:`, pc.iceGatheringState);
     };
 
     // Handle connection state changes
