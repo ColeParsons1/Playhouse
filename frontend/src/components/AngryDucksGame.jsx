@@ -802,11 +802,11 @@ const AngryDucksGame = ({ onGameEnd, onClose }) => {
     if (nextLevel >= LEVELS.length) {
       setGameState('gameOver');
     } else {
-      setCurrentLevel(nextLevel);
-      // Canvas is already initialized, so directly load the level
+      // Load the next level directly (canvas is already initialized)
       loadLevel(nextLevel);
-      // Already in playing state, just reset level loaded flag
-      levelLoadedRef.current = true;
+      setCurrentLevel(nextLevel);
+      // Transition back to playing state
+      setGameState('playing');
     }
   }, [currentLevel, loadLevel]);
 
