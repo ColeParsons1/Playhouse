@@ -76,6 +76,15 @@ class RoomConsumer(AsyncWebsocketConsumer):
             await self.handle_player_progress(data)
         elif message_type == 'mute_toggle':
             await self.handle_mute_toggle(data)
+        # WebRTC signaling
+        elif message_type == 'webrtc_offer':
+            await self.handle_webrtc_offer(data)
+        elif message_type == 'webrtc_answer':
+            await self.handle_webrtc_answer(data)
+        elif message_type == 'webrtc_ice_candidate':
+            await self.handle_webrtc_ice_candidate(data)
+        elif message_type == 'webrtc_ready':
+            await self.handle_webrtc_ready(data)
 
     async def handle_chat_message(self, data):
         """Handle chat messages"""
@@ -181,6 +190,67 @@ class RoomConsumer(AsyncWebsocketConsumer):
             }
         )
 
+    # WebRTC signaling handlers
+    async def handle_webrtc_ready(self, data):
+        """Handle player announcing they're ready for WebRTC connections"""
+        player_data = await self.get_player_data()
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'webrtc_ready',
+                'player': player_data,
+                'sender_channel': self.channel_name
+            }
+        )
+
+    async def handle_webrtc_offer(self, data):
+        """Handle WebRTC offer - forward to specific peer"""
+        player_data = await self.get_player_data()
+        target_id = data.get('target_id')
+        offer = data.get('offer')
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'webrtc_offer',
+                'offer': offer,
+                'from_player': player_data,
+                'target_id': target_id
+            }
+        )
+
+    async def handle_webrtc_answer(self, data):
+        """Handle WebRTC answer - forward to specific peer"""
+        player_data = await self.get_player_data()
+        target_id = data.get('target_id')
+        answer = data.get('answer')
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'webrtc_answer',
+                'answer': answer,
+                'from_player': player_data,
+                'target_id': target_id
+            }
+        )
+
+    async def handle_webrtc_ice_candidate(self, data):
+        """Handle ICE candidate - forward to specific peer"""
+        player_data = await self.get_player_data()
+        target_id = data.get('target_id')
+        candidate = data.get('candidate')
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'webrtc_ice_candidate',
+                'candidate': candidate,
+                'from_player': player_data,
+                'target_id': target_id
+            }
+        )
+
     async def handle_game_action(self, data):
         """Handle generic game actions"""
         action = data.get('action')
@@ -269,6 +339,42 @@ class RoomConsumer(AsyncWebsocketConsumer):
             'payload': event['payload'],
             'player': event['player']
         }))
+
+    # WebRTC signaling event handlers
+    async def webrtc_ready(self, event):
+        """Forward WebRTC ready signal to all peers except sender"""
+        if event.get('sender_channel') != self.channel_name:
+            await self.send(text_data=json.dumps({
+                'type': 'webrtc_ready',
+                'player': event['player']
+            }))
+
+    async def webrtc_offer(self, event):
+        """Forward WebRTC offer to target peer only"""
+        if self.player_id and str(event.get('target_id')) == str(self.player_id):
+            await self.send(text_data=json.dumps({
+                'type': 'webrtc_offer',
+                'offer': event['offer'],
+                'from_player': event['from_player']
+            }))
+
+    async def webrtc_answer(self, event):
+        """Forward WebRTC answer to target peer only"""
+        if self.player_id and str(event.get('target_id')) == str(self.player_id):
+            await self.send(text_data=json.dumps({
+                'type': 'webrtc_answer',
+                'answer': event['answer'],
+                'from_player': event['from_player']
+            }))
+
+    async def webrtc_ice_candidate(self, event):
+        """Forward ICE candidate to target peer only"""
+        if self.player_id and str(event.get('target_id')) == str(self.player_id):
+            await self.send(text_data=json.dumps({
+                'type': 'webrtc_ice_candidate',
+                'candidate': event['candidate'],
+                'from_player': event['from_player']
+            }))
 
     # Database helpers
     @database_sync_to_async

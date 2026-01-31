@@ -2,6 +2,15 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import './VoiceRoomGame.css';
 
+// WebRTC configuration with STUN servers for NAT traversal
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+  ]
+};
+
 // Generate a random bingo card
 const generateBingoCard = () => {
   const card = [];
@@ -73,6 +82,11 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   const chatRef = useRef(null);
   const autoCallRef = useRef(null);
   const countdownRef = useRef(null);
+
+  // WebRTC refs
+  const localStreamRef = useRef(null);
+  const peerConnectionsRef = useRef({}); // { peerId: RTCPeerConnection }
+  const audioElementsRef = useRef({}); // { peerId: HTMLAudioElement }
 
   // Initialize bingo cards
   useEffect(() => {
@@ -168,6 +182,9 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
         break;
 
       case 'player_left':
+        if (data.player?.id) {
+          cleanupPeerConnection(data.player.id);
+        }
         setPlayers(prev => prev.filter(p => p.id !== data.player?.id));
         setChat(prev => [...prev, {
           id: Date.now(),
@@ -224,10 +241,35 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
         ));
         break;
 
+      // WebRTC signaling messages
+      case 'webrtc_ready':
+        if (data.player && data.player.id !== player?.id) {
+          handlePeerReady(data.player);
+        }
+        break;
+
+      case 'webrtc_offer':
+        if (data.from_player) {
+          handleWebRTCOffer(data.from_player, data.offer);
+        }
+        break;
+
+      case 'webrtc_answer':
+        if (data.from_player) {
+          handleWebRTCAnswer(data.from_player, data.answer);
+        }
+        break;
+
+      case 'webrtc_ice_candidate':
+        if (data.from_player) {
+          handleWebRTCIceCandidate(data.from_player, data.candidate);
+        }
+        break;
+
       default:
         console.log('Unknown message type:', data.type);
     }
-  }, []);
+  }, [player?.id, handlePeerReady, handleWebRTCOffer, handleWebRTCAnswer, handleWebRTCIceCandidate, cleanupPeerConnection]);
 
   // Initialize mock mode for offline/fallback
   const initializeMockMode = useCallback(() => {
@@ -243,6 +285,230 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
       isSystem: true
     }]);
   }, [player]);
+
+  // ====== WebRTC Voice Chat Functions ======
+
+  // Initialize local microphone stream
+  const initializeLocalStream = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
+        video: false
+      });
+      localStreamRef.current = stream;
+      console.log('Microphone initialized successfully');
+
+      // If muted by default, disable audio tracks
+      if (isMuted) {
+        stream.getAudioTracks().forEach(track => {
+          track.enabled = false;
+        });
+      }
+
+      // Announce we're ready for WebRTC connections
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'webrtc_ready' }));
+      }
+
+      return stream;
+    } catch (error) {
+      console.error('Failed to get microphone access:', error);
+      setChat(prev => [...prev, {
+        id: Date.now(),
+        player: 'System',
+        message: 'Microphone access denied. Voice chat unavailable.',
+        isSystem: true
+      }]);
+      return null;
+    }
+  }, [isMuted]);
+
+  // Create a peer connection for a specific peer
+  const createPeerConnection = useCallback((peerId, isInitiator) => {
+    if (peerConnectionsRef.current[peerId]) {
+      console.log('Peer connection already exists for:', peerId);
+      return peerConnectionsRef.current[peerId];
+    }
+
+    console.log(`Creating peer connection for ${peerId}, initiator: ${isInitiator}`);
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+
+    // Add local audio track to the connection
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        pc.addTrack(track, localStreamRef.current);
+      });
+    }
+
+    // Handle incoming audio stream from peer
+    pc.ontrack = (event) => {
+      console.log('Received remote track from:', peerId);
+      const remoteStream = event.streams[0];
+
+      // Create or reuse audio element for this peer
+      if (!audioElementsRef.current[peerId]) {
+        const audio = new Audio();
+        audio.autoplay = true;
+        audio.playsInline = true;
+        audioElementsRef.current[peerId] = audio;
+      }
+
+      audioElementsRef.current[peerId].srcObject = remoteStream;
+      audioElementsRef.current[peerId].play().catch(e => console.log('Audio play error:', e));
+
+      // Update player speaking state based on audio activity
+      setPlayers(prev => prev.map(p =>
+        p.id === peerId ? { ...p, isSpeaking: true } : p
+      ));
+    };
+
+    // Handle ICE candidates
+    pc.onicecandidate = (event) => {
+      if (event.candidate && wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'webrtc_ice_candidate',
+          target_id: peerId,
+          candidate: event.candidate
+        }));
+      }
+    };
+
+    // Handle connection state changes
+    pc.onconnectionstatechange = () => {
+      console.log(`Connection state with ${peerId}:`, pc.connectionState);
+      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+        cleanupPeerConnection(peerId);
+      }
+    };
+
+    peerConnectionsRef.current[peerId] = pc;
+    return pc;
+  }, []);
+
+  // Cleanup a specific peer connection
+  const cleanupPeerConnection = useCallback((peerId) => {
+    const pc = peerConnectionsRef.current[peerId];
+    if (pc) {
+      pc.close();
+      delete peerConnectionsRef.current[peerId];
+    }
+
+    const audio = audioElementsRef.current[peerId];
+    if (audio) {
+      audio.srcObject = null;
+      delete audioElementsRef.current[peerId];
+    }
+
+    setPlayers(prev => prev.map(p =>
+      p.id === peerId ? { ...p, isSpeaking: false } : p
+    ));
+  }, []);
+
+  // Cleanup all WebRTC resources
+  const cleanupAllWebRTC = useCallback(() => {
+    // Stop local stream
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+
+    // Close all peer connections
+    Object.keys(peerConnectionsRef.current).forEach(peerId => {
+      cleanupPeerConnection(peerId);
+    });
+  }, [cleanupPeerConnection]);
+
+  // Handle incoming WebRTC offer
+  const handleWebRTCOffer = useCallback(async (fromPlayer, offer) => {
+    console.log('Received offer from:', fromPlayer.id);
+    const pc = createPeerConnection(fromPlayer.id, false);
+
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'webrtc_answer',
+          target_id: fromPlayer.id,
+          answer: answer
+        }));
+      }
+    } catch (error) {
+      console.error('Error handling offer:', error);
+    }
+  }, [createPeerConnection]);
+
+  // Handle incoming WebRTC answer
+  const handleWebRTCAnswer = useCallback(async (fromPlayer, answer) => {
+    console.log('Received answer from:', fromPlayer.id);
+    const pc = peerConnectionsRef.current[fromPlayer.id];
+
+    if (pc) {
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      } catch (error) {
+        console.error('Error handling answer:', error);
+      }
+    }
+  }, []);
+
+  // Handle incoming ICE candidate
+  const handleWebRTCIceCandidate = useCallback(async (fromPlayer, candidate) => {
+    const pc = peerConnectionsRef.current[fromPlayer.id];
+
+    if (pc && candidate) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (error) {
+        console.error('Error adding ICE candidate:', error);
+      }
+    }
+  }, []);
+
+  // Handle new peer announcing they're ready
+  const handlePeerReady = useCallback(async (peerPlayer) => {
+    if (peerPlayer.id === player?.id) return; // Skip self
+
+    console.log('Peer ready:', peerPlayer.name);
+
+    // As the existing peer, initiate connection to new peer
+    const pc = createPeerConnection(peerPlayer.id, true);
+
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'webrtc_offer',
+          target_id: peerPlayer.id,
+          offer: offer
+        }));
+      }
+    } catch (error) {
+      console.error('Error creating offer:', error);
+    }
+  }, [createPeerConnection, player?.id]);
+
+  // Initialize microphone when connected
+  useEffect(() => {
+    if (isConnected && !localStreamRef.current) {
+      initializeLocalStream();
+    }
+  }, [isConnected, initializeLocalStream]);
+
+  // Cleanup WebRTC on unmount
+  useEffect(() => {
+    return () => {
+      cleanupAllWebRTC();
+    };
+  }, [cleanupAllWebRTC]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -507,12 +773,20 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
 
   // Handle mute toggle
   const handleMuteToggle = () => {
-    setIsMuted(!isMuted);
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
+
+    // Enable/disable local audio tracks
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = !newMutedState;
+      });
+    }
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'mute_toggle',
-        is_muted: !isMuted
+        is_muted: newMutedState
       }));
     }
   };
