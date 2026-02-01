@@ -402,6 +402,72 @@ export const CornholeIcon = ({ size = 64 }) => (
   </svg>
 );
 
+// Simulator - 3D City Car
+const SimulatorIcon = ({ size = 60 }) => (
+  <svg width={size} height={size} viewBox="0 0 80 80" fill="none">
+    {/* Night sky background */}
+    <rect width="80" height="80" rx="12" fill="url(#nightSky)" />
+
+    {/* City buildings silhouette */}
+    <rect x="5" y="28" width="8" height="32" fill="#2d3748" />
+    <rect x="15" y="20" width="10" height="40" fill="#1a202c" />
+    <rect x="27" y="32" width="7" height="28" fill="#2d3748" />
+    <rect x="36" y="15" width="12" height="45" fill="#1a202c" />
+    <rect x="50" y="25" width="8" height="35" fill="#2d3748" />
+    <rect x="60" y="18" width="10" height="42" fill="#1a202c" />
+    <rect x="72" y="30" width="6" height="30" fill="#2d3748" />
+
+    {/* Building windows (lit) */}
+    <rect x="17" y="24" width="2" height="2" fill="#fef08a" opacity="0.8" />
+    <rect x="21" y="28" width="2" height="2" fill="#fef08a" opacity="0.6" />
+    <rect x="17" y="34" width="2" height="2" fill="#fef08a" opacity="0.9" />
+    <rect x="39" y="20" width="2" height="2" fill="#fef08a" opacity="0.7" />
+    <rect x="43" y="26" width="2" height="2" fill="#fef08a" opacity="0.8" />
+    <rect x="39" y="32" width="2" height="2" fill="#fef08a" opacity="0.6" />
+    <rect x="43" y="38" width="2" height="2" fill="#fef08a" opacity="0.9" />
+    <rect x="62" y="24" width="2" height="2" fill="#fef08a" opacity="0.7" />
+    <rect x="66" y="30" width="2" height="2" fill="#fef08a" opacity="0.8" />
+
+    {/* Road */}
+    <rect x="0" y="60" width="80" height="20" fill="#374151" />
+    <rect x="10" y="68" width="12" height="2" fill="#fbbf24" />
+    <rect x="30" y="68" width="12" height="2" fill="#fbbf24" />
+    <rect x="50" y="68" width="12" height="2" fill="#fbbf24" />
+    <rect x="70" y="68" width="8" height="2" fill="#fbbf24" />
+
+    {/* Car body */}
+    <rect x="28" y="52" width="24" height="10" rx="2" fill="#dc2626" />
+    <rect x="31" y="47" width="18" height="7" rx="2" fill="#1f2937" />
+
+    {/* Car windows */}
+    <rect x="33" y="48" width="6" height="4" rx="1" fill="#60a5fa" opacity="0.8" />
+    <rect x="41" y="48" width="6" height="4" rx="1" fill="#60a5fa" opacity="0.8" />
+
+    {/* Car wheels */}
+    <circle cx="33" cy="62" r="4" fill="#1f2937" />
+    <circle cx="33" cy="62" r="2" fill="#6b7280" />
+    <circle cx="47" cy="62" r="4" fill="#1f2937" />
+    <circle cx="47" cy="62" r="2" fill="#6b7280" />
+
+    {/* Headlights glow */}
+    <ellipse cx="52" cy="57" rx="2" ry="1.5" fill="#fef9c3" />
+    <ellipse cx="52" cy="57" rx="4" ry="3" fill="#fef9c3" opacity="0.3" />
+
+    {/* Stars */}
+    <circle cx="12" cy="10" r="1" fill="white" opacity="0.8" />
+    <circle cx="35" cy="8" r="0.8" fill="white" opacity="0.6" />
+    <circle cx="60" cy="12" r="1" fill="white" opacity="0.7" />
+    <circle cx="72" cy="6" r="0.8" fill="white" opacity="0.9" />
+
+    <defs>
+      <linearGradient id="nightSky" x1="0" y1="0" x2="0" y2="80">
+        <stop offset="0%" stopColor="#0f172a" />
+        <stop offset="100%" stopColor="#1e293b" />
+      </linearGradient>
+    </defs>
+  </svg>
+);
+
 // Export all icons as a map
 export const GameIconMap = {
   bingo: BingoIcon,
@@ -425,6 +491,7 @@ export const GameIconMap = {
   pong: PongIcon,
   maps: MapsIcon,
   cornhole: CornholeIcon,
+  simulator: SimulatorIcon,
 };
 
 export default GameIconMap;

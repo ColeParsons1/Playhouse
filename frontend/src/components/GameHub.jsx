@@ -27,6 +27,8 @@ const PegGame = lazy(() => import('./PegGame'));
 const PongGame = lazy(() => import('./PongGame'));
 const MapsGame = lazy(() => import('./MapsGame'));
 const CornholeGame = lazy(() => import('./CornholeGame'));
+const DriveGame = lazy(() => import('./SimulatorGame'));
+const FlyGame = lazy(() => import('./FlyGame'));
 
 // McDonald's PlayPlace color palette - vibrant & saturated
 const PLAYPLACE_COLORS = {
@@ -187,6 +189,20 @@ const GAMES = [
     description: 'Toss bags for points!',
     color: PLAYPLACE_COLORS.orange,
   },
+  {
+    id: 'drive',
+    name: 'Drive',
+    emoji: '🚗',
+    description: '3D city driving!',
+    color: '#1a0a2e',
+  },
+  {
+    id: 'fly',
+    name: 'Fly',
+    emoji: '✈️',
+    description: 'Pilot a plane!',
+    color: '#0a2e4a',
+  },
 ];
 
 // Loading fallback component
@@ -320,6 +336,8 @@ const GameHub = ({ player, onPlayerUpdate }) => {
       pong: PongGame,
       maps: MapsGame,
       cornhole: CornholeGame,
+      drive: DriveGame,
+      fly: FlyGame,
     }[activeGame];
 
     if (!GameComponent) return null;

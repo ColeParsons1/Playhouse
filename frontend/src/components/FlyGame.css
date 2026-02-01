@@ -1,0 +1,639 @@
+/* Fly Game - Flight Simulator Styles */
+
+.fly-game {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh; /* Dynamic viewport height for mobile */
+  background: #87CEEB; /* Sky blue - should match Three.js scene background */
+  overflow: hidden;
+  z-index: 10000; /* Above everything including nav bars */
+}
+
+.fly-canvas-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  z-index: 1;
+}
+
+.fly-canvas-container canvas {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Exit Button */
+.fly-game .exit-btn {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.fly-game .exit-btn:hover {
+  background: rgba(255, 0, 0, 0.6);
+  border-color: rgba(255, 0, 0, 0.8);
+}
+
+/* Flight HUD */
+.flight-hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  font-family: 'Courier New', monospace;
+  z-index: 100;
+}
+
+/* HUD Panels */
+.hud-panel {
+  position: absolute;
+  background: rgba(0, 20, 40, 0.75);
+  border: 2px solid rgba(0, 200, 255, 0.5);
+  border-radius: 8px;
+  padding: 10px 15px;
+  color: #00ffaa;
+  text-align: center;
+  box-shadow:
+    0 0 20px rgba(0, 200, 255, 0.2),
+    inset 0 0 20px rgba(0, 0, 0, 0.3);
+}
+
+.panel-label {
+  font-size: 10px;
+  color: rgba(0, 200, 255, 0.8);
+  letter-spacing: 2px;
+  margin-bottom: 5px;
+}
+
+.panel-value {
+  font-size: 28px;
+  font-weight: bold;
+  text-shadow: 0 0 10px rgba(0, 255, 170, 0.5);
+}
+
+.panel-unit {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 2px;
+}
+
+/* Airspeed Indicator */
+.airspeed-panel {
+  top: 20px;
+  right: 180px;
+  min-width: 100px;
+}
+
+/* Altimeter */
+.altitude-panel {
+  top: 20px;
+  right: 20px;
+  min-width: 120px;
+}
+
+/* Heading */
+.heading-panel {
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 100px;
+}
+
+/* Throttle */
+.throttle-panel {
+  bottom: 220px;
+  left: 20px;
+  width: 60px;
+  height: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.throttle-bar {
+  width: 30px;
+  height: 80px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(0, 200, 255, 0.4);
+  border-radius: 4px;
+  margin: 10px 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.throttle-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, #00aa44, #00ff66, #ffff00, #ff6600);
+  transition: height 0.1s ease;
+}
+
+.throttle-panel .panel-value {
+  font-size: 18px;
+}
+
+/* Pitch Indicator */
+.pitch-panel {
+  bottom: 220px;
+  right: 20px;
+  min-width: 80px;
+}
+
+/* Stall Warning */
+.stall-warning {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 0, 0, 0.8);
+  border: 3px solid #ff0000;
+  border-radius: 10px;
+  padding: 20px 40px;
+  animation: stall-flash 0.3s ease-in-out infinite alternate;
+}
+
+.stall-warning span {
+  color: white;
+  font-size: 24px;
+  font-weight: bold;
+  text-shadow: 0 0 10px rgba(255, 0, 0, 1);
+}
+
+@keyframes stall-flash {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0.7; transform: translate(-50%, -50%) scale(1.05); }
+}
+
+/* Touch Controls - Swipe Areas */
+.touch-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 200px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: auto;
+  z-index: 100;
+}
+
+/* Throttle Area (Left side) */
+.throttle-area {
+  width: 30%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.throttle-zone {
+  width: 80px;
+  height: 160px;
+  background: rgba(0, 50, 80, 0.6);
+  border: 2px solid rgba(0, 255, 170, 0.5);
+  border-radius: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 20px rgba(0, 255, 170, 0.2);
+}
+
+.throttle-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: rgba(0, 255, 170, 0.8);
+}
+
+.throttle-icon {
+  font-size: 20px;
+  opacity: 0.7;
+}
+
+.throttle-label {
+  font-size: 10px;
+  letter-spacing: 1px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-family: 'Courier New', monospace;
+}
+
+/* Flight Stick Area (Right side) */
+.flight-stick-area {
+  width: 40%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.flight-stick-zone {
+  width: 150px;
+  height: 150px;
+  background: rgba(0, 50, 80, 0.6);
+  border: 2px solid rgba(0, 200, 255, 0.5);
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: 0 0 25px rgba(0, 200, 255, 0.2);
+}
+
+.stick-crosshair {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
+.crosshair-v {
+  position: absolute;
+  left: 50%;
+  top: 20%;
+  bottom: 20%;
+  width: 2px;
+  background: linear-gradient(to bottom, transparent, rgba(0, 200, 255, 0.4), transparent);
+  transform: translateX(-50%);
+}
+
+.crosshair-h {
+  position: absolute;
+  top: 50%;
+  left: 20%;
+  right: 20%;
+  height: 2px;
+  background: linear-gradient(to right, transparent, rgba(0, 200, 255, 0.4), transparent);
+  transform: translateY(-50%);
+}
+
+.stick-center {
+  width: 20px;
+  height: 20px;
+  background: rgba(0, 200, 255, 0.6);
+  border: 2px solid rgba(0, 255, 255, 0.8);
+  border-radius: 50%;
+  box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+}
+
+.stick-label {
+  position: absolute;
+  bottom: 15px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: rgba(0, 200, 255, 0.7);
+  font-family: 'Courier New', monospace;
+}
+
+/* Controls Hint */
+.fly-game .controls-hint {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: rgba(0, 20, 40, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.fly-game .hint-content {
+  background: linear-gradient(135deg, rgba(0, 50, 80, 0.95) 0%, rgba(0, 30, 50, 0.95) 100%);
+  border: 2px solid rgba(0, 200, 255, 0.5);
+  border-radius: 20px;
+  padding: 30px 40px;
+  text-align: center;
+  max-width: 500px;
+  box-shadow: 0 0 40px rgba(0, 200, 255, 0.3);
+}
+
+.fly-game .hint-content h3 {
+  font-size: 28px;
+  color: #00ffff;
+  margin: 0 0 20px 0;
+  text-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+}
+
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.control-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+}
+
+.control-item .key {
+  background: rgba(0, 200, 255, 0.3);
+  border: 1px solid rgba(0, 200, 255, 0.5);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #00ffff;
+  font-family: 'Courier New', monospace;
+  min-width: 50px;
+  text-align: center;
+}
+
+.control-item span:last-child {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+}
+
+.hint-tip {
+  color: rgba(0, 255, 170, 0.9);
+  font-size: 14px;
+  margin: 15px 0;
+  padding: 10px;
+  background: rgba(0, 100, 80, 0.3);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 255, 170, 0.3);
+}
+
+.fly-game .hint-content .takeoff-btn {
+  margin-top: 10px;
+  margin-bottom: 20px;
+  padding: 20px 50px;
+  background: linear-gradient(135deg, #00aaff 0%, #00ffaa 100%);
+  border: none;
+  border-radius: 25px;
+  color: #001a2a;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 20px rgba(0, 200, 255, 0.5);
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  position: relative;
+  z-index: 10002;
+  display: block;
+  width: 100%;
+}
+
+.fly-game .hint-content .takeoff-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 40px rgba(0, 255, 255, 0.8);
+}
+
+.fly-game .hint-content .takeoff-btn:active {
+  transform: scale(0.98);
+  box-shadow: 0 0 30px rgba(0, 255, 255, 1);
+}
+
+/* Loading State */
+.fly-loading {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #0a1a2a 0%, #1a3a5a 50%, #0a2a3a 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10002;
+  color: white;
+}
+
+.fly-loading .loading-spinner {
+  width: 60px;
+  height: 60px;
+  border: 4px solid rgba(0, 200, 255, 0.2);
+  border-top-color: #00ffff;
+  border-right-color: #00ffaa;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
+  box-shadow: 0 0 30px rgba(0, 200, 255, 0.3);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.fly-loading p {
+  font-size: 20px;
+  font-family: 'Courier New', monospace;
+  color: #00ffff;
+  text-shadow: 0 0 20px rgba(0, 255, 255, 0.8);
+  letter-spacing: 3px;
+}
+
+/* Rotate Device Overlay */
+.fly-game .rotate-device-overlay {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #0a1a2a 0%, #1a3a5a 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+}
+
+.fly-game .rotate-content {
+  text-align: center;
+  color: white;
+  padding: 40px;
+}
+
+.fly-game .rotate-icon {
+  font-size: 80px;
+  margin-bottom: 20px;
+  animation: rotate-wobble 2s ease-in-out infinite;
+}
+
+@keyframes rotate-wobble {
+  0%, 100% { transform: rotate(-20deg); }
+  50% { transform: rotate(20deg); }
+}
+
+.fly-game .rotate-content h2 {
+  font-size: 28px;
+  color: #00ffff;
+  margin-bottom: 15px;
+  text-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+}
+
+.fly-game .rotate-content p {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Mobile adjustments */
+@media (max-width: 900px) {
+  .hud-panel {
+    padding: 8px 12px;
+  }
+
+  .panel-value {
+    font-size: 22px;
+  }
+
+  .panel-label {
+    font-size: 9px;
+  }
+
+  .airspeed-panel {
+    right: 140px;
+    top: 15px;
+  }
+
+  .altitude-panel {
+    right: 15px;
+    top: 15px;
+  }
+
+  .heading-panel {
+    top: 15px;
+  }
+
+  .throttle-panel {
+    bottom: 220px;
+    left: 15px;
+    width: 50px;
+    height: 100px;
+  }
+
+  .throttle-bar {
+    height: 50px;
+    width: 25px;
+  }
+
+  .pitch-panel {
+    bottom: 220px;
+    right: 15px;
+  }
+
+  .touch-controls {
+    height: 180px;
+  }
+
+  .throttle-zone {
+    width: 70px;
+    height: 140px;
+  }
+
+  .flight-stick-zone {
+    width: 130px;
+    height: 130px;
+  }
+
+  .stall-warning {
+    padding: 15px 25px;
+  }
+
+  .stall-warning span {
+    font-size: 18px;
+  }
+
+  .fly-game .hint-content {
+    padding: 20px 25px;
+    max-width: 90%;
+  }
+
+  .fly-game .hint-content h3 {
+    font-size: 22px;
+  }
+
+  .controls-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .control-item {
+    padding: 6px 10px;
+  }
+}
+
+/* Compass indicator at top center */
+.heading-panel::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid rgba(0, 200, 255, 0.8);
+}
+
+/* Horizon reference line */
+.flight-hud::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 30%;
+  right: 30%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 255, 170, 0.4), transparent);
+  pointer-events: none;
+}
+
+/* Center crosshair */
+.flight-hud::after {
+  content: '+';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 30px;
+  color: rgba(0, 255, 170, 0.5);
+  pointer-events: none;
+}

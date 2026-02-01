@@ -1,0 +1,618 @@
+/* Simulator Game Styles */
+
+.simulator-game {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh; /* Dynamic viewport height for mobile */
+  background: #000;
+  z-index: 10000;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+.simulator-game * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.game-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.game-canvas canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Rotate Device Overlay */
+.rotate-device-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.rotate-content {
+  text-align: center;
+  padding: 40px;
+  color: white;
+}
+
+.rotate-icon {
+  font-size: 80px;
+  margin-bottom: 20px;
+  animation: rotateHint 2s ease-in-out infinite;
+}
+
+@keyframes rotateHint {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-15deg); }
+  75% { transform: rotate(15deg); }
+}
+
+.rotate-content h2 {
+  font-size: 28px;
+  margin: 0 0 15px 0;
+  font-weight: 700;
+}
+
+.rotate-content p {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0;
+  max-width: 300px;
+}
+
+/* HUD */
+.simulator-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  padding: 20px;
+}
+
+.simulator-hud > * {
+  pointer-events: auto;
+}
+
+/* Exit Button */
+.exit-btn {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  z-index: 100;
+}
+
+.exit-btn:hover {
+  background: rgba(255, 0, 0, 0.6);
+  border-color: rgba(255, 0, 0, 0.8);
+}
+
+/* Speedometer - VICE CITY NEON STYLE */
+.speedometer {
+  position: absolute;
+  bottom: 30px;
+  right: 30px;
+  width: 150px;
+  height: 150px;
+  background: radial-gradient(circle, rgba(20, 0, 40, 0.9) 0%, rgba(10, 0, 20, 0.95) 100%);
+  border-radius: 50%;
+  border: 3px solid rgba(255, 0, 255, 0.4);
+  box-shadow:
+    0 0 30px rgba(255, 0, 255, 0.4),
+    0 0 60px rgba(0, 255, 255, 0.2),
+    inset 0 0 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Orbitron', 'Courier New', monospace;
+}
+
+.speed-value {
+  font-size: 48px;
+  font-weight: 700;
+  color: #00ffff;
+  text-shadow: 0 0 20px rgba(0, 255, 255, 0.8), 0 0 40px rgba(0, 255, 255, 0.4);
+  line-height: 1;
+}
+
+.speed-unit {
+  font-size: 12px;
+  color: rgba(255, 0, 255, 0.8);
+  letter-spacing: 2px;
+  margin-top: 5px;
+  text-shadow: 0 0 10px rgba(255, 0, 255, 0.5);
+}
+
+.gear-indicator {
+  position: absolute;
+  bottom: 15px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #ff00ff;
+  text-shadow: 0 0 15px rgba(255, 0, 255, 0.8);
+}
+
+/* RPM Gauge - VICE CITY NEON */
+.rpm-gauge {
+  position: absolute;
+  bottom: 200px;
+  right: 30px;
+  width: 150px;
+  height: 20px;
+  background: rgba(20, 0, 40, 0.8);
+  border-radius: 10px;
+  border: 2px solid rgba(255, 0, 255, 0.4);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 0 15px rgba(255, 0, 255, 0.3);
+}
+
+.rpm-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #00ffff 0%, #ff00ff 50%, #ff0044 100%);
+  border-radius: 8px;
+  transition: width 0.1s ease;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.rpm-value {
+  position: absolute;
+  right: 10px;
+  font-size: 10px;
+  color: rgba(0, 255, 255, 0.9);
+  font-family: 'Orbitron', 'Courier New', monospace;
+  text-shadow: 0 0 5px rgba(0, 255, 255, 0.5);
+}
+
+/* Altitude Indicator */
+.altitude-indicator {
+  position: absolute;
+  bottom: 240px;
+  right: 30px;
+  width: 80px;
+  padding: 15px;
+  background: radial-gradient(circle, rgba(100, 0, 150, 0.8) 0%, rgba(50, 0, 100, 0.9) 100%);
+  border-radius: 15px;
+  border: 2px solid rgba(200, 100, 255, 0.5);
+  box-shadow:
+    0 0 20px rgba(150, 50, 255, 0.5),
+    inset 0 0 15px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: 'Orbitron', 'Courier New', monospace;
+  animation: altitudePulse 1s ease-in-out infinite;
+}
+
+@keyframes altitudePulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(150, 50, 255, 0.5), inset 0 0 15px rgba(0, 0, 0, 0.3); }
+  50% { box-shadow: 0 0 30px rgba(150, 50, 255, 0.8), inset 0 0 15px rgba(0, 0, 0, 0.3); }
+}
+
+.altitude-icon {
+  font-size: 24px;
+  margin-bottom: 5px;
+}
+
+.altitude-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #ff88ff;
+  text-shadow: 0 0 15px rgba(255, 136, 255, 0.8);
+  line-height: 1;
+}
+
+.altitude-unit {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 2px;
+  margin-top: 3px;
+}
+
+/* Mini Map - VICE CITY STYLE */
+.mini-map {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 150px;
+  height: 150px;
+  background: rgba(20, 0, 40, 0.8);
+  border-radius: 10px;
+  border: 2px solid rgba(255, 0, 255, 0.4);
+  overflow: hidden;
+  box-shadow: 0 0 20px rgba(255, 0, 255, 0.3);
+}
+
+.map-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  background: #00ffff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 15px rgba(0, 255, 255, 1), 0 0 30px rgba(0, 255, 255, 0.5);
+  animation: pulseDot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% { box-shadow: 0 0 15px rgba(0, 255, 255, 1), 0 0 30px rgba(0, 255, 255, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(0, 255, 255, 1), 0 0 40px rgba(0, 255, 255, 0.7); }
+}
+
+/* Touch Controls */
+.touch-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 200px;
+  display: flex;
+  justify-content: space-between;
+  padding: 20px;
+  pointer-events: none;
+}
+
+.touch-controls > * {
+  pointer-events: auto;
+}
+
+/* Steering Area */
+.steering-area {
+  width: 200px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.steering-wheel {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.steering-indicator {
+  width: 4px;
+  height: 50px;
+  background: linear-gradient(to bottom, #00ffff, #ff00ff, transparent);
+  border-radius: 2px;
+  position: absolute;
+  top: 10px;
+  transition: transform 0.1s ease;
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+}
+
+/* Pedals */
+.pedals {
+  display: flex;
+  gap: 15px;
+  align-items: flex-end;
+}
+
+.pedal {
+  width: 100px;
+  height: 140px;
+  border-radius: 15px;
+  border: 3px solid;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.gas-pedal {
+  background: linear-gradient(180deg, rgba(0, 200, 200, 0.3) 0%, rgba(0, 150, 150, 0.5) 100%);
+  border-color: rgba(0, 255, 255, 0.6);
+  color: #00ffff;
+  box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+}
+
+.gas-pedal:active {
+  background: linear-gradient(180deg, rgba(0, 255, 255, 0.5) 0%, rgba(0, 200, 200, 0.7) 100%);
+  box-shadow: 0 0 40px rgba(0, 255, 255, 0.7);
+  transform: scale(0.95);
+}
+
+.brake-pedal {
+  background: linear-gradient(180deg, rgba(200, 0, 100, 0.3) 0%, rgba(150, 0, 75, 0.5) 100%);
+  border-color: rgba(255, 0, 150, 0.6);
+  color: #ff00aa;
+  box-shadow: 0 0 15px rgba(255, 0, 150, 0.3);
+}
+
+.brake-pedal:active {
+  background: linear-gradient(180deg, rgba(255, 0, 150, 0.5) 0%, rgba(200, 0, 100, 0.7) 100%);
+  box-shadow: 0 0 40px rgba(255, 0, 150, 0.7);
+  transform: scale(0.95);
+}
+
+/* Controls Hint */
+.controls-hint {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+}
+
+.hint-content {
+  background: rgba(30, 30, 50, 0.95);
+  border-radius: 20px;
+  padding: 30px 40px;
+  text-align: center;
+  max-width: 400px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.hint-content h3 {
+  margin: 0 0 20px 0;
+  font-size: 24px;
+  color: white;
+}
+
+.hint-content p {
+  margin: 0 0 10px 0;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+}
+
+.hint-content button {
+  margin-top: 20px;
+  padding: 12px 30px;
+  background: linear-gradient(135deg, #ff00ff 0%, #00ffff 100%);
+  border: none;
+  border-radius: 25px;
+  color: #000;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 15px rgba(255, 0, 255, 0.5);
+}
+
+.hint-content button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 30px rgba(255, 0, 255, 0.8), 0 0 60px rgba(0, 255, 255, 0.4);
+}
+
+/* Mobile adjustments */
+@media (max-width: 900px) {
+  .speedometer {
+    width: 120px;
+    height: 120px;
+    bottom: 220px;
+    right: 20px;
+  }
+
+  .speed-value {
+    font-size: 36px;
+  }
+
+  .rpm-gauge {
+    bottom: 330px;
+    width: 120px;
+  }
+
+  .altitude-indicator {
+    bottom: 360px;
+    right: 20px;
+    width: 70px;
+    padding: 10px;
+  }
+
+  .altitude-value {
+    font-size: 22px;
+  }
+
+  .mini-map {
+    width: 100px;
+    height: 100px;
+  }
+
+  .pedal {
+    width: 80px;
+    height: 120px;
+    font-size: 12px;
+  }
+
+  .steering-wheel {
+    width: 100px;
+    height: 100px;
+  }
+}
+
+@media (max-height: 500px) {
+  .speedometer {
+    width: 100px;
+    height: 100px;
+    bottom: auto;
+    top: 20px;
+    right: 180px;
+  }
+
+  .speed-value {
+    font-size: 28px;
+  }
+
+  .rpm-gauge {
+    bottom: auto;
+    top: 130px;
+    right: 180px;
+    width: 100px;
+  }
+
+  .altitude-indicator {
+    bottom: auto;
+    top: 20px;
+    right: 290px;
+    width: 60px;
+    padding: 8px;
+  }
+
+  .altitude-value {
+    font-size: 18px;
+  }
+
+  .altitude-icon {
+    font-size: 18px;
+  }
+
+  .mini-map {
+    width: 80px;
+    height: 80px;
+  }
+
+  .touch-controls {
+    height: 150px;
+  }
+
+  .pedal {
+    width: 70px;
+    height: 100px;
+    font-size: 11px;
+  }
+
+  .steering-wheel {
+    width: 80px;
+    height: 80px;
+  }
+}
+
+/* Night mode glow effects */
+.simulator-game::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.3) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+/* Loading State - VICE CITY STYLE */
+.simulator-loading {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #1a0a2e 0%, #0a0a1e 50%, #2a0a3e 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  color: white;
+}
+
+.simulator-loading .loading-spinner {
+  width: 60px;
+  height: 60px;
+  border: 4px solid rgba(255, 0, 255, 0.2);
+  border-top-color: #00ffff;
+  border-right-color: #ff00ff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
+  box-shadow: 0 0 30px rgba(255, 0, 255, 0.3), 0 0 60px rgba(0, 255, 255, 0.2);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.simulator-loading p {
+  font-size: 20px;
+  font-family: 'Orbitron', 'Courier New', monospace;
+  color: #ff00ff;
+  text-shadow: 0 0 20px rgba(255, 0, 255, 0.8), 0 0 40px rgba(255, 0, 255, 0.4);
+  letter-spacing: 3px;
+}
+
+/* Error State */
+.simulator-error {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  padding: 40px;
+  text-align: center;
+}
+
+.simulator-error h2 {
+  font-size: 28px;
+  margin: 0 0 15px 0;
+  color: #ff6666;
+}
+
+.simulator-error p {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0 0 30px 0;
+  max-width: 400px;
+}
+
+.simulator-error button {
+  padding: 12px 30px;
+  background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
+  border: none;
+  border-radius: 25px;
+  color: #000;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.simulator-error button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+}

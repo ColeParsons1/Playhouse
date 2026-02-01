@@ -5,7 +5,6 @@ import ThemeProvider from './components/ThemeProvider';
 import FloatingAnimals from './components/FloatingAnimals';
 import BottomNav from './components/BottomNav';
 import VoiceRoomsLobby from './components/VoiceRoomsLobby';
-import VoiceRoomGame from './components/VoiceRoomGame';
 import AuthPage from './components/AuthPage';
 import BuyCoinsModal from './components/BuyCoinsModal';
 import './App.css';
@@ -19,6 +18,7 @@ const AvatarEditor = lazy(() => import('./components/AvatarEditor'));
 const StatsModal = lazy(() => import('./components/StatsModal'));
 const CreateRoomModal = lazy(() => import('./components/CreateRoomModal'));
 const FollowScreen = lazy(() => import('./components/FollowScreen'));
+const VoiceRoomGame = lazy(() => import('./components/VoiceRoomGame'));
 
 // Loading component
 const ScreenLoading = () => (
@@ -284,11 +284,13 @@ function App() {
       <div className="app">
         {/* Voice Room Game - shows when player is in a room */}
         {inGame && currentRoom && (
-          <VoiceRoomGame
-            room={currentRoom}
-            player={player}
-            onLeave={handleLeaveRoom}
-          />
+          <Suspense fallback={<ScreenLoading />}>
+            <VoiceRoomGame
+              room={currentRoom}
+              player={player}
+              onLeave={handleLeaveRoom}
+            />
+          </Suspense>
         )}
 
         {/* Regular App UI when not in game */}
