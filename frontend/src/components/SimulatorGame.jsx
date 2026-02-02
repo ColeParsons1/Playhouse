@@ -17,16 +17,17 @@ const SimulatorGame = ({ onClose, onExit }) => {
   const touchControlsRef = useRef({ steering: 0, gas: false, brake: false });
   const carPhysicsRef = useRef(null);
 
-  // Removed unused state: speed, gear, rpm, showControls (HUD removed)
+  const [speed, setSpeed] = useState(0);
   const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
+  const [showControls, setShowControls] = useState(true);
+  const [gear, setGear] = useState('D');
+  const [rpm, setRpm] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [altitude, setAltitude] = useState(0);
   const [isFlying, setIsFlying] = useState(false);
   const rampsRef = useRef([]);
   const neonLightsRef = useRef([]);
-  const lastHudUpdateRef = useRef(0); // Throttle HUD updates for performance
-  const directionVectorRef = useRef(null); // Reusable vector to avoid allocation every frame
 
   // Check if current player is the host
   const isHost = true;
@@ -138,125 +139,98 @@ const SimulatorGame = ({ onClose, onExit }) => {
       scene.add(rightCurb);
     }
 
-    // MERGED GEOMETRY APPROACH - Collect all positions, then create single meshes
-    // This dramatically reduces draw calls from thousands to just a few
-
-    // Yellow dash geometries to merge
+    // Add center yellow dashed lines (only on some roads for performance)
     const yellowDashGeom = new THREE.BoxGeometry(12 * scale, 0.12, 0.5 * scale);
     const yellowDashGeomV = new THREE.BoxGeometry(0.5 * scale, 0.12, 12 * scale);
-    const yellowDashGeometries = [];
 
-    // Collect horizontal yellow dashes
+    // Horizontal road center lines (every other road)
     hRoadPositions.forEach((z, idx) => {
       if (idx % 2 === 0 && z < 650) {
         for (let x = -1500; x <= 1500; x += 60 * scale) {
-          const geom = yellowDashGeom.clone();
-          geom.translate(x, 0.12, z);
-          yellowDashGeometries.push(geom);
+          const dash = new THREE.Mesh(yellowDashGeom, yellowLineMat);
+          dash.position.set(x, 0.12, z);
+          scene.add(dash);
         }
       }
     });
 
-    // Collect vertical yellow dashes
+    // Vertical road center lines (every other road)
     vRoadPositions.forEach((x, idx) => {
       if (idx % 2 === 0) {
         for (let z = -1500; z <= 600; z += 60 * scale) {
-          const geom = yellowDashGeomV.clone();
-          geom.translate(x, 0.12, z);
-          yellowDashGeometries.push(geom);
+          const dash = new THREE.Mesh(yellowDashGeomV, yellowLineMat);
+          dash.position.set(x, 0.12, z);
+          scene.add(dash);
         }
       }
     });
 
-    // Merge all yellow dashes into single mesh
-    if (yellowDashGeometries.length > 0) {
-      const mergedYellowGeom = THREE.BufferGeometryUtils.mergeGeometries(yellowDashGeometries);
-      const yellowDashesMesh = new THREE.Mesh(mergedYellowGeom, yellowLineMat);
-      scene.add(yellowDashesMesh);
-      // Dispose individual geometries
-      yellowDashGeometries.forEach(g => g.dispose());
-    }
-
-    // ZEBRA CROSSWALKS - merge all into single mesh
+    // ZEBRA CROSSWALKS at intersections
     const crosswalkStripeGeom = new THREE.BoxGeometry(3 * scale, 0.12, 1.2 * scale);
     const crosswalkStripeGeomV = new THREE.BoxGeometry(1.2 * scale, 0.12, 3 * scale);
-    const crosswalkGeometries = [];
 
+    // Add crosswalks at every 3rd intersection for performance
     let intersectionCount = 0;
     vRoadPositions.forEach(x => {
       hRoadPositions.forEach(z => {
         if (z < 650 && intersectionCount % 3 === 0) {
-          // North crosswalk
+          // North crosswalk (horizontal stripes)
           for (let i = -4; i <= 4; i++) {
-            const geom = crosswalkStripeGeom.clone();
-            geom.translate(x + i * 2 * scale, 0.12, z + roadWidth/2 + 2 * scale);
-            crosswalkGeometries.push(geom);
+            const stripe = new THREE.Mesh(crosswalkStripeGeom, whiteLineMat);
+            stripe.position.set(x + i * 2 * scale, 0.12, z + roadWidth/2 + 2 * scale);
+            scene.add(stripe);
           }
-          // South crosswalk
+
+          // South crosswalk (horizontal stripes)
           for (let i = -4; i <= 4; i++) {
-            const geom = crosswalkStripeGeom.clone();
-            geom.translate(x + i * 2 * scale, 0.12, z - roadWidth/2 - 2 * scale);
-            crosswalkGeometries.push(geom);
+            const stripe = new THREE.Mesh(crosswalkStripeGeom, whiteLineMat);
+            stripe.position.set(x + i * 2 * scale, 0.12, z - roadWidth/2 - 2 * scale);
+            scene.add(stripe);
           }
-          // East crosswalk
+
+          // East crosswalk (vertical stripes)
           for (let i = -4; i <= 4; i++) {
-            const geom = crosswalkStripeGeomV.clone();
-            geom.translate(x + roadWidth/2 + 2 * scale, 0.12, z + i * 2 * scale);
-            crosswalkGeometries.push(geom);
+            const stripe = new THREE.Mesh(crosswalkStripeGeomV, whiteLineMat);
+            stripe.position.set(x + roadWidth/2 + 2 * scale, 0.12, z + i * 2 * scale);
+            scene.add(stripe);
           }
-          // West crosswalk
+
+          // West crosswalk (vertical stripes)
           for (let i = -4; i <= 4; i++) {
-            const geom = crosswalkStripeGeomV.clone();
-            geom.translate(x - roadWidth/2 - 2 * scale, 0.12, z + i * 2 * scale);
-            crosswalkGeometries.push(geom);
+            const stripe = new THREE.Mesh(crosswalkStripeGeomV, whiteLineMat);
+            stripe.position.set(x - roadWidth/2 - 2 * scale, 0.12, z + i * 2 * scale);
+            scene.add(stripe);
           }
         }
         intersectionCount++;
       });
     });
 
-    // Merge all crosswalk stripes into single mesh
-    if (crosswalkGeometries.length > 0) {
-      const mergedCrosswalkGeom = THREE.BufferGeometryUtils.mergeGeometries(crosswalkGeometries);
-      const crosswalksMesh = new THREE.Mesh(mergedCrosswalkGeom, whiteLineMat);
-      scene.add(crosswalksMesh);
-      crosswalkGeometries.forEach(g => g.dispose());
-    }
-
-    // White edge lines - also merge into single mesh
+    // Add white edge lines on roads (road edges)
     const edgeLineGeom = new THREE.BoxGeometry(roadLength, 0.12, 0.3 * scale);
     const edgeLineGeomV = new THREE.BoxGeometry(0.3 * scale, 0.12, roadLength);
-    const edgeLineGeometries = [];
 
     hRoadPositions.forEach((z, idx) => {
       if (idx % 3 === 0 && z < 650) {
-        const leftGeom = edgeLineGeom.clone();
-        leftGeom.translate(0, 0.12, z - roadWidth/2 + 1 * scale);
-        edgeLineGeometries.push(leftGeom);
-        const rightGeom = edgeLineGeom.clone();
-        rightGeom.translate(0, 0.12, z + roadWidth/2 - 1 * scale);
-        edgeLineGeometries.push(rightGeom);
+        const leftEdge = new THREE.Mesh(edgeLineGeom, whiteLineMat);
+        leftEdge.position.set(0, 0.12, z - roadWidth/2 + 1 * scale);
+        scene.add(leftEdge);
+        const rightEdge = new THREE.Mesh(edgeLineGeom, whiteLineMat);
+        rightEdge.position.set(0, 0.12, z + roadWidth/2 - 1 * scale);
+        scene.add(rightEdge);
       }
     });
 
     vRoadPositions.forEach((x, idx) => {
       if (idx % 3 === 0) {
-        const leftGeom = edgeLineGeomV.clone();
-        leftGeom.translate(x - roadWidth/2 + 1 * scale, 0.12, 0);
-        edgeLineGeometries.push(leftGeom);
-        const rightGeom = edgeLineGeomV.clone();
-        rightGeom.translate(x + roadWidth/2 - 1 * scale, 0.12, 0);
-        edgeLineGeometries.push(rightGeom);
+        const leftEdge = new THREE.Mesh(edgeLineGeomV, whiteLineMat);
+        leftEdge.position.set(x - roadWidth/2 + 1 * scale, 0.12, 0);
+        scene.add(leftEdge);
+        const rightEdge = new THREE.Mesh(edgeLineGeomV, whiteLineMat);
+        rightEdge.position.set(x + roadWidth/2 - 1 * scale, 0.12, 0);
+        scene.add(rightEdge);
       }
     });
-
-    // Merge edge lines into single mesh
-    if (edgeLineGeometries.length > 0) {
-      const mergedEdgeGeom = THREE.BufferGeometryUtils.mergeGeometries(edgeLineGeometries);
-      const edgeLinesMesh = new THREE.Mesh(mergedEdgeGeom, whiteLineMat);
-      scene.add(edgeLinesMesh);
-      edgeLineGeometries.forEach(g => g.dispose());
-    }
   }, []);
 
   // Create buildings - REALISTIC Miami Architecture with Art Deco Details
@@ -719,121 +693,50 @@ const SimulatorGame = ({ onClose, onExit }) => {
     return car;
   };
 
-  // Palm tree instancing refs
-  const palmTreeInstancesRef = useRef(null);
+  // Shared palm tree geometry and materials (created once)
+  const palmTreeGeomRef = useRef(null);
+  const palmTreeMatsRef = useRef(null);
 
-  // Create all palm trees using InstancedMesh for massive performance boost
-  const createPalmTrees = (scene, scale, roadPositions) => {
+  // Create palm tree helper - OPTIMIZED with shared geometry
+  const createPalmTree = (scene, x, z, scale) => {
     if (!THREE) return;
 
-    // First, collect all palm tree positions
-    const palmPositions = [];
-
-    // Beach palm trees - every 80 units
-    for (let x = -2400; x <= 2400; x += 80) {
-      palmPositions.push({
-        x: x + (Math.random() - 0.5) * 10,
-        z: 660 + (Math.random() - 0.5) * 20,
-        scale: scale
-      });
+    // Initialize shared resources once
+    if (!palmTreeGeomRef.current) {
+      palmTreeGeomRef.current = {
+        trunk: new THREE.CylinderGeometry(0.4, 0.6, 15, 4), // Low poly trunk
+        frond: new THREE.ConeGeometry(1.5, 12, 3), // Low poly fronds
+      };
+      palmTreeMatsRef.current = {
+        trunk: new THREE.MeshBasicMaterial({ color: 0x8b7355 }),
+        leaf: new THREE.MeshBasicMaterial({ color: 0x228b22 }),
+      };
     }
 
-    // Second row of beach palms - every 120 units
-    for (let x = -2400; x <= 2400; x += 120) {
-      palmPositions.push({
-        x: x + (Math.random() - 0.5) * 15,
-        z: 590 + (Math.random() - 0.5) * 15,
-        scale: scale
-      });
+    const geoms = palmTreeGeomRef.current;
+    const mats = palmTreeMatsRef.current;
+
+    // Trunk
+    const trunk = new THREE.Mesh(geoms.trunk, mats.trunk);
+    trunk.position.set(x, 7.5 * scale, z);
+    trunk.scale.set(scale, scale, scale);
+    scene.add(trunk);
+
+    // Simplified fronds - only 4 instead of 8
+    const numFronds = 4;
+    for (let i = 0; i < numFronds; i++) {
+      const frond = new THREE.Mesh(geoms.frond, mats.leaf);
+      const angle = (i / numFronds) * Math.PI * 2;
+      frond.position.set(
+        x + Math.cos(angle) * 3 * scale,
+        15 * scale,
+        z + Math.sin(angle) * 3 * scale
+      );
+      frond.rotation.x = Math.PI / 2 + 0.5;
+      frond.rotation.z = angle;
+      frond.scale.set(scale, scale, scale);
+      scene.add(frond);
     }
-
-    // Palm trees scattered in city
-    for (let i = 0; i < 100; i++) {
-      const x = (Math.random() - 0.5) * 4000;
-      const z = (Math.random() - 0.5) * 2800 - 100;
-
-      const nearHorizontalRoad = roadPositions.some(roadZ => Math.abs(z - roadZ) < 25);
-      const nearVerticalRoad = roadPositions.some(roadX => Math.abs(x - roadX) < 25);
-      const inOcean = z > 600;
-
-      if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean) {
-        palmPositions.push({
-          x: x,
-          z: z,
-          scale: scale * (0.8 + Math.random() * 0.4)
-        });
-      }
-    }
-
-    const count = palmPositions.length;
-    if (count === 0) return;
-
-    // Create geometries
-    const trunkGeom = new THREE.CylinderGeometry(0.4, 0.6, 15, 4);
-    const frondGeom = new THREE.ConeGeometry(1.5, 12, 3);
-
-    // Create materials
-    const trunkMat = new THREE.MeshBasicMaterial({ color: 0x8b7355 });
-    const leafMat = new THREE.MeshBasicMaterial({ color: 0x228b22 });
-
-    // Create instanced meshes
-    const trunkInstances = new THREE.InstancedMesh(trunkGeom, trunkMat, count);
-    const frondInstances0 = new THREE.InstancedMesh(frondGeom, leafMat, count);
-    const frondInstances1 = new THREE.InstancedMesh(frondGeom, leafMat, count);
-    const frondInstances2 = new THREE.InstancedMesh(frondGeom, leafMat, count);
-    const frondInstances3 = new THREE.InstancedMesh(frondGeom, leafMat, count);
-
-    const matrix = new THREE.Matrix4();
-    const position = new THREE.Vector3();
-    const rotation = new THREE.Euler();
-    const quaternion = new THREE.Quaternion();
-    const scaleVec = new THREE.Vector3();
-
-    palmPositions.forEach((palm, i) => {
-      const s = palm.scale;
-
-      // Trunk
-      position.set(palm.x, 7.5 * s, palm.z);
-      scaleVec.set(s, s, s);
-      matrix.compose(position, quaternion.identity(), scaleVec);
-      trunkInstances.setMatrixAt(i, matrix);
-
-      // 4 fronds around the trunk
-      for (let f = 0; f < 4; f++) {
-        const angle = (f / 4) * Math.PI * 2;
-        position.set(
-          palm.x + Math.cos(angle) * 3 * s,
-          15 * s,
-          palm.z + Math.sin(angle) * 3 * s
-        );
-        rotation.set(Math.PI / 2 + 0.5, 0, angle);
-        quaternion.setFromEuler(rotation);
-        scaleVec.set(s, s, s);
-        matrix.compose(position, quaternion, scaleVec);
-
-        if (f === 0) frondInstances0.setMatrixAt(i, matrix);
-        else if (f === 1) frondInstances1.setMatrixAt(i, matrix);
-        else if (f === 2) frondInstances2.setMatrixAt(i, matrix);
-        else frondInstances3.setMatrixAt(i, matrix);
-      }
-    });
-
-    // Update instance matrices
-    trunkInstances.instanceMatrix.needsUpdate = true;
-    frondInstances0.instanceMatrix.needsUpdate = true;
-    frondInstances1.instanceMatrix.needsUpdate = true;
-    frondInstances2.instanceMatrix.needsUpdate = true;
-    frondInstances3.instanceMatrix.needsUpdate = true;
-
-    // Add to scene
-    scene.add(trunkInstances);
-    scene.add(frondInstances0);
-    scene.add(frondInstances1);
-    scene.add(frondInstances2);
-    scene.add(frondInstances3);
-
-    // Store refs for cleanup
-    palmTreeInstancesRef.current = [trunkInstances, frondInstances0, frondInstances1, frondInstances2, frondInstances3];
   };
 
   // Create the city environment - VICE CITY STYLE, 10X LARGER AREA
@@ -893,16 +796,37 @@ const SimulatorGame = ({ onClose, onExit }) => {
     createBuildings(scene);
     createStreetLights(scene);
     createTrafficLights(scene);
-    // createTrafficCars(scene); // Disabled for 4K performance
+    createTrafficCars(scene);
 
     const roadPositions = [];
     for (let i = -200 * scale * citySize; i <= 200 * scale * citySize; i += 80 * scale) {
       roadPositions.push(i);
     }
 
-    // PALM TREES - Using InstancedMesh for massive performance boost
-    // All palm trees created with single draw call per mesh type
-    createPalmTrees(scene, scale, roadPositions);
+    // PALM TREES - REDUCED count for performance
+    // Beach palm trees - every 80 units instead of 40
+    for (let x = -2400; x <= 2400; x += 80) {
+      createPalmTree(scene, x + (Math.random() - 0.5) * 10, 660 + (Math.random() - 0.5) * 20, scale);
+    }
+
+    // Second row of beach palms - every 120 units instead of 60
+    for (let x = -2400; x <= 2400; x += 120) {
+      createPalmTree(scene, x + (Math.random() - 0.5) * 15, 590 + (Math.random() - 0.5) * 15, scale);
+    }
+
+    // Palm trees scattered in city - REDUCED from 400 to 100
+    for (let i = 0; i < 100; i++) {
+      const x = (Math.random() - 0.5) * 4000;
+      const z = (Math.random() - 0.5) * 2800 - 100;
+
+      const nearHorizontalRoad = roadPositions.some(roadZ => Math.abs(z - roadZ) < 25);
+      const nearVerticalRoad = roadPositions.some(roadX => Math.abs(x - roadX) < 25);
+      const inOcean = z > 600;
+
+      if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean) {
+        createPalmTree(scene, x, z, scale * (0.8 + Math.random() * 0.4));
+      }
+    }
 
     // Beach umbrellas - OPTIMIZED with shared geometry and BasicMaterial
     const umbrellaMat = new THREE.MeshBasicMaterial({ color: 0xff1493 });
@@ -1316,28 +1240,24 @@ const SimulatorGame = ({ onClose, onExit }) => {
 
     const gravity = -0.8; // Gravity acceleration
 
-    // Check for ramp collision (only when on ground and moving fast enough)
-    if (!physics.isAirborne && Math.abs(physics.speed) > 30 && rampsRef.current.length > 0) {
-      const ramps = rampsRef.current;
-      const px = physics.position.x;
-      const pz = physics.position.z;
-      for (let i = 0; i < ramps.length; i++) {
-        const ramp = ramps[i];
-        const dx = px - ramp.position.x;
-        const dz = pz - ramp.position.z;
-        // Use squared distance to avoid sqrt (faster)
-        const distSq = dx * dx + dz * dz;
-        const thresholdSq = (ramp.length * 0.8) ** 2;
+    // Check for ramp collision (only when on ground)
+    if (!physics.isAirborne) {
+      rampsRef.current.forEach(ramp => {
+        const dx = physics.position.x - ramp.position.x;
+        const dz = physics.position.z - ramp.position.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
 
-        if (distSq < thresholdSq) {
+        // Check if car is on the ramp
+        if (distance < ramp.length * 0.8 && Math.abs(physics.speed) > 30) {
           // Launch the car!
           physics.isAirborne = true;
+          // Higher minimum launch velocity, scales with speed
           const speedFactor = 0.5 + (Math.abs(physics.speed) / physics.maxSpeed) * 0.5;
           physics.verticalVelocity = ramp.launchVelocity * speedFactor;
+          // Boost forward speed when launching
           physics.speed = Math.max(physics.speed, 100);
-          break; // Exit early once launched
         }
-      }
+      });
     }
 
     // Apply gravity when airborne
@@ -1380,12 +1300,12 @@ const SimulatorGame = ({ onClose, onExit }) => {
       physics.rotation += steerAmount * baseTurnSpeed * turnMultiplier * Math.sign(physics.speed);
     }
 
-    // Update horizontal position - reuse vector to avoid allocation
-    if (!directionVectorRef.current) {
-      directionVectorRef.current = new THREE.Vector3();
-    }
-    const direction = directionVectorRef.current;
-    direction.set(Math.sin(physics.rotation), 0, Math.cos(physics.rotation));
+    // Update horizontal position
+    const direction = new THREE.Vector3(
+      Math.sin(physics.rotation),
+      0,
+      Math.cos(physics.rotation)
+    );
 
     physics.position.x += direction.x * physics.speed * 0.016;
     physics.position.z += direction.z * physics.speed * 0.016;
@@ -1402,18 +1322,15 @@ const SimulatorGame = ({ onClose, onExit }) => {
       carRef.current.rotation.x = 0;
     }
 
-    // Update HUD - throttled to 10fps instead of 60fps for performance
-    // Only update altitude/flying state (speed/rpm displays removed)
-    const now = Date.now();
-    if (now - lastHudUpdateRef.current > 100) { // Update every 100ms (10fps)
-      lastHudUpdateRef.current = now;
-      const newAltitude = Math.max(0, Math.round(physics.position.y));
-      const newIsFlying = physics.isAirborne || physics.position.y > 10;
-      // Only trigger re-render if values actually changed
-      if (newAltitude !== altitude) setAltitude(newAltitude);
-      if (newIsFlying !== isFlying) setIsFlying(newIsFlying);
-    }
-  }, [altitude, isFlying]);
+    // Update HUD
+    const newSpeed = Math.abs(Math.round(physics.speed));
+    const newRpm = Math.min(Math.abs(physics.speed) * 80, 8000);
+
+    setSpeed(newSpeed);
+    setRpm(newRpm);
+    setAltitude(Math.max(0, Math.round(physics.position.y)));
+    setIsFlying(physics.isAirborne || physics.position.y > 10);
+  }, []);
 
   // Update camera - adjusted for bigger car, FIXED DISTANCE regardless of speed
   const updateCamera = useCallback(() => {
@@ -1447,11 +1364,9 @@ const SimulatorGame = ({ onClose, onExit }) => {
 
     const initThree = async () => {
       try {
-        // Dynamic import of THREE and BufferGeometryUtils
+        // Dynamic import of THREE
         const threeModule = await import('three');
-        const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
         THREE = threeModule;
-        THREE.BufferGeometryUtils = { mergeGeometries };
 
         if (!mounted || !containerRef.current) return;
 
@@ -1460,9 +1375,9 @@ const SimulatorGame = ({ onClose, onExit }) => {
           velocity: new THREE.Vector3(),
           angularVelocity: 0,
           speed: 0,
-          maxSpeed: 360, // Doubled from 180
-          acceleration: 0.5, // Doubled from 0.25
-          braking: 0.9, // Doubled from 0.45
+          maxSpeed: 180,
+          acceleration: 0.25,
+          braking: 0.45,
           friction: 0.03,
           turnSpeed: 0.025,
           position: new THREE.Vector3(0, 1, 0),
@@ -1472,15 +1387,15 @@ const SimulatorGame = ({ onClose, onExit }) => {
         // Scene - VICE CITY SUNSET SKY (iconic purple/orange gradient feel)
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x1a0a2e); // Deep purple night sky
-        scene.fog = new THREE.Fog(0x1a0a2e, 100, 1800); // Fog hides distant objects
+        scene.fog = new THREE.Fog(0x1a0a2e, 100, 2500); // Extended fog for 4K detail visibility
         sceneRef.current = scene;
 
-        // Camera - far plane matches fog for no wasted rendering
+        // Camera - extended far plane for 4K detail
         const camera = new THREE.PerspectiveCamera(
           75,
           window.innerWidth / window.innerHeight,
           0.5,  // Lower near plane for sharper close-ups
-          2000  // Matches fog distance - no rendering invisible geometry
+          4000  // Extended far plane for more detail
         );
         camera.position.set(0, 5, -10);
         cameraRef.current = camera;
@@ -1495,13 +1410,13 @@ const SimulatorGame = ({ onClose, onExit }) => {
           preserveDrawingBuffer: false,
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap at 2x (was 3x - 30% perf boost)
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3)); // Up to 3x for 4K displays
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFShadowMap; // Faster than PCFSoftShadowMap
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadows
         renderer.toneMapping = THREE.ACESFilmicToneMapping; // Cinematic tone mapping
         renderer.toneMappingExposure = 1.2;
         renderer.outputColorSpace = THREE.SRGBColorSpace;
-        renderer.sortObjects = false; // Disabled - buildings are static, no need to sort 10k+ objects
+        renderer.sortObjects = true;
         containerRef.current.appendChild(renderer.domElement);
         rendererRef.current = renderer;
 
@@ -1518,8 +1433,8 @@ const SimulatorGame = ({ onClose, onExit }) => {
         const mainLight = new THREE.DirectionalLight(0xffeedd, 0.8);
         mainLight.position.set(50, 100, 50);
         mainLight.castShadow = true;
-        mainLight.shadow.mapSize.width = 1024; // Reduced from 2048 for performance
-        mainLight.shadow.mapSize.height = 1024;
+        mainLight.shadow.mapSize.width = 2048;
+        mainLight.shadow.mapSize.height = 2048;
         mainLight.shadow.camera.near = 1;
         mainLight.shadow.camera.far = 500;
         mainLight.shadow.camera.left = -100;
@@ -1529,7 +1444,15 @@ const SimulatorGame = ({ onClose, onExit }) => {
         mainLight.shadow.bias = -0.001;
         scene.add(mainLight);
 
-        // Fill and rim lights removed for performance (ambient + hemi + main is enough)
+        // Fill light from opposite side
+        const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
+        fillLight.position.set(-30, 50, -30);
+        scene.add(fillLight);
+
+        // Rim light for car highlights
+        const rimLight = new THREE.DirectionalLight(0xff8866, 0.4);
+        rimLight.position.set(0, 20, -50);
+        scene.add(rimLight);
 
         // Create city and car
         createCity(scene);
@@ -1545,17 +1468,17 @@ const SimulatorGame = ({ onClose, onExit }) => {
           updateCarPhysics();
           updateCamera();
 
-          // Traffic cars disabled for 4K performance
-          // trafficCarsRef.current.forEach(tc => {
-          //   tc.progress += tc.route.speed * 0.016;
-          //   if (tc.progress > 1) tc.progress = 0;
-          //   if (tc.progress < 0) tc.progress = 1;
-          //   tc.mesh.position.set(
-          //     tc.route.startX + (tc.route.endX - tc.route.startX) * tc.progress,
-          //     0,
-          //     tc.route.startZ + (tc.route.endZ - tc.route.startZ) * tc.progress
-          //   );
-          // });
+          // Update traffic cars
+          trafficCarsRef.current.forEach(tc => {
+            tc.progress += tc.route.speed * 0.016;
+            if (tc.progress > 1) tc.progress = 0;
+            if (tc.progress < 0) tc.progress = 1;
+            tc.mesh.position.set(
+              tc.route.startX + (tc.route.endX - tc.route.startX) * tc.progress,
+              0,
+              tc.route.startZ + (tc.route.endZ - tc.route.startZ) * tc.progress
+            );
+          });
 
           renderer.render(scene, camera);
         };
@@ -1597,39 +1520,10 @@ const SimulatorGame = ({ onClose, onExit }) => {
         cancelAnimationFrame(animationRef.current);
       }
 
-      // Properly dispose all Three.js resources to prevent memory leaks
-      if (sceneRef.current) {
-        sceneRef.current.traverse((object) => {
-          if (object.geometry) {
-            object.geometry.dispose();
-          }
-          if (object.material) {
-            if (Array.isArray(object.material)) {
-              object.material.forEach(mat => mat.dispose());
-            } else {
-              object.material.dispose();
-            }
-          }
-        });
-        sceneRef.current.clear();
-      }
-
-      if (rendererRef.current) {
+      if (rendererRef.current && containerRef.current) {
+        containerRef.current.removeChild(rendererRef.current.domElement);
         rendererRef.current.dispose();
-        rendererRef.current.forceContextLoss();
-        if (containerRef.current && rendererRef.current.domElement) {
-          containerRef.current.removeChild(rendererRef.current.domElement);
-        }
       }
-
-      // Clear refs
-      sceneRef.current = null;
-      cameraRef.current = null;
-      carRef.current = null;
-      carPhysicsRef.current = null;
-      directionVectorRef.current = null;
-      rampsRef.current = [];
-      neonLightsRef.current = [];
     };
   }, [createCity, createCar, updateCarPhysics, updateCamera]);
 
@@ -1699,6 +1593,17 @@ const SimulatorGame = ({ onClose, onExit }) => {
       {!isLoading && (
         <div className="simulator-hud">
           <button className="exit-btn" onClick={handleExit}>✕</button>
+
+          <div className="speedometer">
+            <div className="speed-value">{speed}</div>
+            <div className="speed-unit">KM/H</div>
+            <div className="gear-indicator">{gear}</div>
+          </div>
+
+          <div className="rpm-gauge">
+            <div className="rpm-bar" style={{ width: `${(rpm / 8000) * 100}%` }} />
+            <div className="rpm-value">{Math.round(rpm)}</div>
+          </div>
 
           {/* Altitude indicator - shows when flying */}
           {isFlying && (
