@@ -4,37 +4,6 @@ import './SimulatorGame.css';
 // Dynamically import THREE to avoid SSR issues
 let THREE = null;
 
-// MATERIAL CACHE: Reduces GPU state changes by reusing materials
-// Key format: "type_color_props" -> material instance
-const materialCache = new Map();
-
-// Helper to get or create a cached MeshBasicMaterial
-const getCachedBasicMaterial = (color) => {
-  if (!THREE) return null;
-  const key = `basic_${color}`;
-  if (!materialCache.has(key)) {
-    materialCache.set(key, new THREE.MeshBasicMaterial({ color }));
-  }
-  return materialCache.get(key);
-};
-
-// Helper to get or create a cached emissive MeshBasicMaterial (for neon effects)
-const getCachedEmissiveBasicMaterial = (color) => {
-  if (!THREE) return null;
-  const key = `basic_emissive_${color}`;
-  if (!materialCache.has(key)) {
-    // MeshBasicMaterial doesn't support emissive, so just use bright color
-    materialCache.set(key, new THREE.MeshBasicMaterial({ color }));
-  }
-  return materialCache.get(key);
-};
-
-// Clear material cache on unmount
-const clearMaterialCache = () => {
-  materialCache.forEach(mat => mat.dispose());
-  materialCache.clear();
-};
-
 const SimulatorGame = ({ onClose, onExit }) => {
   // Support both onClose (from GameHub) and onExit prop names
   const handleExit = onClose || onExit;
@@ -685,8 +654,8 @@ const SimulatorGame = ({ onClose, onExit }) => {
         bodyGeom: new THREE.BoxGeometry(1.8, 0.5, 4),
         cabinGeom: new THREE.BoxGeometry(1.6, 0.45, 2),
         wheelGeom: new THREE.CylinderGeometry(0.3, 0.3, 0.2, 6), // Low poly wheels
-        cabinMat: getCachedBasicMaterial(0x111122),
-        wheelMat: getCachedBasicMaterial(0x111111),
+        cabinMat: new THREE.MeshBasicMaterial({ color: 0x111122 }),
+        wheelMat: new THREE.MeshBasicMaterial({ color: 0x111111 }),
       };
     }
 
@@ -771,9 +740,9 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const trunkGeom = new THREE.CylinderGeometry(0.4, 0.6, 15, 4);
     const frondGeom = new THREE.ConeGeometry(1.5, 12, 3);
 
-    // Create CACHED materials
-    const trunkMat = getCachedBasicMaterial(0x8b7355);
-    const leafMat = getCachedBasicMaterial(0x228b22);
+    // Create materials
+    const trunkMat = new THREE.MeshBasicMaterial({ color: 0x8b7355 });
+    const leafMat = new THREE.MeshBasicMaterial({ color: 0x228b22 });
 
     // Create instanced meshes
     const trunkInstances = new THREE.InstancedMesh(trunkGeom, trunkMat, count);
@@ -850,42 +819,48 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const citySize = 10;
     const groundSize = 2500 * citySize;
 
-    // Main ground - use CACHED BasicMaterial (no lighting calculations)
+    // Main ground - use BasicMaterial (no lighting calculations)
     const groundGeometry = new THREE.PlaneGeometry(groundSize, groundSize);
-    const ground = new THREE.Mesh(groundGeometry, getCachedBasicMaterial(0x2d4a2d));
+    const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x2d4a2d });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     scene.add(ground);
 
-    // OCEAN - simplified with cached material
+    // OCEAN - simplified
     const oceanGeometry = new THREE.PlaneGeometry(groundSize, 800);
-    const ocean = new THREE.Mesh(oceanGeometry, getCachedBasicMaterial(0x1a3a5c));
+    const oceanMaterial = new THREE.MeshBasicMaterial({ color: 0x1a3a5c });
+    const ocean = new THREE.Mesh(oceanGeometry, oceanMaterial);
     ocean.rotation.x = -Math.PI / 2;
     ocean.position.set(0, 0.1, 1100);
     scene.add(ocean);
 
-    // Shallow water with cached material
+    // Shallow water
     const shallowGeometry = new THREE.PlaneGeometry(groundSize, 200);
-    const shallowWater = new THREE.Mesh(shallowGeometry, getCachedBasicMaterial(0x2d5a6a));
+    const shallowMaterial = new THREE.MeshBasicMaterial({ color: 0x2d5a6a });
+    const shallowWater = new THREE.Mesh(shallowGeometry, shallowMaterial);
     shallowWater.rotation.x = -Math.PI / 2;
     shallowWater.position.set(0, 0.15, 800);
     scene.add(shallowWater);
 
-    // BEACH with cached material
+    // BEACH
     const beachGeometry = new THREE.PlaneGeometry(groundSize, 150);
-    const beach = new THREE.Mesh(beachGeometry, getCachedBasicMaterial(0xd4b896));
+    const beachMaterial = new THREE.MeshBasicMaterial({ color: 0xd4b896 });
+    const beach = new THREE.Mesh(beachGeometry, beachMaterial);
     beach.rotation.x = -Math.PI / 2;
     beach.position.set(0, 0.2, 700);
     scene.add(beach);
 
-    // Boardwalk with cached material
+    // Boardwalk
     const boardwalkGeometry = new THREE.BoxGeometry(groundSize, 0.3, 15);
-    const boardwalk = new THREE.Mesh(boardwalkGeometry, getCachedBasicMaterial(0xb89468));
+    const boardwalkMaterial = new THREE.MeshBasicMaterial({ color: 0xb89468 });
+    const boardwalk = new THREE.Mesh(boardwalkGeometry, boardwalkMaterial);
     boardwalk.position.set(0, 0.15, 620);
     scene.add(boardwalk);
 
-    // Neon strip along boardwalk with cached magenta material
+    // Neon strip along boardwalk
     const boardwalkNeonGeom = new THREE.BoxGeometry(groundSize, 0.3, 0.5);
-    const boardwalkNeon = new THREE.Mesh(boardwalkNeonGeom, getCachedBasicMaterial(0xff00ff));
+    const boardwalkNeonMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+    const boardwalkNeon = new THREE.Mesh(boardwalkNeonGeom, boardwalkNeonMat);
     boardwalkNeon.position.set(0, 0.35, 612);
     scene.add(boardwalkNeon);
 
@@ -904,10 +879,10 @@ const SimulatorGame = ({ onClose, onExit }) => {
     // All palm trees created with single draw call per mesh type
     createPalmTrees(scene, scale, roadPositions);
 
-    // Beach umbrellas - OPTIMIZED with shared geometry and CACHED BasicMaterial
-    const umbrellaMat = getCachedBasicMaterial(0xff1493);
-    const umbrellaMat2 = getCachedBasicMaterial(0x00ced1);
-    const poleMat = getCachedBasicMaterial(0xffffff);
+    // Beach umbrellas - OPTIMIZED with shared geometry and BasicMaterial
+    const umbrellaMat = new THREE.MeshBasicMaterial({ color: 0xff1493 });
+    const umbrellaMat2 = new THREE.MeshBasicMaterial({ color: 0x00ced1 });
+    const poleMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
     // Shared geometries
     const umbrellaGeom = new THREE.ConeGeometry(8 * scale, 4 * scale, 4); // Low poly
@@ -927,12 +902,12 @@ const SimulatorGame = ({ onClose, onExit }) => {
     }
 
     // Neon signs - REDUCED and simplified
-    // CACHED materials for neon signs
+    // Neon signs - REDUCED and simplified
     const neonSignMats = [
-      getCachedBasicMaterial(0xff00ff),
-      getCachedBasicMaterial(0x00ffff),
+      new THREE.MeshBasicMaterial({ color: 0xff00ff }),
+      new THREE.MeshBasicMaterial({ color: 0x00ffff }),
     ];
-    const postMat = getCachedBasicMaterial(0x333333);
+    const postMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
     const postGeom = new THREE.BoxGeometry(0.5 * scale, 20 * scale, 0.5 * scale);
     const signGeom = new THREE.BoxGeometry(15 * scale, 3 * scale, 0.5 * scale);
 
@@ -949,14 +924,14 @@ const SimulatorGame = ({ onClose, onExit }) => {
       scene.add(sign);
     }
 
-    // ========== LAUNCH RAMPS - OPTIMIZED with CACHED materials ==========
+    // ========== LAUNCH RAMPS - OPTIMIZED ==========
     const ramps = [];
-    const rampMaterial = getCachedBasicMaterial(0x222222);
+    const rampMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
 
-    // Shared CACHED neon materials
+    // Shared neon materials
     const rampNeonMats = [
-      getCachedBasicMaterial(0xff00ff),
-      getCachedBasicMaterial(0x00ffff),
+      new THREE.MeshBasicMaterial({ color: 0xff00ff }),
+      new THREE.MeshBasicMaterial({ color: 0x00ffff }),
     ];
 
     const rampPositions = [
@@ -1622,9 +1597,6 @@ const SimulatorGame = ({ onClose, onExit }) => {
           containerRef.current.removeChild(rendererRef.current.domElement);
         }
       }
-
-      // Clear material cache to free GPU memory
-      clearMaterialCache();
 
       // Clear refs
       sceneRef.current = null;
