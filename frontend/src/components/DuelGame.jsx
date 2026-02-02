@@ -397,6 +397,10 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
     return STAKE_TIERS.filter(tier => tier <= coins);
   }, [player?.coins]);
 
+  // Handler refs for cleanup
+  const handleClickRef = useRef(null);
+  const handleResizeRef = useRef(null);
+
   // Initialize Three.js scene
   useEffect(() => {
     if (phase !== PHASES.FIGHTING && phase !== PHASES.COUNTDOWN &&
@@ -472,13 +476,24 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
       scene.add(indicatorGroup);
       clickIndicatorRef.current = indicatorGroup;
 
-      // Click handler
+      // Click/touch handler
       const handleClick = (event) => {
         if (phaseRef.current !== PHASES.FIGHTING) return;
 
+        // Handle touch events
+        let clientX, clientY;
+        if (event.type === 'touchstart' && event.touches && event.touches.length > 0) {
+          event.preventDefault();
+          clientX = event.touches[0].clientX;
+          clientY = event.touches[0].clientY;
+        } else {
+          clientX = event.clientX;
+          clientY = event.clientY;
+        }
+
         const rect = renderer.domElement.getBoundingClientRect();
-        mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        mouseRef.current.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+        mouseRef.current.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
         raycasterRef.current.setFromCamera(mouseRef.current, camera);
 
@@ -575,8 +590,26 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
         }
       };
 
+      // Store handler ref for cleanup
+      handleClickRef.current = handleClick;
+
       renderer.domElement.addEventListener('click', handleClick);
+      renderer.domElement.addEventListener('touchstart', handleClick, { passive: false });
       renderer.domElement.style.cursor = 'pointer';
+
+      // Handle window resize for mobile orientation changes
+      const handleResize = () => {
+        if (!isMounted || !containerRef.current) return;
+        const width = containerRef.current.clientWidth || window.innerWidth;
+        const height = containerRef.current.clientHeight || window.innerHeight;
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+      };
+      handleResizeRef.current = handleResize;
+
+      window.addEventListener('resize', handleResize);
+      window.addEventListener('orientationchange', handleResize);
 
       // Lighting
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -621,8 +654,15 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
+      if (handleResizeRef.current) {
+        window.removeEventListener('resize', handleResizeRef.current);
+        window.removeEventListener('orientationchange', handleResizeRef.current);
+      }
       if (rendererRef.current && containerRef.current) {
-        rendererRef.current.domElement.removeEventListener('click', handleClick);
+        if (handleClickRef.current) {
+          rendererRef.current.domElement.removeEventListener('click', handleClickRef.current);
+          rendererRef.current.domElement.removeEventListener('touchstart', handleClickRef.current);
+        }
         containerRef.current.removeChild(rendererRef.current.domElement);
         rendererRef.current.dispose();
       }

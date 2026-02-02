@@ -800,46 +800,558 @@
   border-color: #FFD000;
 }
 
-/* Mobile adjustments */
+/* ================================ */
+/* MOBILE RESPONSIVE STYLES         */
+/* ================================ */
+
+/* Tablets and smaller desktops */
+@media (max-width: 900px) {
+  .hud-top {
+    padding: 8px;
+  }
+
+  .bar-bg {
+    width: 80px;
+  }
+
+  .stat-value {
+    font-size: 0.75rem;
+    min-width: 40px;
+  }
+}
+
+/* Mobile landscape and tablets */
 @media (max-width: 700px) {
+  .hud-top {
+    padding: 6px;
+    gap: 5px;
+  }
+
   .hud-bottom {
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
+    padding: 8px;
   }
 
   .combat-panel,
   .inventory-panel {
     width: 100%;
-    max-width: 300px;
+    max-width: 320px;
   }
 
   .bar-bg {
-    width: 70px;
+    width: 60px;
+    height: 14px;
+  }
+
+  .stat-icon {
+    font-size: 0.85rem;
+  }
+
+  .stat-value {
+    font-size: 0.7rem;
+    min-width: 35px;
+  }
+
+  .player-class-badge,
+  .enemy-class-badge {
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    gap: 5px;
+  }
+
+  .contract-display {
+    padding: 4px 8px;
+    font-size: 0.8rem;
+  }
+
+  .current-weapon {
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+
+  .weapon-icon {
+    font-size: 1.3rem;
+  }
+
+  .weapon-name {
+    font-size: 0.85rem;
+  }
+
+  .combat-panel h3,
+  .inventory-panel h3 {
+    font-size: 0.8rem;
+  }
+
+  .style-btn,
+  .prayer-btn {
+    padding: 10px 8px;
+    font-size: 0.85rem;
+  }
+
+  .spec-btn {
+    padding: 10px;
+    font-size: 0.85rem;
+  }
+
+  .attack-btn {
+    padding: 12px;
+    font-size: 1.1rem;
+  }
+
+  .inv-slot {
+    width: 36px;
+    height: 36px;
+    font-size: 1.2rem;
+  }
+
+  .countdown-number {
+    font-size: 6rem;
+  }
+
+  .countdown-overlay p {
+    font-size: 1.1rem;
   }
 }
 
-@media (max-height: 500px) {
-  .hud-bottom {
+/* Mobile phones portrait */
+@media (max-width: 480px) {
+  .duel-title {
+    font-size: 1.6rem;
+  }
+
+  .duel-subtitle {
+    font-size: 0.95rem;
+  }
+
+  .hud-top {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .player-stats,
+  .enemy-stats {
     flex-direction: row;
-    padding: 5px;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .player-class-badge,
+  .enemy-class-badge {
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 4px;
+  }
+
+  .enemy-stats {
+    align-items: center;
+  }
+
+  .stat-bar {
+    gap: 4px;
+  }
+
+  .stat-bar.enemy {
+    flex-direction: row;
+  }
+
+  .bar-bg {
+    width: 50px;
+    height: 12px;
+  }
+
+  .contract-display {
+    width: 100%;
+    justify-content: center;
+    order: -1;
+    margin-bottom: 6px;
+  }
+
+  .hud-bottom {
+    padding: 6px;
+    gap: 6px;
   }
 
   .combat-panel,
   .inventory-panel {
-    padding: 6px;
+    padding: 10px;
+    border-radius: 10px;
   }
 
   .combat-panel h3,
   .inventory-panel h3 {
     font-size: 0.75rem;
-    margin-bottom: 4px;
+    margin-bottom: 5px;
+  }
+
+  .current-weapon {
+    padding: 6px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+  }
+
+  .weapon-icon {
+    font-size: 1.1rem;
+  }
+
+  .weapon-name {
+    font-size: 0.75rem;
+  }
+
+  .style-buttons,
+  .prayer-buttons {
+    gap: 3px;
+    margin-bottom: 6px;
+  }
+
+  .style-btn,
+  .prayer-btn {
+    padding: 8px 4px;
+    font-size: 0.75rem;
+    border-radius: 6px;
+    min-height: 44px; /* Touch target */
+  }
+
+  .spec-btn {
+    padding: 8px;
+    font-size: 0.75rem;
+    border-radius: 6px;
+    min-height: 44px;
+  }
+
+  .attack-btn {
+    padding: 10px;
+    font-size: 1rem;
+    border-radius: 10px;
+    margin-top: 6px;
+    min-height: 50px;
+  }
+
+  .inventory-grid {
+    grid-template-columns: repeat(7, 1fr);
+    gap: 3px;
+  }
+
+  .inv-slot {
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+    border-radius: 6px;
+    min-height: 32px;
+  }
+
+  /* Hit splats mobile positioning */
+  .hit-splat.player {
+    left: 25%;
+    top: 35%;
+  }
+
+  .hit-splat.enemy {
+    right: 25%;
+    top: 30%;
+  }
+
+  .hit-splat {
+    font-size: 1rem;
+    padding: 3px 8px;
+  }
+
+  /* Countdown mobile */
+  .countdown-number {
+    font-size: 5rem;
+  }
+
+  .countdown-overlay p {
+    font-size: 1rem;
+  }
+
+  /* Result screen mobile */
+  .result-container {
+    padding: 20px 15px;
+    border-radius: 15px;
+  }
+
+  .result-container h1 {
+    font-size: 1.8rem;
+    margin-bottom: 15px;
+  }
+
+  .contract-result,
+  .loss-display {
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  .reward,
+  .loss {
+    font-size: 1.3rem;
+  }
+
+  .stats-summary {
+    font-size: 0.85rem;
+    margin-bottom: 15px;
+  }
+
+  .collect-btn {
+    padding: 12px 30px;
+    font-size: 1.1rem;
+    border-radius: 15px;
+    min-height: 50px;
+  }
+
+  /* Stake selection mobile */
+  .stake-container {
+    padding: 15px 10px;
+  }
+
+  .selected-class-display {
+    padding: 8px 12px;
+    font-size: 1.1rem;
+    gap: 8px;
+  }
+
+  .your-coins {
+    padding: 8px 16px;
+    font-size: 1rem;
+  }
+
+  .section-title {
+    font-size: 1.1rem;
+    margin: 15px 0 10px;
+  }
+
+  .contracts-grid {
+    gap: 8px;
+  }
+
+  .contract-card {
+    padding: 10px 8px;
+    border-radius: 10px;
+  }
+
+  .contract-emoji {
+    font-size: 1.5rem;
+  }
+
+  .contract-name {
+    font-size: 0.95rem;
+  }
+
+  .contract-desc {
+    font-size: 0.75rem;
+  }
+
+  .contract-mult {
+    font-size: 0.95rem;
+  }
+
+  .stakes-grid {
+    gap: 8px;
+  }
+
+  .stake-btn {
+    padding: 10px 18px;
+    border-radius: 10px;
+    min-height: 60px;
+  }
+
+  .stake-amount {
+    font-size: 1rem;
+  }
+
+  .stake-reward {
+    font-size: 0.75rem;
+  }
+
+  .start-btn {
+    padding: 14px 35px;
+    font-size: 1.2rem;
+    border-radius: 20px;
+    min-height: 55px;
+  }
+
+  /* Close button mobile */
+  .duel-close-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 1rem;
+    top: 8px;
+    right: 8px;
+  }
+}
+
+/* Very small phones */
+@media (max-width: 360px) {
+  .duel-title {
+    font-size: 1.3rem;
+  }
+
+  .inventory-grid {
+    grid-template-columns: repeat(7, 1fr);
   }
 
   .inv-slot {
     width: 28px;
     height: 28px;
-    font-size: 1rem;
+    font-size: 0.9rem;
+  }
+
+  .bar-bg {
+    width: 40px;
+    height: 10px;
+  }
+
+  .stat-value {
+    font-size: 0.65rem;
+    min-width: 28px;
+  }
+
+  .style-btn,
+  .prayer-btn {
+    padding: 6px 3px;
+    font-size: 0.7rem;
+  }
+}
+
+/* Landscape mobile */
+@media (max-height: 500px) and (orientation: landscape) {
+  .hud-top {
+    padding: 4px 8px;
+  }
+
+  .hud-bottom {
+    flex-direction: row;
+    padding: 4px 8px;
+    gap: 8px;
+    align-items: flex-end;
+  }
+
+  .combat-panel,
+  .inventory-panel {
+    padding: 6px;
+    max-width: 200px;
+  }
+
+  .combat-panel h3,
+  .inventory-panel h3 {
+    font-size: 0.7rem;
+    margin-bottom: 3px;
+  }
+
+  .current-weapon {
+    display: none;
+  }
+
+  .style-buttons,
+  .prayer-buttons {
+    margin-bottom: 4px;
+  }
+
+  .style-btn,
+  .prayer-btn {
+    padding: 6px 4px;
+    font-size: 0.7rem;
+    min-height: 36px;
+  }
+
+  .spec-btn {
+    padding: 6px;
+    font-size: 0.7rem;
+  }
+
+  .attack-btn {
+    padding: 8px;
+    font-size: 0.9rem;
+    margin-top: 4px;
+    min-height: 40px;
+  }
+
+  .inv-slot {
+    width: 26px;
+    height: 26px;
+    font-size: 0.9rem;
+  }
+
+  .inventory-grid {
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+  }
+
+  .bar-bg {
+    width: 50px;
+    height: 12px;
+  }
+
+  .player-class-badge,
+  .enemy-class-badge {
+    padding: 3px 6px;
+    font-size: 0.7rem;
+  }
+
+  .countdown-number {
+    font-size: 4rem;
+  }
+
+  /* Stake/class selection landscape */
+  .duel-overlay.stake-select,
+  .duel-overlay.class-select {
+    padding: 10px;
+  }
+
+  .stake-container,
+  .class-container {
+    padding: 10px;
+  }
+
+  .duel-title {
+    font-size: 1.5rem;
+    margin-bottom: 5px;
+  }
+
+  .duel-subtitle {
+    font-size: 0.9rem;
+    margin: 5px 0 10px;
+  }
+}
+
+/* Touch-friendly adjustments - ensure minimum tap targets */
+@media (pointer: coarse) {
+  .style-btn,
+  .prayer-btn,
+  .spec-btn,
+  .attack-btn,
+  .inv-slot,
+  .stake-btn,
+  .contract-card,
+  .class-card,
+  .duel-close-btn,
+  .collect-btn,
+  .start-btn,
+  .confirm-class-btn,
+  .change-class-btn {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* Larger touch targets for action buttons */
+  .attack-btn {
+    min-height: 50px;
+  }
+
+  .inv-slot {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  /* Prevent text selection on touch */
+  .duel-game {
+    -webkit-user-select: none;
+    user-select: none;
   }
 }
 
@@ -1020,10 +1532,20 @@
 @media (max-width: 600px) {
   .classes-grid {
     grid-template-columns: 1fr;
+    gap: 10px;
   }
 
   .class-card {
-    padding: 15px 12px;
+    padding: 14px 12px;
+    border-radius: 12px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .class-header {
+    width: 100%;
+    justify-content: center;
   }
 
   .class-emoji {
@@ -1034,8 +1556,84 @@
     font-size: 1.2rem;
   }
 
+  .class-desc {
+    font-size: 0.85rem;
+    margin: 2px 0 8px;
+  }
+
+  .class-stats {
+    gap: 12px;
+    padding: 10px 0;
+  }
+
+  .class-stat .stat-label {
+    font-size: 0.65rem;
+  }
+
+  .class-stat .stat-num {
+    font-size: 1rem;
+  }
+
+  .class-specialty {
+    margin-top: 8px;
+    padding: 8px 10px;
+    font-size: 0.8rem;
+  }
+
   .confirm-class-btn {
     padding: 14px 35px;
     font-size: 1.2rem;
+    min-height: 55px;
+  }
+
+  .class-card.selected::after {
+    width: 24px;
+    height: 24px;
+    font-size: 0.85rem;
+    top: 10px;
+    right: 10px;
+  }
+}
+
+/* Very small phones - class selection */
+@media (max-width: 380px) {
+  .class-container {
+    padding: 10px;
+  }
+
+  .classes-grid {
+    gap: 8px;
+    margin: 15px 0;
+  }
+
+  .class-card {
+    padding: 12px 10px;
+  }
+
+  .class-emoji {
+    font-size: 1.5rem;
+  }
+
+  .class-name {
+    font-size: 1rem;
+  }
+
+  .class-stats {
+    gap: 10px;
+    padding: 8px 0;
+  }
+
+  .class-stat .stat-num {
+    font-size: 0.9rem;
+  }
+
+  .class-specialty {
+    font-size: 0.75rem;
+    padding: 6px 8px;
+  }
+
+  .confirm-class-btn {
+    padding: 12px 25px;
+    font-size: 1.1rem;
   }
 }
