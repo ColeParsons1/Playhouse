@@ -44,7 +44,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 6; // Reduced from 10 for performance
+    const citySize = 12; // Doubled downtown area
 
     // 4K QUALITY MATERIALS - Realistic PBR materials
     // Realistic asphalt - darker gray with roughness
@@ -245,7 +245,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 6; // Reduced from 10 for performance
+    const citySize = 12; // Doubled downtown area
 
     // 4K QUALITY building materials - PBR with proper roughness/metalness
     const buildingColors = [
@@ -568,7 +568,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 6; // Reduced from 10 for performance
+    const citySize = 12; // Doubled downtown area
 
     const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.7, metalness: 0.8 });
     const lampColors = [0xff00ff, 0x00ffff, 0xff1493];
@@ -625,7 +625,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 6; // Reduced from 10 for performance
+    const citySize = 12; // Doubled downtown area
 
     const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7, metalness: 0.8 });
     const boxMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8, metalness: 0.5 });
@@ -671,7 +671,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 6; // Reduced from 10 for performance
+    const citySize = 12; // Doubled downtown area
 
     // Vice City 80s car colors - white, red, teal, pink, gold
     const carColors = [0xffffff, 0xf5f5f5, 0xff0044, 0x00cccc, 0xff69b4, 0xffd700, 0x8b0000, 0x00ced1, 0xff1493, 0xc0c0c0];
@@ -837,7 +837,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 6; // Reduced from 10 for performance
+    const citySize = 12; // Doubled downtown area
     const groundSize = 2500 * citySize;
 
     // Main ground - use BasicMaterial (no lighting calculations)
@@ -1638,7 +1638,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     physics.position.z += direction.z * physics.speed * 0.016;
 
     // Map boundaries - allow beach driving, stop at shallow water
-    const mapBoundary = 2400; // Reduced playable area
+    const mapBoundary = 4800; // Doubled for larger downtown area
     const oceanBoundary = 780; // Allow beach (z=700), stop at shallow water edge
 
     // Tampa Bay check - ellipse centered at (0, -200)
