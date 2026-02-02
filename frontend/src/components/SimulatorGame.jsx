@@ -793,6 +793,13 @@ const SimulatorGame = ({ onClose, onExit }) => {
     frondInstances2.instanceMatrix.needsUpdate = true;
     frondInstances3.instanceMatrix.needsUpdate = true;
 
+    // Compute bounding spheres for proper frustum culling
+    trunkInstances.computeBoundingSphere();
+    frondInstances0.computeBoundingSphere();
+    frondInstances1.computeBoundingSphere();
+    frondInstances2.computeBoundingSphere();
+    frondInstances3.computeBoundingSphere();
+
     // Add to scene
     scene.add(trunkInstances);
     scene.add(frondInstances0);
