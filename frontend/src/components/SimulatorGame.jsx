@@ -310,11 +310,16 @@ const SimulatorGame = ({ onClose, onExit }) => {
 
     // Channel connecting bay to ocean
     const isInChannel = (x, z) => {
-      const channelWidth = 220; // Slightly wider for building clearance
+      const channelWidth = 250; // Wider for building clearance
       return Math.abs(x) < channelWidth / 2 && z > 100 && z < 720;
     };
 
-    // Building grid - dense Miami feel with bay and channel cutout
+    // Wide bridge area (z=140 to z=420, x=-250 to x=250)
+    const isOnWideBridge = (x, z) => {
+      return Math.abs(x) < 280 && z > 120 && z < 440;
+    };
+
+    // Building grid - dense Miami feel with bay, channel, and bridge cutout
     const buildingPositions = [];
     for (let x = -2000; x <= 2000; x += 70) {
       for (let z = -2000; z <= 2000; z += 70) {
@@ -323,8 +328,9 @@ const SimulatorGame = ({ onClose, onExit }) => {
         const inOcean = z > 650;
         const inBay = isInBay(x, z);
         const inChannel = isInChannel(x, z);
+        const onBridge = isOnWideBridge(x, z);
 
-        if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean && !inBay && !inChannel) {
+        if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean && !inBay && !inChannel && !onBridge) {
           buildingPositions.push({ x, z });
         }
       }
