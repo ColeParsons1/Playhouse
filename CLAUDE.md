@@ -144,7 +144,22 @@ Key endpoints defined in `backend/game/urls.py`
 
 ---
 
-# SECTION 9: CONTEXT SHARING
+# SECTION 9: DESIGN GUIDELINES
+
+### Color Palette: McDonald's PlayPlace Theme
+**IMPORTANT**: All design changes must use the McDonald's PlayPlace color palette:
+- **Red**: #DA291C (primary)
+- **Yellow**: #FFC72C (accent)
+- **Blue**: #0033A0 (secondary)
+- **Green**: #00A94F (accent)
+- **Purple**: #702F8A (accent)
+- **Orange**: #FF7900 (accent)
+
+Keep designs fun, playful, and reminiscent of a PlayPlace.
+
+---
+
+# SECTION 10: CONTEXT SHARING
 
 Use this section to leave notes for the other collaborator's Claude.
 
@@ -158,7 +173,7 @@ Use this section to leave notes for the other collaborator's Claude.
 
 ---
 
-# SECTION 10: SESSION LOG
+# SECTION 11: SESSION LOG
 
 Use this section to log major changes made in each session.
 
