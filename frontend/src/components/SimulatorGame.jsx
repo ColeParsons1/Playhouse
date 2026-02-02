@@ -29,6 +29,19 @@ const SimulatorGame = ({ onClose, onExit }) => {
   const rampsRef = useRef([]);
   const neonLightsRef = useRef([]);
 
+  // Day/night cycle refs (5 minute full cycle)
+  const dayTimeRef = useRef(0); // 0 to 1 representing full day cycle
+  const ambientLightRef = useRef(null);
+  const hemiLightRef = useRef(null);
+  const mainLightRef = useRef(null);
+  const DAY_CYCLE_DURATION = 300; // 5 minutes in seconds
+
+  // Weather system refs
+  const rainRef = useRef(null);
+  const isRainingRef = useRef(false);
+  const rainTimeRef = useRef(0);
+  const nextRainChangeRef = useRef(Math.random() * 60 + 30); // Random time until weather change (30-90 seconds)
+
   // Check if current player is the host
   const isHost = true;
 
@@ -291,15 +304,33 @@ const SimulatorGame = ({ onClose, onExit }) => {
 
     const roadClearance = 55;
 
-    // Building grid - dense Miami feel
+    // Tampa Bay - downtown bay area
+    // Bay is an ellipse centered at (0, -200), extending from x=-400 to x=400, z=-500 to z=100
+    const isInBay = (x, z) => {
+      const bayX = 0, bayZ = -200;
+      const bayRadiusX = 450, bayRadiusZ = 350;
+      const dx = (x - bayX) / bayRadiusX;
+      const dz = (z - bayZ) / bayRadiusZ;
+      return (dx * dx + dz * dz) < 1;
+    };
+
+    // Channel connecting bay to ocean
+    const isInChannel = (x, z) => {
+      const channelWidth = 220; // Slightly wider for building clearance
+      return Math.abs(x) < channelWidth / 2 && z > 100 && z < 720;
+    };
+
+    // Building grid - dense Miami feel with bay and channel cutout
     const buildingPositions = [];
     for (let x = -2000; x <= 2000; x += 70) {
       for (let z = -2000; z <= 2000; z += 70) {
         const nearHorizontalRoad = roadPositions.some(roadZ => Math.abs(z - roadZ) < roadClearance);
         const nearVerticalRoad = roadPositions.some(roadX => Math.abs(x - roadX) < roadClearance);
         const inOcean = z > 650;
+        const inBay = isInBay(x, z);
+        const inChannel = isInChannel(x, z);
 
-        if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean) {
+        if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean && !inBay && !inChannel) {
           buildingPositions.push({ x, z });
         }
       }
@@ -318,14 +349,68 @@ const SimulatorGame = ({ onClose, onExit }) => {
     buildingPositions.forEach(pos => {
       const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
       const isDowntown = distFromCenter < 500;
-      const isSkyscraper = isDowntown ? Math.random() > 0.25 : Math.random() > 0.85;
+      const isSkyscraper = isDowntown ? Math.random() > 0.01 : Math.random() > 0.80; // 35% more skyscrapers
       const buildingType = Math.random(); // Determine architectural style
 
       const heightMultiplier = Math.max(0.3, 1.5 - distFromCenter / 700);
 
-      const width = isSkyscraper ? (14 + Math.random() * 6) * scale : (10 + Math.random() * 5) * scale;
-      const depth = isSkyscraper ? (14 + Math.random() * 6) * scale : (10 + Math.random() * 5) * scale;
-      const baseHeight = isSkyscraper ? 80 + Math.random() * 160 : 15 + Math.random() * 35;
+      // More varied building footprints like a real city
+      let width, depth, baseHeight;
+      const footprintType = Math.random();
+
+      if (isSkyscraper) {
+        // Skyscrapers: variety of sizes
+        if (footprintType < 0.2) {
+          // Slim tower
+          width = (8 + Math.random() * 4) * scale;
+          depth = (8 + Math.random() * 4) * scale;
+          baseHeight = 120 + Math.random() * 140;
+        } else if (footprintType < 0.5) {
+          // Medium office tower
+          width = (14 + Math.random() * 8) * scale;
+          depth = (14 + Math.random() * 8) * scale;
+          baseHeight = 80 + Math.random() * 120;
+        } else if (footprintType < 0.8) {
+          // Large corporate building
+          width = (20 + Math.random() * 15) * scale;
+          depth = (18 + Math.random() * 12) * scale;
+          baseHeight = 60 + Math.random() * 100;
+        } else {
+          // Massive complex
+          width = (30 + Math.random() * 20) * scale;
+          depth = (25 + Math.random() * 15) * scale;
+          baseHeight = 50 + Math.random() * 80;
+        }
+      } else {
+        // Regular buildings: even more variety
+        if (footprintType < 0.15) {
+          // Tiny shop/house
+          width = (5 + Math.random() * 3) * scale;
+          depth = (5 + Math.random() * 3) * scale;
+          baseHeight = 8 + Math.random() * 12;
+        } else if (footprintType < 0.35) {
+          // Small building
+          width = (7 + Math.random() * 5) * scale;
+          depth = (6 + Math.random() * 5) * scale;
+          baseHeight = 12 + Math.random() * 18;
+        } else if (footprintType < 0.6) {
+          // Medium building
+          width = (10 + Math.random() * 8) * scale;
+          depth = (10 + Math.random() * 8) * scale;
+          baseHeight = 15 + Math.random() * 25;
+        } else if (footprintType < 0.85) {
+          // Large building
+          width = (15 + Math.random() * 12) * scale;
+          depth = (12 + Math.random() * 10) * scale;
+          baseHeight = 20 + Math.random() * 35;
+        } else {
+          // Wide/long building (warehouses, malls)
+          width = (25 + Math.random() * 20) * scale;
+          depth = (15 + Math.random() * 15) * scale;
+          baseHeight = 10 + Math.random() * 15;
+        }
+      }
+
       const height = baseHeight * scale * heightMultiplier;
 
       const buildingMaterial = buildingColors[Math.floor(Math.random() * buildingColors.length)];
@@ -701,11 +786,11 @@ const SimulatorGame = ({ onClose, onExit }) => {
   const createPalmTree = (scene, x, z, scale) => {
     if (!THREE) return;
 
-    // Initialize shared resources once
+    // Initialize shared resources once - DOUBLED HEIGHT
     if (!palmTreeGeomRef.current) {
       palmTreeGeomRef.current = {
-        trunk: new THREE.CylinderGeometry(0.4, 0.6, 15, 4), // Low poly trunk
-        frond: new THREE.ConeGeometry(1.5, 12, 3), // Low poly fronds
+        trunk: new THREE.CylinderGeometry(0.4, 0.6, 30, 4), // Low poly trunk - doubled from 15 to 30
+        frond: new THREE.ConeGeometry(2, 18, 3), // Larger fronds - scaled up
       };
       palmTreeMatsRef.current = {
         trunk: new THREE.MeshBasicMaterial({ color: 0x8b7355 }),
@@ -716,21 +801,21 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const geoms = palmTreeGeomRef.current;
     const mats = palmTreeMatsRef.current;
 
-    // Trunk
+    // Trunk - doubled height
     const trunk = new THREE.Mesh(geoms.trunk, mats.trunk);
-    trunk.position.set(x, 7.5 * scale, z);
+    trunk.position.set(x, 15 * scale, z); // Doubled from 7.5 to 15
     trunk.scale.set(scale, scale, scale);
     scene.add(trunk);
 
-    // Simplified fronds - only 4 instead of 8
+    // Simplified fronds - only 4 instead of 8, positioned at top of taller trunk
     const numFronds = 4;
     for (let i = 0; i < numFronds; i++) {
       const frond = new THREE.Mesh(geoms.frond, mats.leaf);
       const angle = (i / numFronds) * Math.PI * 2;
       frond.position.set(
-        x + Math.cos(angle) * 3 * scale,
-        15 * scale,
-        z + Math.sin(angle) * 3 * scale
+        x + Math.cos(angle) * 4 * scale,
+        30 * scale, // Doubled from 15 to 30
+        z + Math.sin(angle) * 4 * scale
       );
       frond.rotation.x = Math.PI / 2 + 0.5;
       frond.rotation.z = angle;
@@ -792,6 +877,223 @@ const SimulatorGame = ({ onClose, onExit }) => {
     boardwalkNeon.position.set(0, 0.35, 612);
     scene.add(boardwalkNeon);
 
+    // ========== TAMPA BAY - Downtown Bay Area ==========
+    const bayMaterial = new THREE.MeshBasicMaterial({ color: 0x1a4a6a }); // Deep bay water
+    const bayShallowMaterial = new THREE.MeshBasicMaterial({ color: 0x2a6a8a }); // Shallow edges
+
+    // Create elliptical bay using circle geometry scaled
+    const bayGeometry = new THREE.CircleGeometry(450, 64);
+    bayGeometry.scale(1, 0.78, 1); // Make it elliptical (350/450 ratio)
+    const bay = new THREE.Mesh(bayGeometry, bayMaterial);
+    bay.rotation.x = -Math.PI / 2;
+    bay.position.set(0, 0.3, -200);
+    scene.add(bay);
+
+    // Shallow water ring around bay
+    const bayShallowGeometry = new THREE.RingGeometry(420, 480, 64);
+    bayShallowGeometry.scale(1, 0.78, 1);
+    const bayShallow = new THREE.Mesh(bayShallowGeometry, bayShallowMaterial);
+    bayShallow.rotation.x = -Math.PI / 2;
+    bayShallow.position.set(0, 0.25, -200);
+    scene.add(bayShallow);
+
+    // ========== CHANNEL connecting bay to ocean ==========
+    // Channel runs from bay (z=150) to ocean (z=700)
+    const channelLength = 570; // From bay edge to ocean
+    const channelWidth = 180;
+
+    // Main channel water
+    const channelGeometry = new THREE.PlaneGeometry(channelWidth, channelLength);
+    const channel = new THREE.Mesh(channelGeometry, bayMaterial);
+    channel.rotation.x = -Math.PI / 2;
+    channel.position.set(0, 0.3, 150 + channelLength / 2); // Positioned between bay and ocean
+    scene.add(channel);
+
+    // Channel shallow edges (left and right banks)
+    const channelBankGeom = new THREE.PlaneGeometry(40, channelLength);
+    const channelBankLeft = new THREE.Mesh(channelBankGeom, bayShallowMaterial);
+    channelBankLeft.rotation.x = -Math.PI / 2;
+    channelBankLeft.position.set(-channelWidth / 2 - 20, 0.25, 150 + channelLength / 2);
+    scene.add(channelBankLeft);
+
+    const channelBankRight = new THREE.Mesh(channelBankGeom, bayShallowMaterial);
+    channelBankRight.rotation.x = -Math.PI / 2;
+    channelBankRight.position.set(channelWidth / 2 + 20, 0.25, 150 + channelLength / 2);
+    scene.add(channelBankRight);
+
+    // ========== TAMPA BAY BRIDGE (Inspired by Sunshine Skyway) ==========
+    const bridgeMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.6, metalness: 0.4 });
+    const cableMaterial = new THREE.MeshBasicMaterial({ color: 0xffdd00 }); // Yellow cables like Skyway
+    const pillarMaterial = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.5, metalness: 0.3 });
+
+    // Bridge deck - spans across the bay (east-west)
+    const bridgeLength = 950;
+    const bridgeWidth = 45;
+    const bridgeHeight = 8;
+
+    // Main bridge deck
+    const bridgeDeckGeom = new THREE.BoxGeometry(bridgeLength, 3, bridgeWidth);
+    const bridgeDeck = new THREE.Mesh(bridgeDeckGeom, bridgeMaterial);
+    bridgeDeck.position.set(0, bridgeHeight, -200);
+    bridgeDeck.castShadow = true;
+    bridgeDeck.receiveShadow = true;
+    scene.add(bridgeDeck);
+
+    // Road surface on bridge
+    const bridgeRoadGeom = new THREE.BoxGeometry(bridgeLength - 10, 0.5, bridgeWidth - 10);
+    const bridgeRoadMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
+    const bridgeRoad = new THREE.Mesh(bridgeRoadGeom, bridgeRoadMat);
+    bridgeRoad.position.set(0, bridgeHeight + 1.8, -200);
+    scene.add(bridgeRoad);
+
+    // Center line on bridge
+    const bridgeLineGeom = new THREE.BoxGeometry(bridgeLength - 20, 0.6, 1);
+    const bridgeLineMat = new THREE.MeshBasicMaterial({ color: 0xffdd44 });
+    const bridgeLine = new THREE.Mesh(bridgeLineGeom, bridgeLineMat);
+    bridgeLine.position.set(0, bridgeHeight + 2.1, -200);
+    scene.add(bridgeLine);
+
+    // Bridge support pillars
+    const pillarGeom = new THREE.CylinderGeometry(4, 5, bridgeHeight + 5, 8);
+    const pillarPositions = [-400, -200, 0, 200, 400];
+    pillarPositions.forEach(x => {
+      const pillar = new THREE.Mesh(pillarGeom, pillarMaterial);
+      pillar.position.set(x, (bridgeHeight + 5) / 2 - 3, -200);
+      pillar.castShadow = true;
+      scene.add(pillar);
+    });
+
+    // Cable-stayed towers (like Sunshine Skyway)
+    const towerHeight = 80;
+    const towerGeom = new THREE.BoxGeometry(6, towerHeight, 6);
+
+    // Two main towers
+    [-150, 150].forEach(x => {
+      const tower = new THREE.Mesh(towerGeom, pillarMaterial);
+      tower.position.set(x, bridgeHeight + towerHeight / 2, -200);
+      tower.castShadow = true;
+      scene.add(tower);
+
+      // Tower top pyramid
+      const towerTopGeom = new THREE.ConeGeometry(5, 15, 4);
+      const towerTop = new THREE.Mesh(towerTopGeom, pillarMaterial);
+      towerTop.position.set(x, bridgeHeight + towerHeight + 7, -200);
+      scene.add(towerTop);
+
+      // Cables from tower to bridge deck
+      const cableGeom = new THREE.CylinderGeometry(0.3, 0.3, 1, 4);
+      for (let i = 0; i < 8; i++) {
+        const cableLength = 20 + i * 8;
+        const cableX = x + (x > 0 ? 1 : -1) * (15 + i * 18);
+        const cableAngle = Math.atan2(towerHeight - 10, Math.abs(cableX - x));
+
+        const cable = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.4, 0.4, cableLength, 4),
+          cableMaterial
+        );
+        cable.position.set(
+          (x + cableX) / 2,
+          bridgeHeight + towerHeight / 2 + 20 - i * 3,
+          -200
+        );
+        cable.rotation.z = (x > 0 ? -1 : 1) * (Math.PI / 2 - cableAngle);
+        scene.add(cable);
+      }
+    });
+
+    // Bridge railings
+    const railingGeom = new THREE.BoxGeometry(bridgeLength, 2, 0.5);
+    const railingMat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+    [-1, 1].forEach(side => {
+      const railing = new THREE.Mesh(railingGeom, railingMat);
+      railing.position.set(0, bridgeHeight + 3, -200 + side * (bridgeWidth / 2 - 2));
+      scene.add(railing);
+    });
+
+    // Bridge approach ramps (connect to ground level)
+    const bridgeRampLength = 200;
+    const bridgeRampGeom = new THREE.BoxGeometry(bridgeRampLength, 3, bridgeWidth);
+
+    // West ramp
+    const westRamp = new THREE.Mesh(bridgeRampGeom, bridgeMaterial);
+    westRamp.position.set(-bridgeLength / 2 - bridgeRampLength / 2 + 20, bridgeHeight / 2, -200);
+    westRamp.rotation.z = Math.atan2(bridgeHeight, bridgeRampLength);
+    scene.add(westRamp);
+
+    // East ramp
+    const eastRamp = new THREE.Mesh(bridgeRampGeom, bridgeMaterial);
+    eastRamp.position.set(bridgeLength / 2 + bridgeRampLength / 2 - 20, bridgeHeight / 2, -200);
+    eastRamp.rotation.z = -Math.atan2(bridgeHeight, bridgeRampLength);
+    scene.add(eastRamp);
+
+    // ========== CHANNEL BRIDGE (North-South over the channel, near launch ramp) ==========
+    // This bridge crosses the channel at x=0, connecting the road that has the launch ramp
+    const channelBridgeSpan = 600; // Long enough to span entire channel (z=150 to z=720)
+    const channelBridgeWidth2 = 50;
+    const channelBridgeHeight2 = 12;
+    const channelBridgeZ2 = 435; // Center of channel (150 + 570/2)
+
+    console.log('Creating channel bridge at z=', channelBridgeZ2);
+
+    // Channel bridge material - distinct red color to make it visible
+    const channelBridgeMaterial = new THREE.MeshStandardMaterial({ color: 0xcc4444, roughness: 0.6, metalness: 0.4 });
+
+    // Main channel bridge deck
+    const channelBridgeDeckGeom2 = new THREE.BoxGeometry(channelBridgeWidth2, 4, channelBridgeSpan);
+    const channelBridgeDeck2 = new THREE.Mesh(channelBridgeDeckGeom2, channelBridgeMaterial);
+    channelBridgeDeck2.position.set(0, channelBridgeHeight2, channelBridgeZ2);
+    channelBridgeDeck2.castShadow = true;
+    channelBridgeDeck2.receiveShadow = true;
+    scene.add(channelBridgeDeck2);
+
+    // Road surface on channel bridge
+    const channelBridgeRoadGeom2 = new THREE.BoxGeometry(channelBridgeWidth2 - 8, 0.5, channelBridgeSpan - 10);
+    const channelBridgeRoad2 = new THREE.Mesh(channelBridgeRoadGeom2, bridgeRoadMat);
+    channelBridgeRoad2.position.set(0, channelBridgeHeight2 + 2.2, channelBridgeZ2);
+    scene.add(channelBridgeRoad2);
+
+    // Center line on channel bridge
+    const channelBridgeLineGeom2 = new THREE.BoxGeometry(1.5, 0.6, channelBridgeSpan - 20);
+    const channelBridgeLine2 = new THREE.Mesh(channelBridgeLineGeom2, bridgeLineMat);
+    channelBridgeLine2.position.set(0, channelBridgeHeight2 + 2.5, channelBridgeZ2);
+    scene.add(channelBridgeLine2);
+
+    // Channel bridge support pillars - taller and more visible
+    const channelPillarGeom2 = new THREE.CylinderGeometry(5, 6, channelBridgeHeight2 + 8, 8);
+    [250, 350, 450, 550, 650].forEach(z => {
+      const pillar = new THREE.Mesh(channelPillarGeom2, pillarMaterial);
+      pillar.position.set(0, (channelBridgeHeight2 + 8) / 2 - 4, z);
+      pillar.castShadow = true;
+      scene.add(pillar);
+    });
+
+    // Channel bridge railings - more visible
+    const channelRailingGeom2 = new THREE.BoxGeometry(1, 3, channelBridgeSpan);
+    const channelRailingMat = new THREE.MeshStandardMaterial({ color: 0xffdd00 }); // Yellow like Skyway
+    [-1, 1].forEach(side => {
+      const railing = new THREE.Mesh(channelRailingGeom2, channelRailingMat);
+      railing.position.set(side * (channelBridgeWidth2 / 2 - 2), channelBridgeHeight2 + 3.5, channelBridgeZ2);
+      scene.add(railing);
+    });
+
+    // Channel bridge approach ramps (north and south)
+    const channelRampLength2 = 150;
+    const channelRampGeom2 = new THREE.BoxGeometry(channelBridgeWidth2, 4, channelRampLength2);
+
+    // South ramp (towards ocean)
+    const southRamp2 = new THREE.Mesh(channelRampGeom2, channelBridgeMaterial);
+    southRamp2.position.set(0, channelBridgeHeight2 / 2, channelBridgeZ2 + channelBridgeSpan / 2 + channelRampLength2 / 2 - 20);
+    southRamp2.rotation.x = -Math.atan2(channelBridgeHeight2, channelRampLength2);
+    scene.add(southRamp2);
+
+    // North ramp (towards bay)
+    const northRamp2 = new THREE.Mesh(channelRampGeom2, channelBridgeMaterial);
+    northRamp2.position.set(0, channelBridgeHeight2 / 2, channelBridgeZ2 - channelBridgeSpan / 2 - channelRampLength2 / 2 + 20);
+    northRamp2.rotation.x = Math.atan2(channelBridgeHeight2, channelRampLength2);
+    scene.add(northRamp2);
+
+    console.log('Channel bridge created successfully');
+
     createRoads(scene);
     createBuildings(scene);
     createStreetLights(scene);
@@ -814,6 +1116,21 @@ const SimulatorGame = ({ onClose, onExit }) => {
       createPalmTree(scene, x + (Math.random() - 0.5) * 15, 590 + (Math.random() - 0.5) * 15, scale);
     }
 
+    // Bay check function for palm trees
+    const isInBayArea = (x, z) => {
+      const bayX = 0, bayZ = -200;
+      const bayRadiusX = 500, bayRadiusZ = 400; // Slightly larger to keep trees away from edge
+      const dx = (x - bayX) / bayRadiusX;
+      const dz = (z - bayZ) / bayRadiusZ;
+      return (dx * dx + dz * dz) < 1;
+    };
+
+    // Channel check for palm trees
+    const isInChannelArea = (x, z) => {
+      const channelWidth = 240; // Keep trees away from channel
+      return Math.abs(x) < channelWidth / 2 && z > 80 && z < 720;
+    };
+
     // Palm trees scattered in city - REDUCED from 400 to 100
     for (let i = 0; i < 100; i++) {
       const x = (Math.random() - 0.5) * 4000;
@@ -822,8 +1139,10 @@ const SimulatorGame = ({ onClose, onExit }) => {
       const nearHorizontalRoad = roadPositions.some(roadZ => Math.abs(z - roadZ) < 25);
       const nearVerticalRoad = roadPositions.some(roadX => Math.abs(x - roadX) < 25);
       const inOcean = z > 600;
+      const inBay = isInBayArea(x, z);
+      const inChannel = isInChannelArea(x, z);
 
-      if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean) {
+      if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean && !inBay && !inChannel) {
         createPalmTree(scene, x, z, scale * (0.8 + Math.random() * 0.4));
       }
     }
@@ -1314,6 +1633,60 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const mapBoundary = 2400; // Reduced playable area
     const oceanBoundary = 600; // Stop before deep ocean
 
+    // Tampa Bay check - ellipse centered at (0, -200)
+    const bayX = 0, bayZ = -200;
+    const bayRadiusX = 450, bayRadiusZ = 350;
+    const dxBay = (physics.position.x - bayX) / bayRadiusX;
+    const dzBay = (physics.position.z - bayZ) / bayRadiusZ;
+    const inBay = (dxBay * dxBay + dzBay * dzBay) < 1;
+
+    // Check if on bay bridge (bridge is at z=-200, x from -475 to 475, width 45)
+    const onBayBridge = Math.abs(physics.position.z - (-200)) < 25 && Math.abs(physics.position.x) < 500;
+
+    // Check if on channel bridge (bridge is at x=0, z=435 center, spans entire channel)
+    const channelBridgeZ = 435;
+    const channelBridgeSpan = 600;
+    const channelBridgeWidth = 50;
+    const onChannelBridge = Math.abs(physics.position.x) < channelBridgeWidth / 2 &&
+                            physics.position.z > (channelBridgeZ - channelBridgeSpan / 2 - 80) &&
+                            physics.position.z < (channelBridgeZ + channelBridgeSpan / 2 + 80);
+
+    // Check if in channel (connects bay to ocean)
+    const channelWidth = 180;
+    const inChannel = Math.abs(physics.position.x) < channelWidth / 2 && physics.position.z > 100 && physics.position.z < 700;
+
+    // Handle bay bridge height
+    if (onBayBridge && !physics.isAirborne) {
+      // Bridge deck is at y=10 (bridgeHeight + road surface)
+      const bridgeY = 10;
+      if (physics.position.y < bridgeY) {
+        physics.position.y = bridgeY;
+      }
+    }
+    // Handle channel bridge height
+    else if (onChannelBridge && !physics.isAirborne) {
+      // Channel bridge deck is at y=14 (channelBridgeHeight2 + road surface)
+      const channelBridgeY = 14;
+      if (physics.position.y < channelBridgeY) {
+        physics.position.y = channelBridgeY;
+      }
+    }
+    else if (inBay && !onBayBridge) {
+      // Push car out of bay if not on bridge
+      const angle = Math.atan2(physics.position.z - bayZ, physics.position.x - bayX);
+      physics.position.x = bayX + Math.cos(angle) * (bayRadiusX + 10);
+      physics.position.z = bayZ + Math.sin(angle) * (bayRadiusZ + 10);
+      physics.speed *= 0.3; // Slow down significantly
+    } else if (inChannel && !onChannelBridge && !physics.isAirborne) {
+      // Push car out of channel to nearest bank (unless on channel bridge)
+      if (physics.position.x >= 0) {
+        physics.position.x = channelWidth / 2 + 10;
+      } else {
+        physics.position.x = -channelWidth / 2 - 10;
+      }
+      physics.speed *= 0.3;
+    }
+
     if (physics.position.z > oceanBoundary) {
       physics.position.z = oceanBoundary;
       physics.speed *= 0.5; // Slow down at boundary
@@ -1367,6 +1740,170 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const lookAtPosition = physics.position.clone();
     lookAtPosition.y += 2;
     camera.lookAt(lookAtPosition);
+  }, []);
+
+  // Create rain particle system
+  const createRain = useCallback((scene) => {
+    if (!THREE) return;
+
+    const rainCount = 15000;
+    const rainGeometry = new THREE.BufferGeometry();
+    const rainPositions = new Float32Array(rainCount * 3);
+    const rainVelocities = new Float32Array(rainCount);
+
+    // Spread rain over a large area around the player
+    for (let i = 0; i < rainCount; i++) {
+      rainPositions[i * 3] = (Math.random() - 0.5) * 800;     // x
+      rainPositions[i * 3 + 1] = Math.random() * 200;          // y
+      rainPositions[i * 3 + 2] = (Math.random() - 0.5) * 800;  // z
+      rainVelocities[i] = 2 + Math.random() * 3;               // fall speed
+    }
+
+    rainGeometry.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+    rainGeometry.userData = { velocities: rainVelocities };
+
+    const rainMaterial = new THREE.PointsMaterial({
+      color: 0xaaaacc,
+      size: 0.5,
+      transparent: true,
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending,
+    });
+
+    const rain = new THREE.Points(rainGeometry, rainMaterial);
+    rain.visible = false; // Start with rain hidden
+    scene.add(rain);
+    rainRef.current = rain;
+  }, []);
+
+  // Update weather system - random rain
+  const updateWeather = useCallback(() => {
+    if (!THREE || !sceneRef.current || !rainRef.current || !carRef.current) return;
+
+    const rain = rainRef.current;
+    const car = carRef.current;
+    const scene = sceneRef.current;
+
+    // Check if it's time to toggle rain
+    rainTimeRef.current += 1 / 60; // Assuming 60fps
+    if (rainTimeRef.current >= nextRainChangeRef.current) {
+      rainTimeRef.current = 0;
+      nextRainChangeRef.current = Math.random() * 60 + 30; // 30-90 seconds until next change
+      isRainingRef.current = !isRainingRef.current;
+      rain.visible = isRainingRef.current;
+    }
+
+    if (!isRainingRef.current) return;
+
+    // Update rain particle positions
+    const positions = rain.geometry.attributes.position.array;
+    const velocities = rain.geometry.userData.velocities;
+    const carPos = car.position;
+
+    for (let i = 0; i < positions.length / 3; i++) {
+      // Move rain down
+      positions[i * 3 + 1] -= velocities[i];
+
+      // Reset rain drop when it hits the ground
+      if (positions[i * 3 + 1] < 0) {
+        positions[i * 3] = carPos.x + (Math.random() - 0.5) * 800;
+        positions[i * 3 + 1] = 150 + Math.random() * 50;
+        positions[i * 3 + 2] = carPos.z + (Math.random() - 0.5) * 800;
+      }
+    }
+
+    // Keep rain centered around the car
+    rain.position.x = carPos.x;
+    rain.position.z = carPos.z;
+
+    rain.geometry.attributes.position.needsUpdate = true;
+
+    // Adjust fog density when raining (make it hazier)
+    if (scene.fog) {
+      const baseFar = 2500;
+      scene.fog.far = isRainingRef.current ? baseFar * 0.6 : baseFar;
+    }
+  }, []);
+
+  // Update day/night cycle - 5 minute full cycle
+  const updateDayNightCycle = useCallback(() => {
+    if (!sceneRef.current || !ambientLightRef.current || !hemiLightRef.current || !mainLightRef.current || !THREE) return;
+
+    // Advance time (60fps assumed, so 1/60 second per frame)
+    dayTimeRef.current += (1 / 60) / DAY_CYCLE_DURATION;
+    if (dayTimeRef.current > 1) dayTimeRef.current = 0;
+
+    const t = dayTimeRef.current;
+    const scene = sceneRef.current;
+    const ambientLight = ambientLightRef.current;
+    const hemiLight = hemiLightRef.current;
+    const mainLight = mainLightRef.current;
+
+    // Time of day phases:
+    // 0.0 - 0.25: Sunrise (dark to bright)
+    // 0.25 - 0.5: Day (bright)
+    // 0.5 - 0.75: Sunset (bright to dark)
+    // 0.75 - 1.0: Night (dark)
+
+    let skyColor, fogColor, ambientColor, sunColor, sunIntensity, ambientIntensity;
+    let sunY, sunX;
+
+    if (t < 0.25) {
+      // Sunrise: 0 to 0.25
+      const phase = t / 0.25;
+      skyColor = new THREE.Color().lerpColors(new THREE.Color(0x0a0a1a), new THREE.Color(0xff7744), phase);
+      fogColor = new THREE.Color().lerpColors(new THREE.Color(0x0a0a1a), new THREE.Color(0xffaa66), phase);
+      ambientColor = new THREE.Color().lerpColors(new THREE.Color(0x202040), new THREE.Color(0xffddbb), phase);
+      sunColor = new THREE.Color(0xffaa44);
+      sunIntensity = 0.3 + phase * 0.7;
+      ambientIntensity = 0.2 + phase * 0.4;
+      sunY = phase * 100;
+      sunX = -50 + phase * 50;
+    } else if (t < 0.5) {
+      // Day: 0.25 to 0.5
+      const phase = (t - 0.25) / 0.25;
+      skyColor = new THREE.Color().lerpColors(new THREE.Color(0xff7744), new THREE.Color(0x66ccff), phase);
+      fogColor = new THREE.Color().lerpColors(new THREE.Color(0xffaa66), new THREE.Color(0xaaddff), phase);
+      ambientColor = new THREE.Color().lerpColors(new THREE.Color(0xffddbb), new THREE.Color(0xffffff), phase);
+      sunColor = new THREE.Color().lerpColors(new THREE.Color(0xffaa44), new THREE.Color(0xffffee), phase);
+      sunIntensity = 1.0;
+      ambientIntensity = 0.6;
+      sunY = 100;
+      sunX = phase * 100;
+    } else if (t < 0.75) {
+      // Sunset: 0.5 to 0.75
+      const phase = (t - 0.5) / 0.25;
+      skyColor = new THREE.Color().lerpColors(new THREE.Color(0x66ccff), new THREE.Color(0xff5500), phase);
+      fogColor = new THREE.Color().lerpColors(new THREE.Color(0xaaddff), new THREE.Color(0xff6622), phase);
+      ambientColor = new THREE.Color().lerpColors(new THREE.Color(0xffffff), new THREE.Color(0xff8844), phase);
+      sunColor = new THREE.Color().lerpColors(new THREE.Color(0xffffee), new THREE.Color(0xff4400), phase);
+      sunIntensity = 1.0 - phase * 0.7;
+      ambientIntensity = 0.6 - phase * 0.4;
+      sunY = 100 - phase * 100;
+      sunX = 100 - phase * 50;
+    } else {
+      // Night: 0.75 to 1.0
+      const phase = (t - 0.75) / 0.25;
+      skyColor = new THREE.Color().lerpColors(new THREE.Color(0xff5500), new THREE.Color(0x0a0a1a), phase);
+      fogColor = new THREE.Color().lerpColors(new THREE.Color(0xff6622), new THREE.Color(0x0a0a1a), phase);
+      ambientColor = new THREE.Color().lerpColors(new THREE.Color(0xff8844), new THREE.Color(0x202040), phase);
+      sunColor = new THREE.Color(0x4444ff); // Moonlight
+      sunIntensity = 0.3;
+      ambientIntensity = 0.2;
+      sunY = phase * 50;
+      sunX = -50;
+    }
+
+    // Apply colors
+    scene.background = skyColor;
+    scene.fog.color = fogColor;
+    ambientLight.color = ambientColor;
+    ambientLight.intensity = ambientIntensity;
+    hemiLight.color = skyColor;
+    hemiLight.groundColor = new THREE.Color(0x444422);
+    mainLight.color = sunColor;
+    mainLight.intensity = sunIntensity;
+    mainLight.position.set(sunX, Math.max(10, sunY), 50);
   }, []);
 
   // Initialize Three.js
@@ -1431,16 +1968,18 @@ const SimulatorGame = ({ onClose, onExit }) => {
         containerRef.current.appendChild(renderer.domElement);
         rendererRef.current = renderer;
 
-        // ENHANCED LIGHTING for 4K quality
-        // Ambient light - slightly blue for night atmosphere
+        // ENHANCED LIGHTING for day/night cycle
+        // Ambient light - will change color throughout the day
         const ambientLight = new THREE.AmbientLight(0x404060, 0.4);
         scene.add(ambientLight);
+        ambientLightRef.current = ambientLight;
 
         // Hemisphere light for natural sky/ground color blend
         const hemiLight = new THREE.HemisphereLight(0x6666aa, 0x444422, 0.5);
         scene.add(hemiLight);
+        hemiLightRef.current = hemiLight;
 
-        // Main directional light (moon/sun) with shadows
+        // Main directional light (sun) with shadows
         const mainLight = new THREE.DirectionalLight(0xffeedd, 0.8);
         mainLight.position.set(50, 100, 50);
         mainLight.castShadow = true;
@@ -1454,6 +1993,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
         mainLight.shadow.camera.bottom = -100;
         mainLight.shadow.bias = -0.001;
         scene.add(mainLight);
+        mainLightRef.current = mainLight;
 
         // Fill light from opposite side
         const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
@@ -1470,6 +2010,9 @@ const SimulatorGame = ({ onClose, onExit }) => {
         const car = createCar(scene);
         carRef.current = car;
 
+        // Create rain particle system
+        createRain(scene);
+
         setIsLoading(false);
 
         // Animation loop
@@ -1478,6 +2021,8 @@ const SimulatorGame = ({ onClose, onExit }) => {
           animationRef.current = requestAnimationFrame(animate);
           updateCarPhysics();
           updateCamera();
+          updateDayNightCycle();
+          updateWeather();
 
           // Update traffic cars
           trafficCarsRef.current.forEach(tc => {
@@ -1536,7 +2081,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
         rendererRef.current.dispose();
       }
     };
-  }, [createCity, createCar, updateCarPhysics, updateCamera]);
+  }, [createCity, createCar, createRain, updateCarPhysics, updateCamera, updateWeather]);
 
   // Touch controls
   const handleSteeringMove = useCallback((e) => {
@@ -1584,7 +2129,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
       {isLoading && (
         <div className="simulator-loading">
           <div className="loading-spinner"></div>
-          <p>Welcome to Vice City...</p>
+          <p>Welcome to Playhouse City...</p>
         </div>
       )}
 

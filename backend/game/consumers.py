@@ -456,6 +456,7 @@ class RoomConsumer(AsyncWebsocketConsumer):
                 'id': str(room.room_id),
                 'name': room.name,
                 'game_mode': room.game_mode,
+                'theme': room.theme,
                 'entry_fee': room.entry_fee,
                 'card_cost': room.card_cost,
                 'max_players': room.max_players,
