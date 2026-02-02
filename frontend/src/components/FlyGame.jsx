@@ -22,6 +22,16 @@ const FlyGame = ({ onExit }) => {
   const [showControls, setShowControls] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [stalled, setStalled] = useState(false);
+  const [ammo, setAmmo] = useState(500);
+  const [score, setScore] = useState(0);
+  const [targetsDestroyed, setTargetsDestroyed] = useState(0);
+
+  // Bullets and targets refs
+  const bulletsRef = useRef([]);
+  const targetsRef = useRef([]);
+  const lastFireTimeRef = useRef(0);
+  const isFiringRef = useRef(false);
+  const ammoRef = useRef(500); // Track ammo in ref to avoid re-renders causing issues
 
   // Touch controls state - analog values for smooth control
   const touchControlsRef = useRef({
@@ -30,603 +40,866 @@ const FlyGame = ({ onExit }) => {
     throttleChange: 0, // -1 (decrease) to 1 (increase)
   });
 
-  // Create terrain with mountains, desert, ocean, and cities
+  // Create LASER TAG ARENA - dark glowing neon environment
   const createTerrain = useCallback((scene) => {
     if (!THREE.current) return;
     const T = THREE.current;
 
-    const worldSize = 50000;
+    const arenaSize = 8000; // Smaller, contained arena
+    const wallHeight = 2000;
 
-    // === OCEAN (base layer) ===
-    const oceanGeom = new T.PlaneGeometry(worldSize * 2, worldSize * 2);
-    const oceanMat = new T.MeshBasicMaterial({ color: 0x0a4a6e });
-    const ocean = new T.Mesh(oceanGeom, oceanMat);
-    ocean.rotation.x = -Math.PI / 2;
-    ocean.position.y = -5;
-    scene.add(ocean);
+    // === NEON COLORS ===
+    const neonMagenta = 0xff00ff;
+    const neonCyan = 0x00ffff;
+    const neonGreen = 0x00ff00;
+    const neonPink = 0xff1493;
+    const neonBlue = 0x0066ff;
+    const neonPurple = 0x9900ff;
 
-    // Shallow water near coasts
-    const shallowGeom = new T.PlaneGeometry(worldSize, 8000);
-    const shallowMat = new T.MeshBasicMaterial({ color: 0x1a6a8e });
-    const shallowWater = new T.Mesh(shallowGeom, shallowMat);
-    shallowWater.rotation.x = -Math.PI / 2;
-    shallowWater.position.set(0, -2, worldSize / 2 - 4000);
-    scene.add(shallowWater);
+    // === FLOOR - Dark reflective with grid ===
+    const floorGeom = new T.PlaneGeometry(arenaSize * 3, arenaSize * 3);
+    const floorMat = new T.MeshStandardMaterial({
+      color: 0x0a0a0a,
+      metalness: 0.9,
+      roughness: 0.1,
+    });
+    const floor = new T.Mesh(floorGeom, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = 0;
+    scene.add(floor);
 
-    // === MAIN LANDMASS ===
-    const landGeom = new T.PlaneGeometry(worldSize, worldSize);
-    const landMat = new T.MeshBasicMaterial({ color: 0x3d6b3d });
-    const land = new T.Mesh(landGeom, landMat);
-    land.rotation.x = -Math.PI / 2;
-    land.position.y = 0;
-    scene.add(land);
-
-    // === DESERT REGION (southwest) ===
-    const desertGeom = new T.PlaneGeometry(15000, 15000);
-    const desertMat = new T.MeshBasicMaterial({ color: 0xd4a574 });
-    const desert = new T.Mesh(desertGeom, desertMat);
-    desert.rotation.x = -Math.PI / 2;
-    desert.position.set(-12000, 1, -12000);
-    scene.add(desert);
-
-    // Desert dunes
-    const duneMat = new T.MeshBasicMaterial({ color: 0xe8c090 });
-    for (let i = 0; i < 30; i++) {
-      const duneGeom = new T.ConeGeometry(300 + Math.random() * 400, 50 + Math.random() * 80, 6);
-      const dune = new T.Mesh(duneGeom, duneMat);
-      dune.position.set(
-        -12000 + (Math.random() - 0.5) * 14000,
-        25 + Math.random() * 40,
-        -12000 + (Math.random() - 0.5) * 14000
-      );
-      dune.scale.set(1, 0.3, 1);
-      scene.add(dune);
+    // Grid lines on floor - CYAN
+    const gridMat = new T.MeshBasicMaterial({ color: neonCyan });
+    const gridSpacing = 500;
+    for (let i = -arenaSize * 1.5; i <= arenaSize * 1.5; i += gridSpacing) {
+      // X lines
+      const lineGeomX = new T.BoxGeometry(arenaSize * 3, 2, 4);
+      const lineX = new T.Mesh(lineGeomX, gridMat);
+      lineX.position.set(0, 1, i);
+      scene.add(lineX);
+      // Z lines
+      const lineGeomZ = new T.BoxGeometry(4, 2, arenaSize * 3);
+      const lineZ = new T.Mesh(lineGeomZ, gridMat);
+      lineZ.position.set(i, 1, 0);
+      scene.add(lineZ);
     }
 
-    // === MOUNTAIN RANGE (north) ===
-    const mountainMat = new T.MeshBasicMaterial({ color: 0x6b6b6b });
-    const snowMat = new T.MeshBasicMaterial({ color: 0xf0f0f0 });
-    const rockMat = new T.MeshBasicMaterial({ color: 0x4a4a4a });
-
-    // Main mountain peaks
-    const mountainPositions = [
-      { x: 0, z: -18000, height: 4000, radius: 3000 },
-      { x: -5000, z: -16000, height: 3500, radius: 2500 },
-      { x: 5000, z: -17000, height: 3800, radius: 2800 },
-      { x: -10000, z: -15000, height: 3000, radius: 2000 },
-      { x: 10000, z: -16000, height: 3200, radius: 2200 },
-      { x: -3000, z: -20000, height: 4500, radius: 3500 },
-      { x: 3000, z: -19000, height: 4200, radius: 3200 },
-      { x: -8000, z: -18000, height: 3600, radius: 2600 },
-      { x: 8000, z: -19000, height: 3400, radius: 2400 },
-      { x: 0, z: -22000, height: 5000, radius: 4000 }, // Tallest peak
-    ];
-
-    mountainPositions.forEach(mt => {
-      // Mountain base
-      const baseGeom = new T.ConeGeometry(mt.radius, mt.height, 8);
-      const base = new T.Mesh(baseGeom, mountainMat);
-      base.position.set(mt.x, mt.height / 2, mt.z);
-      scene.add(base);
-
-      // Snow cap (top 30%)
-      const snowGeom = new T.ConeGeometry(mt.radius * 0.35, mt.height * 0.3, 8);
-      const snow = new T.Mesh(snowGeom, snowMat);
-      snow.position.set(mt.x, mt.height * 0.85, mt.z);
-      scene.add(snow);
-
-      // Rocky outcrops
-      for (let i = 0; i < 5; i++) {
-        const rockGeom = new T.ConeGeometry(mt.radius * 0.15, mt.height * 0.2, 5);
-        const rock = new T.Mesh(rockGeom, rockMat);
-        const angle = (i / 5) * Math.PI * 2;
-        rock.position.set(
-          mt.x + Math.cos(angle) * mt.radius * 0.6,
-          mt.height * 0.3,
-          mt.z + Math.sin(angle) * mt.radius * 0.6
-        );
-        scene.add(rock);
-      }
+    // === OUTER WALLS - Dark with neon edges ===
+    const wallMat = new T.MeshStandardMaterial({
+      color: 0x111111,
+      metalness: 0.5,
+      roughness: 0.5,
     });
 
-    // Foothills
-    for (let i = 0; i < 50; i++) {
-      const hillGeom = new T.ConeGeometry(400 + Math.random() * 600, 200 + Math.random() * 400, 6);
-      const hillMat = new T.MeshBasicMaterial({ color: Math.random() > 0.5 ? 0x5a7a5a : 0x6b6b6b });
-      const hill = new T.Mesh(hillGeom, hillMat);
-      hill.position.set(
-        (Math.random() - 0.5) * 25000,
-        100 + Math.random() * 200,
-        -10000 - Math.random() * 8000
-      );
-      scene.add(hill);
-    }
+    const createGlowingWall = (width, height, depth, x, y, z, rotY = 0, color = neonMagenta) => {
+      // Main wall
+      const wallGeom = new T.BoxGeometry(width, height, depth);
+      const wall = new T.Mesh(wallGeom, wallMat);
+      wall.position.set(x, y, z);
+      wall.rotation.y = rotY;
+      scene.add(wall);
 
-    // === FORESTS ===
-    const treeMat = new T.MeshBasicMaterial({ color: 0x1a5a1a });
-    const trunkMat = new T.MeshBasicMaterial({ color: 0x4a3020 });
-    const treeGeom = new T.ConeGeometry(80, 200, 5);
-    const trunkGeom = new T.CylinderGeometry(15, 20, 60, 5);
+      // Neon edge strips
+      const stripMat = new T.MeshBasicMaterial({ color: color });
 
-    // Forest patches
-    const forestCenters = [
-      { x: 8000, z: 5000, count: 200 },
-      { x: -5000, z: 8000, count: 150 },
-      { x: 12000, z: -5000, count: 180 },
-      { x: -15000, z: 3000, count: 100 },
-    ];
+      // Top edge
+      const topStrip = new T.Mesh(new T.BoxGeometry(width + 10, 15, depth + 10), stripMat);
+      topStrip.position.set(x, y + height / 2 + 5, z);
+      topStrip.rotation.y = rotY;
+      scene.add(topStrip);
 
-    forestCenters.forEach(forest => {
-      for (let i = 0; i < forest.count; i++) {
-        const treeGroup = new T.Group();
-        const tree = new T.Mesh(treeGeom, treeMat);
-        tree.position.y = 130;
-        treeGroup.add(tree);
-
-        const trunk = new T.Mesh(trunkGeom, trunkMat);
-        trunk.position.y = 30;
-        treeGroup.add(trunk);
-
-        const scale = 0.8 + Math.random() * 0.6;
-        treeGroup.scale.set(scale, scale, scale);
-        treeGroup.position.set(
-          forest.x + (Math.random() - 0.5) * 5000,
-          0,
-          forest.z + (Math.random() - 0.5) * 5000
-        );
-        scene.add(treeGroup);
-      }
-    });
-
-    // === CITIES ===
-    const createCity = (centerX, centerZ, size, name) => {
-      const buildingColors = [
-        new T.MeshBasicMaterial({ color: 0xd0d0d0 }),
-        new T.MeshBasicMaterial({ color: 0xc0c0c0 }),
-        new T.MeshBasicMaterial({ color: 0xb0b0b0 }),
-        new T.MeshBasicMaterial({ color: 0xe0e0e0 }),
-      ];
-      const windowMat = new T.MeshBasicMaterial({ color: 0x3a5a7a });
-      const glowMat = new T.MeshBasicMaterial({ color: 0xffffaa });
-
-      const numBuildings = size === 'large' ? 150 : size === 'medium' ? 80 : 40;
-      const spread = size === 'large' ? 4000 : size === 'medium' ? 2500 : 1500;
-      const maxHeight = size === 'large' ? 600 : size === 'medium' ? 400 : 200;
-
-      for (let i = 0; i < numBuildings; i++) {
-        const distFromCenter = Math.sqrt(
-          Math.pow((Math.random() - 0.5) * spread, 2) +
-          Math.pow((Math.random() - 0.5) * spread, 2)
-        );
-        const heightFactor = 1 - (distFromCenter / (spread * 0.7));
-        const height = Math.max(30, (50 + Math.random() * maxHeight) * Math.max(0.2, heightFactor));
-        const width = 40 + Math.random() * 80;
-        const depth = 40 + Math.random() * 80;
-
-        const buildingGeom = new T.BoxGeometry(width, height, depth);
-        const building = new T.Mesh(buildingGeom, buildingColors[Math.floor(Math.random() * buildingColors.length)]);
-        building.position.set(
-          centerX + (Math.random() - 0.5) * spread,
-          height / 2,
-          centerZ + (Math.random() - 0.5) * spread
-        );
-        scene.add(building);
-
-        // Windows
-        if (height > 100) {
-          const numFloors = Math.floor(height / 25);
-          for (let floor = 1; floor < numFloors; floor++) {
-            if (Math.random() > 0.3) {
-              const windowGeom = new T.BoxGeometry(width * 0.8, 8, 1);
-              const window = new T.Mesh(windowGeom, Math.random() > 0.4 ? windowMat : glowMat);
-              window.position.set(
-                building.position.x,
-                floor * 25,
-                building.position.z + depth / 2 + 0.5
-              );
-              scene.add(window);
-            }
-          }
-        }
-      }
-
-      // Roads grid
-      const roadMat = new T.MeshBasicMaterial({ color: 0x333333 });
-      const roadWidth = 30;
-      const roadSpacing = size === 'large' ? 400 : 300;
-
-      for (let x = -spread / 2; x <= spread / 2; x += roadSpacing) {
-        const roadGeom = new T.BoxGeometry(roadWidth, 0.5, spread);
-        const road = new T.Mesh(roadGeom, roadMat);
-        road.position.set(centerX + x, 0.3, centerZ);
-        scene.add(road);
-      }
-      for (let z = -spread / 2; z <= spread / 2; z += roadSpacing) {
-        const roadGeom = new T.BoxGeometry(spread, 0.5, roadWidth);
-        const road = new T.Mesh(roadGeom, roadMat);
-        road.position.set(centerX, 0.3, centerZ + z);
-        scene.add(road);
-      }
+      // Bottom edge
+      const bottomStrip = new T.Mesh(new T.BoxGeometry(width + 10, 15, depth + 10), stripMat);
+      bottomStrip.position.set(x, y - height / 2 + 5, z);
+      bottomStrip.rotation.y = rotY;
+      scene.add(bottomStrip);
     };
 
-    // Create multiple cities
-    createCity(0, 0, 'large', 'Central City'); // Main city at origin
-    createCity(15000, 10000, 'medium', 'East Harbor');
-    createCity(-18000, 5000, 'medium', 'West Valley');
-    createCity(8000, -8000, 'small', 'Mountain View');
-    createCity(-8000, 15000, 'small', 'Coastal Town');
+    // Arena boundary walls
+    createGlowingWall(arenaSize * 2, wallHeight, 50, 0, wallHeight / 2, -arenaSize, 0, neonMagenta);
+    createGlowingWall(arenaSize * 2, wallHeight, 50, 0, wallHeight / 2, arenaSize, 0, neonMagenta);
+    createGlowingWall(50, wallHeight, arenaSize * 2, -arenaSize, wallHeight / 2, 0, 0, neonCyan);
+    createGlowingWall(50, wallHeight, arenaSize * 2, arenaSize, wallHeight / 2, 0, 0, neonCyan);
 
-    // === COASTAL FEATURES ===
-    // Beach
-    const beachGeom = new T.PlaneGeometry(worldSize, 2000);
-    const beachMat = new T.MeshBasicMaterial({ color: 0xe8d4a8 });
-    const beach = new T.Mesh(beachGeom, beachMat);
-    beach.rotation.x = -Math.PI / 2;
-    beach.position.set(0, 0.5, worldSize / 2 - 1000);
-    scene.add(beach);
+    // === CEILING with neon beams ===
+    const ceilingGeom = new T.PlaneGeometry(arenaSize * 3, arenaSize * 3);
+    const ceilingMat = new T.MeshStandardMaterial({ color: 0x050505, metalness: 0.8, roughness: 0.2 });
+    const ceiling = new T.Mesh(ceilingGeom, ceilingMat);
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.y = wallHeight + 500;
+    scene.add(ceiling);
 
-    // === RIVERS ===
-    const riverMat = new T.MeshBasicMaterial({ color: 0x2a6a8a });
-    // Main river
-    const riverGeom = new T.BoxGeometry(200, 1, 30000);
-    const river = new T.Mesh(riverGeom, riverMat);
-    river.position.set(5000, 0.2, -5000);
-    river.rotation.y = 0.3;
-    scene.add(river);
-
-    // River branches
-    const river2Geom = new T.BoxGeometry(150, 1, 15000);
-    const river2 = new T.Mesh(river2Geom, riverMat);
-    river2.position.set(-3000, 0.2, 5000);
-    river2.rotation.y = -0.5;
-    scene.add(river2);
-
-    // === AIRPORTS/RUNWAYS ===
-    const runwayMat = new T.MeshBasicMaterial({ color: 0x2a2a2a });
-    const markingMat = new T.MeshBasicMaterial({ color: 0xffffff });
-
-    // Main airport near central city
-    const runwayGeom = new T.BoxGeometry(80, 0.5, 3000);
-    const runway = new T.Mesh(runwayGeom, runwayMat);
-    runway.position.set(3000, 0.3, 0);
-    scene.add(runway);
-
-    // Runway markings
-    for (let z = -1400; z <= 1400; z += 100) {
-      const markingGeom = new T.BoxGeometry(10, 0.2, 30);
-      const marking = new T.Mesh(markingGeom, markingMat);
-      marking.position.set(3000, 0.5, z);
-      scene.add(marking);
+    // Ceiling neon strips
+    const ceilingStripMat = new T.MeshBasicMaterial({ color: neonPurple });
+    for (let i = -arenaSize; i <= arenaSize; i += 800) {
+      const ceilingStrip = new T.Mesh(new T.BoxGeometry(30, 20, arenaSize * 2.5), ceilingStripMat);
+      ceilingStrip.position.set(i, wallHeight + 480, 0);
+      scene.add(ceilingStrip);
     }
 
-    // Second runway
-    const runway2 = new T.Mesh(runwayGeom, runwayMat);
-    runway2.position.set(-10000, 0.3, 8000);
-    runway2.rotation.y = Math.PI / 4;
-    scene.add(runway2);
+    // === OBSTACLE PILLARS with neon accents ===
+    const pillarPositions = [
+      { x: -2000, z: -2000 }, { x: 2000, z: -2000 },
+      { x: -2000, z: 2000 }, { x: 2000, z: 2000 },
+      { x: 0, z: -3500 }, { x: 0, z: 3500 },
+      { x: -3500, z: 0 }, { x: 3500, z: 0 },
+      { x: -4500, z: -4500 }, { x: 4500, z: -4500 },
+      { x: -4500, z: 4500 }, { x: 4500, z: 4500 },
+    ];
+
+    const pillarMat = new T.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.7, roughness: 0.3 });
+
+    pillarPositions.forEach((pos, i) => {
+      const pillarHeight = 800 + Math.random() * 600;
+      const pillarGeom = new T.CylinderGeometry(150, 150, pillarHeight, 8);
+      const pillar = new T.Mesh(pillarGeom, pillarMat);
+      pillar.position.set(pos.x, pillarHeight / 2, pos.z);
+      scene.add(pillar);
+
+      // Neon ring around pillar (alternating colors)
+      const ringColor = i % 3 === 0 ? neonMagenta : i % 3 === 1 ? neonCyan : neonGreen;
+      const ringMat = new T.MeshBasicMaterial({ color: ringColor });
+
+      // Multiple rings up the pillar
+      for (let h = 100; h < pillarHeight; h += 200) {
+        const ring = new T.Mesh(new T.TorusGeometry(160, 8, 8, 16), ringMat);
+        ring.position.set(pos.x, h, pos.z);
+        ring.rotation.x = Math.PI / 2;
+        scene.add(ring);
+      }
+
+      // Glowing top
+      const topGlow = new T.Mesh(new T.CylinderGeometry(155, 155, 20, 8), ringMat);
+      topGlow.position.set(pos.x, pillarHeight, pos.z);
+      scene.add(topGlow);
+    });
+
+    // === FLOATING PLATFORMS with neon edges ===
+    const platformPositions = [
+      { x: -3000, y: 400, z: -1500, w: 600, d: 600 },
+      { x: 3000, y: 500, z: -1500, w: 600, d: 600 },
+      { x: -3000, y: 600, z: 1500, w: 600, d: 600 },
+      { x: 3000, y: 450, z: 1500, w: 600, d: 600 },
+      { x: 0, y: 700, z: 0, w: 1000, d: 1000 }, // Center platform
+      { x: -5000, y: 300, z: 0, w: 800, d: 400 },
+      { x: 5000, y: 350, z: 0, w: 800, d: 400 },
+      { x: 0, y: 400, z: -5000, w: 400, d: 800 },
+      { x: 0, y: 400, z: 5000, w: 400, d: 800 },
+    ];
+
+    const platformMat = new T.MeshStandardMaterial({ color: 0x151515, metalness: 0.6, roughness: 0.4 });
+
+    platformPositions.forEach((plat, i) => {
+      const platGeom = new T.BoxGeometry(plat.w, 40, plat.d);
+      const platform = new T.Mesh(platGeom, platformMat);
+      platform.position.set(plat.x, plat.y, plat.z);
+      scene.add(platform);
+
+      // Neon edge around platform
+      const edgeColor = i % 2 === 0 ? neonPink : neonBlue;
+      const edgeMat = new T.MeshBasicMaterial({ color: edgeColor });
+
+      // Edge strips
+      const edgeThickness = 15;
+      // Front/back edges
+      scene.add(new T.Mesh(new T.BoxGeometry(plat.w + 20, edgeThickness, edgeThickness), edgeMat)).position.set(plat.x, plat.y, plat.z + plat.d / 2);
+      scene.add(new T.Mesh(new T.BoxGeometry(plat.w + 20, edgeThickness, edgeThickness), edgeMat)).position.set(plat.x, plat.y, plat.z - plat.d / 2);
+      // Left/right edges
+      scene.add(new T.Mesh(new T.BoxGeometry(edgeThickness, edgeThickness, plat.d + 20), edgeMat)).position.set(plat.x + plat.w / 2, plat.y, plat.z);
+      scene.add(new T.Mesh(new T.BoxGeometry(edgeThickness, edgeThickness, plat.d + 20), edgeMat)).position.set(plat.x - plat.w / 2, plat.y, plat.z);
+
+      // Underside glow
+      const glowGeom = new T.BoxGeometry(plat.w * 0.8, 5, plat.d * 0.8);
+      const glowMat = new T.MeshBasicMaterial({ color: edgeColor, transparent: true, opacity: 0.6 });
+      const glow = new T.Mesh(glowGeom, glowMat);
+      glow.position.set(plat.x, plat.y - 25, plat.z);
+      scene.add(glow);
+    });
+
+    // === NEON LIGHT TUBES floating in air ===
+    const tubeColors = [neonMagenta, neonCyan, neonGreen, neonPink, neonPurple];
+    for (let i = 0; i < 40; i++) {
+      const tubeLength = 200 + Math.random() * 800;
+      const tubeGeom = new T.CylinderGeometry(8, 8, tubeLength, 6);
+      const tubeMat = new T.MeshBasicMaterial({ color: tubeColors[i % tubeColors.length] });
+      const tube = new T.Mesh(tubeGeom, tubeMat);
+      tube.position.set(
+        (Math.random() - 0.5) * arenaSize * 1.8,
+        200 + Math.random() * 1500,
+        (Math.random() - 0.5) * arenaSize * 1.8
+      );
+      tube.rotation.x = Math.random() * Math.PI;
+      tube.rotation.z = Math.random() * Math.PI;
+      scene.add(tube);
+    }
+
+    // === BARRIER WALLS (cover obstacles) ===
+    const barrierMat = new T.MeshStandardMaterial({ color: 0x0a0a0a, metalness: 0.6, roughness: 0.5 });
+    const barrierPositions = [
+      { x: -1000, z: 0, w: 100, h: 300, d: 1200, color: neonCyan },
+      { x: 1000, z: 0, w: 100, h: 300, d: 1200, color: neonMagenta },
+      { x: 0, z: -1000, w: 1200, h: 300, d: 100, color: neonGreen },
+      { x: 0, z: 1000, w: 1200, h: 300, d: 100, color: neonPink },
+      { x: -5000, z: -3000, w: 800, h: 400, d: 100, color: neonBlue },
+      { x: 5000, z: -3000, w: 800, h: 400, d: 100, color: neonPurple },
+      { x: -5000, z: 3000, w: 800, h: 400, d: 100, color: neonCyan },
+      { x: 5000, z: 3000, w: 800, h: 400, d: 100, color: neonMagenta },
+    ];
+
+    barrierPositions.forEach(bar => {
+      const barGeom = new T.BoxGeometry(bar.w, bar.h, bar.d);
+      const barrier = new T.Mesh(barGeom, barrierMat);
+      barrier.position.set(bar.x, bar.h / 2, bar.z);
+      scene.add(barrier);
+
+      // Top neon strip
+      const stripMat = new T.MeshBasicMaterial({ color: bar.color });
+      const strip = new T.Mesh(new T.BoxGeometry(bar.w + 20, 12, bar.d + 20), stripMat);
+      strip.position.set(bar.x, bar.h, bar.z);
+      scene.add(strip);
+    });
+
+    // === CORNER TOWERS ===
+    const towerCorners = [
+      { x: -arenaSize + 300, z: -arenaSize + 300 },
+      { x: arenaSize - 300, z: -arenaSize + 300 },
+      { x: -arenaSize + 300, z: arenaSize - 300 },
+      { x: arenaSize - 300, z: arenaSize - 300 },
+    ];
+
+    towerCorners.forEach((corner, i) => {
+      const towerGeom = new T.BoxGeometry(400, 1200, 400);
+      const towerMat = new T.MeshStandardMaterial({ color: 0x0d0d0d, metalness: 0.7, roughness: 0.3 });
+      const tower = new T.Mesh(towerGeom, towerMat);
+      tower.position.set(corner.x, 600, corner.z);
+      scene.add(tower);
+
+      // Vertical neon strips on corners
+      const cornerColor = i % 2 === 0 ? neonMagenta : neonCyan;
+      const vStripMat = new T.MeshBasicMaterial({ color: cornerColor });
+      for (let edge = 0; edge < 4; edge++) {
+        const vStrip = new T.Mesh(new T.BoxGeometry(15, 1200, 15), vStripMat);
+        const offsetX = edge < 2 ? -190 : 190;
+        const offsetZ = edge % 2 === 0 ? -190 : 190;
+        vStrip.position.set(corner.x + offsetX, 600, corner.z + offsetZ);
+        scene.add(vStrip);
+      }
+
+      // Beacon light on top
+      const beaconGeom = new T.SphereGeometry(60, 8, 8);
+      const beaconMat = new T.MeshBasicMaterial({ color: cornerColor });
+      const beacon = new T.Mesh(beaconGeom, beaconMat);
+      beacon.position.set(corner.x, 1250, corner.z);
+      scene.add(beacon);
+    });
 
   }, []);
 
-  // Create the airplane
+  // Create the drone - FULLY GLOWING NEON for dark arena
   const createPlane = useCallback((scene) => {
     if (!THREE.current) return null;
     const T = THREE.current;
 
-    const plane = new T.Group();
+    const drone = new T.Group();
 
-    // Fuselage (body)
-    const fuselageMat = new T.MeshStandardMaterial({
-      color: 0xf0f0f0,
-      metalness: 0.7,
-      roughness: 0.3,
-    });
-    const fuselageGeom = new T.CylinderGeometry(3, 2.5, 30, 12);
-    const fuselage = new T.Mesh(fuselageGeom, fuselageMat);
-    fuselage.rotation.x = Math.PI / 2;
-    plane.add(fuselage);
+    // ALL materials use MeshBasicMaterial for guaranteed visibility in dark arena
+    const bodyMat = new T.MeshBasicMaterial({ color: 0x224466 }); // Dark blue body
+    const accentMat = new T.MeshBasicMaterial({ color: 0x00ffff }); // Bright cyan
+    const frameMat = new T.MeshBasicMaterial({ color: 0x333355 }); // Frame color
 
-    // Nose cone
-    const noseMat = new T.MeshStandardMaterial({
-      color: 0x333333,
-      metalness: 0.8,
-      roughness: 0.2,
-    });
-    const noseGeom = new T.ConeGeometry(2.5, 8, 12);
-    const nose = new T.Mesh(noseGeom, noseMat);
-    nose.rotation.x = -Math.PI / 2;
-    nose.position.z = 19;
-    plane.add(nose);
+    // Central body - flat oval shape
+    const bodyGeom = new T.CylinderGeometry(8, 8, 4, 12);
+    const body = new T.Mesh(bodyGeom, bodyMat);
+    body.rotation.x = Math.PI / 2;
+    drone.add(body);
 
-    // Cockpit (glass)
-    const cockpitMat = new T.MeshStandardMaterial({
-      color: 0x4488aa,
-      metalness: 0.9,
-      roughness: 0.1,
-      transparent: true,
-      opacity: 0.7,
-    });
-    const cockpitGeom = new T.SphereGeometry(2.5, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-    const cockpit = new T.Mesh(cockpitGeom, cockpitMat);
-    cockpit.position.set(0, 1.5, 10);
-    cockpit.rotation.x = -Math.PI / 2;
-    plane.add(cockpit);
+    // Glowing ring around body
+    const ringGeom = new T.TorusGeometry(9, 1, 8, 24);
+    const ring = new T.Mesh(ringGeom, accentMat);
+    ring.rotation.x = Math.PI / 2;
+    drone.add(ring);
 
-    // Main wings
-    const wingMat = new T.MeshStandardMaterial({
-      color: 0xe8e8e8,
-      metalness: 0.6,
-      roughness: 0.4,
-    });
-    const wingGeom = new T.BoxGeometry(40, 0.5, 8);
-    const wings = new T.Mesh(wingGeom, wingMat);
-    wings.position.set(0, 0, -2);
-    plane.add(wings);
+    // Top dome
+    const domeGeom = new T.SphereGeometry(4, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+    const domeMat = new T.MeshBasicMaterial({ color: 0x3366aa });
+    const dome = new T.Mesh(domeGeom, domeMat);
+    dome.position.set(0, 2, 0);
+    drone.add(dome);
 
-    // Wing tips (angled up)
-    const wingTipGeom = new T.BoxGeometry(3, 4, 4);
-    [-20, 20].forEach(x => {
-      const wingTip = new T.Mesh(wingTipGeom, wingMat);
-      wingTip.position.set(x, 2, -2);
-      wingTip.rotation.z = x > 0 ? 0.3 : -0.3;
-      plane.add(wingTip);
-    });
+    // Camera lens - bright glowing
+    const lensMat = new T.MeshBasicMaterial({ color: 0x00ffff });
+    const lensGeom = new T.SphereGeometry(3, 8, 6);
+    const lens = new T.Mesh(lensGeom, lensMat);
+    lens.position.set(0, 0, 7);
+    drone.add(lens);
 
-    // Horizontal stabilizer (tail wings)
-    const hStabGeom = new T.BoxGeometry(15, 0.4, 4);
-    const hStab = new T.Mesh(hStabGeom, wingMat);
-    hStab.position.set(0, 0, -14);
-    plane.add(hStab);
+    // Four arms with neon edges
+    const armPositions = [
+      { x: 18, z: 18, angle: Math.PI / 4 },
+      { x: -18, z: 18, angle: -Math.PI / 4 },
+      { x: 18, z: -18, angle: -Math.PI / 4 },
+      { x: -18, z: -18, angle: Math.PI / 4 },
+    ];
 
-    // Vertical stabilizer (tail fin)
-    const vStabGeom = new T.BoxGeometry(0.5, 8, 6);
-    const vStab = new T.Mesh(vStabGeom, wingMat);
-    vStab.position.set(0, 4, -14);
-    plane.add(vStab);
+    armPositions.forEach((pos, i) => {
+      // Arm - glowing frame
+      const armGeom = new T.BoxGeometry(20, 2, 3);
+      const arm = new T.Mesh(armGeom, frameMat);
+      arm.position.set(pos.x / 2, 0, pos.z / 2);
+      arm.rotation.y = pos.angle;
+      drone.add(arm);
 
-    // Engines (under wings)
-    const engineMat = new T.MeshStandardMaterial({
-      color: 0x444444,
-      metalness: 0.8,
-      roughness: 0.3,
-    });
-    const engineGeom = new T.CylinderGeometry(1.5, 1.8, 8, 8);
-    [-12, 12].forEach(x => {
-      const engine = new T.Mesh(engineGeom, engineMat);
-      engine.rotation.x = Math.PI / 2;
-      engine.position.set(x, -2, 0);
-      plane.add(engine);
+      // Neon edge on arm
+      const armEdgeGeom = new T.BoxGeometry(20, 0.5, 0.5);
+      const armEdge = new T.Mesh(armEdgeGeom, accentMat);
+      armEdge.position.set(pos.x / 2, 1.2, pos.z / 2);
+      armEdge.rotation.y = pos.angle;
+      drone.add(armEdge);
 
-      // Engine intake
-      const intakeMat = new T.MeshBasicMaterial({ color: 0x222222 });
-      const intakeGeom = new T.CircleGeometry(1.5, 8);
-      const intake = new T.Mesh(intakeGeom, intakeMat);
-      intake.position.set(x, -2, 4);
-      plane.add(intake);
+      // Motor housing
+      const motorGeom = new T.CylinderGeometry(4, 4, 4, 8);
+      const motor = new T.Mesh(motorGeom, bodyMat);
+      motor.position.set(pos.x, 0, pos.z);
+      drone.add(motor);
 
-      // Engine glow (thrust)
-      const thrustMat = new T.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.6 });
-      const thrustGeom = new T.ConeGeometry(1.2, 4, 8);
-      const thrust = new T.Mesh(thrustGeom, thrustMat);
-      thrust.rotation.x = Math.PI / 2;
-      thrust.position.set(x, -2, -6);
-      thrust.name = 'thrust';
-      plane.add(thrust);
+      // Glowing motor ring
+      const motorRingGeom = new T.TorusGeometry(4.5, 0.5, 6, 16);
+      const motorRing = new T.Mesh(motorRingGeom, accentMat);
+      motorRing.position.set(pos.x, 0, pos.z);
+      motorRing.rotation.x = Math.PI / 2;
+      drone.add(motorRing);
+
+      // Propeller disc (simplified, always visible)
+      const propGeom = new T.CylinderGeometry(6, 6, 0.3, 16);
+      const propMat = new T.MeshBasicMaterial({ color: 0x88aacc, transparent: true, opacity: 0.4 });
+      const prop = new T.Mesh(propGeom, propMat);
+      prop.position.set(pos.x, 3, pos.z);
+      prop.name = `prop${i}`;
+      drone.add(prop);
+
+      // LED light under each motor - BIG AND BRIGHT
+      const ledColor = i < 2 ? 0x00ff44 : 0xff0044; // Front green, back red
+      const ledMat = new T.MeshBasicMaterial({ color: ledColor });
+      const ledGeom = new T.SphereGeometry(3, 8, 8);
+      const led = new T.Mesh(ledGeom, ledMat);
+      led.position.set(pos.x, -3, pos.z);
+      drone.add(led);
+
+      // Glow ring around LED
+      const glowRingGeom = new T.TorusGeometry(5, 0.8, 6, 16);
+      const glowRingMat = new T.MeshBasicMaterial({ color: ledColor, transparent: true, opacity: 0.6 });
+      const glowRing = new T.Mesh(glowRingGeom, glowRingMat);
+      glowRing.position.set(pos.x, -3, pos.z);
+      glowRing.rotation.x = Math.PI / 2;
+      drone.add(glowRing);
     });
 
-    // Landing gear (simplified)
-    const gearMat = new T.MeshBasicMaterial({ color: 0x333333 });
-    const wheelMat = new T.MeshBasicMaterial({ color: 0x111111 });
+    // Bottom sensor - bright orange
+    const sensorMat = new T.MeshBasicMaterial({ color: 0xff6600 });
+    const sensorGeom = new T.BoxGeometry(6, 2, 6);
+    const sensor = new T.Mesh(sensorGeom, sensorMat);
+    sensor.position.set(0, -3, 0);
+    drone.add(sensor);
 
-    // Front gear
-    const frontStrut = new T.Mesh(new T.CylinderGeometry(0.3, 0.3, 4, 6), gearMat);
-    frontStrut.position.set(0, -4, 8);
-    plane.add(frontStrut);
-    const frontWheel = new T.Mesh(new T.CylinderGeometry(1, 1, 0.5, 8), wheelMat);
-    frontWheel.rotation.z = Math.PI / 2;
-    frontWheel.position.set(0, -6, 8);
-    plane.add(frontWheel);
-
-    // Rear gear
-    [-5, 5].forEach(x => {
-      const rearStrut = new T.Mesh(new T.CylinderGeometry(0.4, 0.4, 5, 6), gearMat);
-      rearStrut.position.set(x, -4.5, -4);
-      plane.add(rearStrut);
-      const rearWheel = new T.Mesh(new T.CylinderGeometry(1.2, 1.2, 0.8, 8), wheelMat);
-      rearWheel.rotation.z = Math.PI / 2;
-      rearWheel.position.set(x, -7, -4);
-      plane.add(rearWheel);
+    // Glowing strips along bottom
+    [-6, 6].forEach(offset => {
+      const stripGeom = new T.BoxGeometry(2, 1, 25);
+      const strip = new T.Mesh(stripGeom, accentMat);
+      strip.position.set(offset, -2, 5);
+      drone.add(strip);
     });
 
-    // Navigation lights
-    const redLight = new T.Mesh(
-      new T.SphereGeometry(0.5, 6, 6),
-      new T.MeshBasicMaterial({ color: 0xff0000 })
-    );
-    redLight.position.set(-20, 0, -2);
-    plane.add(redLight);
+    // Gun pods - glowing
+    const gunMat = new T.MeshBasicMaterial({ color: 0x445566 });
+    [-10, 10].forEach(x => {
+      // Gun pod body
+      const gunPodGeom = new T.CylinderGeometry(1.5, 1.5, 12, 8);
+      const gunPod = new T.Mesh(gunPodGeom, gunMat);
+      gunPod.rotation.x = Math.PI / 2;
+      gunPod.position.set(x, -1, 10);
+      drone.add(gunPod);
 
-    const greenLight = new T.Mesh(
-      new T.SphereGeometry(0.5, 6, 6),
-      new T.MeshBasicMaterial({ color: 0x00ff00 })
-    );
-    greenLight.position.set(20, 0, -2);
-    plane.add(greenLight);
+      // Glowing gun barrel
+      const barrelGeom = new T.CylinderGeometry(0.8, 0.8, 8, 6);
+      const barrel = new T.Mesh(barrelGeom, accentMat);
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(x, -1, 18);
+      drone.add(barrel);
 
-    const whiteLight = new T.Mesh(
-      new T.SphereGeometry(0.5, 6, 6),
-      new T.MeshBasicMaterial({ color: 0xffffff })
-    );
-    whiteLight.position.set(0, 0, -17);
-    plane.add(whiteLight);
+      // Gun tip glow
+      const gunTipGeom = new T.SphereGeometry(1.5, 8, 8);
+      const gunTip = new T.Mesh(gunTipGeom, accentMat);
+      gunTip.position.set(x, -1, 22);
+      drone.add(gunTip);
+    });
 
-    // Initial position (in the air, ready to fly)
-    plane.position.set(3000, 500, -1000);
-    scene.add(plane);
+    // Add a point light to the drone so it illuminates nearby objects
+    const droneLight = new T.PointLight(0x00ffff, 2, 500);
+    droneLight.position.set(0, 0, 0);
+    drone.add(droneLight);
 
-    return plane;
+    // SCALE UP the drone for visibility in the large arena
+    drone.scale.set(5, 5, 5);
+
+    // Initial position (in the laser tag arena)
+    drone.position.set(0, 400, 5000);
+    scene.add(drone);
+
+    return drone;
   }, []);
 
-  // Flight physics update
+  // Create LASER TAG targets - neon glowing orbs within the arena
+  const createTargets = useCallback((scene) => {
+    if (!THREE.current) return;
+    const T = THREE.current;
+
+    const targets = [];
+
+    // Neon target colors
+    const neonRed = 0xff0044;
+    const neonOrange = 0xff6600;
+    const neonYellow = 0xffff00;
+    const neonGreen = 0x00ff44;
+
+    // Targets positioned within the laser tag arena (arena is ~8000 units)
+    const targetPositions = [
+      // Center area - easy targets
+      { x: 0, y: 500, z: 0, size: 80, health: 2, color: neonRed, ring: 0xff00ff },
+      { x: 500, y: 600, z: -500, size: 60, health: 1, color: neonOrange, ring: 0x00ffff },
+      { x: -500, y: 550, z: 500, size: 70, health: 2, color: neonYellow, ring: 0xff00ff },
+
+      // Around the pillars
+      { x: -2000, y: 700, z: -2000, size: 70, health: 2, color: neonRed, ring: 0x00ffff },
+      { x: 2000, y: 650, z: -2000, size: 75, health: 2, color: neonOrange, ring: 0xff00ff },
+      { x: -2000, y: 800, z: 2000, size: 65, health: 2, color: neonYellow, ring: 0x00ffff },
+      { x: 2000, y: 750, z: 2000, size: 80, health: 3, color: neonRed, ring: 0xff00ff },
+
+      // Near walls - harder to hit
+      { x: -6000, y: 400, z: 0, size: 90, health: 3, color: neonGreen, ring: 0xff00ff },
+      { x: 6000, y: 450, z: 0, size: 85, health: 3, color: neonGreen, ring: 0x00ffff },
+      { x: 0, y: 500, z: -6000, size: 95, health: 4, color: neonOrange, ring: 0xff00ff },
+      { x: 0, y: 550, z: 6000, size: 90, health: 3, color: neonYellow, ring: 0x00ffff },
+
+      // High altitude - above platforms
+      { x: -3000, y: 1000, z: 1500, size: 100, health: 4, color: neonRed, ring: 0x00ffff },
+      { x: 3000, y: 1100, z: -1500, size: 110, health: 5, color: neonOrange, ring: 0xff00ff },
+      { x: 0, y: 1200, z: 0, size: 120, health: 5, color: neonYellow, ring: 0x00ff00 },
+
+      // Corner targets
+      { x: -5500, y: 300, z: -5500, size: 60, health: 2, color: neonGreen, ring: 0xff00ff },
+      { x: 5500, y: 350, z: -5500, size: 65, health: 2, color: neonGreen, ring: 0x00ffff },
+      { x: -5500, y: 380, z: 5500, size: 70, health: 2, color: neonGreen, ring: 0xff00ff },
+    ];
+
+    targetPositions.forEach((pos, index) => {
+      const targetGroup = new T.Group();
+
+      // Main target sphere - glowing neon
+      const targetGeom = new T.SphereGeometry(pos.size, 16, 12);
+      const targetMat = new T.MeshBasicMaterial({
+        color: pos.color,
+        transparent: true,
+        opacity: 0.9,
+      });
+      const targetMesh = new T.Mesh(targetGeom, targetMat);
+      targetGroup.add(targetMesh);
+
+      // Inner glowing core - bright white
+      const coreGeom = new T.SphereGeometry(pos.size * 0.4, 12, 8);
+      const coreMat = new T.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.8,
+      });
+      const core = new T.Mesh(coreGeom, coreMat);
+      targetGroup.add(core);
+
+      // Outer neon ring
+      const ringGeom = new T.TorusGeometry(pos.size * 1.4, pos.size * 0.08, 8, 24);
+      const ringMat = new T.MeshBasicMaterial({ color: pos.ring });
+      const ring = new T.Mesh(ringGeom, ringMat);
+      ring.rotation.x = Math.PI / 2;
+      targetGroup.add(ring);
+
+      // Second ring (perpendicular) - different color
+      const ring2Mat = new T.MeshBasicMaterial({ color: pos.color });
+      const ring2 = new T.Mesh(ringGeom, ring2Mat);
+      ring2.rotation.y = Math.PI / 2;
+      targetGroup.add(ring2);
+
+      // Pulsing outer glow effect
+      const glowGeom = new T.SphereGeometry(pos.size * 1.6, 8, 6);
+      const glowMat = new T.MeshBasicMaterial({
+        color: pos.ring,
+        transparent: true,
+        opacity: 0.15,
+      });
+      const glow = new T.Mesh(glowGeom, glowMat);
+      targetGroup.add(glow);
+
+      targetGroup.position.set(pos.x, pos.y, pos.z);
+      scene.add(targetGroup);
+
+      targets.push({
+        mesh: targetGroup,
+        mainMesh: targetMesh,
+        core: core,
+        health: pos.health,
+        maxHealth: pos.health,
+        size: pos.size,
+        position: { x: pos.x, y: pos.y, z: pos.z },
+        id: index,
+        destroyed: false,
+      });
+    });
+
+    targetsRef.current = targets;
+    return targets;
+  }, []);
+
+  // Fire bullets from the drone
+  const fireBullets = useCallback(() => {
+    if (!THREE.current || !planeRef.current || !physicsRef.current || !sceneRef.current) return;
+    if (ammoRef.current <= 0) return;
+
+    const T = THREE.current;
+    const drone = planeRef.current;
+    const physics = physicsRef.current;
+    const scene = sceneRef.current;
+
+    // Rate limiting - can fire every 100ms
+    const now = Date.now();
+    if (now - lastFireTimeRef.current < 100) return;
+    lastFireTimeRef.current = now;
+
+    // Create bullet - MUCH larger with GLOW for visibility
+    const bulletGeom = new T.SphereGeometry(12, 8, 6); // Much bigger bullets
+    const bulletMat = new T.MeshBasicMaterial({
+      color: 0x00ffff, // Cyan to match drone
+    });
+
+    // Outer glow sphere for bullets
+    const bulletGlowGeom = new T.SphereGeometry(18, 8, 6);
+    const bulletGlowMat = new T.MeshBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.3,
+    });
+
+    // Fire from both gun pod positions (drone guns are at x: -8, 8, z: 14) - scaled by drone scale
+    [-8, 8].forEach(gunOffset => {
+      // Create bullet group with core and glow
+      const bulletGroup = new T.Group();
+      const bulletCore = new T.Mesh(bulletGeom, bulletMat.clone());
+      const bulletGlow = new T.Mesh(bulletGlowGeom, bulletGlowMat.clone());
+      bulletGroup.add(bulletCore);
+      bulletGroup.add(bulletGlow);
+
+      // Calculate bullet starting position (at the gun barrels, accounting for drone scale of 4)
+      const gunPos = new T.Vector3(gunOffset * 4, -1 * 4, 16 * 4);
+      gunPos.applyQuaternion(drone.quaternion);
+      gunPos.add(drone.position);
+      bulletGroup.position.copy(gunPos);
+
+      // Calculate bullet velocity - shoot straight forward from where drone is facing
+      const bulletSpeed = 600; // Good speed for drone bullets
+      const forward = new T.Vector3(
+        Math.sin(physics.yaw),
+        0, // Bullets fly level
+        Math.cos(physics.yaw)
+      );
+
+      const velocity = {
+        x: forward.x * bulletSpeed + physics.velocity.x * 0.5,
+        y: physics.velocity.y * 0.3, // Slight vertical influence
+        z: forward.z * bulletSpeed + physics.velocity.z * 0.5,
+      };
+
+      scene.add(bulletGroup);
+
+      bulletsRef.current.push({
+        mesh: bulletGroup,
+        velocity: velocity,
+        lifetime: 4, // seconds - longer lifetime
+        created: now,
+      });
+    });
+
+    // Update both ref and state
+    ammoRef.current = Math.max(0, ammoRef.current - 2);
+    setAmmo(ammoRef.current);
+  }, []);
+
+  // Update bullets and check collisions
+  const updateBullets = useCallback((createExplosionFn) => {
+    if (!THREE.current || !sceneRef.current) return;
+
+    const scene = sceneRef.current;
+    const now = Date.now();
+    const dt = 0.016;
+
+    // Update each bullet
+    bulletsRef.current = bulletsRef.current.filter(bullet => {
+      // Check lifetime
+      if ((now - bullet.created) / 1000 > bullet.lifetime) {
+        scene.remove(bullet.mesh);
+        // Dispose of all children in the group
+        bullet.mesh.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+        });
+        return false;
+      }
+
+      // Update position
+      bullet.mesh.position.x += bullet.velocity.x * dt;
+      bullet.mesh.position.y += bullet.velocity.y * dt;
+      bullet.mesh.position.z += bullet.velocity.z * dt;
+
+      // Check collision with targets
+      for (const target of targetsRef.current) {
+        if (target.destroyed) continue;
+
+        const dx = bullet.mesh.position.x - target.position.x;
+        const dy = bullet.mesh.position.y - target.position.y;
+        const dz = bullet.mesh.position.z - target.position.z;
+        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+        if (distance < target.size * 1.5) {
+          // Hit! - increased hit detection radius
+          target.health--;
+
+          // Flash the target
+          if (target.mainMesh && target.mainMesh.material) {
+            target.mainMesh.material.color.setHex(0xffffff);
+            setTimeout(() => {
+              if (target.mainMesh && target.mainMesh.material && !target.destroyed) {
+                const healthRatio = target.health / target.maxHealth;
+                const r = 1;
+                const g = healthRatio * 0.5;
+                const b = healthRatio * 0.3;
+                target.mainMesh.material.color.setRGB(r, g, b);
+              }
+            }, 50);
+          }
+
+          // Check if destroyed
+          if (target.health <= 0) {
+            target.destroyed = true;
+            scene.remove(target.mesh);
+            setScore(prev => prev + target.maxHealth * 100);
+            setTargetsDestroyed(prev => prev + 1);
+
+            // Create explosion effect
+            if (createExplosionFn) {
+              createExplosionFn(target.position);
+            }
+          }
+
+          // Remove bullet
+          scene.remove(bullet.mesh);
+          bullet.mesh.traverse((child) => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+          });
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, []);
+
+  // Create explosion effect
+  const createExplosion = useCallback((position) => {
+    if (!THREE.current || !sceneRef.current) return;
+
+    const T = THREE.current;
+    const scene = sceneRef.current;
+
+    // Create explosion particles
+    const particles = [];
+    const numParticles = 20;
+
+    for (let i = 0; i < numParticles; i++) {
+      const size = 10 + Math.random() * 20;
+      const particleGeom = new T.SphereGeometry(size, 6, 4);
+      const particleMat = new T.MeshBasicMaterial({
+        color: Math.random() > 0.5 ? 0xff6600 : 0xffaa00,
+        transparent: true,
+        opacity: 1,
+      });
+      const particle = new T.Mesh(particleGeom, particleMat);
+
+      particle.position.set(position.x, position.y, position.z);
+
+      const speed = 50 + Math.random() * 100;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.random() * Math.PI;
+
+      particle.userData.velocity = {
+        x: Math.sin(phi) * Math.cos(theta) * speed,
+        y: Math.sin(phi) * Math.sin(theta) * speed,
+        z: Math.cos(phi) * speed,
+      };
+      particle.userData.created = Date.now();
+
+      scene.add(particle);
+      particles.push(particle);
+    }
+
+    // Animate explosion
+    const animateExplosion = () => {
+      const now = Date.now();
+      let allDone = true;
+
+      particles.forEach(particle => {
+        const age = (now - particle.userData.created) / 1000;
+        if (age < 1) {
+          allDone = false;
+          particle.position.x += particle.userData.velocity.x * 0.016;
+          particle.position.y += particle.userData.velocity.y * 0.016;
+          particle.position.z += particle.userData.velocity.z * 0.016;
+          particle.material.opacity = 1 - age;
+          particle.scale.setScalar(1 + age * 2);
+        } else {
+          scene.remove(particle);
+          particle.geometry.dispose();
+          particle.material.dispose();
+        }
+      });
+
+      if (!allDone) {
+        requestAnimationFrame(animateExplosion);
+      }
+    };
+
+    animateExplosion();
+  }, []);
+
+  // Drone physics update - SUPER SIMPLE kid-friendly controls
+  // Swipe/drag in any direction = drone moves that direction
+  // No complex steering - just point and go!
   const updateFlightPhysics = useCallback(() => {
     if (!planeRef.current || !physicsRef.current) return;
 
     const physics = physicsRef.current;
     const keys = keysRef.current;
     const touch = touchControlsRef.current;
-    const plane = planeRef.current;
-
-    // Physics constants
-    const GRAVITY = 9.81;
-    const AIR_DENSITY = 1.225;
-    const WING_AREA = 50;
-    const MASS = 5000;
-    const MAX_THRUST = 80000;
-    const DRAG_COEFFICIENT = 0.025;
-    const LIFT_COEFFICIENT = 0.8;
-    const STALL_ANGLE = 0.35; // ~20 degrees
-    const MIN_FLIGHT_SPEED = 50;
+    const drone = planeRef.current;
 
     const dt = 0.016; // ~60fps
 
-    // Throttle control - keyboard or touch
-    if (keys['ShiftLeft'] || keys['ShiftRight'] || touch.throttleChange > 0.1) {
-      const throttleRate = touch.throttleChange > 0.1 ? touch.throttleChange * 1.5 : 0.5;
-      physics.throttle = Math.min(100, physics.throttle + throttleRate);
-    }
-    if (keys['ControlLeft'] || keys['ControlRight'] || touch.throttleChange < -0.1) {
-      const throttleRate = touch.throttleChange < -0.1 ? Math.abs(touch.throttleChange) * 1.5 : 0.5;
-      physics.throttle = Math.max(0, physics.throttle - throttleRate);
-    }
+    // Simple drone constants - easy to control
+    const MAX_SPEED = 120; // Not too fast for kids
+    const ACCELERATION = 8; // Responsive but not twitchy
+    const FRICTION = 0.92; // Slows down quickly when you let go
+    const TILT_AMOUNT = 0.2; // Gentle visual tilt
 
-    // Calculate thrust
-    const thrust = (physics.throttle / 100) * MAX_THRUST;
+    // === SIMPLE DIRECT MOVEMENT ===
+    // Touch controls: swipe in any direction to move that way
+    // The drone faces the direction it's moving
+    let moveX = 0;
+    let moveZ = 0;
+    let moveY = 0;
 
-    // Pitch control - keyboard or touch (W/S or ArrowUp/ArrowDown or touch.pitch)
-    let pitchInput = ((keys['KeyS'] || keys['ArrowDown']) ? 1 : 0) - ((keys['KeyW'] || keys['ArrowUp']) ? 1 : 0);
-    // Add touch pitch input (inverted: touch up = dive down, touch down = climb up)
-    if (Math.abs(touch.pitch) > 0.1) {
-      pitchInput = -touch.pitch; // Inverted for natural feel
+    // Keyboard controls - W/S for forward/back, A/D for left/right
+    if (keys['KeyW'] || keys['ArrowUp']) moveZ = 1;
+    if (keys['KeyS'] || keys['ArrowDown']) moveZ = -1;
+    if (keys['KeyA'] || keys['ArrowLeft']) moveX = -1;
+    if (keys['KeyD'] || keys['ArrowRight']) moveX = 1;
+    if (keys['ShiftLeft'] || keys['ShiftRight']) moveY = 1;
+    if (keys['ControlLeft'] || keys['ControlRight']) moveY = -1;
+
+    // Unified joystick: swipe controls all movement
+    // Left/Right = strafe, Up/Down = altitude (push up to go up, push down to go down)
+    if (Math.abs(touch.roll) > 0.05) {
+      moveX = touch.roll; // Push right = strafe right
     }
-    const pitchRate = 0.025 * (physics.speed / 100); // More responsive at higher speeds
-    physics.pitch += pitchInput * pitchRate;
-    physics.pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, physics.pitch)); // Limit pitch
-
-    // Roll control - keyboard or touch (A/D or ArrowLeft/ArrowRight or touch.roll)
-    let rollInput = ((keys['KeyD'] || keys['ArrowRight']) ? 1 : 0) - ((keys['KeyA'] || keys['ArrowLeft']) ? 1 : 0);
-    // Add touch roll input
-    if (Math.abs(touch.roll) > 0.1) {
-      rollInput = touch.roll;
-    }
-    const rollRate = 0.035;
-    physics.roll += rollInput * rollRate;
-    physics.roll = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, physics.roll)); // Limit roll
-
-    // Auto-level roll when no input
-    if (!rollInput && Math.abs(touch.roll) < 0.1) {
-      physics.roll *= 0.98;
+    if (Math.abs(touch.pitch) > 0.05) {
+      moveY = -touch.pitch; // Push up = fly up, push down = fly down
     }
 
-    // Yaw from roll (banking turns)
-    const yawRate = Math.sin(physics.roll) * 0.015 * (physics.speed / 100);
-    physics.yaw += yawRate;
+    // Apply movement in world space (simple, direct)
+    physics.velocity.x += moveX * ACCELERATION;
+    physics.velocity.z += moveZ * ACCELERATION;
+    physics.velocity.y += moveY * ACCELERATION * 0.5; // Slower vertical
 
-    // Calculate speed from velocity
-    physics.speed = Math.sqrt(
-      physics.velocity.x ** 2 +
-      physics.velocity.y ** 2 +
-      physics.velocity.z ** 2
-    );
+    // Apply friction (smooth stop when you let go)
+    physics.velocity.x *= FRICTION;
+    physics.velocity.z *= FRICTION;
+    physics.velocity.y *= FRICTION;
 
-    // Angle of attack
-    const aoa = physics.pitch;
-    const isStalled = Math.abs(aoa) > STALL_ANGLE && physics.speed < MIN_FLIGHT_SPEED * 2;
-
-    // Lift calculation
-    let lift = 0;
-    if (physics.speed > 10) {
-      const effectiveLift = isStalled ? LIFT_COEFFICIENT * 0.3 : LIFT_COEFFICIENT;
-      lift = 0.5 * AIR_DENSITY * physics.speed ** 2 * WING_AREA * effectiveLift * Math.cos(aoa);
+    // Clamp speeds
+    const horizontalSpeed = Math.sqrt(physics.velocity.x ** 2 + physics.velocity.z ** 2);
+    if (horizontalSpeed > MAX_SPEED) {
+      const scale = MAX_SPEED / horizontalSpeed;
+      physics.velocity.x *= scale;
+      physics.velocity.z *= scale;
     }
-
-    // Drag calculation
-    const dragArea = WING_AREA * (1 + Math.abs(Math.sin(aoa)) * 2);
-    const drag = 0.5 * AIR_DENSITY * physics.speed ** 2 * dragArea * DRAG_COEFFICIENT;
-
-    // Weight
-    const weight = MASS * GRAVITY;
-
-    // Direction vectors
-    const forward = {
-      x: Math.sin(physics.yaw) * Math.cos(physics.pitch),
-      y: Math.sin(physics.pitch),
-      z: Math.cos(physics.yaw) * Math.cos(physics.pitch),
-    };
-
-    const up = {
-      x: -Math.sin(physics.yaw) * Math.sin(physics.pitch) * Math.cos(physics.roll) - Math.cos(physics.yaw) * Math.sin(physics.roll),
-      y: Math.cos(physics.pitch) * Math.cos(physics.roll),
-      z: -Math.cos(physics.yaw) * Math.sin(physics.pitch) * Math.cos(physics.roll) + Math.sin(physics.yaw) * Math.sin(physics.roll),
-    };
-
-    // Apply forces
-    // Thrust
-    physics.velocity.x += (thrust * forward.x / MASS) * dt;
-    physics.velocity.y += (thrust * forward.y / MASS) * dt;
-    physics.velocity.z += (thrust * forward.z / MASS) * dt;
-
-    // Lift
-    physics.velocity.x += (lift * up.x / MASS) * dt;
-    physics.velocity.y += (lift * up.y / MASS) * dt;
-    physics.velocity.z += (lift * up.z / MASS) * dt;
-
-    // Drag (opposes velocity)
-    if (physics.speed > 0) {
-      const dragForce = drag / MASS * dt;
-      physics.velocity.x -= (physics.velocity.x / physics.speed) * dragForce;
-      physics.velocity.y -= (physics.velocity.y / physics.speed) * dragForce;
-      physics.velocity.z -= (physics.velocity.z / physics.speed) * dragForce;
-    }
-
-    // Gravity
-    physics.velocity.y -= GRAVITY * dt;
+    physics.velocity.y = Math.max(-30, Math.min(30, physics.velocity.y));
 
     // Update position
     physics.position.x += physics.velocity.x * dt;
     physics.position.y += physics.velocity.y * dt;
     physics.position.z += physics.velocity.z * dt;
 
-    // Ground collision
-    const groundLevel = 10; // Minimum altitude
+    // Ground collision - bounce gently
+    const groundLevel = 30;
     if (physics.position.y < groundLevel) {
       physics.position.y = groundLevel;
-      physics.velocity.y = Math.max(0, physics.velocity.y);
-
-      // Ground friction when on ground
-      if (physics.speed > 0) {
-        physics.velocity.x *= 0.995;
-        physics.velocity.z *= 0.995;
-      }
+      physics.velocity.y = Math.abs(physics.velocity.y) * 0.3; // Gentle bounce
     }
 
-    // Update plane visual
-    plane.position.set(physics.position.x, physics.position.y, physics.position.z);
-    plane.rotation.set(physics.pitch, physics.yaw, physics.roll);
+    // Sky limit
+    if (physics.position.y > 3000) {
+      physics.position.y = 3000;
+      physics.velocity.y = Math.min(0, physics.velocity.y);
+    }
 
-    // Update thrust visuals
-    plane.children.forEach(child => {
-      if (child.name === 'thrust') {
-        child.scale.z = 0.5 + (physics.throttle / 100) * 1.5;
-        child.material.opacity = 0.3 + (physics.throttle / 100) * 0.5;
+    // Auto-rotate to face movement direction (smooth)
+    if (horizontalSpeed > 5) {
+      const targetYaw = Math.atan2(physics.velocity.x, physics.velocity.z);
+      // Smooth rotation towards movement direction
+      let yawDiff = targetYaw - physics.yaw;
+      // Normalize angle difference
+      while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+      while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+      physics.yaw += yawDiff * 0.1; // Smooth turn
+    }
+
+    // Visual tilt based on movement (makes it feel alive)
+    const targetPitch = (moveZ * TILT_AMOUNT); // Tilt forward/back
+    const targetRoll = (-moveX * TILT_AMOUNT); // Tilt left/right
+
+    physics.pitch = physics.pitch * 0.9 + targetPitch * 0.1;
+    physics.roll = physics.roll * 0.9 + targetRoll * 0.1;
+
+    // Calculate speed for display
+    physics.speed = Math.sqrt(
+      physics.velocity.x ** 2 +
+      physics.velocity.y ** 2 +
+      physics.velocity.z ** 2
+    );
+
+    // Update drone visual
+    drone.position.set(physics.position.x, physics.position.y, physics.position.z);
+    drone.rotation.set(physics.pitch, physics.yaw, physics.roll);
+
+    // Spin all propellers!
+    drone.children.forEach(child => {
+      if (child.name && child.name.startsWith('prop')) {
+        child.rotation.y += 0.8;
       }
     });
 
     // Update HUD
-    setSpeed(Math.round(physics.speed * 1.944)); // m/s to knots
+    setSpeed(Math.round(physics.speed * 2.237)); // m/s to mph
     setAltitude(Math.round(physics.position.y * 3.281)); // meters to feet
     setHeading(Math.round(((physics.yaw * 180 / Math.PI) % 360 + 360) % 360));
     setPitch(Math.round(physics.pitch * 180 / Math.PI));
-    setThrottle(Math.round(physics.throttle));
-    setStalled(isStalled);
+    setThrottle(Math.round(Math.min(100, horizontalSpeed / MAX_SPEED * 100)));
+    setStalled(false);
 
   }, []);
 
@@ -642,33 +915,34 @@ const FlyGame = ({ onExit }) => {
 
         if (!isMounted || !containerRef.current) return;
 
-        // Initialize physics - start higher in the air with good speed
+        // Initialize physics - helicopter starts hovering
         physicsRef.current = {
-          position: { x: 3000, y: 500, z: -1000 },
-          velocity: { x: 0, y: 0, z: 80 }, // Good initial forward velocity
+          position: { x: 0, y: 400, z: 5000 }, // Match drone starting position
+          velocity: { x: 0, y: 0, z: 0 }, // Hovering, no initial velocity
           pitch: 0,
-          yaw: 0,
+          yaw: Math.PI, // Face towards center of arena
           roll: 0,
           throttle: 60,
           speed: 80,
         };
 
-        // Scene
+        // Scene - Dark for laser tag
         const scene = new T.Scene();
-        scene.background = new T.Color(0x87CEEB); // Sky blue
-        scene.fog = new T.Fog(0x87CEEB, 5000, 40000);
+        scene.background = new T.Color(0x000000); // Pure black
+        scene.fog = new T.Fog(0x000011, 500, 12000); // Dark fog, shorter distance for arena
         sceneRef.current = scene;
 
-        // Camera - initialize near the plane's starting position
+        // Camera - initialize behind the drone (drone starts at 0, 400, 5000, facing -Z towards center)
         const camera = new T.PerspectiveCamera(
           70,
           window.innerWidth / window.innerHeight,
           0.1,
           60000
         );
-        // Set initial camera position behind the plane (plane starts at 3000, 500, -1000)
-        camera.position.set(3000, 530, -1080);
-        camera.lookAt(3000, 500, -1000);
+        // Drone is at (0, 400, 5000) facing towards center (yaw = Math.PI means facing -Z)
+        // Camera should be behind it (higher Z value)
+        camera.position.set(0, 500, 5500);
+        camera.lookAt(0, 400, 5000);
         cameraRef.current = camera;
 
         // Renderer
@@ -679,7 +953,7 @@ const FlyGame = ({ onExit }) => {
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.setClearColor(0x87CEEB, 1); // Sky blue background
+        renderer.setClearColor(0x000000, 1); // Pure black background for laser tag
 
         // Ensure container is empty before adding
         while (containerRef.current.firstChild) {
@@ -694,25 +968,26 @@ const FlyGame = ({ onExit }) => {
         console.log('FlyGame: Window size:', window.innerWidth, 'x', window.innerHeight);
         console.log('FlyGame: Canvas size:', renderer.domElement.width, 'x', renderer.domElement.height);
 
-        // Lighting
-        const ambientLight = new T.AmbientLight(0xffffff, 0.6);
+        // Lighting - Dark ambient for laser tag feel
+        const ambientLight = new T.AmbientLight(0x111122, 0.3); // Very dim bluish ambient
         scene.add(ambientLight);
 
-        const sunLight = new T.DirectionalLight(0xfffacd, 1.0);
-        sunLight.position.set(10000, 15000, 5000);
-        scene.add(sunLight);
+        // Point lights for neon glow effect
+        const magentaLight = new T.PointLight(0xff00ff, 0.8, 5000);
+        magentaLight.position.set(-3000, 1000, 0);
+        scene.add(magentaLight);
 
-        // Hemisphere light for sky/ground
-        const hemiLight = new T.HemisphereLight(0x87CEEB, 0x3d6b3d, 0.4);
-        scene.add(hemiLight);
+        const cyanLight = new T.PointLight(0x00ffff, 0.8, 5000);
+        cyanLight.position.set(3000, 1000, 0);
+        scene.add(cyanLight);
 
-        // Create a simple test cube to verify rendering works
-        const testCubeGeom = new T.BoxGeometry(100, 100, 100);
-        const testCubeMat = new T.MeshBasicMaterial({ color: 0xff0000 });
-        const testCube = new T.Mesh(testCubeGeom, testCubeMat);
-        testCube.position.set(3000, 500, -900); // In front of plane starting position
-        scene.add(testCube);
-        console.log('FlyGame: Test cube added at', testCube.position);
+        const greenLight = new T.PointLight(0x00ff00, 0.5, 4000);
+        greenLight.position.set(0, 500, -3000);
+        scene.add(greenLight);
+
+        const purpleLight = new T.PointLight(0x9900ff, 0.6, 4000);
+        purpleLight.position.set(0, 1500, 3000);
+        scene.add(purpleLight);
 
         // Create terrain and plane
         console.log('FlyGame: Creating terrain...');
@@ -722,35 +997,33 @@ const FlyGame = ({ onExit }) => {
         planeRef.current = plane;
         console.log('FlyGame: Plane created at', plane.position);
 
+        // Create targets
+        console.log('FlyGame: Creating targets...');
+        createTargets(scene);
+        console.log('FlyGame: Targets created:', targetsRef.current.length);
+
         // Force multiple initial renders to ensure scene is visible
         renderer.render(scene, camera);
         requestAnimationFrame(() => renderer.render(scene, camera));
         console.log('FlyGame: Initial render complete, scene children:', scene.children.length);
 
-        // Add clouds
-        const cloudMat = new T.MeshBasicMaterial({
-          color: 0xffffff,
-          transparent: true,
-          opacity: 0.8,
-        });
-        for (let i = 0; i < 100; i++) {
-          const cloudGeom = new T.SphereGeometry(200 + Math.random() * 400, 8, 6);
-          const cloud = new T.Mesh(cloudGeom, cloudMat);
-          cloud.position.set(
-            (Math.random() - 0.5) * 40000,
-            1500 + Math.random() * 3000,
-            (Math.random() - 0.5) * 40000
+        // Add floating neon particles/dust for atmosphere
+        const particleColors = [0xff00ff, 0x00ffff, 0x00ff00, 0xff1493, 0x9900ff];
+        for (let i = 0; i < 80; i++) {
+          const particleGeom = new T.SphereGeometry(5 + Math.random() * 10, 4, 4);
+          const particleMat = new T.MeshBasicMaterial({
+            color: particleColors[Math.floor(Math.random() * particleColors.length)],
+            transparent: true,
+            opacity: 0.6 + Math.random() * 0.4,
+          });
+          const particle = new T.Mesh(particleGeom, particleMat);
+          particle.position.set(
+            (Math.random() - 0.5) * 15000,
+            100 + Math.random() * 1800,
+            (Math.random() - 0.5) * 15000
           );
-          cloud.scale.set(2 + Math.random(), 0.5 + Math.random() * 0.5, 1 + Math.random());
-          scene.add(cloud);
+          scene.add(particle);
         }
-
-        // Add sun
-        const sunGeom = new T.SphereGeometry(500, 16, 16);
-        const sunMat = new T.MeshBasicMaterial({ color: 0xffff88 });
-        const sun = new T.Mesh(sunGeom, sunMat);
-        sun.position.set(10000, 15000, 5000);
-        scene.add(sun);
 
         setIsLoading(false);
         console.log('FlyGame: Loading complete, starting animation');
@@ -764,6 +1037,14 @@ const FlyGame = ({ onExit }) => {
           // Only update physics when game is running (controls dismissed)
           if (planeRef.current && physicsRef.current && gameRunningRef.current) {
             updateFlightPhysics();
+
+            // Handle firing
+            if (keysRef.current['Space'] || isFiringRef.current) {
+              fireBullets();
+            }
+
+            // Update bullets (pass createExplosion function)
+            updateBullets(createExplosion);
           }
 
           // Camera follows plane (chase camera)
@@ -771,9 +1052,9 @@ const FlyGame = ({ onExit }) => {
             const planeObj = planeRef.current;
             const physics = physicsRef.current;
 
-            // Calculate camera position behind and above plane
-            const cameraDistance = 80;
-            const cameraHeight = 30;
+            // Calculate camera position behind and above plane (drone is scaled 5x, so need more distance)
+            const cameraDistance = 300;
+            const cameraHeight = 100;
 
             const camX = planeObj.position.x - Math.sin(physics.yaw) * cameraDistance;
             const camY = planeObj.position.y + cameraHeight;
@@ -847,8 +1128,12 @@ const FlyGame = ({ onExit }) => {
         containerRef.current.removeChild(rendererRef.current.domElement);
         rendererRef.current.dispose();
       }
+      // Clean up bullets
+      bulletsRef.current = [];
+      targetsRef.current = [];
     };
-  }, [createTerrain, createPlane, updateFlightPhysics]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createTerrain, createPlane, createTargets]);
 
   // Touch controls - Flight stick (right side)
   const flightStickStartRef = useRef(null);
@@ -937,89 +1222,65 @@ const FlyGame = ({ onExit }) => {
       {/* Exit Button - always visible */}
       <button className="exit-btn" onClick={onExit}>✕</button>
 
-      {/* HUD - show when not loading and controls hint is dismissed */}
+      {/* Mini HUD - show when not loading and controls hint is dismissed */}
       {!isLoading && !showControls && (
-      <div className="flight-hud">
-        {/* Airspeed Indicator */}
-        <div className="hud-panel airspeed-panel">
-          <div className="panel-label">AIRSPEED</div>
-          <div className="panel-value">{speed}</div>
-          <div className="panel-unit">KTS</div>
-        </div>
-
-        {/* Altimeter */}
-        <div className="hud-panel altitude-panel">
-          <div className="panel-label">ALTITUDE</div>
-          <div className="panel-value">{altitude.toLocaleString()}</div>
-          <div className="panel-unit">FT</div>
-        </div>
-
-        {/* Heading */}
-        <div className="hud-panel heading-panel">
-          <div className="panel-label">HEADING</div>
-          <div className="panel-value">{heading.toString().padStart(3, '0')}°</div>
-        </div>
-
-        {/* Throttle */}
-        <div className="hud-panel throttle-panel">
-          <div className="panel-label">THROTTLE</div>
-          <div className="throttle-bar">
-            <div className="throttle-fill" style={{ height: `${throttle}%` }}></div>
+      <div className="flight-hud mini-hud">
+        {/* Compact Weapons/Score display */}
+        <div className="hud-panel weapons-panel-mini">
+          <div className="mini-stat">
+            <span className="mini-icon">🎯</span>
+            <span className="mini-value">{targetsDestroyed}/17</span>
           </div>
-          <div className="panel-value">{throttle}%</div>
-        </div>
-
-        {/* Pitch indicator */}
-        <div className="hud-panel pitch-panel">
-          <div className="panel-label">PITCH</div>
-          <div className="panel-value">{pitch > 0 ? '+' : ''}{pitch}°</div>
-        </div>
-
-        {/* Stall warning */}
-        {stalled && (
-          <div className="stall-warning">
-            <span>⚠️ STALL WARNING ⚠️</span>
+          <div className="mini-stat">
+            <span className="mini-icon">⭐</span>
+            <span className="mini-value">{score.toLocaleString()}</span>
           </div>
-        )}
+          <div className="mini-stat">
+            <span className="mini-icon">💥</span>
+            <span className="mini-value">{ammo}</span>
+          </div>
+        </div>
       </div>
       )}
 
       {/* Touch Controls - show when not loading and controls hint is dismissed */}
       {!isLoading && !showControls && isLandscape && (
-      <div className="touch-controls">
-        {/* Left side - Throttle control area */}
+      <div className="touch-controls unified-controls">
+        {/* Left side - Unified joystick for ALL movement */}
         <div
-          className="throttle-area"
-          onTouchStart={handleThrottleStart}
-          onTouchMove={handleThrottleMove}
-          onTouchEnd={handleThrottleEnd}
-          onTouchCancel={handleThrottleEnd}
-        >
-          <div className="throttle-zone">
-            <div className="throttle-indicator">
-              <span className="throttle-icon">⬆</span>
-              <span className="throttle-label">THROTTLE</span>
-              <span className="throttle-icon">⬇</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right side - Flight stick area */}
-        <div
-          className="flight-stick-area"
+          className="joystick-area unified-joystick"
           onTouchStart={handleFlightStickStart}
           onTouchMove={handleFlightStickMove}
           onTouchEnd={handleFlightStickEnd}
           onTouchCancel={handleFlightStickEnd}
         >
-          <div className="flight-stick-zone">
-            <div className="stick-crosshair">
-              <div className="crosshair-v"></div>
-              <div className="crosshair-h"></div>
-              <div className="stick-center"></div>
+          <div className="joystick-zone large-zone">
+            <div className="joystick-ring"></div>
+            <div className="joystick-arrows">
+              <span className="arrow up">▲</span>
+              <span className="arrow down">▼</span>
+              <span className="arrow left">◀</span>
+              <span className="arrow right">▶</span>
             </div>
-            <span className="stick-label">FLIGHT STICK</span>
+            <div className="joystick-center"></div>
+            <span className="joystick-label">FLY</span>
           </div>
+        </div>
+
+        {/* Right side - Big Fire button */}
+        <div className="fire-button-area">
+          <button
+            className="fire-btn big-fire-btn"
+            onTouchStart={(e) => { e.preventDefault(); isFiringRef.current = true; }}
+            onTouchEnd={(e) => { e.preventDefault(); isFiringRef.current = false; }}
+            onTouchCancel={() => { isFiringRef.current = false; }}
+            onMouseDown={() => { isFiringRef.current = true; }}
+            onMouseUp={() => { isFiringRef.current = false; }}
+            onMouseLeave={() => { isFiringRef.current = false; }}
+          >
+            <span className="fire-icon">🎯</span>
+            <span className="fire-label">SHOOT!</span>
+          </button>
         </div>
       </div>
       )}
@@ -1032,7 +1293,7 @@ const FlyGame = ({ onExit }) => {
           onTouchEnd={(e) => { e.preventDefault(); gameRunningRef.current = true; setShowControls(false); }}
         >
           <div className="hint-content" onClick={(e) => e.stopPropagation()} onTouchEnd={(e) => e.stopPropagation()}>
-            <h3>✈️ Flight Controls</h3>
+            <h3>🛸 Fly the Drone!</h3>
             <button
               className="takeoff-btn"
               onClick={(e) => { e.stopPropagation(); gameRunningRef.current = true; setShowControls(false); }}
@@ -1041,27 +1302,19 @@ const FlyGame = ({ onExit }) => {
               onPointerDown={(e) => { e.stopPropagation(); }}
               onPointerUp={(e) => { e.preventDefault(); e.stopPropagation(); gameRunningRef.current = true; setShowControls(false); }}
             >
-              Ready for Takeoff!
+              🚀 START!
             </button>
-            <div className="controls-grid">
-              <div className="control-item">
-                <span className="key">📱 LEFT</span>
-                <span>Swipe up/down for throttle</span>
+            <div className="controls-grid simple-grid">
+              <div className="control-item big-item">
+                <span className="key">🕹️ JOYSTICK</span>
+                <span>Swipe to fly anywhere!</span>
               </div>
-              <div className="control-item">
-                <span className="key">📱 RIGHT</span>
-                <span>Swipe to steer (flight stick)</span>
-              </div>
-              <div className="control-item">
-                <span className="key">W/S ↑↓</span>
-                <span>Pitch (Dive/Climb)</span>
-              </div>
-              <div className="control-item">
-                <span className="key">A/D ←→</span>
-                <span>Roll Left/Right</span>
+              <div className="control-item big-item">
+                <span className="key">🎯 SHOOT</span>
+                <span>Tap to blast targets!</span>
               </div>
             </div>
-            <p className="hint-tip">💡 Use the right side to steer like a joystick. Bank (roll) to turn smoothly!</p>
+            <p className="hint-tip">🎮 One touch to fly, one to shoot!</p>
           </div>
         </div>
       )}

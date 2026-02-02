@@ -170,6 +170,41 @@
   min-width: 80px;
 }
 
+/* Mini HUD - Compact display */
+.mini-hud {
+  pointer-events: none;
+}
+
+.weapons-panel-mini {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 15px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 25px;
+  padding: 8px 20px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.mini-stat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.mini-icon {
+  font-size: 16px;
+}
+
+.mini-value {
+  font-size: 16px;
+  font-weight: bold;
+  color: #ffffff;
+  text-shadow: 0 0 5px rgba(0, 0, 0, 0.8);
+}
+
 /* Stall Warning */
 .stall-warning {
   position: absolute;
@@ -195,69 +230,176 @@
   100% { opacity: 0.7; transform: translate(-50%, -50%) scale(1.05); }
 }
 
-/* Touch Controls - Swipe Areas */
+/* Touch Controls - Kid-Friendly Layout */
 .touch-controls {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 200px;
+  height: 220px;
   display: flex;
   justify-content: space-between;
+  align-items: center;
   pointer-events: auto;
   z-index: 100;
+  padding: 10px 20px;
 }
 
-/* Throttle Area (Left side) */
-.throttle-area {
-  width: 30%;
-  height: 100%;
+/* Unified Controls - Just joystick and fire button */
+.touch-controls.unified-controls {
+  justify-content: space-around;
+  padding: 10px 40px;
+}
+
+.unified-joystick {
+  width: 200px !important;
+  height: 200px !important;
+}
+
+.unified-joystick .joystick-zone.large-zone {
+  width: 180px;
+  height: 180px;
+  background: rgba(0, 80, 50, 0.7);
+  border: 4px solid rgba(0, 255, 150, 0.6);
+  box-shadow: 0 0 40px rgba(0, 255, 150, 0.4);
+}
+
+.unified-joystick .joystick-ring {
+  width: 120px;
+  height: 120px;
+}
+
+.unified-joystick .joystick-center {
+  width: 50px;
+  height: 50px;
+  background: linear-gradient(135deg, rgba(0, 255, 150, 0.9), rgba(0, 200, 100, 0.9));
+}
+
+.unified-joystick .joystick-arrows .arrow {
+  font-size: 28px;
+  color: rgba(0, 255, 150, 0.8);
+}
+
+.unified-joystick .joystick-label {
+  color: rgba(0, 255, 150, 0.9);
+  font-size: 14px;
+}
+
+/* Altitude Buttons (Left side) - Big UP/DOWN buttons */
+.altitude-buttons {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  touch-action: none;
-  -webkit-touch-callout: none;
-  user-select: none;
-  -webkit-user-select: none;
+  flex-direction: column;
+  gap: 15px;
+  width: 100px;
 }
 
-.throttle-zone {
-  width: 80px;
-  height: 160px;
-  background: rgba(0, 50, 80, 0.6);
-  border: 2px solid rgba(0, 255, 170, 0.5);
-  border-radius: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 0 20px rgba(0, 255, 170, 0.2);
-}
-
-.throttle-indicator {
+.altitude-btn {
+  width: 90px;
+  height: 80px;
+  border-radius: 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  color: rgba(0, 255, 170, 0.8);
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.1s ease;
+  border: 4px solid;
 }
 
-.throttle-icon {
-  font-size: 20px;
-  opacity: 0.7;
+.altitude-btn.up-btn {
+  background: linear-gradient(135deg, rgba(50, 200, 100, 0.8), rgba(30, 150, 80, 0.9));
+  border-color: rgba(100, 255, 150, 0.8);
+  box-shadow: 0 0 25px rgba(50, 200, 100, 0.5);
 }
 
-.throttle-label {
-  font-size: 10px;
+.altitude-btn.down-btn {
+  background: linear-gradient(135deg, rgba(100, 150, 200, 0.8), rgba(60, 100, 150, 0.9));
+  border-color: rgba(150, 200, 255, 0.8);
+  box-shadow: 0 0 25px rgba(100, 150, 200, 0.5);
+}
+
+.altitude-btn:active {
+  transform: scale(0.9);
+}
+
+.altitude-btn.up-btn:active {
+  background: linear-gradient(135deg, rgba(80, 255, 130, 1), rgba(50, 200, 100, 1));
+  box-shadow: 0 0 40px rgba(80, 255, 130, 0.9);
+}
+
+.altitude-btn.down-btn:active {
+  background: linear-gradient(135deg, rgba(130, 180, 230, 1), rgba(80, 130, 180, 1));
+  box-shadow: 0 0 40px rgba(130, 180, 230, 0.9);
+}
+
+.altitude-btn .btn-icon {
+  font-size: 28px;
+}
+
+.altitude-btn .btn-label {
+  font-size: 14px;
+  font-weight: bold;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+/* Fire Button Area (Center) - Big and prominent */
+.fire-button-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fire-btn,
+.fire-btn.big-fire-btn {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(255, 50, 50, 0.9), rgba(200, 0, 0, 0.95));
+  border: 5px solid rgba(255, 200, 100, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  box-shadow: 0 0 40px rgba(255, 100, 50, 0.7), inset 0 0 25px rgba(255, 200, 100, 0.4);
+  transition: all 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fire-btn:active,
+.fire-btn.big-fire-btn:active {
+  transform: scale(0.85);
+  background: linear-gradient(135deg, rgba(255, 100, 50, 1), rgba(255, 50, 0, 1));
+  box-shadow: 0 0 60px rgba(255, 150, 50, 1), inset 0 0 40px rgba(255, 255, 100, 0.6);
+}
+
+.fire-icon {
+  font-size: 40px;
+}
+
+.fire-label {
+  font-size: 16px;
+  font-weight: bold;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
   letter-spacing: 1px;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  font-family: 'Courier New', monospace;
+  margin-top: 2px;
 }
 
-/* Flight Stick Area (Right side) */
-.flight-stick-area {
-  width: 40%;
-  height: 100%;
+/* Joystick Area (Right side) - Big movement area */
+.joystick-area {
+  width: 180px;
+  height: 180px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -267,63 +409,90 @@
   -webkit-user-select: none;
 }
 
-.flight-stick-zone {
-  width: 150px;
-  height: 150px;
-  background: rgba(0, 50, 80, 0.6);
-  border: 2px solid rgba(0, 200, 255, 0.5);
+.joystick-zone {
+  width: 160px;
+  height: 160px;
+  background: rgba(0, 50, 80, 0.7);
+  border: 4px solid rgba(0, 200, 255, 0.6);
   border-radius: 50%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   position: relative;
-  box-shadow: 0 0 25px rgba(0, 200, 255, 0.2);
+  box-shadow: 0 0 35px rgba(0, 200, 255, 0.3);
 }
 
-.stick-crosshair {
+.joystick-ring {
+  position: absolute;
+  width: 100px;
+  height: 100px;
+  border: 3px dashed rgba(0, 200, 255, 0.4);
+  border-radius: 50%;
+}
+
+.joystick-arrows {
   position: absolute;
   width: 100%;
   height: 100%;
 }
 
-.crosshair-v {
+.joystick-arrows .arrow {
   position: absolute;
+  font-size: 24px;
+  color: rgba(0, 255, 200, 0.7);
+  text-shadow: 0 0 10px rgba(0, 255, 200, 0.5);
+}
+
+.joystick-arrows .arrow.up {
+  top: 8px;
   left: 50%;
-  top: 20%;
-  bottom: 20%;
-  width: 2px;
-  background: linear-gradient(to bottom, transparent, rgba(0, 200, 255, 0.4), transparent);
   transform: translateX(-50%);
 }
 
-.crosshair-h {
-  position: absolute;
+.joystick-arrows .arrow.down {
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.joystick-arrows .arrow.left {
+  left: 8px;
   top: 50%;
-  left: 20%;
-  right: 20%;
-  height: 2px;
-  background: linear-gradient(to right, transparent, rgba(0, 200, 255, 0.4), transparent);
   transform: translateY(-50%);
 }
 
-.stick-center {
-  width: 20px;
-  height: 20px;
-  background: rgba(0, 200, 255, 0.6);
-  border: 2px solid rgba(0, 255, 255, 0.8);
-  border-radius: 50%;
-  box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+.joystick-arrows .arrow.right {
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
-.stick-label {
-  position: absolute;
-  bottom: 15px;
-  font-size: 9px;
-  letter-spacing: 1px;
-  color: rgba(0, 200, 255, 0.7);
-  font-family: 'Courier New', monospace;
+.joystick-center {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, rgba(0, 255, 200, 0.8), rgba(0, 200, 255, 0.8));
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.6);
+  z-index: 1;
 }
+
+.joystick-label {
+  position: absolute;
+  bottom: 12px;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  color: rgba(0, 255, 200, 0.9);
+  text-shadow: 0 0 10px rgba(0, 255, 200, 0.5);
+}
+
+/* Legacy classes for compatibility */
+.throttle-area, .flight-stick-area { display: none; }
+.throttle-zone, .flight-stick-zone { display: none; }
+.stick-crosshair, .crosshair-v, .crosshair-h, .stick-center, .stick-label { display: none; }
+.throttle-indicator, .throttle-icon, .throttle-label { display: none; }
 
 /* Controls Hint */
 .fly-game .controls-hint {
@@ -368,6 +537,12 @@
   margin-bottom: 20px;
 }
 
+/* Simple grid for kid-friendly controls */
+.controls-grid.simple-grid {
+  grid-template-columns: 1fr;
+  gap: 15px;
+}
+
 .control-item {
   display: flex;
   align-items: center;
@@ -375,6 +550,30 @@
   padding: 8px 12px;
   background: rgba(0, 0, 0, 0.3);
   border-radius: 8px;
+}
+
+/* Big items for kid-friendly display */
+.control-item.big-item {
+  padding: 15px 20px;
+  background: rgba(0, 50, 80, 0.5);
+  border: 2px solid rgba(0, 200, 255, 0.3);
+  border-radius: 15px;
+  flex-direction: column;
+  text-align: center;
+  gap: 8px;
+}
+
+.control-item.big-item .key {
+  font-size: 24px;
+  background: none;
+  border: none;
+  padding: 0;
+  min-width: auto;
+}
+
+.control-item.big-item span:last-child {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .control-item .key {
