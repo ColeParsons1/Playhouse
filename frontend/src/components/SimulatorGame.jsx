@@ -29,6 +29,13 @@ const SimulatorGame = ({ onClose, onExit }) => {
   const rampsRef = useRef([]);
   const neonLightsRef = useRef([]);
 
+  // Day/night cycle refs (5 minute full cycle)
+  const dayTimeRef = useRef(0); // 0 to 1 representing full day cycle
+  const ambientLightRef = useRef(null);
+  const hemiLightRef = useRef(null);
+  const mainLightRef = useRef(null);
+  const DAY_CYCLE_DURATION = 300; // 5 minutes in seconds
+
   // Check if current player is the host
   const isHost = true;
 
@@ -37,42 +44,47 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 6; // Reduced from 10 for performance
+    const citySize = 12; // Doubled downtown area
 
-    // 4K QUALITY MATERIALS - Realistic PBR materials
-    // Realistic asphalt - darker gray with roughness
+    // 4K ULTRA QUALITY MATERIALS - Enhanced PBR materials
+    // Realistic asphalt - detailed texture feel
     const asphaltMaterial = new THREE.MeshStandardMaterial({
-      color: 0x2a2a2a,
-      roughness: 0.9,
-      metalness: 0.1,
+      color: 0x222222,
+      roughness: 0.95,
+      metalness: 0.05,
+      envMapIntensity: 0.3,
     });
-    // Concrete sidewalks - lighter gray with texture feel
+    // Concrete sidewalks - realistic concrete
     const sidewalkMaterial = new THREE.MeshStandardMaterial({
-      color: 0x888888,
-      roughness: 0.85,
-      metalness: 0.05,
-    });
-    // Curb material - slightly darker than sidewalk
-    const curbMaterial = new THREE.MeshStandardMaterial({
-      color: 0x666666,
+      color: 0x9a9a9a,
       roughness: 0.8,
-      metalness: 0.05,
+      metalness: 0.02,
+      envMapIntensity: 0.2,
     });
-    // Yellow center line - slight gloss for paint
+    // Curb material - defined edge
+    const curbMaterial = new THREE.MeshStandardMaterial({
+      color: 0x707070,
+      roughness: 0.75,
+      metalness: 0.05,
+      envMapIntensity: 0.2,
+    });
+    // Yellow center line - reflective road paint
     const yellowLineMat = new THREE.MeshStandardMaterial({
       color: 0xf4d03f,
-      roughness: 0.6,
-      metalness: 0.1,
+      roughness: 0.4,
+      metalness: 0.2,
       emissive: 0xf4d03f,
-      emissiveIntensity: 0.1,
+      emissiveIntensity: 0.15,
+      envMapIntensity: 0.5,
     });
-    // White lane markings and crosswalks - slight gloss
+    // White lane markings and crosswalks - reflective
     const whiteLineMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      roughness: 0.5,
-      metalness: 0.1,
+      roughness: 0.35,
+      metalness: 0.2,
       emissive: 0xffffff,
-      emissiveIntensity: 0.05,
+      emissiveIntensity: 0.1,
+      envMapIntensity: 0.5,
     });
 
     const roadWidth = 20 * scale;
@@ -238,49 +250,57 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 6; // Reduced from 10 for performance
+    const citySize = 12; // Doubled downtown area
 
-    // 4K QUALITY building materials - PBR with proper roughness/metalness
+    // 4K ULTRA QUALITY building materials - Enhanced PBR
     const buildingColors = [
-      new THREE.MeshStandardMaterial({ color: 0xe8e4e0, roughness: 0.85, metalness: 0.05 }), // Warm concrete
-      new THREE.MeshStandardMaterial({ color: 0xd4d0cc, roughness: 0.8, metalness: 0.05 }), // Cool concrete
-      new THREE.MeshStandardMaterial({ color: 0xf5f0eb, roughness: 0.75, metalness: 0.05 }), // Light stucco
-      new THREE.MeshStandardMaterial({ color: 0xccc8c4, roughness: 0.9, metalness: 0.1 }), // Gray stone
-      new THREE.MeshStandardMaterial({ color: 0xe0dcd8, roughness: 0.8, metalness: 0.05 }), // Off-white
-      new THREE.MeshStandardMaterial({ color: 0xd8d4d0, roughness: 0.85, metalness: 0.05 }), // Beige
+      new THREE.MeshStandardMaterial({ color: 0xe8e4e0, roughness: 0.7, metalness: 0.1, envMapIntensity: 0.5 }), // Warm concrete
+      new THREE.MeshStandardMaterial({ color: 0xd4d0cc, roughness: 0.65, metalness: 0.1, envMapIntensity: 0.5 }), // Cool concrete
+      new THREE.MeshStandardMaterial({ color: 0xf5f0eb, roughness: 0.6, metalness: 0.05, envMapIntensity: 0.4 }), // Light stucco
+      new THREE.MeshStandardMaterial({ color: 0xccc8c4, roughness: 0.75, metalness: 0.15, envMapIntensity: 0.5 }), // Gray stone
+      new THREE.MeshStandardMaterial({ color: 0xe0dcd8, roughness: 0.65, metalness: 0.1, envMapIntensity: 0.4 }), // Off-white
+      new THREE.MeshStandardMaterial({ color: 0xd8d4d0, roughness: 0.7, metalness: 0.1, envMapIntensity: 0.5 }), // Beige
+      new THREE.MeshStandardMaterial({ color: 0x4a5a6a, roughness: 0.3, metalness: 0.8, envMapIntensity: 1.0 }), // Blue glass tower
+      new THREE.MeshStandardMaterial({ color: 0x3a4a5a, roughness: 0.25, metalness: 0.85, envMapIntensity: 1.0 }), // Dark glass tower
     ];
 
-    // Window/glass materials - realistic glass with reflections
+    // Window/glass materials - realistic glass with reflections (4K quality)
     const windowDarkMat = new THREE.MeshPhysicalMaterial({
-      color: 0x2a3a4a,
-      roughness: 0.05,
-      metalness: 0.9,
-      reflectivity: 0.9,
-    });
-    const windowReflectMat = new THREE.MeshPhysicalMaterial({
-      color: 0x4a6a8a,
-      roughness: 0.0,
+      color: 0x1a2a3a,
+      roughness: 0.02,
       metalness: 0.95,
       reflectivity: 1.0,
+      clearcoat: 0.5,
+      clearcoatRoughness: 0.1,
+    });
+    const windowReflectMat = new THREE.MeshPhysicalMaterial({
+      color: 0x3a5a7a,
+      roughness: 0.0,
+      metalness: 1.0,
+      reflectivity: 1.0,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.05,
     });
 
-    // Accent/trim materials
-    const trimMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6, metalness: 0.3 });
-    const ledgeMat = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.5, metalness: 0.2 });
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9, metalness: 0.1 });
+    // Accent/trim materials - enhanced
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.4, metalness: 0.5, envMapIntensity: 0.8 });
+    const ledgeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.35, metalness: 0.4, envMapIntensity: 0.6 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8, metalness: 0.2 });
 
-    // Glowing window materials for night effect - with emissive
+    // Glowing window materials for night effect - enhanced emissive
     const windowGlowMaterials = [
-      new THREE.MeshStandardMaterial({ color: 0xffee88, emissive: 0xffee88, emissiveIntensity: 0.8 }),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffee, emissiveIntensity: 0.6 }),
-      new THREE.MeshStandardMaterial({ color: 0xffcc66, emissive: 0xffcc66, emissiveIntensity: 0.7 }),
+      new THREE.MeshStandardMaterial({ color: 0xffee88, emissive: 0xffee88, emissiveIntensity: 1.2 }),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffee, emissiveIntensity: 1.0 }),
+      new THREE.MeshStandardMaterial({ color: 0xffcc66, emissive: 0xffcc66, emissiveIntensity: 1.1 }),
+      new THREE.MeshStandardMaterial({ color: 0x88ccff, emissive: 0x88ccff, emissiveIntensity: 0.8 }), // Blue office light
     ];
 
-    // Neon accent materials - bright emissive
+    // Neon accent materials - brighter for 4K
     const neonMaterials = [
-      new THREE.MeshStandardMaterial({ color: 0xff00ff, emissive: 0xff00ff, emissiveIntensity: 2.0 }),
-      new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 2.0 }),
-      new THREE.MeshStandardMaterial({ color: 0xff1493, emissive: 0xff1493, emissiveIntensity: 2.0 }),
+      new THREE.MeshStandardMaterial({ color: 0xff00ff, emissive: 0xff00ff, emissiveIntensity: 3.0 }),
+      new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 3.0 }),
+      new THREE.MeshStandardMaterial({ color: 0xff1493, emissive: 0xff1493, emissiveIntensity: 3.0 }),
+      new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 3.0 }),
     ];
 
     // Road positions for collision checking
@@ -291,15 +311,39 @@ const SimulatorGame = ({ onClose, onExit }) => {
 
     const roadClearance = 55;
 
-    // Building grid - dense Miami feel
+    // Tampa Bay - downtown bay area
+    // Bay is an ellipse centered at (0, -200), extending from x=-400 to x=400, z=-500 to z=100
+    const isInBay = (x, z) => {
+      const bayX = 0, bayZ = -200;
+      const bayRadiusX = 450, bayRadiusZ = 350;
+      const dx = (x - bayX) / bayRadiusX;
+      const dz = (z - bayZ) / bayRadiusZ;
+      return (dx * dx + dz * dz) < 1;
+    };
+
+    // Channel connecting bay to ocean
+    const isInChannel = (x, z) => {
+      const channelWidth = 250; // Wider for building clearance
+      return Math.abs(x) < channelWidth / 2 && z > 100 && z < 720;
+    };
+
+    // Wide bridge area (z=140 to z=420, x=-250 to x=250)
+    const isOnWideBridge = (x, z) => {
+      return Math.abs(x) < 280 && z > 120 && z < 440;
+    };
+
+    // Building grid - dense Miami feel with bay, channel, and bridge cutout
     const buildingPositions = [];
     for (let x = -2000; x <= 2000; x += 70) {
       for (let z = -2000; z <= 2000; z += 70) {
         const nearHorizontalRoad = roadPositions.some(roadZ => Math.abs(z - roadZ) < roadClearance);
         const nearVerticalRoad = roadPositions.some(roadX => Math.abs(x - roadX) < roadClearance);
         const inOcean = z > 650;
+        const inBay = isInBay(x, z);
+        const inChannel = isInChannel(x, z);
+        const onBridge = isOnWideBridge(x, z);
 
-        if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean) {
+        if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean && !inBay && !inChannel && !onBridge) {
           buildingPositions.push({ x, z });
         }
       }
@@ -317,15 +361,77 @@ const SimulatorGame = ({ onClose, onExit }) => {
 
     buildingPositions.forEach(pos => {
       const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
-      const isDowntown = distFromCenter < 500;
-      const isSkyscraper = isDowntown ? Math.random() > 0.25 : Math.random() > 0.85;
-      const buildingType = Math.random(); // Determine architectural style
 
-      const heightMultiplier = Math.max(0.3, 1.5 - distFromCenter / 700);
+      // TESTING: Only skyscrapers in downtown area, no small buildings outside
+      const isDowntown = distFromCenter < 800;
 
-      const width = isSkyscraper ? (14 + Math.random() * 6) * scale : (10 + Math.random() * 5) * scale;
-      const depth = isSkyscraper ? (14 + Math.random() * 6) * scale : (10 + Math.random() * 5) * scale;
-      const baseHeight = isSkyscraper ? 80 + Math.random() * 160 : 15 + Math.random() * 35;
+      // Skip all non-downtown buildings for testing
+      if (!isDowntown) return;
+
+      // All downtown buildings are skyscrapers
+      const isSkyscraper = true;
+      const buildingType = Math.random();
+
+      // Height multiplier - tallest in center
+      const heightMultiplier = Math.max(1.0, 1.8 - distFromCenter / 600);
+
+      // More varied building footprints like a real city
+      let width, depth, baseHeight;
+      const footprintType = Math.random();
+
+      if (isSkyscraper) {
+        // Skyscrapers: variety of sizes
+        if (footprintType < 0.2) {
+          // Slim tower
+          width = (8 + Math.random() * 4) * scale;
+          depth = (8 + Math.random() * 4) * scale;
+          baseHeight = 120 + Math.random() * 140;
+        } else if (footprintType < 0.5) {
+          // Medium office tower
+          width = (14 + Math.random() * 8) * scale;
+          depth = (14 + Math.random() * 8) * scale;
+          baseHeight = 80 + Math.random() * 120;
+        } else if (footprintType < 0.8) {
+          // Large corporate building
+          width = (20 + Math.random() * 15) * scale;
+          depth = (18 + Math.random() * 12) * scale;
+          baseHeight = 60 + Math.random() * 100;
+        } else {
+          // Massive complex
+          width = (30 + Math.random() * 20) * scale;
+          depth = (25 + Math.random() * 15) * scale;
+          baseHeight = 50 + Math.random() * 80;
+        }
+      } else {
+        // Regular buildings: even more variety
+        if (footprintType < 0.15) {
+          // Tiny shop/house
+          width = (5 + Math.random() * 3) * scale;
+          depth = (5 + Math.random() * 3) * scale;
+          baseHeight = 8 + Math.random() * 12;
+        } else if (footprintType < 0.35) {
+          // Small building
+          width = (7 + Math.random() * 5) * scale;
+          depth = (6 + Math.random() * 5) * scale;
+          baseHeight = 12 + Math.random() * 18;
+        } else if (footprintType < 0.6) {
+          // Medium building
+          width = (10 + Math.random() * 8) * scale;
+          depth = (10 + Math.random() * 8) * scale;
+          baseHeight = 15 + Math.random() * 25;
+        } else if (footprintType < 0.85) {
+          // Large building
+          width = (15 + Math.random() * 12) * scale;
+          depth = (12 + Math.random() * 10) * scale;
+          baseHeight = 20 + Math.random() * 35;
+        } else {
+          // Wide/long building (warehouses, malls)
+          width = (25 + Math.random() * 20) * scale;
+          depth = (15 + Math.random() * 15) * scale;
+          baseHeight = 10 + Math.random() * 15;
+        }
+      }
+
       const height = baseHeight * scale * heightMultiplier;
 
       const buildingMaterial = buildingColors[Math.floor(Math.random() * buildingColors.length)];
@@ -489,7 +595,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 6; // Reduced from 10 for performance
+    const citySize = 12; // Doubled downtown area
 
     const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.7, metalness: 0.8 });
     const lampColors = [0xff00ff, 0x00ffff, 0xff1493];
@@ -511,11 +617,18 @@ const SimulatorGame = ({ onClose, onExit }) => {
       roadZPositions.push(i);
     }
 
+    // Helper to check if position is in channel
+    const isInChannelArea = (x, z) => {
+      const channelWidth = 220;
+      return Math.abs(x) < channelWidth / 2 && z > 100 && z < 720;
+    };
+
     // REDUCED density - every 200 units instead of 100
     let lampIndex = 0;
     for (let x = -1800; x <= 1800; x += 200) {
       for (let z of roadZPositions) {
-        if (z < 700) {
+        // Skip if in ocean area OR in channel area
+        if (z < 700 && !isInChannelArea(x, z)) {
           const pole = new THREE.Mesh(poleGeom, poleMaterial);
           pole.position.set(x, 6 * scale, z + 15 * scale);
           scene.add(pole);
@@ -539,7 +652,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 6; // Reduced from 10 for performance
+    const citySize = 12; // Doubled downtown area
 
     const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7, metalness: 0.8 });
     const boxMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8, metalness: 0.5 });
@@ -553,11 +666,18 @@ const SimulatorGame = ({ onClose, onExit }) => {
       roadPositions.push(i);
     }
 
+    // Helper to check if position is in channel
+    const isInChannelArea = (x, z) => {
+      const channelWidth = 220;
+      return Math.abs(x) < channelWidth / 2 && z > 100 && z < 720;
+    };
+
     // Only add traffic lights at every 4th intersection for performance
     let count = 0;
     for (let x of roadPositions) {
       for (let z of roadPositions) {
-        if (z < 700 && count % 4 === 0) {
+        // Skip if in ocean area OR in channel area
+        if (z < 700 && !isInChannelArea(x, z) && count % 4 === 0) {
           const pole = new THREE.Mesh(poleGeom, poleMaterial);
           pole.position.set(x + 12 * scale, 4 * scale, z + 12 * scale);
           scene.add(pole);
@@ -578,7 +698,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 6; // Reduced from 10 for performance
+    const citySize = 12; // Doubled downtown area
 
     // Vice City 80s car colors - white, red, teal, pink, gold
     const carColors = [0xffffff, 0xf5f5f5, 0xff0044, 0x00cccc, 0xff69b4, 0xffd700, 0x8b0000, 0x00ced1, 0xff1493, 0xc0c0c0];
@@ -701,11 +821,11 @@ const SimulatorGame = ({ onClose, onExit }) => {
   const createPalmTree = (scene, x, z, scale) => {
     if (!THREE) return;
 
-    // Initialize shared resources once
+    // Initialize shared resources once - 20% TALLER
     if (!palmTreeGeomRef.current) {
       palmTreeGeomRef.current = {
-        trunk: new THREE.CylinderGeometry(0.4, 0.6, 15, 4), // Low poly trunk
-        frond: new THREE.ConeGeometry(1.5, 12, 3), // Low poly fronds
+        trunk: new THREE.CylinderGeometry(0.4, 0.6, 36, 4), // 20% taller trunk (30 * 1.2 = 36)
+        frond: new THREE.ConeGeometry(2.4, 22, 3), // 20% larger fronds
       };
       palmTreeMatsRef.current = {
         trunk: new THREE.MeshBasicMaterial({ color: 0x8b7355 }),
@@ -716,21 +836,21 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const geoms = palmTreeGeomRef.current;
     const mats = palmTreeMatsRef.current;
 
-    // Trunk
+    // Trunk - 20% taller
     const trunk = new THREE.Mesh(geoms.trunk, mats.trunk);
-    trunk.position.set(x, 7.5 * scale, z);
+    trunk.position.set(x, 18 * scale, z); // 20% taller (15 * 1.2 = 18)
     trunk.scale.set(scale, scale, scale);
     scene.add(trunk);
 
-    // Simplified fronds - only 4 instead of 8
+    // Simplified fronds - only 4 instead of 8, positioned at top of 20% taller trunk
     const numFronds = 4;
     for (let i = 0; i < numFronds; i++) {
       const frond = new THREE.Mesh(geoms.frond, mats.leaf);
       const angle = (i / numFronds) * Math.PI * 2;
       frond.position.set(
-        x + Math.cos(angle) * 3 * scale,
-        15 * scale,
-        z + Math.sin(angle) * 3 * scale
+        x + Math.cos(angle) * 4.8 * scale, // 20% wider spread
+        36 * scale, // 20% taller (30 * 1.2 = 36)
+        z + Math.sin(angle) * 4.8 * scale
       );
       frond.rotation.x = Math.PI / 2 + 0.5;
       frond.rotation.z = angle;
@@ -744,7 +864,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 6; // Reduced from 10 for performance
+    const citySize = 12; // Doubled downtown area
     const groundSize = 2500 * citySize;
 
     // Main ground - use BasicMaterial (no lighting calculations)
@@ -792,6 +912,237 @@ const SimulatorGame = ({ onClose, onExit }) => {
     boardwalkNeon.position.set(0, 0.35, 612);
     scene.add(boardwalkNeon);
 
+    // ========== TAMPA BAY - Downtown Bay Area ==========
+    const bayMaterial = new THREE.MeshBasicMaterial({ color: 0x1a4a6a }); // Deep bay water
+    const bayShallowMaterial = new THREE.MeshBasicMaterial({ color: 0x2a6a8a }); // Shallow edges
+
+    // Create elliptical bay using circle geometry scaled
+    const bayGeometry = new THREE.CircleGeometry(450, 64);
+    bayGeometry.scale(1, 0.78, 1); // Make it elliptical (350/450 ratio)
+    const bay = new THREE.Mesh(bayGeometry, bayMaterial);
+    bay.rotation.x = -Math.PI / 2;
+    bay.position.set(0, 0.3, -200);
+    scene.add(bay);
+
+    // Shallow water ring around bay
+    const bayShallowGeometry = new THREE.RingGeometry(420, 480, 64);
+    bayShallowGeometry.scale(1, 0.78, 1);
+    const bayShallow = new THREE.Mesh(bayShallowGeometry, bayShallowMaterial);
+    bayShallow.rotation.x = -Math.PI / 2;
+    bayShallow.position.set(0, 0.25, -200);
+    scene.add(bayShallow);
+
+    // ========== CHANNEL connecting bay to ocean ==========
+    // Channel runs from bay (z=150) to ocean (z=700)
+    const channelLength = 570; // From bay edge to ocean
+    const channelWidth = 180;
+
+    // Main channel water
+    const channelGeometry = new THREE.PlaneGeometry(channelWidth, channelLength);
+    const channel = new THREE.Mesh(channelGeometry, bayMaterial);
+    channel.rotation.x = -Math.PI / 2;
+    channel.position.set(0, 0.3, 150 + channelLength / 2); // Positioned between bay and ocean
+    scene.add(channel);
+
+    // Channel shallow edges (left and right banks)
+    const channelBankGeom = new THREE.PlaneGeometry(40, channelLength);
+    const channelBankLeft = new THREE.Mesh(channelBankGeom, bayShallowMaterial);
+    channelBankLeft.rotation.x = -Math.PI / 2;
+    channelBankLeft.position.set(-channelWidth / 2 - 20, 0.25, 150 + channelLength / 2);
+    scene.add(channelBankLeft);
+
+    const channelBankRight = new THREE.Mesh(channelBankGeom, bayShallowMaterial);
+    channelBankRight.rotation.x = -Math.PI / 2;
+    channelBankRight.position.set(channelWidth / 2 + 20, 0.25, 150 + channelLength / 2);
+    scene.add(channelBankRight);
+
+    // ========== TAMPA BAY BRIDGE (Inspired by Sunshine Skyway) ==========
+    const bridgeMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.6, metalness: 0.4 });
+    const cableMaterial = new THREE.MeshBasicMaterial({ color: 0xffdd00 }); // Yellow cables like Skyway
+    const pillarMaterial = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.5, metalness: 0.3 });
+
+    // Bridge deck - spans across the bay (east-west)
+    const bridgeLength = 950;
+    const bridgeWidth = 45;
+    const bridgeHeight = 8;
+
+    // Main bridge deck
+    const bridgeDeckGeom = new THREE.BoxGeometry(bridgeLength, 3, bridgeWidth);
+    const bridgeDeck = new THREE.Mesh(bridgeDeckGeom, bridgeMaterial);
+    bridgeDeck.position.set(0, bridgeHeight, -200);
+    bridgeDeck.castShadow = true;
+    bridgeDeck.receiveShadow = true;
+    scene.add(bridgeDeck);
+
+    // Road surface on bridge
+    const bridgeRoadGeom = new THREE.BoxGeometry(bridgeLength - 10, 0.5, bridgeWidth - 10);
+    const bridgeRoadMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
+    const bridgeRoad = new THREE.Mesh(bridgeRoadGeom, bridgeRoadMat);
+    bridgeRoad.position.set(0, bridgeHeight + 1.8, -200);
+    scene.add(bridgeRoad);
+
+    // Center line on bridge
+    const bridgeLineGeom = new THREE.BoxGeometry(bridgeLength - 20, 0.6, 1);
+    const bridgeLineMat = new THREE.MeshBasicMaterial({ color: 0xffdd44 });
+    const bridgeLine = new THREE.Mesh(bridgeLineGeom, bridgeLineMat);
+    bridgeLine.position.set(0, bridgeHeight + 2.1, -200);
+    scene.add(bridgeLine);
+
+    // Bridge support pillars
+    const pillarGeom = new THREE.CylinderGeometry(4, 5, bridgeHeight + 5, 8);
+    const pillarPositions = [-400, -200, 0, 200, 400];
+    pillarPositions.forEach(x => {
+      const pillar = new THREE.Mesh(pillarGeom, pillarMaterial);
+      pillar.position.set(x, (bridgeHeight + 5) / 2 - 3, -200);
+      pillar.castShadow = true;
+      scene.add(pillar);
+    });
+
+    // Cable-stayed towers (like Sunshine Skyway)
+    const towerHeight = 80;
+    const towerGeom = new THREE.BoxGeometry(6, towerHeight, 6);
+
+    // Two main towers
+    [-150, 150].forEach(x => {
+      const tower = new THREE.Mesh(towerGeom, pillarMaterial);
+      tower.position.set(x, bridgeHeight + towerHeight / 2, -200);
+      tower.castShadow = true;
+      scene.add(tower);
+
+      // Tower top pyramid
+      const towerTopGeom = new THREE.ConeGeometry(5, 15, 4);
+      const towerTop = new THREE.Mesh(towerTopGeom, pillarMaterial);
+      towerTop.position.set(x, bridgeHeight + towerHeight + 7, -200);
+      scene.add(towerTop);
+
+      // Cables from tower to bridge deck
+      const cableGeom = new THREE.CylinderGeometry(0.3, 0.3, 1, 4);
+      for (let i = 0; i < 8; i++) {
+        const cableLength = 20 + i * 8;
+        const cableX = x + (x > 0 ? 1 : -1) * (15 + i * 18);
+        const cableAngle = Math.atan2(towerHeight - 10, Math.abs(cableX - x));
+
+        const cable = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.4, 0.4, cableLength, 4),
+          cableMaterial
+        );
+        cable.position.set(
+          (x + cableX) / 2,
+          bridgeHeight + towerHeight / 2 + 20 - i * 3,
+          -200
+        );
+        cable.rotation.z = (x > 0 ? -1 : 1) * (Math.PI / 2 - cableAngle);
+        scene.add(cable);
+      }
+    });
+
+    // Bridge railings
+    const railingGeom = new THREE.BoxGeometry(bridgeLength, 2, 0.5);
+    const railingMat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+    [-1, 1].forEach(side => {
+      const railing = new THREE.Mesh(railingGeom, railingMat);
+      railing.position.set(0, bridgeHeight + 3, -200 + side * (bridgeWidth / 2 - 2));
+      scene.add(railing);
+    });
+
+    // Bridge approach ramps (connect to ground level)
+    const bridgeRampLength = 200;
+    const bridgeRampGeom = new THREE.BoxGeometry(bridgeRampLength, 3, bridgeWidth);
+
+    // West ramp
+    const westRamp = new THREE.Mesh(bridgeRampGeom, bridgeMaterial);
+    westRamp.position.set(-bridgeLength / 2 - bridgeRampLength / 2 + 20, bridgeHeight / 2, -200);
+    westRamp.rotation.z = Math.atan2(bridgeHeight, bridgeRampLength);
+    scene.add(westRamp);
+
+    // East ramp
+    const eastRamp = new THREE.Mesh(bridgeRampGeom, bridgeMaterial);
+    eastRamp.position.set(bridgeLength / 2 + bridgeRampLength / 2 - 20, bridgeHeight / 2, -200);
+    eastRamp.rotation.z = -Math.atan2(bridgeHeight, bridgeRampLength);
+    scene.add(eastRamp);
+
+    // ========== WIDE CHANNEL BRIDGE (spans from z=160 to z=400) ==========
+    // Single wide bridge covering the entire channel area
+    const wideBridgeLength = 350; // Length spanning east-west across channel
+    const wideBridgeDepth = 280; // Depth from z=160 to z=440 (north-south)
+    const wideBridgeHeight = 12;
+    const wideBridgeCenterZ = 280; // Center between 160 and 400
+
+    console.log('Creating wide channel bridge from z=140 to z=420');
+
+    // Bridge material - gray concrete look
+    const wideBridgeMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.8, metalness: 0.2 });
+
+    // Main bridge deck - wide platform
+    const wideBridgeDeckGeom = new THREE.BoxGeometry(wideBridgeLength, 6, wideBridgeDepth);
+    const wideBridgeDeck = new THREE.Mesh(wideBridgeDeckGeom, wideBridgeMaterial);
+    wideBridgeDeck.position.set(0, wideBridgeHeight, wideBridgeCenterZ);
+    wideBridgeDeck.castShadow = true;
+    wideBridgeDeck.receiveShadow = true;
+    scene.add(wideBridgeDeck);
+
+    // Road surface on bridge
+    const wideBridgeRoadGeom = new THREE.BoxGeometry(wideBridgeLength - 20, 0.5, wideBridgeDepth - 20);
+    const wideBridgeRoad = new THREE.Mesh(wideBridgeRoadGeom, bridgeRoadMat);
+    wideBridgeRoad.position.set(0, wideBridgeHeight + 3.2, wideBridgeCenterZ);
+    scene.add(wideBridgeRoad);
+
+    // Lane markings (multiple lanes running east-west)
+    const laneLineGeom = new THREE.BoxGeometry(wideBridgeLength - 30, 0.6, 1.5);
+    [-80, 0, 80].forEach(z => {
+      const laneLine = new THREE.Mesh(laneLineGeom, bridgeLineMat);
+      laneLine.position.set(0, wideBridgeHeight + 3.5, wideBridgeCenterZ + z);
+      scene.add(laneLine);
+    });
+
+    // Support pillars - grid pattern
+    const widePillarGeom = new THREE.CylinderGeometry(5, 6, wideBridgeHeight + 8, 8);
+    [-120, 0, 120].forEach(x => {
+      [180, 280, 380].forEach(z => {
+        const pillar = new THREE.Mesh(widePillarGeom, pillarMaterial);
+        pillar.position.set(x, (wideBridgeHeight + 8) / 2 - 4, z);
+        pillar.castShadow = true;
+        scene.add(pillar);
+      });
+    });
+
+    // Railings on all four sides
+    const wideRailingMat = new THREE.MeshStandardMaterial({ color: 0xffdd00 });
+
+    // North and south railings (run east-west)
+    const nsRailingGeom = new THREE.BoxGeometry(wideBridgeLength, 3, 1);
+    [-1, 1].forEach(side => {
+      const railing = new THREE.Mesh(nsRailingGeom, wideRailingMat);
+      railing.position.set(0, wideBridgeHeight + 4.5, wideBridgeCenterZ + side * (wideBridgeDepth / 2 - 2));
+      scene.add(railing);
+    });
+
+    // East and west railings (run north-south)
+    const ewRailingGeom = new THREE.BoxGeometry(1, 3, wideBridgeDepth);
+    [-1, 1].forEach(side => {
+      const railing = new THREE.Mesh(ewRailingGeom, wideRailingMat);
+      railing.position.set(side * (wideBridgeLength / 2 - 2), wideBridgeHeight + 4.5, wideBridgeCenterZ);
+      scene.add(railing);
+    });
+
+    // Approach ramps on east and west sides
+    const wideRampLength = 150;
+    const wideRampGeom = new THREE.BoxGeometry(wideRampLength, 4, wideBridgeDepth);
+
+    // West ramp
+    const wideWestRamp = new THREE.Mesh(wideRampGeom, wideBridgeMaterial);
+    wideWestRamp.position.set(-wideBridgeLength / 2 - wideRampLength / 2 + 20, wideBridgeHeight / 2, wideBridgeCenterZ);
+    wideWestRamp.rotation.z = Math.atan2(wideBridgeHeight, wideRampLength);
+    scene.add(wideWestRamp);
+
+    // East ramp
+    const wideEastRamp = new THREE.Mesh(wideRampGeom, wideBridgeMaterial);
+    wideEastRamp.position.set(wideBridgeLength / 2 + wideRampLength / 2 - 20, wideBridgeHeight / 2, wideBridgeCenterZ);
+    wideEastRamp.rotation.z = -Math.atan2(wideBridgeHeight, wideRampLength);
+    scene.add(wideEastRamp);
+
+    console.log('Wide channel bridge created');
+
     createRoads(scene);
     createBuildings(scene);
     createStreetLights(scene);
@@ -803,27 +1154,44 @@ const SimulatorGame = ({ onClose, onExit }) => {
       roadPositions.push(i);
     }
 
-    // PALM TREES - REDUCED count for performance
-    // Beach palm trees - every 80 units instead of 40
-    for (let x = -2400; x <= 2400; x += 80) {
+    // PALM TREES - 50% REDUCED count
+    // Beach palm trees - every 160 units (was 80)
+    for (let x = -2400; x <= 2400; x += 160) {
       createPalmTree(scene, x + (Math.random() - 0.5) * 10, 660 + (Math.random() - 0.5) * 20, scale);
     }
 
-    // Second row of beach palms - every 120 units instead of 60
-    for (let x = -2400; x <= 2400; x += 120) {
+    // Second row of beach palms - every 240 units (was 120)
+    for (let x = -2400; x <= 2400; x += 240) {
       createPalmTree(scene, x + (Math.random() - 0.5) * 15, 590 + (Math.random() - 0.5) * 15, scale);
     }
 
-    // Palm trees scattered in city - REDUCED from 400 to 100
-    for (let i = 0; i < 100; i++) {
+    // Bay check function for palm trees
+    const isInBayArea = (x, z) => {
+      const bayX = 0, bayZ = -200;
+      const bayRadiusX = 500, bayRadiusZ = 400; // Slightly larger to keep trees away from edge
+      const dx = (x - bayX) / bayRadiusX;
+      const dz = (z - bayZ) / bayRadiusZ;
+      return (dx * dx + dz * dz) < 1;
+    };
+
+    // Channel check for palm trees
+    const isInChannelArea = (x, z) => {
+      const channelWidth = 240; // Keep trees away from channel
+      return Math.abs(x) < channelWidth / 2 && z > 80 && z < 720;
+    };
+
+    // Palm trees scattered in city - 50% reduced (100 to 50)
+    for (let i = 0; i < 50; i++) {
       const x = (Math.random() - 0.5) * 4000;
       const z = (Math.random() - 0.5) * 2800 - 100;
 
       const nearHorizontalRoad = roadPositions.some(roadZ => Math.abs(z - roadZ) < 25);
       const nearVerticalRoad = roadPositions.some(roadX => Math.abs(x - roadX) < 25);
       const inOcean = z > 600;
+      const inBay = isInBayArea(x, z);
+      const inChannel = isInChannelArea(x, z);
 
-      if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean) {
+      if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean && !inBay && !inChannel) {
         createPalmTree(scene, x, z, scale * (0.8 + Math.random() * 0.4));
       }
     }
@@ -948,14 +1316,18 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const car = new THREE.Group();
     const scale = 2; // Scale factor for bigger car
 
-    // Main body paint - Iconic Vice City WHITE with high-quality reflections
+    // Main body paint - 4K ULTRA QUALITY with perfect reflections
     const bodyMaterial = new THREE.MeshPhysicalMaterial({
       color: 0xf8f8ff,
-      roughness: 0.1,
-      metalness: 0.9,
+      roughness: 0.05,
+      metalness: 0.95,
       clearcoat: 1.0,
-      clearcoatRoughness: 0.1,
+      clearcoatRoughness: 0.03,
       reflectivity: 1.0,
+      envMapIntensity: 1.5,
+      sheen: 0.5,
+      sheenRoughness: 0.2,
+      sheenColor: new THREE.Color(0xffffff),
     });
 
     // Lower body / chassis
@@ -984,17 +1356,20 @@ const SimulatorGame = ({ onClose, onExit }) => {
     trunk.position.set(0, 0.65 * scale, -2 * scale);
     car.add(trunk);
 
-    // Windshield - realistic glass with reflections
+    // Windshield - 4K realistic glass with reflections
     const glassMaterial = new THREE.MeshPhysicalMaterial({
       color: 0x88aacc,
       roughness: 0.0,
       metalness: 0.0,
       transparent: true,
-      opacity: 0.4,
-      transmission: 0.9,
-      thickness: 0.1,
-      reflectivity: 0.9,
+      opacity: 0.35,
+      transmission: 0.95,
+      thickness: 0.05,
+      reflectivity: 1.0,
       clearcoat: 1.0,
+      clearcoatRoughness: 0.0,
+      ior: 1.5, // Glass index of refraction
+      envMapIntensity: 1.2,
     });
 
     const windshieldGeom = new THREE.BoxGeometry(1.8 * scale, 0.6 * scale, 0.1 * scale);
@@ -1310,9 +1685,62 @@ const SimulatorGame = ({ onClose, onExit }) => {
     physics.position.x += direction.x * physics.speed * 0.016;
     physics.position.z += direction.z * physics.speed * 0.016;
 
-    // Map boundaries - stop at ocean (z > 600) and city edges
-    const mapBoundary = 2400; // Reduced playable area
-    const oceanBoundary = 600; // Stop before deep ocean
+    // Map boundaries - allow beach driving, stop at shallow water
+    const mapBoundary = 4800; // Doubled for larger downtown area
+    const oceanBoundary = 780; // Allow beach (z=700), stop at shallow water edge
+
+    // Tampa Bay check - ellipse centered at (0, -200)
+    const bayX = 0, bayZ = -200;
+    const bayRadiusX = 450, bayRadiusZ = 350;
+    const dxBay = (physics.position.x - bayX) / bayRadiusX;
+    const dzBay = (physics.position.z - bayZ) / bayRadiusZ;
+    const inBay = (dxBay * dxBay + dzBay * dzBay) < 1;
+
+    // Check if on bay bridge (bridge is at z=-200, x from -475 to 475, width 45)
+    const onBayBridge = Math.abs(physics.position.z - (-200)) < 25 && Math.abs(physics.position.x) < 500;
+
+    // Check if on wide channel bridge (spans z=140 to z=420, centered at z=280)
+    const wideBridgeCenterZ = 280;
+    const wideBridgeLength = 350;
+    const wideBridgeDepth = 280;
+    const onWideBridge = Math.abs(physics.position.x) < (wideBridgeLength / 2 + 80) &&
+                         physics.position.z > (wideBridgeCenterZ - wideBridgeDepth / 2 - 20) &&
+                         physics.position.z < (wideBridgeCenterZ + wideBridgeDepth / 2 + 20);
+
+    // Check if in channel (connects bay to ocean) - stops before beach at z=650
+    const channelWidth = 180;
+    const inChannel = Math.abs(physics.position.x) < channelWidth / 2 && physics.position.z > 100 && physics.position.z < 650;
+
+    // Handle bay bridge height
+    if (onBayBridge && !physics.isAirborne) {
+      // Bridge deck is at y=10 (bridgeHeight + road surface)
+      const bridgeY = 10;
+      if (physics.position.y < bridgeY) {
+        physics.position.y = bridgeY;
+      }
+    }
+    // Handle wide channel bridge height
+    else if (onWideBridge && !physics.isAirborne) {
+      const wideBridgeY = 15;
+      if (physics.position.y < wideBridgeY) {
+        physics.position.y = wideBridgeY;
+      }
+    }
+    else if (inBay && !onBayBridge) {
+      // Push car out of bay if not on bridge
+      const angle = Math.atan2(physics.position.z - bayZ, physics.position.x - bayX);
+      physics.position.x = bayX + Math.cos(angle) * (bayRadiusX + 10);
+      physics.position.z = bayZ + Math.sin(angle) * (bayRadiusZ + 10);
+      physics.speed *= 0.3; // Slow down significantly
+    } else if (inChannel && !onWideBridge && !physics.isAirborne) {
+      // Push car out of channel to nearest bank (unless on bridge)
+      if (physics.position.x >= 0) {
+        physics.position.x = channelWidth / 2 + 10;
+      } else {
+        physics.position.x = -channelWidth / 2 - 10;
+      }
+      physics.speed *= 0.3;
+    }
 
     if (physics.position.z > oceanBoundary) {
       physics.position.z = oceanBoundary;
@@ -1368,6 +1796,36 @@ const SimulatorGame = ({ onClose, onExit }) => {
     lookAtPosition.y += 2;
     camera.lookAt(lookAtPosition);
   }, []);
+  // Always nighttime - no day/night cycle
+  const updateDayNightCycle = useCallback(() => {
+    if (!sceneRef.current || !ambientLightRef.current || !hemiLightRef.current || !mainLightRef.current || !THREE) return;
+
+    const scene = sceneRef.current;
+    const ambientLight = ambientLightRef.current;
+    const hemiLight = hemiLightRef.current;
+    const mainLight = mainLightRef.current;
+
+    // Permanent night settings
+    const skyColor = new THREE.Color(0x0a0a1a); // Dark night sky
+    const fogColor = new THREE.Color(0x0a0a1a);
+    const ambientColor = new THREE.Color(0x202040); // Dark blue ambient
+    const sunColor = new THREE.Color(0x6666ff); // Moonlight blue
+    const sunIntensity = 0.4;
+    const ambientIntensity = 0.25;
+
+    // Apply colors
+    scene.background = skyColor;
+    if (scene.fog) {
+      scene.fog.color = fogColor;
+    }
+    ambientLight.color = ambientColor;
+    ambientLight.intensity = ambientIntensity;
+    hemiLight.color = new THREE.Color(0x1a1a3a);
+    hemiLight.groundColor = new THREE.Color(0x101020);
+    mainLight.color = sunColor;
+    mainLight.intensity = sunIntensity;
+    mainLight.position.set(-50, 60, 50); // Moon position
+  }, []);
 
   // Initialize Three.js
   useEffect(() => {
@@ -1386,19 +1844,19 @@ const SimulatorGame = ({ onClose, onExit }) => {
           velocity: new THREE.Vector3(),
           angularVelocity: 0,
           speed: 0,
-          maxSpeed: 360, // Doubled from 180
-          acceleration: 0.5, // Doubled for faster acceleration
-          braking: 0.45,
+          maxSpeed: 360,
+          acceleration: 2.5, // Fast acceleration - 0 to max in ~2-3 seconds
+          braking: 1.5, // Faster braking too
           friction: 0.03,
           turnSpeed: 0.025,
           position: new THREE.Vector3(0, 1, 0),
           rotation: 0
         };
 
-        // Scene - VICE CITY SUNSET SKY (iconic purple/orange gradient feel)
+        // Scene - 4K ULTRA QUALITY nighttime atmosphere
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a0a2e); // Deep purple night sky
-        scene.fog = new THREE.Fog(0x1a0a2e, 100, 2500); // Extended fog for 4K detail visibility
+        scene.background = new THREE.Color(0x0a0a1a); // Dark night sky
+        scene.fog = new THREE.FogExp2(0x0a0a1a, 0.00012); // Night fog
         sceneRef.current = scene;
 
         // Camera - extended far plane for 4K detail
@@ -1411,59 +1869,70 @@ const SimulatorGame = ({ onClose, onExit }) => {
         camera.position.set(0, 5, -10);
         cameraRef.current = camera;
 
-        // Renderer - 4K QUALITY settings
+        // Renderer - 4K ULTRA QUALITY settings
         const renderer = new THREE.WebGLRenderer({
-          antialias: true, // Smooth edges
+          antialias: true, // Smooth edges - MSAA
           powerPreference: 'high-performance',
           stencil: true,
           depth: true,
           alpha: false,
           preserveDrawingBuffer: false,
+          precision: 'highp', // High precision shaders
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap at 2x for performance
+        renderer.setPixelRatio(window.devicePixelRatio); // Full device pixel ratio for 4K
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFShadowMap; // Faster shadows
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadows for quality
         renderer.toneMapping = THREE.ACESFilmicToneMapping; // Cinematic tone mapping
-        renderer.toneMappingExposure = 1.2;
+        renderer.toneMappingExposure = 1.1;
         renderer.outputColorSpace = THREE.SRGBColorSpace;
-        renderer.sortObjects = false; // Disable sorting for performance
+        renderer.physicallyCorrectLights = true; // Physically correct lighting
         containerRef.current.appendChild(renderer.domElement);
         rendererRef.current = renderer;
 
         // ENHANCED LIGHTING for 4K quality
-        // Ambient light - slightly blue for night atmosphere
-        const ambientLight = new THREE.AmbientLight(0x404060, 0.4);
+        // Ambient light - softer for realism
+        const ambientLight = new THREE.AmbientLight(0x404060, 0.3);
         scene.add(ambientLight);
+        ambientLightRef.current = ambientLight;
 
         // Hemisphere light for natural sky/ground color blend
-        const hemiLight = new THREE.HemisphereLight(0x6666aa, 0x444422, 0.5);
+        const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x444422, 0.6);
         scene.add(hemiLight);
+        hemiLightRef.current = hemiLight;
 
-        // Main directional light (moon/sun) with shadows
-        const mainLight = new THREE.DirectionalLight(0xffeedd, 0.8);
+        // Main directional light (sun) with HIGH QUALITY shadows
+        const mainLight = new THREE.DirectionalLight(0xffeedd, 1.2);
         mainLight.position.set(50, 100, 50);
         mainLight.castShadow = true;
-        mainLight.shadow.mapSize.width = 1024;
-        mainLight.shadow.mapSize.height = 1024;
-        mainLight.shadow.camera.near = 1;
-        mainLight.shadow.camera.far = 500;
-        mainLight.shadow.camera.left = -100;
-        mainLight.shadow.camera.right = 100;
-        mainLight.shadow.camera.top = 100;
-        mainLight.shadow.camera.bottom = -100;
-        mainLight.shadow.bias = -0.001;
+        mainLight.shadow.mapSize.width = 4096; // 4K shadow map
+        mainLight.shadow.mapSize.height = 4096;
+        mainLight.shadow.camera.near = 0.5;
+        mainLight.shadow.camera.far = 800;
+        mainLight.shadow.camera.left = -200;
+        mainLight.shadow.camera.right = 200;
+        mainLight.shadow.camera.top = 200;
+        mainLight.shadow.camera.bottom = -200;
+        mainLight.shadow.bias = -0.0005;
+        mainLight.shadow.normalBias = 0.02;
+        mainLight.shadow.radius = 2; // Soft shadow edges
         scene.add(mainLight);
+        mainLightRef.current = mainLight;
 
-        // Fill light from opposite side
-        const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
-        fillLight.position.set(-30, 50, -30);
+        // Fill light from opposite side - warmer
+        const fillLight = new THREE.DirectionalLight(0xffd4a6, 0.4);
+        fillLight.position.set(-50, 60, -50);
         scene.add(fillLight);
 
-        // Rim light for car highlights
-        const rimLight = new THREE.DirectionalLight(0xff8866, 0.4);
-        rimLight.position.set(0, 20, -50);
+        // Rim light for car highlights - stronger
+        const rimLight = new THREE.DirectionalLight(0xff9966, 0.5);
+        rimLight.position.set(0, 30, -60);
         scene.add(rimLight);
+
+        // Additional bounce light from ground
+        const bounceLight = new THREE.DirectionalLight(0x90a090, 0.2);
+        bounceLight.position.set(0, -10, 0);
+        scene.add(bounceLight);
 
         // Create city and car
         createCity(scene);
@@ -1478,6 +1947,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
           animationRef.current = requestAnimationFrame(animate);
           updateCarPhysics();
           updateCamera();
+          updateDayNightCycle();
 
           // Update traffic cars
           trafficCarsRef.current.forEach(tc => {
@@ -1559,14 +2029,6 @@ const SimulatorGame = ({ onClose, onExit }) => {
     touchControlsRef.current.gas = false;
   }, []);
 
-  const handleBrakeStart = useCallback(() => {
-    touchControlsRef.current.brake = true;
-  }, []);
-
-  const handleBrakeEnd = useCallback(() => {
-    touchControlsRef.current.brake = false;
-  }, []);
-
   if (error) {
     return (
       <div className="simulator-game">
@@ -1584,7 +2046,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
       {isLoading && (
         <div className="simulator-loading">
           <div className="loading-spinner"></div>
-          <p>Welcome to Vice City...</p>
+          <p>Welcome to Playhouse City...</p>
         </div>
       )}
 
@@ -1634,16 +2096,6 @@ const SimulatorGame = ({ onClose, onExit }) => {
           </div>
 
           <div className="pedals">
-            <button
-              className="pedal brake-pedal"
-              onTouchStart={handleBrakeStart}
-              onTouchEnd={handleBrakeEnd}
-              onMouseDown={handleBrakeStart}
-              onMouseUp={handleBrakeEnd}
-              onMouseLeave={handleBrakeEnd}
-            >
-              BRAKE
-            </button>
             <button
               className="pedal gas-pedal"
               onTouchStart={handleGasStart}

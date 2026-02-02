@@ -115,6 +115,13 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   const [roomTheme, setRoomTheme] = useState(room?.theme || 'default');
   const [showThemeSelector, setShowThemeSelector] = useState(false);
 
+  // Sync theme when room data loads/updates
+  useEffect(() => {
+    if (room?.theme) {
+      setRoomTheme(room.theme);
+    }
+  }, [room?.theme]);
+
   // Available themes
   const themes = [
     { id: 'default', name: 'Default' },
@@ -265,6 +272,10 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
           }
           return prev;
         });
+        // Sync theme from room data when joining
+        if (data.room?.theme) {
+          setRoomTheme(data.room.theme);
+        }
         setChat(prev => [...prev, {
           id: Date.now(),
           player: 'System',

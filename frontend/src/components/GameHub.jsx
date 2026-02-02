@@ -194,7 +194,7 @@ const GAMES = [
   },
   {
     id: 'drive',
-    name: 'Drive',
+    name: 'Playhouse City',
     emoji: '🚗',
     description: '3D city driving!',
     color: '#1a0a2e',
