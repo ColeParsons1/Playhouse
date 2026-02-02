@@ -1796,88 +1796,35 @@ const SimulatorGame = ({ onClose, onExit }) => {
     lookAtPosition.y += 2;
     camera.lookAt(lookAtPosition);
   }, []);
-  // Update day/night cycle - 5 minute full cycle
+  // Always nighttime - no day/night cycle
   const updateDayNightCycle = useCallback(() => {
     if (!sceneRef.current || !ambientLightRef.current || !hemiLightRef.current || !mainLightRef.current || !THREE) return;
 
-    // Advance time (60fps assumed, so 1/60 second per frame)
-    dayTimeRef.current += (1 / 60) / DAY_CYCLE_DURATION;
-    if (dayTimeRef.current > 1) dayTimeRef.current = 0;
-
-    const t = dayTimeRef.current;
     const scene = sceneRef.current;
     const ambientLight = ambientLightRef.current;
     const hemiLight = hemiLightRef.current;
     const mainLight = mainLightRef.current;
 
-    // Time of day phases:
-    // 0.0 - 0.25: Sunrise (dark to bright)
-    // 0.25 - 0.5: Day (bright)
-    // 0.5 - 0.75: Sunset (bright to dark)
-    // 0.75 - 1.0: Night (dark)
-
-    let skyColor, fogColor, ambientColor, sunColor, sunIntensity, ambientIntensity;
-    let sunY, sunX;
-
-    if (t < 0.25) {
-      // Sunrise: 0 to 0.25
-      const phase = t / 0.25;
-      skyColor = new THREE.Color().lerpColors(new THREE.Color(0x0a0a1a), new THREE.Color(0xff7744), phase);
-      fogColor = new THREE.Color().lerpColors(new THREE.Color(0x0a0a1a), new THREE.Color(0xffaa66), phase);
-      ambientColor = new THREE.Color().lerpColors(new THREE.Color(0x202040), new THREE.Color(0xffddbb), phase);
-      sunColor = new THREE.Color(0xffaa44);
-      sunIntensity = 0.3 + phase * 0.7;
-      ambientIntensity = 0.2 + phase * 0.4;
-      sunY = phase * 100;
-      sunX = -50 + phase * 50;
-    } else if (t < 0.5) {
-      // Day: 0.25 to 0.5
-      const phase = (t - 0.25) / 0.25;
-      skyColor = new THREE.Color().lerpColors(new THREE.Color(0xff7744), new THREE.Color(0x66ccff), phase);
-      fogColor = new THREE.Color().lerpColors(new THREE.Color(0xffaa66), new THREE.Color(0xaaddff), phase);
-      ambientColor = new THREE.Color().lerpColors(new THREE.Color(0xffddbb), new THREE.Color(0xffffff), phase);
-      sunColor = new THREE.Color().lerpColors(new THREE.Color(0xffaa44), new THREE.Color(0xffffee), phase);
-      sunIntensity = 1.0;
-      ambientIntensity = 0.6;
-      sunY = 100;
-      sunX = phase * 100;
-    } else if (t < 0.75) {
-      // Sunset: 0.5 to 0.75
-      const phase = (t - 0.5) / 0.25;
-      skyColor = new THREE.Color().lerpColors(new THREE.Color(0x66ccff), new THREE.Color(0xff5500), phase);
-      fogColor = new THREE.Color().lerpColors(new THREE.Color(0xaaddff), new THREE.Color(0xff6622), phase);
-      ambientColor = new THREE.Color().lerpColors(new THREE.Color(0xffffff), new THREE.Color(0xff8844), phase);
-      sunColor = new THREE.Color().lerpColors(new THREE.Color(0xffffee), new THREE.Color(0xff4400), phase);
-      sunIntensity = 1.0 - phase * 0.7;
-      ambientIntensity = 0.6 - phase * 0.4;
-      sunY = 100 - phase * 100;
-      sunX = 100 - phase * 50;
-    } else {
-      // Night: 0.75 to 1.0
-      const phase = (t - 0.75) / 0.25;
-      skyColor = new THREE.Color().lerpColors(new THREE.Color(0xff5500), new THREE.Color(0x0a0a1a), phase);
-      fogColor = new THREE.Color().lerpColors(new THREE.Color(0xff6622), new THREE.Color(0x0a0a1a), phase);
-      ambientColor = new THREE.Color().lerpColors(new THREE.Color(0xff8844), new THREE.Color(0x202040), phase);
-      sunColor = new THREE.Color(0x4444ff); // Moonlight
-      sunIntensity = 0.3;
-      ambientIntensity = 0.2;
-      sunY = phase * 50;
-      sunX = -50;
-    }
+    // Permanent night settings
+    const skyColor = new THREE.Color(0x0a0a1a); // Dark night sky
+    const fogColor = new THREE.Color(0x0a0a1a);
+    const ambientColor = new THREE.Color(0x202040); // Dark blue ambient
+    const sunColor = new THREE.Color(0x6666ff); // Moonlight blue
+    const sunIntensity = 0.4;
+    const ambientIntensity = 0.25;
 
     // Apply colors
     scene.background = skyColor;
-    // Update fog color for FogExp2
     if (scene.fog) {
       scene.fog.color = fogColor;
     }
     ambientLight.color = ambientColor;
     ambientLight.intensity = ambientIntensity;
-    hemiLight.color = skyColor;
-    hemiLight.groundColor = new THREE.Color(0x444422);
+    hemiLight.color = new THREE.Color(0x1a1a3a);
+    hemiLight.groundColor = new THREE.Color(0x101020);
     mainLight.color = sunColor;
     mainLight.intensity = sunIntensity;
-    mainLight.position.set(sunX, Math.max(10, sunY), 50);
+    mainLight.position.set(-50, 60, 50); // Moon position
   }, []);
 
   // Initialize Three.js
@@ -1906,10 +1853,10 @@ const SimulatorGame = ({ onClose, onExit }) => {
           rotation: 0
         };
 
-        // Scene - 4K ULTRA QUALITY sky and atmosphere
+        // Scene - 4K ULTRA QUALITY nighttime atmosphere
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87ceeb); // Clear sky blue for daytime start
-        scene.fog = new THREE.FogExp2(0x87ceeb, 0.00015); // Exponential fog for realistic depth
+        scene.background = new THREE.Color(0x0a0a1a); // Dark night sky
+        scene.fog = new THREE.FogExp2(0x0a0a1a, 0.00012); // Night fog
         sceneRef.current = scene;
 
         // Camera - extended far plane for 4K detail
