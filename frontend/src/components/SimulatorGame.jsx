@@ -138,98 +138,125 @@ const SimulatorGame = ({ onClose, onExit }) => {
       scene.add(rightCurb);
     }
 
-    // Add center yellow dashed lines (only on some roads for performance)
+    // MERGED GEOMETRY APPROACH - Collect all positions, then create single meshes
+    // This dramatically reduces draw calls from thousands to just a few
+
+    // Yellow dash geometries to merge
     const yellowDashGeom = new THREE.BoxGeometry(12 * scale, 0.12, 0.5 * scale);
     const yellowDashGeomV = new THREE.BoxGeometry(0.5 * scale, 0.12, 12 * scale);
+    const yellowDashGeometries = [];
 
-    // Horizontal road center lines (every other road)
+    // Collect horizontal yellow dashes
     hRoadPositions.forEach((z, idx) => {
       if (idx % 2 === 0 && z < 650) {
         for (let x = -1500; x <= 1500; x += 60 * scale) {
-          const dash = new THREE.Mesh(yellowDashGeom, yellowLineMat);
-          dash.position.set(x, 0.12, z);
-          scene.add(dash);
+          const geom = yellowDashGeom.clone();
+          geom.translate(x, 0.12, z);
+          yellowDashGeometries.push(geom);
         }
       }
     });
 
-    // Vertical road center lines (every other road)
+    // Collect vertical yellow dashes
     vRoadPositions.forEach((x, idx) => {
       if (idx % 2 === 0) {
         for (let z = -1500; z <= 600; z += 60 * scale) {
-          const dash = new THREE.Mesh(yellowDashGeomV, yellowLineMat);
-          dash.position.set(x, 0.12, z);
-          scene.add(dash);
+          const geom = yellowDashGeomV.clone();
+          geom.translate(x, 0.12, z);
+          yellowDashGeometries.push(geom);
         }
       }
     });
 
-    // ZEBRA CROSSWALKS at intersections
+    // Merge all yellow dashes into single mesh
+    if (yellowDashGeometries.length > 0) {
+      const mergedYellowGeom = THREE.BufferGeometryUtils.mergeGeometries(yellowDashGeometries);
+      const yellowDashesMesh = new THREE.Mesh(mergedYellowGeom, yellowLineMat);
+      scene.add(yellowDashesMesh);
+      // Dispose individual geometries
+      yellowDashGeometries.forEach(g => g.dispose());
+    }
+
+    // ZEBRA CROSSWALKS - merge all into single mesh
     const crosswalkStripeGeom = new THREE.BoxGeometry(3 * scale, 0.12, 1.2 * scale);
     const crosswalkStripeGeomV = new THREE.BoxGeometry(1.2 * scale, 0.12, 3 * scale);
+    const crosswalkGeometries = [];
 
-    // Add crosswalks at every 3rd intersection for performance
     let intersectionCount = 0;
     vRoadPositions.forEach(x => {
       hRoadPositions.forEach(z => {
         if (z < 650 && intersectionCount % 3 === 0) {
-          // North crosswalk (horizontal stripes)
+          // North crosswalk
           for (let i = -4; i <= 4; i++) {
-            const stripe = new THREE.Mesh(crosswalkStripeGeom, whiteLineMat);
-            stripe.position.set(x + i * 2 * scale, 0.12, z + roadWidth/2 + 2 * scale);
-            scene.add(stripe);
+            const geom = crosswalkStripeGeom.clone();
+            geom.translate(x + i * 2 * scale, 0.12, z + roadWidth/2 + 2 * scale);
+            crosswalkGeometries.push(geom);
           }
-
-          // South crosswalk (horizontal stripes)
+          // South crosswalk
           for (let i = -4; i <= 4; i++) {
-            const stripe = new THREE.Mesh(crosswalkStripeGeom, whiteLineMat);
-            stripe.position.set(x + i * 2 * scale, 0.12, z - roadWidth/2 - 2 * scale);
-            scene.add(stripe);
+            const geom = crosswalkStripeGeom.clone();
+            geom.translate(x + i * 2 * scale, 0.12, z - roadWidth/2 - 2 * scale);
+            crosswalkGeometries.push(geom);
           }
-
-          // East crosswalk (vertical stripes)
+          // East crosswalk
           for (let i = -4; i <= 4; i++) {
-            const stripe = new THREE.Mesh(crosswalkStripeGeomV, whiteLineMat);
-            stripe.position.set(x + roadWidth/2 + 2 * scale, 0.12, z + i * 2 * scale);
-            scene.add(stripe);
+            const geom = crosswalkStripeGeomV.clone();
+            geom.translate(x + roadWidth/2 + 2 * scale, 0.12, z + i * 2 * scale);
+            crosswalkGeometries.push(geom);
           }
-
-          // West crosswalk (vertical stripes)
+          // West crosswalk
           for (let i = -4; i <= 4; i++) {
-            const stripe = new THREE.Mesh(crosswalkStripeGeomV, whiteLineMat);
-            stripe.position.set(x - roadWidth/2 - 2 * scale, 0.12, z + i * 2 * scale);
-            scene.add(stripe);
+            const geom = crosswalkStripeGeomV.clone();
+            geom.translate(x - roadWidth/2 - 2 * scale, 0.12, z + i * 2 * scale);
+            crosswalkGeometries.push(geom);
           }
         }
         intersectionCount++;
       });
     });
 
-    // Add white edge lines on roads (road edges)
+    // Merge all crosswalk stripes into single mesh
+    if (crosswalkGeometries.length > 0) {
+      const mergedCrosswalkGeom = THREE.BufferGeometryUtils.mergeGeometries(crosswalkGeometries);
+      const crosswalksMesh = new THREE.Mesh(mergedCrosswalkGeom, whiteLineMat);
+      scene.add(crosswalksMesh);
+      crosswalkGeometries.forEach(g => g.dispose());
+    }
+
+    // White edge lines - also merge into single mesh
     const edgeLineGeom = new THREE.BoxGeometry(roadLength, 0.12, 0.3 * scale);
     const edgeLineGeomV = new THREE.BoxGeometry(0.3 * scale, 0.12, roadLength);
+    const edgeLineGeometries = [];
 
     hRoadPositions.forEach((z, idx) => {
       if (idx % 3 === 0 && z < 650) {
-        const leftEdge = new THREE.Mesh(edgeLineGeom, whiteLineMat);
-        leftEdge.position.set(0, 0.12, z - roadWidth/2 + 1 * scale);
-        scene.add(leftEdge);
-        const rightEdge = new THREE.Mesh(edgeLineGeom, whiteLineMat);
-        rightEdge.position.set(0, 0.12, z + roadWidth/2 - 1 * scale);
-        scene.add(rightEdge);
+        const leftGeom = edgeLineGeom.clone();
+        leftGeom.translate(0, 0.12, z - roadWidth/2 + 1 * scale);
+        edgeLineGeometries.push(leftGeom);
+        const rightGeom = edgeLineGeom.clone();
+        rightGeom.translate(0, 0.12, z + roadWidth/2 - 1 * scale);
+        edgeLineGeometries.push(rightGeom);
       }
     });
 
     vRoadPositions.forEach((x, idx) => {
       if (idx % 3 === 0) {
-        const leftEdge = new THREE.Mesh(edgeLineGeomV, whiteLineMat);
-        leftEdge.position.set(x - roadWidth/2 + 1 * scale, 0.12, 0);
-        scene.add(leftEdge);
-        const rightEdge = new THREE.Mesh(edgeLineGeomV, whiteLineMat);
-        rightEdge.position.set(x + roadWidth/2 - 1 * scale, 0.12, 0);
-        scene.add(rightEdge);
+        const leftGeom = edgeLineGeomV.clone();
+        leftGeom.translate(x - roadWidth/2 + 1 * scale, 0.12, 0);
+        edgeLineGeometries.push(leftGeom);
+        const rightGeom = edgeLineGeomV.clone();
+        rightGeom.translate(x + roadWidth/2 - 1 * scale, 0.12, 0);
+        edgeLineGeometries.push(rightGeom);
       }
     });
+
+    // Merge edge lines into single mesh
+    if (edgeLineGeometries.length > 0) {
+      const mergedEdgeGeom = THREE.BufferGeometryUtils.mergeGeometries(edgeLineGeometries);
+      const edgeLinesMesh = new THREE.Mesh(mergedEdgeGeom, whiteLineMat);
+      scene.add(edgeLinesMesh);
+      edgeLineGeometries.forEach(g => g.dispose());
+    }
   }, []);
 
   // Create buildings - REALISTIC Miami Architecture with Art Deco Details
@@ -1370,9 +1397,11 @@ const SimulatorGame = ({ onClose, onExit }) => {
 
     const initThree = async () => {
       try {
-        // Dynamic import of THREE
+        // Dynamic import of THREE and BufferGeometryUtils
         const threeModule = await import('three');
+        const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
         THREE = threeModule;
+        THREE.BufferGeometryUtils = { mergeGeometries };
 
         if (!mounted || !containerRef.current) return;
 
