@@ -17,11 +17,8 @@ const SimulatorGame = ({ onClose, onExit }) => {
   const touchControlsRef = useRef({ steering: 0, gas: false, brake: false });
   const carPhysicsRef = useRef(null);
 
-  const [speed, setSpeed] = useState(0);
+  // Removed unused state: speed, gear, rpm, showControls (HUD removed)
   const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
-  const [showControls, setShowControls] = useState(true);
-  const [gear, setGear] = useState('D');
-  const [rpm, setRpm] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [altitude, setAltitude] = useState(0);
@@ -29,6 +26,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
   const rampsRef = useRef([]);
   const neonLightsRef = useRef([]);
   const lastHudUpdateRef = useRef(0); // Throttle HUD updates for performance
+  const directionVectorRef = useRef(null); // Reusable vector to avoid allocation every frame
 
   // Check if current player is the host
   const isHost = true;
@@ -1241,24 +1239,28 @@ const SimulatorGame = ({ onClose, onExit }) => {
 
     const gravity = -0.8; // Gravity acceleration
 
-    // Check for ramp collision (only when on ground)
-    if (!physics.isAirborne) {
-      rampsRef.current.forEach(ramp => {
-        const dx = physics.position.x - ramp.position.x;
-        const dz = physics.position.z - ramp.position.z;
-        const distance = Math.sqrt(dx * dx + dz * dz);
+    // Check for ramp collision (only when on ground and moving fast enough)
+    if (!physics.isAirborne && Math.abs(physics.speed) > 30 && rampsRef.current.length > 0) {
+      const ramps = rampsRef.current;
+      const px = physics.position.x;
+      const pz = physics.position.z;
+      for (let i = 0; i < ramps.length; i++) {
+        const ramp = ramps[i];
+        const dx = px - ramp.position.x;
+        const dz = pz - ramp.position.z;
+        // Use squared distance to avoid sqrt (faster)
+        const distSq = dx * dx + dz * dz;
+        const thresholdSq = (ramp.length * 0.8) ** 2;
 
-        // Check if car is on the ramp
-        if (distance < ramp.length * 0.8 && Math.abs(physics.speed) > 30) {
+        if (distSq < thresholdSq) {
           // Launch the car!
           physics.isAirborne = true;
-          // Higher minimum launch velocity, scales with speed
           const speedFactor = 0.5 + (Math.abs(physics.speed) / physics.maxSpeed) * 0.5;
           physics.verticalVelocity = ramp.launchVelocity * speedFactor;
-          // Boost forward speed when launching
           physics.speed = Math.max(physics.speed, 100);
+          break; // Exit early once launched
         }
-      });
+      }
     }
 
     // Apply gravity when airborne
@@ -1301,12 +1303,12 @@ const SimulatorGame = ({ onClose, onExit }) => {
       physics.rotation += steerAmount * baseTurnSpeed * turnMultiplier * Math.sign(physics.speed);
     }
 
-    // Update horizontal position
-    const direction = new THREE.Vector3(
-      Math.sin(physics.rotation),
-      0,
-      Math.cos(physics.rotation)
-    );
+    // Update horizontal position - reuse vector to avoid allocation
+    if (!directionVectorRef.current) {
+      directionVectorRef.current = new THREE.Vector3();
+    }
+    const direction = directionVectorRef.current;
+    direction.set(Math.sin(physics.rotation), 0, Math.cos(physics.rotation));
 
     physics.position.x += direction.x * physics.speed * 0.016;
     physics.position.z += direction.z * physics.speed * 0.016;
@@ -1324,17 +1326,17 @@ const SimulatorGame = ({ onClose, onExit }) => {
     }
 
     // Update HUD - throttled to 10fps instead of 60fps for performance
+    // Only update altitude/flying state (speed/rpm displays removed)
     const now = Date.now();
     if (now - lastHudUpdateRef.current > 100) { // Update every 100ms (10fps)
       lastHudUpdateRef.current = now;
-      const newSpeed = Math.abs(Math.round(physics.speed));
-      const newRpm = Math.min(Math.abs(physics.speed) * 80, 8000);
-      setSpeed(newSpeed);
-      setRpm(newRpm);
-      setAltitude(Math.max(0, Math.round(physics.position.y)));
-      setIsFlying(physics.isAirborne || physics.position.y > 10);
+      const newAltitude = Math.max(0, Math.round(physics.position.y));
+      const newIsFlying = physics.isAirborne || physics.position.y > 10;
+      // Only trigger re-render if values actually changed
+      if (newAltitude !== altitude) setAltitude(newAltitude);
+      if (newIsFlying !== isFlying) setIsFlying(newIsFlying);
     }
-  }, []);
+  }, [altitude, isFlying]);
 
   // Update camera - adjusted for bigger car, FIXED DISTANCE regardless of speed
   const updateCamera = useCallback(() => {
@@ -1516,10 +1518,39 @@ const SimulatorGame = ({ onClose, onExit }) => {
         cancelAnimationFrame(animationRef.current);
       }
 
-      if (rendererRef.current && containerRef.current) {
-        containerRef.current.removeChild(rendererRef.current.domElement);
-        rendererRef.current.dispose();
+      // Properly dispose all Three.js resources to prevent memory leaks
+      if (sceneRef.current) {
+        sceneRef.current.traverse((object) => {
+          if (object.geometry) {
+            object.geometry.dispose();
+          }
+          if (object.material) {
+            if (Array.isArray(object.material)) {
+              object.material.forEach(mat => mat.dispose());
+            } else {
+              object.material.dispose();
+            }
+          }
+        });
+        sceneRef.current.clear();
       }
+
+      if (rendererRef.current) {
+        rendererRef.current.dispose();
+        rendererRef.current.forceContextLoss();
+        if (containerRef.current && rendererRef.current.domElement) {
+          containerRef.current.removeChild(rendererRef.current.domElement);
+        }
+      }
+
+      // Clear refs
+      sceneRef.current = null;
+      cameraRef.current = null;
+      carRef.current = null;
+      carPhysicsRef.current = null;
+      directionVectorRef.current = null;
+      rampsRef.current = [];
+      neonLightsRef.current = [];
     };
   }, [createCity, createCar, updateCarPhysics, updateCamera]);
 
