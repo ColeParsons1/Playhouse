@@ -341,15 +341,11 @@ const SimulatorGame = ({ onClose, onExit }) => {
       return boxGeomCache[key];
     };
 
-    // LOD SYSTEM: Create buildings with Level of Detail
-    // - Close (< 400): Full detail with windows, ledges, rooftop
-    // - Medium (400-800): Simple box with window strip
-    // - Far (> 800): Just a colored box
-
     buildingPositions.forEach(pos => {
       const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
       const isDowntown = distFromCenter < 500;
       const isSkyscraper = isDowntown ? Math.random() > 0.25 : Math.random() > 0.85;
+      const buildingType = Math.random(); // Determine architectural style
 
       const heightMultiplier = Math.max(0.3, 1.5 - distFromCenter / 700);
 
@@ -360,121 +356,157 @@ const SimulatorGame = ({ onClose, onExit }) => {
 
       const buildingMaterial = buildingColors[Math.floor(Math.random() * buildingColors.length)];
 
-      // Create LOD object
-      const lod = new THREE.LOD();
-      lod.position.set(pos.x, 0, pos.z);
-
-      // ========== LOD 0: HIGH DETAIL (< 400 units) ==========
-      const highDetailGroup = new THREE.Group();
-
-      // Building base
+      // ========== BUILDING BASE (Ground Floor) ==========
       const baseFloorHeight = 8 * scale;
       const baseGeom = getBoxGeom(width + 2, baseFloorHeight, depth + 2);
       const base = new THREE.Mesh(baseGeom, buildingMaterial);
-      base.position.set(0, baseFloorHeight / 2, 0);
-      highDetailGroup.add(base);
+      base.position.set(pos.x, baseFloorHeight / 2, pos.z);
+      scene.add(base);
 
-      // Storefront
+      // Ground floor windows/storefronts (darker glass band)
       const storefrontGeom = getBoxGeom(width - 4, 5 * scale, 0.5);
       const storefront = new THREE.Mesh(storefrontGeom, windowDarkMat);
-      storefront.position.set(0, 4 * scale, depth/2 + 1.3);
-      highDetailGroup.add(storefront);
+      storefront.position.set(pos.x, 4 * scale, pos.z + depth/2 + 1.3);
+      scene.add(storefront);
 
-      // Main building body
+      // ========== MAIN BUILDING BODY ==========
       const mainHeight = height - baseFloorHeight;
       const mainGeom = getBoxGeom(width, mainHeight, depth);
       const mainBuilding = new THREE.Mesh(mainGeom, buildingMaterial);
-      mainBuilding.position.set(0, baseFloorHeight + mainHeight / 2, 0);
-      highDetailGroup.add(mainBuilding);
+      mainBuilding.position.set(pos.x, baseFloorHeight + mainHeight / 2, pos.z);
+      scene.add(mainBuilding);
 
-      // Window grid (limited for performance)
-      const floorHeight = 12;
+      // ========== WINDOW GRID (Realistic pattern) ==========
+      const floorHeight = 12; // Height per floor
       const numFloors = Math.floor(mainHeight / floorHeight);
       const windowWidth = 4;
       const windowHeight = 6;
       const windowSpacing = 8;
       const numWindowsPerRow = Math.floor((width - 8) / windowSpacing);
 
+      // Create window grid on front face
       if (numFloors > 1 && numWindowsPerRow > 0) {
         const windowMat = Math.random() > 0.5 ? windowDarkMat : windowReflectMat;
 
-        for (let floor = 0; floor < Math.min(numFloors, 8); floor++) {
+        for (let floor = 0; floor < Math.min(numFloors, 12); floor++) { // Limit floors for performance
           const floorY = baseFloorHeight + floor * floorHeight + floorHeight/2 + 2;
 
           for (let w = 0; w < numWindowsPerRow; w++) {
-            const windowX = - (numWindowsPerRow - 1) * windowSpacing / 2 + w * windowSpacing;
-            const windowGeom = getBoxGeom(windowWidth, windowHeight, 0.5);
-            const windowMesh = new THREE.Mesh(windowGeom, windowMat);
-            windowMesh.position.set(windowX, floorY, depth/2 + 0.3);
-            highDetailGroup.add(windowMesh);
+            const windowX = pos.x - (numWindowsPerRow - 1) * windowSpacing / 2 + w * windowSpacing;
 
-            // Lit windows
-            if (Math.random() > 0.7) {
+            // Window pane
+            const windowGeom = getBoxGeom(windowWidth, windowHeight, 0.5);
+            const window = new THREE.Mesh(windowGeom, windowMat);
+            window.position.set(windowX, floorY, pos.z + depth/2 + 0.3);
+            scene.add(window);
+
+            // Add lit windows randomly at night
+            if (Math.random() > 0.6) {
               const glowMat = windowGlowMaterials[Math.floor(Math.random() * windowGlowMaterials.length)];
               const glowGeom = getBoxGeom(windowWidth - 1, windowHeight - 1, 0.3);
               const glow = new THREE.Mesh(glowGeom, glowMat);
-              glow.position.set(windowX, floorY, depth/2 + 0.5);
-              highDetailGroup.add(glow);
+              glow.position.set(windowX, floorY, pos.z + depth/2 + 0.5);
+              scene.add(glow);
             }
           }
         }
-      }
 
-      // Cornice
-      const corniceGeom = getBoxGeom(width + 4, 2, depth + 4);
-      const cornice = new THREE.Mesh(corniceGeom, ledgeMat);
-      cornice.position.set(0, height - 1, 0);
-      highDetailGroup.add(cornice);
-
-      // Neon signage (Miami Vice style) - only in high detail LOD
-      if (distFromCenter < 800 && Math.random() > 0.6) {
-        const neonMat = neonMaterials[Math.floor(Math.random() * neonMaterials.length)];
-        // Neon strip along storefront
-        const neonStripGeom = getBoxGeom(width * 0.8, 1.5, 1);
-        const neonStrip = new THREE.Mesh(neonStripGeom, neonMat);
-        neonStrip.position.set(0, baseFloorHeight - 1, depth/2 + 1.5);
-        highDetailGroup.add(neonStrip);
-
-        // Vertical neon accent on some skyscrapers
-        if (Math.random() > 0.7 && isSkyscraper) {
-          const vertNeonGeom = getBoxGeom(1.5, height * 0.6, 1);
-          const vertNeon = new THREE.Mesh(vertNeonGeom, neonMat);
-          vertNeon.position.set(width/2 + 1, height * 0.5, 0);
-          highDetailGroup.add(vertNeon);
+        // Side face windows (simplified - just a few)
+        for (let floor = 0; floor < Math.min(numFloors, 8); floor += 2) {
+          const floorY = baseFloorHeight + floor * floorHeight + floorHeight/2 + 2;
+          const sideWindow = new THREE.Mesh(getBoxGeom(0.5, windowHeight, windowWidth), windowMat);
+          sideWindow.position.set(pos.x + width/2 + 0.3, floorY, pos.z);
+          scene.add(sideWindow);
         }
       }
 
-      lod.addLevel(highDetailGroup, 0);
+      // ========== HORIZONTAL LEDGES (Every few floors) ==========
+      const numLedges = Math.floor(numFloors / 4);
+      for (let i = 1; i <= numLedges; i++) {
+        const ledgeY = baseFloorHeight + i * 4 * floorHeight;
+        if (ledgeY < height - 10) {
+          const ledgeGeom = getBoxGeom(width + 3, 1.5, depth + 3);
+          const ledge = new THREE.Mesh(ledgeGeom, ledgeMat);
+          ledge.position.set(pos.x, ledgeY, pos.z);
+          scene.add(ledge);
+        }
+      }
 
-      // ========== LOD 1: MEDIUM DETAIL (400-800 units) ==========
-      const mediumDetailGroup = new THREE.Group();
+      // ========== ROOFTOP DETAILS ==========
+      // Cornice/top ledge
+      const corniceGeom = getBoxGeom(width + 4, 2, depth + 4);
+      const cornice = new THREE.Mesh(corniceGeom, ledgeMat);
+      cornice.position.set(pos.x, height - 1, pos.z);
+      scene.add(cornice);
 
-      // Simple building box
-      const mediumGeom = getBoxGeom(width, height, depth);
-      const mediumBuilding = new THREE.Mesh(mediumGeom, buildingMaterial);
-      mediumBuilding.position.set(0, height / 2, 0);
-      mediumDetailGroup.add(mediumBuilding);
+      // Rooftop structures (AC units, elevator housing)
+      if (isSkyscraper && Math.random() > 0.3) {
+        // Elevator penthouse
+        const penthouseWidth = width * 0.4;
+        const penthouseDepth = depth * 0.4;
+        const penthouseHeight = 15 + Math.random() * 10;
+        const penthouseGeom = getBoxGeom(penthouseWidth, penthouseHeight, penthouseDepth);
+        const penthouse = new THREE.Mesh(penthouseGeom, buildingMaterial);
+        penthouse.position.set(pos.x, height + penthouseHeight/2, pos.z);
+        scene.add(penthouse);
 
-      // Single window strip
-      const stripGeom = getBoxGeom(width * 0.8, height * 0.7, 0.5);
-      const strip = new THREE.Mesh(stripGeom, windowDarkMat);
-      strip.position.set(0, height / 2, depth/2 + 0.3);
-      mediumDetailGroup.add(strip);
+        // Spire/antenna on very tall buildings
+        if (height > 200 && Math.random() > 0.5) {
+          const spireGeom = getBoxGeom(2, 30, 2);
+          const spire = new THREE.Mesh(spireGeom, trimMat);
+          spire.position.set(pos.x, height + penthouseHeight + 15, pos.z);
+          scene.add(spire);
 
-      lod.addLevel(mediumDetailGroup, 400);
+          // Blinking light on top
+          const lightGeom = getBoxGeom(3, 3, 3);
+          const lightMat = neonMaterials[Math.floor(Math.random() * neonMaterials.length)];
+          const light = new THREE.Mesh(lightGeom, lightMat);
+          light.position.set(pos.x, height + penthouseHeight + 32, pos.z);
+          scene.add(light);
+        }
+      }
 
-      // ========== LOD 2: LOW DETAIL (> 800 units) ==========
-      const lowDetailGroup = new THREE.Group();
+      // AC units on shorter buildings
+      if (!isSkyscraper && Math.random() > 0.5) {
+        const acGeom = getBoxGeom(6, 4, 6);
+        const ac = new THREE.Mesh(acGeom, roofMat);
+        ac.position.set(pos.x + (Math.random() - 0.5) * width * 0.4, height + 2, pos.z + (Math.random() - 0.5) * depth * 0.4);
+        scene.add(ac);
+      }
 
-      // Just a box
-      const lowGeom = getBoxGeom(width, height, depth);
-      const lowBuilding = new THREE.Mesh(lowGeom, buildingMaterial);
-      lowBuilding.position.set(0, height / 2, 0);
-      lowDetailGroup.add(lowBuilding);
+      // ========== NEON SIGNAGE (Miami Vice style) ==========
+      if (distFromCenter < 800 && Math.random() > 0.6) {
+        const neonMat = neonMaterials[Math.floor(Math.random() * neonMaterials.length)];
 
-      lod.addLevel(lowDetailGroup, 800);
+        // Neon strip along storefront
+        const neonStripGeom = getBoxGeom(width * 0.8, 1.5, 1);
+        const neonStrip = new THREE.Mesh(neonStripGeom, neonMat);
+        neonStrip.position.set(pos.x, baseFloorHeight - 1, pos.z + depth/2 + 1.5);
+        scene.add(neonStrip);
 
-      scene.add(lod);
+        // Vertical neon accent on some buildings
+        if (Math.random() > 0.7 && isSkyscraper) {
+          const vertNeonGeom = getBoxGeom(1.5, height * 0.6, 1);
+          const vertNeon = new THREE.Mesh(vertNeonGeom, neonMat);
+          vertNeon.position.set(pos.x + width/2 + 1, height * 0.5, pos.z);
+          scene.add(vertNeon);
+        }
+      }
+
+      // ========== BUILDING CORNER DETAILS ==========
+      // Vertical corner trim strips
+      if (buildingType > 0.6) {
+        const cornerTrimGeom = getBoxGeom(2, mainHeight, 2);
+        [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(([xMult, zMult]) => {
+          const cornerTrim = new THREE.Mesh(cornerTrimGeom, trimMat);
+          cornerTrim.position.set(
+            pos.x + xMult * (width/2 + 0.5),
+            baseFloorHeight + mainHeight/2,
+            pos.z + zMult * (depth/2 + 0.5)
+          );
+          scene.add(cornerTrim);
+        });
+      }
     });
   }, []);
 
@@ -793,13 +825,6 @@ const SimulatorGame = ({ onClose, onExit }) => {
     frondInstances2.instanceMatrix.needsUpdate = true;
     frondInstances3.instanceMatrix.needsUpdate = true;
 
-    // Compute bounding spheres for proper frustum culling
-    trunkInstances.computeBoundingSphere();
-    frondInstances0.computeBoundingSphere();
-    frondInstances1.computeBoundingSphere();
-    frondInstances2.computeBoundingSphere();
-    frondInstances3.computeBoundingSphere();
-
     // Add to scene
     scene.add(trunkInstances);
     scene.add(frondInstances0);
@@ -901,7 +926,6 @@ const SimulatorGame = ({ onClose, onExit }) => {
       scene.add(pole);
     }
 
-    // Neon signs - REDUCED and simplified
     // Neon signs - REDUCED and simplified
     const neonSignMats = [
       new THREE.MeshBasicMaterial({ color: 0xff00ff }),
