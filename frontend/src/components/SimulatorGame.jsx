@@ -1034,137 +1034,87 @@ const SimulatorGame = ({ onClose, onExit }) => {
     eastRamp.rotation.z = -Math.atan2(bridgeHeight, bridgeRampLength);
     scene.add(eastRamp);
 
-    // ========== CHANNEL BRIDGE (East-West over the channel) ==========
-    // This bridge goes ACROSS the channel (which runs north-south at x=0)
-    const channelBridgeLength2 = 350; // Length spanning east-west across channel
-    const channelBridgeWidth2 = 50; // Width of the road (north-south)
-    const channelBridgeHeight2 = 12;
-    const channelBridgeZ2 = 400; // Position along channel
+    // ========== WIDE CHANNEL BRIDGE (spans from z=160 to z=400) ==========
+    // Single wide bridge covering the entire channel area
+    const wideBridgeLength = 350; // Length spanning east-west across channel
+    const wideBridgeDepth = 280; // Depth from z=160 to z=440 (north-south)
+    const wideBridgeHeight = 12;
+    const wideBridgeCenterZ = 280; // Center between 160 and 400
 
-    console.log('Creating channel bridge at z=', channelBridgeZ2);
+    console.log('Creating wide channel bridge from z=140 to z=420');
 
-    // Channel bridge material - bright red color to make it VERY visible
-    const channelBridgeMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    // Bridge material - gray concrete look
+    const wideBridgeMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.8, metalness: 0.2 });
 
-    // Main channel bridge deck - spans EAST-WEST (X direction)
-    const channelBridgeDeckGeom2 = new THREE.BoxGeometry(channelBridgeLength2, 6, channelBridgeWidth2);
-    const channelBridgeDeck2 = new THREE.Mesh(channelBridgeDeckGeom2, channelBridgeMaterial);
-    channelBridgeDeck2.position.set(0, channelBridgeHeight2, channelBridgeZ2);
-    channelBridgeDeck2.castShadow = true;
-    channelBridgeDeck2.receiveShadow = true;
-    scene.add(channelBridgeDeck2);
+    // Main bridge deck - wide platform
+    const wideBridgeDeckGeom = new THREE.BoxGeometry(wideBridgeLength, 6, wideBridgeDepth);
+    const wideBridgeDeck = new THREE.Mesh(wideBridgeDeckGeom, wideBridgeMaterial);
+    wideBridgeDeck.position.set(0, wideBridgeHeight, wideBridgeCenterZ);
+    wideBridgeDeck.castShadow = true;
+    wideBridgeDeck.receiveShadow = true;
+    scene.add(wideBridgeDeck);
 
-    // Road surface on channel bridge
-    const channelBridgeRoadGeom2 = new THREE.BoxGeometry(channelBridgeLength2 - 10, 0.5, channelBridgeWidth2 - 8);
-    const channelBridgeRoad2 = new THREE.Mesh(channelBridgeRoadGeom2, bridgeRoadMat);
-    channelBridgeRoad2.position.set(0, channelBridgeHeight2 + 3.2, channelBridgeZ2);
-    scene.add(channelBridgeRoad2);
+    // Road surface on bridge
+    const wideBridgeRoadGeom = new THREE.BoxGeometry(wideBridgeLength - 20, 0.5, wideBridgeDepth - 20);
+    const wideBridgeRoad = new THREE.Mesh(wideBridgeRoadGeom, bridgeRoadMat);
+    wideBridgeRoad.position.set(0, wideBridgeHeight + 3.2, wideBridgeCenterZ);
+    scene.add(wideBridgeRoad);
 
-    // Center line on channel bridge (runs east-west)
-    const channelBridgeLineGeom2 = new THREE.BoxGeometry(channelBridgeLength2 - 20, 0.6, 1.5);
-    const channelBridgeLine2 = new THREE.Mesh(channelBridgeLineGeom2, bridgeLineMat);
-    channelBridgeLine2.position.set(0, channelBridgeHeight2 + 3.5, channelBridgeZ2);
-    scene.add(channelBridgeLine2);
-
-    // Channel bridge support pillars
-    const channelPillarGeom2 = new THREE.CylinderGeometry(4, 5, channelBridgeHeight2 + 6, 8);
-    [-120, -40, 40, 120].forEach(x => {
-      const pillar = new THREE.Mesh(channelPillarGeom2, pillarMaterial);
-      pillar.position.set(x, (channelBridgeHeight2 + 6) / 2 - 3, channelBridgeZ2);
-      pillar.castShadow = true;
-      scene.add(pillar);
+    // Lane markings (multiple lanes running north-south)
+    const laneLineGeom = new THREE.BoxGeometry(1.5, 0.6, wideBridgeDepth - 30);
+    [-60, 0, 60].forEach(x => {
+      const laneLine = new THREE.Mesh(laneLineGeom, bridgeLineMat);
+      laneLine.position.set(x, wideBridgeHeight + 3.5, wideBridgeCenterZ);
+      scene.add(laneLine);
     });
 
-    // Channel bridge railings (run east-west along the bridge)
-    const channelRailingGeom2 = new THREE.BoxGeometry(channelBridgeLength2, 3, 1);
-    const channelRailingMat = new THREE.MeshStandardMaterial({ color: 0xffdd00 });
+    // Support pillars - grid pattern
+    const widePillarGeom = new THREE.CylinderGeometry(5, 6, wideBridgeHeight + 8, 8);
+    [-120, 0, 120].forEach(x => {
+      [180, 280, 380].forEach(z => {
+        const pillar = new THREE.Mesh(widePillarGeom, pillarMaterial);
+        pillar.position.set(x, (wideBridgeHeight + 8) / 2 - 4, z);
+        pillar.castShadow = true;
+        scene.add(pillar);
+      });
+    });
+
+    // Railings on all four sides
+    const wideRailingMat = new THREE.MeshStandardMaterial({ color: 0xffdd00 });
+
+    // North and south railings (run east-west)
+    const nsRailingGeom = new THREE.BoxGeometry(wideBridgeLength, 3, 1);
     [-1, 1].forEach(side => {
-      const railing = new THREE.Mesh(channelRailingGeom2, channelRailingMat);
-      railing.position.set(0, channelBridgeHeight2 + 4.5, channelBridgeZ2 + side * (channelBridgeWidth2 / 2 - 2));
+      const railing = new THREE.Mesh(nsRailingGeom, wideRailingMat);
+      railing.position.set(0, wideBridgeHeight + 4.5, wideBridgeCenterZ + side * (wideBridgeDepth / 2 - 2));
       scene.add(railing);
     });
 
-    // Channel bridge approach ramps (east and west sides)
-    const channelRampLength2 = 150;
-    const channelRampGeom2 = new THREE.BoxGeometry(channelRampLength2, 4, channelBridgeWidth2);
-
-    // West ramp
-    const westRamp2 = new THREE.Mesh(channelRampGeom2, channelBridgeMaterial);
-    westRamp2.position.set(-channelBridgeLength2 / 2 - channelRampLength2 / 2 + 20, channelBridgeHeight2 / 2, channelBridgeZ2);
-    westRamp2.rotation.z = Math.atan2(channelBridgeHeight2, channelRampLength2);
-    scene.add(westRamp2);
-
-    // East ramp
-    const eastRamp2 = new THREE.Mesh(channelRampGeom2, channelBridgeMaterial);
-    eastRamp2.position.set(channelBridgeLength2 / 2 + channelRampLength2 / 2 - 20, channelBridgeHeight2 / 2, channelBridgeZ2);
-    eastRamp2.rotation.z = -Math.atan2(channelBridgeHeight2, channelRampLength2);
-    scene.add(eastRamp2);
-
-    console.log('Channel bridge created successfully');
-
-    // ========== SECOND CHANNEL BRIDGE (at bay entrance, z=160) ==========
-    const bridge3Z = 160; // Right before channel expands into bay
-    const bridge3Length = 350;
-    const bridge3Width = 50;
-    const bridge3Height = 12;
-
-    // Bridge material - blue to distinguish from red bridge
-    const bridge3Material = new THREE.MeshBasicMaterial({ color: 0x0066ff });
-
-    // Main bridge deck
-    const bridge3DeckGeom = new THREE.BoxGeometry(bridge3Length, 6, bridge3Width);
-    const bridge3Deck = new THREE.Mesh(bridge3DeckGeom, bridge3Material);
-    bridge3Deck.position.set(0, bridge3Height, bridge3Z);
-    bridge3Deck.castShadow = true;
-    scene.add(bridge3Deck);
-
-    // Road surface
-    const bridge3RoadGeom = new THREE.BoxGeometry(bridge3Length - 10, 0.5, bridge3Width - 8);
-    const bridge3Road = new THREE.Mesh(bridge3RoadGeom, bridgeRoadMat);
-    bridge3Road.position.set(0, bridge3Height + 3.2, bridge3Z);
-    scene.add(bridge3Road);
-
-    // Center line
-    const bridge3LineGeom = new THREE.BoxGeometry(bridge3Length - 20, 0.6, 1.5);
-    const bridge3Line = new THREE.Mesh(bridge3LineGeom, bridgeLineMat);
-    bridge3Line.position.set(0, bridge3Height + 3.5, bridge3Z);
-    scene.add(bridge3Line);
-
-    // Support pillars
-    const bridge3PillarGeom = new THREE.CylinderGeometry(4, 5, bridge3Height + 6, 8);
-    [-120, -40, 40, 120].forEach(x => {
-      const pillar = new THREE.Mesh(bridge3PillarGeom, pillarMaterial);
-      pillar.position.set(x, (bridge3Height + 6) / 2 - 3, bridge3Z);
-      pillar.castShadow = true;
-      scene.add(pillar);
-    });
-
-    // Railings
-    const bridge3RailingGeom = new THREE.BoxGeometry(bridge3Length, 3, 1);
-    const bridge3RailingMat = new THREE.MeshStandardMaterial({ color: 0xffdd00 });
+    // East and west railings (run north-south)
+    const ewRailingGeom = new THREE.BoxGeometry(1, 3, wideBridgeDepth);
     [-1, 1].forEach(side => {
-      const railing = new THREE.Mesh(bridge3RailingGeom, bridge3RailingMat);
-      railing.position.set(0, bridge3Height + 4.5, bridge3Z + side * (bridge3Width / 2 - 2));
+      const railing = new THREE.Mesh(ewRailingGeom, wideRailingMat);
+      railing.position.set(side * (wideBridgeLength / 2 - 2), wideBridgeHeight + 4.5, wideBridgeCenterZ);
       scene.add(railing);
     });
 
-    // Approach ramps
-    const bridge3RampLength = 150;
-    const bridge3RampGeom = new THREE.BoxGeometry(bridge3RampLength, 4, bridge3Width);
+    // Approach ramps on east and west sides
+    const wideRampLength = 150;
+    const wideRampGeom = new THREE.BoxGeometry(wideRampLength, 4, wideBridgeDepth);
 
     // West ramp
-    const bridge3WestRamp = new THREE.Mesh(bridge3RampGeom, bridge3Material);
-    bridge3WestRamp.position.set(-bridge3Length / 2 - bridge3RampLength / 2 + 20, bridge3Height / 2, bridge3Z);
-    bridge3WestRamp.rotation.z = Math.atan2(bridge3Height, bridge3RampLength);
-    scene.add(bridge3WestRamp);
+    const wideWestRamp = new THREE.Mesh(wideRampGeom, wideBridgeMaterial);
+    wideWestRamp.position.set(-wideBridgeLength / 2 - wideRampLength / 2 + 20, wideBridgeHeight / 2, wideBridgeCenterZ);
+    wideWestRamp.rotation.z = Math.atan2(wideBridgeHeight, wideRampLength);
+    scene.add(wideWestRamp);
 
     // East ramp
-    const bridge3EastRamp = new THREE.Mesh(bridge3RampGeom, bridge3Material);
-    bridge3EastRamp.position.set(bridge3Length / 2 + bridge3RampLength / 2 - 20, bridge3Height / 2, bridge3Z);
-    bridge3EastRamp.rotation.z = -Math.atan2(bridge3Height, bridge3RampLength);
-    scene.add(bridge3EastRamp);
+    const wideEastRamp = new THREE.Mesh(wideRampGeom, wideBridgeMaterial);
+    wideEastRamp.position.set(wideBridgeLength / 2 + wideRampLength / 2 - 20, wideBridgeHeight / 2, wideBridgeCenterZ);
+    wideEastRamp.rotation.z = -Math.atan2(wideBridgeHeight, wideRampLength);
+    scene.add(wideEastRamp);
 
-    console.log('Bay entrance bridge created at z=160');
+    console.log('Wide channel bridge created');
 
     createRoads(scene);
     createBuildings(scene);
@@ -1715,17 +1665,13 @@ const SimulatorGame = ({ onClose, onExit }) => {
     // Check if on bay bridge (bridge is at z=-200, x from -475 to 475, width 45)
     const onBayBridge = Math.abs(physics.position.z - (-200)) < 25 && Math.abs(physics.position.x) < 500;
 
-    // Check if on channel bridge (east-west bridge at z=400, spanning x from -175 to 175)
-    const channelBridgeZ = 400;
-    const channelBridgeLength = 350;
-    const channelBridgeWidth = 50;
-    const onChannelBridge = Math.abs(physics.position.x) < (channelBridgeLength / 2 + 80) &&
-                            Math.abs(physics.position.z - channelBridgeZ) < channelBridgeWidth / 2;
-
-    // Check if on bay entrance bridge (east-west bridge at z=160)
-    const bayEntranceBridgeZ = 160;
-    const onBayEntranceBridge = Math.abs(physics.position.x) < (channelBridgeLength / 2 + 80) &&
-                                 Math.abs(physics.position.z - bayEntranceBridgeZ) < channelBridgeWidth / 2;
+    // Check if on wide channel bridge (spans z=140 to z=420, centered at z=280)
+    const wideBridgeCenterZ = 280;
+    const wideBridgeLength = 350;
+    const wideBridgeDepth = 280;
+    const onWideBridge = Math.abs(physics.position.x) < (wideBridgeLength / 2 + 80) &&
+                         physics.position.z > (wideBridgeCenterZ - wideBridgeDepth / 2 - 20) &&
+                         physics.position.z < (wideBridgeCenterZ + wideBridgeDepth / 2 + 20);
 
     // Check if in channel (connects bay to ocean) - stops before beach at z=650
     const channelWidth = 180;
@@ -1739,19 +1685,11 @@ const SimulatorGame = ({ onClose, onExit }) => {
         physics.position.y = bridgeY;
       }
     }
-    // Handle channel bridge height
-    else if (onChannelBridge && !physics.isAirborne) {
-      // Channel bridge deck is at y=15 (channelBridgeHeight2=12 + deck/2 + road surface)
-      const channelBridgeY = 15;
-      if (physics.position.y < channelBridgeY) {
-        physics.position.y = channelBridgeY;
-      }
-    }
-    // Handle bay entrance bridge height
-    else if (onBayEntranceBridge && !physics.isAirborne) {
-      const bayEntranceBridgeY = 15;
-      if (physics.position.y < bayEntranceBridgeY) {
-        physics.position.y = bayEntranceBridgeY;
+    // Handle wide channel bridge height
+    else if (onWideBridge && !physics.isAirborne) {
+      const wideBridgeY = 15;
+      if (physics.position.y < wideBridgeY) {
+        physics.position.y = wideBridgeY;
       }
     }
     else if (inBay && !onBayBridge) {
@@ -1760,8 +1698,8 @@ const SimulatorGame = ({ onClose, onExit }) => {
       physics.position.x = bayX + Math.cos(angle) * (bayRadiusX + 10);
       physics.position.z = bayZ + Math.sin(angle) * (bayRadiusZ + 10);
       physics.speed *= 0.3; // Slow down significantly
-    } else if (inChannel && !onChannelBridge && !onBayEntranceBridge && !physics.isAirborne) {
-      // Push car out of channel to nearest bank (unless on a bridge)
+    } else if (inChannel && !onWideBridge && !physics.isAirborne) {
+      // Push car out of channel to nearest bank (unless on bridge)
       if (physics.position.x >= 0) {
         physics.position.x = channelWidth / 2 + 10;
       } else {
