@@ -1629,9 +1629,9 @@ const SimulatorGame = ({ onClose, onExit }) => {
     physics.position.x += direction.x * physics.speed * 0.016;
     physics.position.z += direction.z * physics.speed * 0.016;
 
-    // Map boundaries - stop at ocean (z > 600) and city edges
+    // Map boundaries - allow beach driving, stop at shallow water
     const mapBoundary = 2400; // Reduced playable area
-    const oceanBoundary = 600; // Stop before deep ocean
+    const oceanBoundary = 780; // Allow beach (z=700), stop at shallow water edge
 
     // Tampa Bay check - ellipse centered at (0, -200)
     const bayX = 0, bayZ = -200;
