@@ -821,11 +821,11 @@ const SimulatorGame = ({ onClose, onExit }) => {
   const createPalmTree = (scene, x, z, scale) => {
     if (!THREE) return;
 
-    // Initialize shared resources once - DOUBLED HEIGHT
+    // Initialize shared resources once - 20% TALLER
     if (!palmTreeGeomRef.current) {
       palmTreeGeomRef.current = {
-        trunk: new THREE.CylinderGeometry(0.4, 0.6, 30, 4), // Low poly trunk - doubled from 15 to 30
-        frond: new THREE.ConeGeometry(2, 18, 3), // Larger fronds - scaled up
+        trunk: new THREE.CylinderGeometry(0.4, 0.6, 36, 4), // 20% taller trunk (30 * 1.2 = 36)
+        frond: new THREE.ConeGeometry(2.4, 22, 3), // 20% larger fronds
       };
       palmTreeMatsRef.current = {
         trunk: new THREE.MeshBasicMaterial({ color: 0x8b7355 }),
@@ -836,21 +836,21 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const geoms = palmTreeGeomRef.current;
     const mats = palmTreeMatsRef.current;
 
-    // Trunk - doubled height
+    // Trunk - 20% taller
     const trunk = new THREE.Mesh(geoms.trunk, mats.trunk);
-    trunk.position.set(x, 15 * scale, z); // Doubled from 7.5 to 15
+    trunk.position.set(x, 18 * scale, z); // 20% taller (15 * 1.2 = 18)
     trunk.scale.set(scale, scale, scale);
     scene.add(trunk);
 
-    // Simplified fronds - only 4 instead of 8, positioned at top of taller trunk
+    // Simplified fronds - only 4 instead of 8, positioned at top of 20% taller trunk
     const numFronds = 4;
     for (let i = 0; i < numFronds; i++) {
       const frond = new THREE.Mesh(geoms.frond, mats.leaf);
       const angle = (i / numFronds) * Math.PI * 2;
       frond.position.set(
-        x + Math.cos(angle) * 4 * scale,
-        30 * scale, // Doubled from 15 to 30
-        z + Math.sin(angle) * 4 * scale
+        x + Math.cos(angle) * 4.8 * scale, // 20% wider spread
+        36 * scale, // 20% taller (30 * 1.2 = 36)
+        z + Math.sin(angle) * 4.8 * scale
       );
       frond.rotation.x = Math.PI / 2 + 0.5;
       frond.rotation.z = angle;
@@ -1154,14 +1154,14 @@ const SimulatorGame = ({ onClose, onExit }) => {
       roadPositions.push(i);
     }
 
-    // PALM TREES - REDUCED count for performance
-    // Beach palm trees - every 80 units instead of 40
-    for (let x = -2400; x <= 2400; x += 80) {
+    // PALM TREES - 50% REDUCED count
+    // Beach palm trees - every 160 units (was 80)
+    for (let x = -2400; x <= 2400; x += 160) {
       createPalmTree(scene, x + (Math.random() - 0.5) * 10, 660 + (Math.random() - 0.5) * 20, scale);
     }
 
-    // Second row of beach palms - every 120 units instead of 60
-    for (let x = -2400; x <= 2400; x += 120) {
+    // Second row of beach palms - every 240 units (was 120)
+    for (let x = -2400; x <= 2400; x += 240) {
       createPalmTree(scene, x + (Math.random() - 0.5) * 15, 590 + (Math.random() - 0.5) * 15, scale);
     }
 
@@ -1180,8 +1180,8 @@ const SimulatorGame = ({ onClose, onExit }) => {
       return Math.abs(x) < channelWidth / 2 && z > 80 && z < 720;
     };
 
-    // Palm trees scattered in city - REDUCED from 400 to 100
-    for (let i = 0; i < 100; i++) {
+    // Palm trees scattered in city - 50% reduced (100 to 50)
+    for (let i = 0; i < 50; i++) {
       const x = (Math.random() - 0.5) * 4000;
       const z = (Math.random() - 0.5) * 2800 - 100;
 
