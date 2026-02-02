@@ -473,3 +473,61 @@ class DailyBonus(models.Model):
     coins_earned = models.IntegerField()
     gems_earned = models.IntegerField(default=0)
     claimed_at = models.DateTimeField(auto_now_add=True)
+
+
+class Plant(models.Model):
+    """Plants in Tanvi's Garden - grow over real time"""
+    PLANT_TYPES = [
+        ('sunflower', 'Sunflower'),
+        ('tomato', 'Tomato'),
+        ('carrot', 'Carrot'),
+        ('pumpkin', 'Pumpkin'),
+        ('rainbow_flower', 'Rainbow Flower'),
+    ]
+
+    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='plants')
+    plot_index = models.IntegerField()  # 0-8 for 9 plots
+    plant_type = models.CharField(max_length=20, choices=PLANT_TYPES)
+    planted_at = models.DateTimeField(auto_now_add=True)
+    last_watered = models.DateTimeField(auto_now_add=True)
+    water_count = models.IntegerField(default=0)
+
+    class Meta:
+        unique_together = ['player', 'plot_index']
+
+    def __str__(self):
+        return f"{self.plant_type} in plot {self.plot_index} for {self.player.name}"
+
+    # Plant data: grow_time (seconds), cost (coins), reward (coins), emoji
+    PLANT_DATA = {
+        'sunflower': {'grow_time': 120, 'cost': 5, 'reward': 15, 'emoji': '🌻'},
+        'tomato': {'grow_time': 300, 'cost': 15, 'reward': 40, 'emoji': '🍅'},
+        'carrot': {'grow_time': 600, 'cost': 30, 'reward': 80, 'emoji': '🥕'},
+        'pumpkin': {'grow_time': 1800, 'cost': 80, 'reward': 200, 'emoji': '🎃'},
+        'rainbow_flower': {'grow_time': 3600, 'cost': 200, 'reward': 500, 'emoji': '🌈'},
+    }
+
+    def get_growth_percent(self):
+        """Calculate growth percentage based on time elapsed and watering"""
+        from django.utils import timezone
+        data = self.PLANT_DATA.get(self.plant_type, {})
+        base_time = data.get('grow_time', 120)
+        # Each watering reduces remaining time by 10%
+        effective_time = base_time * (0.9 ** self.water_count)
+        elapsed = (timezone.now() - self.planted_at).total_seconds()
+        return min(100, (elapsed / effective_time) * 100)
+
+    def is_ready_to_harvest(self):
+        """Check if plant is fully grown"""
+        return self.get_growth_percent() >= 100
+
+    def get_reward(self):
+        """Get coin reward for harvesting"""
+        data = self.PLANT_DATA.get(self.plant_type, {})
+        return data.get('reward', 10)
+
+    @classmethod
+    def get_cost(cls, plant_type):
+        """Get coin cost to plant a seed"""
+        data = cls.PLANT_DATA.get(plant_type, {})
+        return data.get('cost', 5)

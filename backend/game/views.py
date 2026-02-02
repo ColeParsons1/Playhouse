@@ -21,7 +21,7 @@ stripe.api_key = os.environ.get('STRIPE_SECRET_KEY', '')
 from .models import (
     Player, GameSession, BingoCard, Reward, PlayerReward, DailyBonus,
     Avatar, AvatarItem, PlayerAvatarItem, VoiceRoom, RoomParticipant,
-    RoomGame, ChatMessage, ShopItem, PlayerShopItem, Follow
+    RoomGame, ChatMessage, ShopItem, PlayerShopItem, Follow, Plant
 )
 from .serializers import (
     PlayerSerializer, GameSessionSerializer, BingoCardSerializer,
@@ -29,7 +29,8 @@ from .serializers import (
     AvatarSerializer, AvatarItemSerializer, PlayerAvatarItemSerializer,
     PlayerWithAvatarSerializer, VoiceRoomSerializer, VoiceRoomListSerializer,
     RoomParticipantSerializer, RoomGameSerializer, ChatMessageSerializer,
-    ShopItemSerializer, PlayerShopItemSerializer, FollowSerializer, UserListSerializer
+    ShopItemSerializer, PlayerShopItemSerializer, FollowSerializer, UserListSerializer,
+    PlantSerializer
 )
 
 
@@ -1416,3 +1417,169 @@ def format_yt_duration(seconds):
         return f'{mins}:{secs:02d}'
     except (ValueError, TypeError):
         return ''
+
+
+class GardenViewSet(viewsets.ViewSet):
+    """API for Tanvi's Garden game - plant, water, and harvest!"""
+
+    def list(self, request):
+        """Get player's garden state (all 9 plots)."""
+        player_id = request.query_params.get('player_id')
+
+        if not player_id:
+            return Response({'error': 'player_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            player = Player.objects.get(id=player_id)
+        except Player.DoesNotExist:
+            return Response({'error': 'Player not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Get all plants for this player
+        plants = Plant.objects.filter(player=player)
+        plants_data = PlantSerializer(plants, many=True).data
+
+        # Build garden state (9 plots)
+        garden = [None] * 9
+        for plant in plants_data:
+            plot_idx = plant['plot_index']
+            if 0 <= plot_idx < 9:
+                garden[plot_idx] = plant
+
+        # Include plant costs for seed selection
+        plant_info = {
+            plant_type: {
+                'cost': data['cost'],
+                'reward': data['reward'],
+                'grow_time': data['grow_time'],
+                'emoji': data['emoji'],
+            }
+            for plant_type, data in Plant.PLANT_DATA.items()
+        }
+
+        return Response({
+            'garden': garden,
+            'plant_info': plant_info,
+            'coins': player.coins,
+        })
+
+    @action(detail=False, methods=['post'])
+    def plant(self, request):
+        """Plant a seed in a plot."""
+        player_id = request.data.get('player_id')
+        plot_index = request.data.get('plot_index')
+        plant_type = request.data.get('plant_type')
+
+        if not all([player_id, plot_index is not None, plant_type]):
+            return Response({'error': 'player_id, plot_index, and plant_type required'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            player = Player.objects.get(id=player_id)
+        except Player.DoesNotExist:
+            return Response({'error': 'Player not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Validate plot index
+        if not (0 <= plot_index < 9):
+            return Response({'error': 'Invalid plot index'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate plant type
+        if plant_type not in Plant.PLANT_DATA:
+            return Response({'error': 'Invalid plant type'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if plot is already occupied
+        if Plant.objects.filter(player=player, plot_index=plot_index).exists():
+            return Response({'error': 'Plot already has a plant!'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if player has enough coins
+        cost = Plant.get_cost(plant_type)
+        if player.coins < cost:
+            return Response({'error': 'Not enough coins!'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Deduct coins and create plant
+        player.coins -= cost
+        player.save()
+
+        plant = Plant.objects.create(
+            player=player,
+            plot_index=plot_index,
+            plant_type=plant_type
+        )
+
+        return Response({
+            'success': True,
+            'plant': PlantSerializer(plant).data,
+            'coins': player.coins,
+        })
+
+    @action(detail=False, methods=['post'])
+    def water(self, request):
+        """Water a plant to speed up growth."""
+        player_id = request.data.get('player_id')
+        plant_id = request.data.get('plant_id')
+
+        if not all([player_id, plant_id]):
+            return Response({'error': 'player_id and plant_id required'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            player = Player.objects.get(id=player_id)
+            plant = Plant.objects.get(id=plant_id, player=player)
+        except Player.DoesNotExist:
+            return Response({'error': 'Player not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Plant.DoesNotExist:
+            return Response({'error': 'Plant not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if already fully grown
+        if plant.is_ready_to_harvest():
+            return Response({'error': 'Plant is already ready to harvest!'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Update watering
+        plant.water_count += 1
+        plant.last_watered = timezone.now()
+        plant.save()
+
+        return Response({
+            'success': True,
+            'plant': PlantSerializer(plant).data,
+        })
+
+    @action(detail=False, methods=['post'])
+    def harvest(self, request):
+        """Harvest a mature plant for coins."""
+        player_id = request.data.get('player_id')
+        plant_id = request.data.get('plant_id')
+
+        if not all([player_id, plant_id]):
+            return Response({'error': 'player_id and plant_id required'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            player = Player.objects.get(id=player_id)
+            plant = Plant.objects.get(id=plant_id, player=player)
+        except Player.DoesNotExist:
+            return Response({'error': 'Player not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Plant.DoesNotExist:
+            return Response({'error': 'Plant not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if ready to harvest
+        if not plant.is_ready_to_harvest():
+            return Response({
+                'error': 'Plant is not ready yet!',
+                'growth_percent': plant.get_growth_percent()
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get reward and delete plant
+        reward = plant.get_reward()
+        plot_index = plant.plot_index
+        plant.delete()
+
+        # Add coins to player
+        player.coins += reward
+        player.save()
+
+        return Response({
+            'success': True,
+            'reward': reward,
+            'plot_index': plot_index,
+            'coins': player.coins,
+        })

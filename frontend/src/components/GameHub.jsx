@@ -30,6 +30,7 @@ const CornholeGame = lazy(() => import('./CornholeGame'));
 const DriveGame = lazy(() => import('./SimulatorGame'));
 const FlyGame = lazy(() => import('./FlyGame'));
 const DuelGame = lazy(() => import('./DuelGame'));
+const GardenGame = lazy(() => import('./GardenGame'));
 
 // McDonald's PlayPlace color palette - vibrant & saturated
 const PLAYPLACE_COLORS = {
@@ -211,6 +212,13 @@ const GAMES = [
     description: '1v1 toy showdown!',
     color: '#FF6B00',
   },
+  {
+    id: 'garden',
+    name: 'Garden',
+    emoji: '🌻',
+    description: 'Plant, water, harvest!',
+    color: '#00A94F',
+  },
 ];
 
 // Loading fallback component
@@ -347,6 +355,7 @@ const GameHub = ({ player, onPlayerUpdate }) => {
       drive: DriveGame,
       fly: FlyGame,
       duel: DuelGame,
+      garden: GardenGame,
     }[activeGame];
 
     if (!GameComponent) return null;

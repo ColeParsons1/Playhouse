@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Player, GameSession, BingoCard, Reward, PlayerReward, DailyBonus,
     Avatar, AvatarItem, PlayerAvatarItem, VoiceRoom, RoomParticipant,
-    RoomGame, ChatMessage, ShopItem, PlayerShopItem, Follow
+    RoomGame, ChatMessage, ShopItem, PlayerShopItem, Follow, Plant
 )
 
 
@@ -193,3 +193,32 @@ class UserListSerializer(serializers.ModelSerializer):
         if not request_player_id:
             return False
         return Follow.objects.filter(follower_id=request_player_id, following=obj).exists()
+
+
+class PlantSerializer(serializers.ModelSerializer):
+    """Serializer for garden plants with computed growth data"""
+    growth_percent = serializers.SerializerMethodField()
+    is_ready = serializers.SerializerMethodField()
+    reward = serializers.SerializerMethodField()
+    emoji = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Plant
+        fields = [
+            'id', 'player', 'plot_index', 'plant_type', 'planted_at',
+            'last_watered', 'water_count', 'growth_percent', 'is_ready',
+            'reward', 'emoji'
+        ]
+
+    def get_growth_percent(self, obj):
+        return round(obj.get_growth_percent(), 1)
+
+    def get_is_ready(self, obj):
+        return obj.is_ready_to_harvest()
+
+    def get_reward(self, obj):
+        return obj.get_reward()
+
+    def get_emoji(self, obj):
+        data = Plant.PLANT_DATA.get(obj.plant_type, {})
+        return data.get('emoji', '🌱')

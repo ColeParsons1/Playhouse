@@ -169,4 +169,14 @@ export const rewardApi = {
     }),
 };
 
+export const gardenApi = {
+  getGarden: (playerId) => client.get(`/garden/?player_id=${playerId}`),
+  plant: (playerId, plotIndex, plantType) =>
+    client.post('/garden/plant/', { player_id: playerId, plot_index: plotIndex, plant_type: plantType }),
+  water: (playerId, plantId) =>
+    client.post('/garden/water/', { player_id: playerId, plant_id: plantId }),
+  harvest: (playerId, plantId) =>
+    client.post('/garden/harvest/', { player_id: playerId, plant_id: plantId }),
+};
+
 export default client;

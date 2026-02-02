@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     PlayerViewSet, GameSessionViewSet, RewardViewSet, PlayerRewardViewSet,
     AvatarViewSet, AvatarItemViewSet, VoiceRoomViewSet, ShopItemViewSet,
-    create_payment_intent, confirm_payment, youtube_search, youtube_suggestions
+    GardenViewSet, create_payment_intent, confirm_payment, youtube_search, youtube_suggestions
 )
 
 router = DefaultRouter()
@@ -15,6 +15,7 @@ router.register(r'avatars', AvatarViewSet)
 router.register(r'avatar-items', AvatarItemViewSet)
 router.register(r'rooms', VoiceRoomViewSet)
 router.register(r'shop-items', ShopItemViewSet)
+router.register(r'garden', GardenViewSet, basename='garden')
 
 urlpatterns = [
     path('', include(router.urls)),
