@@ -37,7 +37,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 10;
+    const citySize = 6; // Reduced from 10 for performance
 
     // 4K QUALITY MATERIALS - Realistic PBR materials
     // Realistic asphalt - darker gray with roughness
@@ -238,7 +238,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 10;
+    const citySize = 6; // Reduced from 10 for performance
 
     // 4K QUALITY building materials - PBR with proper roughness/metalness
     const buildingColors = [
@@ -489,7 +489,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 10;
+    const citySize = 6; // Reduced from 10 for performance
 
     const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.7, metalness: 0.8 });
     const lampColors = [0xff00ff, 0x00ffff, 0xff1493];
@@ -539,7 +539,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 10;
+    const citySize = 6; // Reduced from 10 for performance
 
     const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7, metalness: 0.8 });
     const boxMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8, metalness: 0.5 });
@@ -578,7 +578,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 10;
+    const citySize = 6; // Reduced from 10 for performance
 
     // Vice City 80s car colors - white, red, teal, pink, gold
     const carColors = [0xffffff, 0xf5f5f5, 0xff0044, 0x00cccc, 0xff69b4, 0xffd700, 0x8b0000, 0x00ced1, 0xff1493, 0xc0c0c0];
@@ -744,7 +744,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     if (!THREE) return;
 
     const scale = 2;
-    const citySize = 10;
+    const citySize = 6; // Reduced from 10 for performance
     const groundSize = 2500 * citySize;
 
     // Main ground - use BasicMaterial (no lighting calculations)
@@ -796,7 +796,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     createBuildings(scene);
     createStreetLights(scene);
     createTrafficLights(scene);
-    createTrafficCars(scene);
+    // createTrafficCars(scene); // Disabled for performance
 
     const roadPositions = [];
     for (let i = -200 * scale * citySize; i <= 200 * scale * citySize; i += 80 * scale) {
@@ -1310,6 +1310,18 @@ const SimulatorGame = ({ onClose, onExit }) => {
     physics.position.x += direction.x * physics.speed * 0.016;
     physics.position.z += direction.z * physics.speed * 0.016;
 
+    // Map boundaries - stop at ocean (z > 600) and city edges
+    const mapBoundary = 2400; // Reduced playable area
+    const oceanBoundary = 600; // Stop before deep ocean
+
+    if (physics.position.z > oceanBoundary) {
+      physics.position.z = oceanBoundary;
+      physics.speed *= 0.5; // Slow down at boundary
+    }
+    if (physics.position.x > mapBoundary) physics.position.x = mapBoundary;
+    if (physics.position.x < -mapBoundary) physics.position.x = -mapBoundary;
+    if (physics.position.z < -mapBoundary) physics.position.z = -mapBoundary;
+
     // Update car mesh position and rotation
     carRef.current.position.copy(physics.position);
     carRef.current.rotation.y = physics.rotation;
@@ -1349,9 +1361,8 @@ const SimulatorGame = ({ onClose, onExit }) => {
 
     const targetPosition = physics.position.clone().add(cameraOffset);
 
-    // Use faster lerp for more responsive camera that stays close to car
-    // Higher value = camera follows more closely
-    camera.position.lerp(targetPosition, 0.15);
+    // Lock camera tightly to car - no lag at high speeds
+    camera.position.copy(targetPosition);
 
     const lookAtPosition = physics.position.clone();
     lookAtPosition.y += 2;
@@ -1375,8 +1386,8 @@ const SimulatorGame = ({ onClose, onExit }) => {
           velocity: new THREE.Vector3(),
           angularVelocity: 0,
           speed: 0,
-          maxSpeed: 180,
-          acceleration: 0.25,
+          maxSpeed: 360, // Doubled from 180
+          acceleration: 0.5, // Doubled for faster acceleration
           braking: 0.45,
           friction: 0.03,
           turnSpeed: 0.025,
@@ -1410,13 +1421,13 @@ const SimulatorGame = ({ onClose, onExit }) => {
           preserveDrawingBuffer: false,
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3)); // Up to 3x for 4K displays
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap at 2x for performance
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadows
+        renderer.shadowMap.type = THREE.PCFShadowMap; // Faster shadows
         renderer.toneMapping = THREE.ACESFilmicToneMapping; // Cinematic tone mapping
         renderer.toneMappingExposure = 1.2;
         renderer.outputColorSpace = THREE.SRGBColorSpace;
-        renderer.sortObjects = true;
+        renderer.sortObjects = false; // Disable sorting for performance
         containerRef.current.appendChild(renderer.domElement);
         rendererRef.current = renderer;
 
@@ -1433,8 +1444,8 @@ const SimulatorGame = ({ onClose, onExit }) => {
         const mainLight = new THREE.DirectionalLight(0xffeedd, 0.8);
         mainLight.position.set(50, 100, 50);
         mainLight.castShadow = true;
-        mainLight.shadow.mapSize.width = 2048;
-        mainLight.shadow.mapSize.height = 2048;
+        mainLight.shadow.mapSize.width = 1024;
+        mainLight.shadow.mapSize.height = 1024;
         mainLight.shadow.camera.near = 1;
         mainLight.shadow.camera.far = 500;
         mainLight.shadow.camera.left = -100;
@@ -1593,17 +1604,6 @@ const SimulatorGame = ({ onClose, onExit }) => {
       {!isLoading && (
         <div className="simulator-hud">
           <button className="exit-btn" onClick={handleExit}>✕</button>
-
-          <div className="speedometer">
-            <div className="speed-value">{speed}</div>
-            <div className="speed-unit">KM/H</div>
-            <div className="gear-indicator">{gear}</div>
-          </div>
-
-          <div className="rpm-gauge">
-            <div className="rpm-bar" style={{ width: `${(rpm / 8000) * 100}%` }} />
-            <div className="rpm-value">{Math.round(rpm)}</div>
-          </div>
 
           {/* Altitude indicator - shows when flying */}
           {isFlying && (
