@@ -932,16 +932,17 @@ const FlyGame = ({ onExit }) => {
         scene.fog = new T.Fog(0x000011, 500, 12000); // Dark fog, shorter distance for arena
         sceneRef.current = scene;
 
-        // Camera - initialize near the plane's starting position
+        // Camera - initialize behind the drone (drone starts at 0, 400, 5000, facing -Z towards center)
         const camera = new T.PerspectiveCamera(
           70,
           window.innerWidth / window.innerHeight,
           0.1,
           60000
         );
-        // Set initial camera position behind the plane (plane starts at 3000, 500, -1000)
-        camera.position.set(3000, 530, -1080);
-        camera.lookAt(3000, 500, -1000);
+        // Drone is at (0, 400, 5000) facing towards center (yaw = Math.PI means facing -Z)
+        // Camera should be behind it (higher Z value)
+        camera.position.set(0, 500, 5500);
+        camera.lookAt(0, 400, 5000);
         cameraRef.current = camera;
 
         // Renderer
@@ -1051,9 +1052,9 @@ const FlyGame = ({ onExit }) => {
             const planeObj = planeRef.current;
             const physics = physicsRef.current;
 
-            // Calculate camera position behind and above plane
-            const cameraDistance = 80;
-            const cameraHeight = 30;
+            // Calculate camera position behind and above plane (drone is scaled 5x, so need more distance)
+            const cameraDistance = 300;
+            const cameraHeight = 100;
 
             const camX = planeObj.position.x - Math.sin(physics.yaw) * cameraDistance;
             const camY = planeObj.position.y + cameraHeight;
