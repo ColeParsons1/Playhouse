@@ -189,11 +189,30 @@ class VoiceRoom(models.Model):
         ('carrom', 'Carrom'),
     ]
 
+    THEME_CHOICES = [
+        ('default', 'Default'),
+        ('sunset', 'Sunset'),
+        ('ocean', 'Ocean'),
+        ('forest', 'Forest'),
+        ('midnight', 'Midnight'),
+        ('cherry', 'Cherry Blossom'),
+        ('neon', 'Neon'),
+        ('galaxy', 'Galaxy'),
+        ('fire', 'Fire'),
+        ('ice', 'Ice'),
+        ('theater', 'Theater'),
+        ('anime_theater', 'Anime Theater'),
+        ('fantasy', 'Fantasy Castle'),
+        ('underwater', 'Under the Sea'),
+        ('hearts', 'Heart Clouds'),
+    ]
+
     room_id = models.CharField(max_length=20, unique=True, default=uuid.uuid4)
     name = models.CharField(max_length=100)
     host = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='hosted_rooms')
     room_type = models.CharField(max_length=20, choices=ROOM_TYPE_CHOICES, default='music')
     game_mode = models.CharField(max_length=30, choices=GAME_MODE_CHOICES, default='bingo_normal')
+    theme = models.CharField(max_length=20, choices=THEME_CHOICES, default='default')
 
     # Room settings
     entry_fee = models.IntegerField(default=200)  # Coins to join a game

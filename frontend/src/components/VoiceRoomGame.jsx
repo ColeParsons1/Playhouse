@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import YouTubeMusicPlayer from './YouTubeMusicPlayer';
 import './VoiceRoomGame.css';
 
 // WebRTC configuration with our own TURN server for reliable cross-network connectivity
@@ -79,7 +80,10 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   const [newMessage, setNewMessage] = useState('');
   const [showChat, setShowChat] = useState(false);
   const [countdown, setCountdown] = useState(null);
-  const [prizePool] = useState(room?.first_prize || 2500);
+  const [prizePool] = useState(room?.first_prize || 500); // Reduced from 2500
+  const [packDropActive, setPackDropActive] = useState(false);
+  const [packs, setPacks] = useState([]);
+  const [packCoinsEarned, setPackCoinsEarned] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [purchasedCards, setPurchasedCards] = useState(1);
   const [showBuyCards, setShowBuyCards] = useState(false);
@@ -100,6 +104,35 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   const chatRef = useRef(null);
   const autoCallRef = useRef(null);
   const countdownRef = useRef(null);
+  const packDropRef = useRef(null); // For pack drop animation
+  const musicPlayerRef = useRef(null); // For YouTube music player
+
+  // Music player state
+  const [musicMinimized, setMusicMinimized] = useState(true);
+  const [showMusicPanel, setShowMusicPanel] = useState(false);
+
+  // Theme state
+  const [roomTheme, setRoomTheme] = useState(room?.theme || 'default');
+  const [showThemeSelector, setShowThemeSelector] = useState(false);
+
+  // Available themes
+  const themes = [
+    { id: 'default', name: 'Default' },
+    { id: 'sunset', name: 'Sunset' },
+    { id: 'ocean', name: 'Ocean' },
+    { id: 'forest', name: 'Forest' },
+    { id: 'midnight', name: 'Midnight' },
+    { id: 'cherry', name: 'Cherry Blossom' },
+    { id: 'neon', name: 'Neon' },
+    { id: 'galaxy', name: 'Galaxy' },
+    { id: 'fire', name: 'Fire' },
+    { id: 'ice', name: 'Ice' },
+    { id: 'theater', name: 'Theater' },
+    { id: 'anime_theater', name: 'Anime Theater' },
+    { id: 'fantasy', name: 'Fantasy Castle' },
+    { id: 'underwater', name: 'Under the Sea' },
+    { id: 'hearts', name: 'Heart Clouds' },
+  ];
 
   // WebRTC refs
   const localStreamRef = useRef(null);
@@ -118,6 +151,40 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     setBingoCards([generateBingoCard()]);
     setMarkedNumbersByCard([new Set(['FREE'])]);
   }, []);
+
+  // Speech synthesis state
+  const [speechReady, setSpeechReady] = useState(false);
+  const voicesLoadedRef = useRef(false);
+
+  // Preload speech synthesis voices (they load asynchronously in some browsers)
+  useEffect(() => {
+    if (window.speechSynthesis) {
+      // Load voices
+      const loadVoices = () => {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          voicesLoadedRef.current = true;
+          console.log('Speech voices loaded:', voices.length);
+        }
+      };
+
+      loadVoices();
+      // Some browsers need this event listener
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  }, []);
+
+  // Initialize speech on user interaction (required for iOS/Safari)
+  const initializeSpeech = useCallback(() => {
+    if (speechReady || !window.speechSynthesis) return;
+
+    // Speak a silent utterance to unlock audio on iOS
+    const utterance = new SpeechSynthesisUtterance('');
+    utterance.volume = 0;
+    window.speechSynthesis.speak(utterance);
+    setSpeechReady(true);
+    console.log('Speech synthesis initialized');
+  }, [speechReady]);
 
   // WebSocket connection
   useEffect(() => {
@@ -236,6 +303,19 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
       case 'number_called':
         setCurrentNumber(data.number);
         setCalledNumbers(data.called_numbers || []);
+        // Announce the number for non-host players receiving via WebSocket
+        if (data.number && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+          const letter = data.number <= 15 ? 'B' : data.number <= 30 ? 'I' : data.number <= 45 ? 'N' : data.number <= 60 ? 'G' : 'O';
+          const utterance = new SpeechSynthesisUtterance(`${letter} ${data.number}`);
+          utterance.rate = 0.9;
+          utterance.pitch = 1.0;
+          utterance.volume = 1.0;
+          const voices = window.speechSynthesis.getVoices();
+          const preferredVoice = voices.find(v => v.lang.startsWith('en')) || voices[0];
+          if (preferredVoice) utterance.voice = preferredVoice;
+          window.speechSynthesis.speak(utterance);
+        }
         break;
 
       case 'progress_update':
@@ -289,6 +369,43 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
         if (data.from_player && handleWebRTCIceCandidateRef.current) {
           handleWebRTCIceCandidateRef.current(data.from_player, data.candidate);
         }
+        break;
+
+      // Music sync messages
+      case 'music_sync':
+        if (musicPlayerRef.current && data.action) {
+          musicPlayerRef.current.handleSyncMessage(data);
+        }
+        break;
+
+      // Theme change
+      case 'theme_change':
+        if (data.theme) {
+          setRoomTheme(data.theme);
+        }
+        break;
+
+      // Pack Drop feature
+      case 'pack_drop':
+        // Pause bingo calling
+        if (autoCallRef.current) {
+          clearInterval(autoCallRef.current);
+        }
+        // Start pack drop with received packs
+        setPacks(data.packs || []);
+        setPackDropActive(true);
+        setPackCoinsEarned(0);
+        setChat(prev => [...prev, {
+          id: Date.now(),
+          player: 'System',
+          message: '📦 PACK DROP! Tap the falling packs to earn coins!',
+          isSystem: true
+        }]);
+        // End after 15 seconds (extended from 8)
+        packDropRef.current = setTimeout(() => {
+          setPackDropActive(false);
+          setPacks([]);
+        }, 15000);
         break;
 
       default:
@@ -705,6 +822,9 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
   const handleStartGame = useCallback(() => {
     if (!isHost || gameState !== 'waiting') return;
 
+    // Initialize speech synthesis on user interaction (required for iOS)
+    initializeSpeech();
+
     setCountdown(10);
     setGameState('countdown');
 
@@ -722,23 +842,70 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
       message: '🎮 The host has started the game! Get ready!',
       isSystem: true
     }]);
-  }, [isHost, gameState]);
+  }, [isHost, gameState, initializeSpeech]);
 
-  // Countdown logic
-  useEffect(() => {
-    if (countdown === null || countdown < 0) return;
+  // Get letter for bingo number (defined before announceBingoNumber which uses it)
+  const getBingoLetter = (num) => {
+    if (num <= 15) return 'B';
+    if (num <= 30) return 'I';
+    if (num <= 45) return 'N';
+    if (num <= 60) return 'G';
+    return 'O';
+  };
 
-    if (countdown > 0) {
-      countdownRef.current = setTimeout(() => setCountdown(countdown - 1), 1000);
-      return () => clearTimeout(countdownRef.current);
-    } else if (countdown === 0) {
-      setGameState('playing');
-      setCountdown(null);
-      startCallingNumbers();
+  // Text-to-speech for bingo number announcements (defined before startCallingNumbers which uses it)
+  const announceBingoNumber = useCallback((number) => {
+    if (!window.speechSynthesis) {
+      console.log('Speech synthesis not available');
+      return;
     }
-  }, [countdown]);
 
-  // Start calling numbers
+    try {
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel();
+
+      const letter = getBingoLetter(number);
+      const announcement = `${letter}... ${number}`;
+
+      console.log('Announcing:', announcement);
+
+      const utterance = new SpeechSynthesisUtterance(announcement);
+      utterance.rate = 0.85; // Slightly slower for clarity
+      utterance.pitch = 1.1; // Slightly higher pitch for better audibility
+      utterance.volume = 1.0;
+
+      // Try to get a good voice (prefer English voices)
+      const voices = window.speechSynthesis.getVoices();
+      console.log('Available voices:', voices.length);
+
+      if (voices.length > 0) {
+        // Prefer female English voices for clarity
+        const preferredVoice = voices.find(voice =>
+          voice.lang.startsWith('en') && (voice.name.includes('Samantha') || voice.name.includes('Karen') || voice.name.includes('Female'))
+        ) || voices.find(voice =>
+          voice.lang.startsWith('en-US')
+        ) || voices.find(voice =>
+          voice.lang.startsWith('en')
+        ) || voices[0];
+
+        if (preferredVoice) {
+          utterance.voice = preferredVoice;
+          console.log('Using voice:', preferredVoice.name);
+        }
+      }
+
+      // Add event handlers for debugging
+      utterance.onstart = () => console.log('Speech started');
+      utterance.onend = () => console.log('Speech ended');
+      utterance.onerror = (e) => console.error('Speech error:', e);
+
+      window.speechSynthesis.speak(utterance);
+    } catch (error) {
+      console.error('Error in announceBingoNumber:', error);
+    }
+  }, []);
+
+  // Start calling numbers (uses announceBingoNumber, so must be defined after it)
   const startCallingNumbers = useCallback(() => {
     const allNumbers = Array.from({ length: 75 }, (_, i) => i + 1);
     let numbersToCall = [...allNumbers];
@@ -756,6 +923,9 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
 
       setCurrentNumber(newNumber);
       setCalledNumbers([...called]);
+
+      // Announce the number with voice
+      announceBingoNumber(newNumber);
 
       // Broadcast number called
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -781,7 +951,21 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     autoCallRef.current = setInterval(callNumber, 5000);
 
     return () => clearInterval(autoCallRef.current);
-  }, [gameState, player?.id]);
+  }, [gameState, player?.id, announceBingoNumber]);
+
+  // Countdown logic
+  useEffect(() => {
+    if (countdown === null || countdown < 0) return;
+
+    if (countdown > 0) {
+      countdownRef.current = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(countdownRef.current);
+    } else if (countdown === 0) {
+      setGameState('playing');
+      setCountdown(null);
+      startCallingNumbers();
+    }
+  }, [countdown, startCallingNumbers]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -791,17 +975,11 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     };
   }, []);
 
-  // Get letter for bingo number
-  const getBingoLetter = (num) => {
-    if (num <= 15) return 'B';
-    if (num <= 30) return 'I';
-    if (num <= 45) return 'N';
-    if (num <= 60) return 'G';
-    return 'O';
-  };
-
   // Handle marking a number on a specific card
   const handleMarkNumber = (cardIndex, number) => {
+    // Initialize speech on first tap (required for iOS)
+    initializeSpeech();
+
     if (number === 'FREE' || calledNumbers.includes(number)) {
       setMarkedNumbersByCard(prev => {
         const newMarkedNumbers = [...prev];
@@ -955,6 +1133,37 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     setNewMessage('');
   };
 
+  // Send music sync message via WebSocket
+  const sendMusicMessage = useCallback((message) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(message));
+    }
+  }, []);
+
+  // Change room theme (host only)
+  const changeTheme = useCallback((themeId) => {
+    if (!isHost) return;
+
+    setRoomTheme(themeId);
+    setShowThemeSelector(false);
+
+    // Broadcast to all players
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'theme_change',
+        theme: themeId
+      }));
+    }
+
+    // Update in backend
+    const API_BASE = import.meta.env.VITE_API_URL || 'https://tfplayhouse.com/api';
+    fetch(`${API_BASE}/voice-rooms/${room?.room_id}/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme: themeId })
+    }).catch(err => console.error('Failed to update theme:', err));
+  }, [isHost, room?.room_id]);
+
   // Handle mute toggle
   const handleMuteToggle = () => {
     const newMutedState = !isMuted;
@@ -987,8 +1196,126 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     }
   };
 
+  // ====== Pack Drop Feature ======
+  // Generate packs with variable speeds (some fall faster as a challenge)
+  const generatePacks = useCallback(() => {
+    const packCount = 60 + Math.floor(Math.random() * 20); // 60-80 packs for continuous stream
+    const newPacks = [];
+
+    for (let i = 0; i < packCount; i++) {
+      // 30% of packs fall faster (challenge packs)
+      const isFast = Math.random() < 0.3;
+      const isGolden = Math.random() < 0.1; // 10% golden packs worth more
+
+      newPacks.push({
+        id: i,
+        x: 5 + Math.random() * 90, // Random horizontal position (5-95%)
+        delay: Math.random() * 12000, // Staggered over 12 seconds (continuous stream throughout 15s)
+        speed: isFast ? 'fast' : 'normal', // Fast packs fall 2x speed
+        coins: isGolden ? (3 + Math.floor(Math.random() * 3)) : (1 + Math.floor(Math.random() * 2)), // Golden: 3-5, Normal: 1-2
+        isGolden,
+        caught: false,
+      });
+    }
+
+    return newPacks;
+  }, []);
+
+  // Host triggers pack drop
+  const handleDropPacks = useCallback(() => {
+    if (!isHost || packDropActive) return;
+
+    // Pause bingo number calling
+    if (autoCallRef.current) {
+      clearInterval(autoCallRef.current);
+    }
+
+    // Generate and start pack drop
+    const newPacks = generatePacks();
+    setPacks(newPacks);
+    setPackDropActive(true);
+    setPackCoinsEarned(0);
+
+    // Broadcast pack drop to all players
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'pack_drop',
+        packs: newPacks
+      }));
+    }
+
+    // Add system message
+    setChat(prev => [...prev, {
+      id: Date.now(),
+      player: 'System',
+      message: '📦 PACK DROP! Tap the falling packs to earn coins!',
+      isSystem: true
+    }]);
+
+    // End pack drop after 15 seconds (extended from 8)
+    packDropRef.current = setTimeout(() => {
+      endPackDrop();
+    }, 15000);
+  }, [isHost, packDropActive, generatePacks]);
+
+  // Handle tapping a pack
+  const handleCatchPack = useCallback((packId) => {
+    setPacks(prev => {
+      const pack = prev.find(p => p.id === packId);
+      if (!pack || pack.caught) return prev;
+
+      setPackCoinsEarned(coins => coins + pack.coins);
+
+      return prev.map(p =>
+        p.id === packId ? { ...p, caught: true } : p
+      );
+    });
+  }, []);
+
+  // End pack drop and resume bingo
+  const endPackDrop = useCallback(() => {
+    setPackDropActive(false);
+    setPacks([]);
+
+    // Show earned coins
+    if (packCoinsEarned > 0) {
+      setChat(prev => [...prev, {
+        id: Date.now(),
+        player: 'System',
+        message: `🪙 You earned ${packCoinsEarned} coins from the pack drop!`,
+        isSystem: true
+      }]);
+    }
+
+    // Resume bingo calling if game is still playing
+    if (gameState === 'playing') {
+      // Resume calling numbers every 5 seconds
+      autoCallRef.current = setInterval(() => {
+        // This will be handled by the existing callNumber logic
+        // For now, just restart the interval - the state is maintained
+      }, 5000);
+
+      setChat(prev => [...prev, {
+        id: Date.now(),
+        player: 'System',
+        message: '🎮 Bingo resumes!',
+        isSystem: true
+      }]);
+    }
+  }, [packCoinsEarned, gameState]);
+
+  // Handle incoming pack drop from other players (via WebSocket)
+  useEffect(() => {
+    // Cleanup pack drop timeout on unmount
+    return () => {
+      if (packDropRef.current) {
+        clearTimeout(packDropRef.current);
+      }
+    };
+  }, []);
+
   return (
-    <div className="voice-room-game">
+    <div className={`voice-room-game theme-${roomTheme}`}>
       {/* Connection Status */}
       {connectionError && (
         <div className="connection-error">
@@ -1022,8 +1349,94 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
           >
             {isMuted ? '🔇' : '🎤'}
           </button>
+          {/* Music Button */}
+          <button
+            className={`music-btn ${showMusicPanel ? 'active' : ''}`}
+            onClick={() => setShowMusicPanel(!showMusicPanel)}
+            title="Music Player"
+          >
+            🎵
+          </button>
+          {/* Host Drop Packs Button */}
+          {isHost && gameState === 'playing' && !packDropActive && (
+            <motion.button
+              className="drop-packs-btn"
+              onClick={handleDropPacks}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              title="Drop Packs"
+            >
+              📦
+            </motion.button>
+          )}
+          {/* Theme Button (Host Only) */}
+          {isHost && (
+            <button
+              className="theme-btn"
+              onClick={() => setShowThemeSelector(true)}
+              title="Room Theme"
+            >
+              🎨
+            </button>
+          )}
           <button className="settings-btn">⚙️</button>
         </div>
+      </div>
+
+      {/* Theme Selector Modal */}
+      <AnimatePresence>
+        {showThemeSelector && (
+          <motion.div
+            className="theme-selector-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowThemeSelector(false)}
+          >
+            <motion.div
+              className="theme-selector-modal"
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="theme-selector-header">
+                <h3>🎨 Room Theme</h3>
+                <button
+                  className="theme-selector-close"
+                  onClick={() => setShowThemeSelector(false)}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="theme-selector-grid">
+                {themes.map((theme) => (
+                  <motion.div
+                    key={theme.id}
+                    className={`theme-option theme-preview-${theme.id} ${roomTheme === theme.id ? 'active' : ''}`}
+                    onClick={() => changeTheme(theme.id)}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <span className="theme-option-label">{theme.name}</span>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Music Player Panel - Always mounted so sync works, visibility controlled by showMusicPanel */}
+      <div className={`music-panel-container ${showMusicPanel ? 'visible' : 'hidden'}`}>
+        <YouTubeMusicPlayer
+          ref={musicPlayerRef}
+          isHost={isHost}
+          onSendMessage={sendMusicMessage}
+          roomId={room?.room_id}
+          minimized={!showMusicPanel}
+          onToggleMinimize={() => setShowMusicPanel(false)}
+        />
       </div>
 
       {/* Prize Pool */}
@@ -1331,6 +1744,94 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
                 Back to Lobby
               </button>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Pack Drop Overlay */}
+      <AnimatePresence>
+        {packDropActive && (
+          <motion.div
+            className="pack-drop-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            {/* Pack Drop Header */}
+            <div className="pack-drop-header">
+              <motion.div
+                className="pack-drop-title"
+                initial={{ y: -50 }}
+                animate={{ y: 0 }}
+              >
+                📦 PACK DROP! 📦
+              </motion.div>
+              <div className="pack-coins-earned">
+                🪙 {packCoinsEarned}
+              </div>
+            </div>
+
+            {/* Falling Packs */}
+            <div className="packs-container">
+              {packs.map((pack) => (
+                <motion.div
+                  key={pack.id}
+                  className={`falling-pack ${pack.speed} ${pack.isGolden ? 'golden' : ''} ${pack.caught ? 'caught' : ''}`}
+                  style={{
+                    left: `${pack.x}%`,
+                  }}
+                  initial={{ y: -80, opacity: 0 }}
+                  animate={{
+                    y: pack.caught ? undefined : '120vh',
+                    opacity: pack.caught ? 0 : 1,
+                    scale: pack.caught ? 1.5 : 1,
+                  }}
+                  transition={{
+                    y: {
+                      duration: pack.speed === 'fast' ? 3 : 6, // Fast packs fall in 3s, normal in 6s (original speeds)
+                      delay: pack.delay / 1000,
+                      ease: 'linear',
+                    },
+                    opacity: pack.caught ? { duration: 0.2 } : { duration: 0.3, delay: pack.delay / 1000 },
+                    scale: { duration: 0.2 },
+                  }}
+                  onClick={() => !pack.caught && handleCatchPack(pack.id)}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    !pack.caught && handleCatchPack(pack.id);
+                  }}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
+                  {/* Larger invisible touch target */}
+                  <div className="pack-touch-target" />
+                  <span className="pack-emoji">{pack.isGolden ? '🎁' : '📦'}</span>
+                  {pack.caught && (
+                    <motion.span
+                      className="pack-coins-popup"
+                      initial={{ y: 0, opacity: 1 }}
+                      animate={{ y: -30, opacity: 0 }}
+                      transition={{ duration: 0.5 }}
+                    >
+                      +{pack.coins}
+                    </motion.span>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Countdown timer */}
+            <div className="pack-drop-timer">
+              <motion.div
+                className="timer-bar"
+                initial={{ width: '100%' }}
+                animate={{ width: '0%' }}
+                transition={{ duration: 15, ease: 'linear' }}
+              />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

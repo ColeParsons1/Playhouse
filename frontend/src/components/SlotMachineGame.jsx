@@ -2,18 +2,19 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import './SlotMachineGame.css';
 
+// Reduced multipliers for profit-focused model (house edge ~15-20%)
 const SYMBOLS = [
-  { id: 'cherry', emoji: '🍒', multiplier: 2, color: '#E74C3C' },
-  { id: 'lemon', emoji: '🍋', multiplier: 3, color: '#F1C40F' },
-  { id: 'orange', emoji: '🍊', multiplier: 4, color: '#E67E22' },
-  { id: 'plum', emoji: '🍇', multiplier: 5, color: '#9B59B6' },
-  { id: 'bell', emoji: '🔔', multiplier: 8, color: '#FFD700' },
-  { id: 'bar', emoji: '💎', multiplier: 10, color: '#3498DB' },
-  { id: 'seven', emoji: '7️⃣', multiplier: 15, color: '#E74C3C' },
-  { id: 'star', emoji: '⭐', multiplier: 20, color: '#FFD700' },
+  { id: 'cherry', emoji: '🍒', multiplier: 1.5, color: '#E74C3C' },
+  { id: 'lemon', emoji: '🍋', multiplier: 2, color: '#F1C40F' },
+  { id: 'orange', emoji: '🍊', multiplier: 2.5, color: '#E67E22' },
+  { id: 'plum', emoji: '🍇', multiplier: 3, color: '#9B59B6' },
+  { id: 'bell', emoji: '🔔', multiplier: 5, color: '#FFD700' },
+  { id: 'bar', emoji: '💎', multiplier: 7, color: '#3498DB' },
+  { id: 'seven', emoji: '7️⃣', multiplier: 10, color: '#E74C3C' },
+  { id: 'star', emoji: '⭐', multiplier: 15, color: '#FFD700' },
 ];
 
-const STARTING_COINS = 100;
+const STARTING_COINS = 50; // Reduced starting coins
 const BET_OPTIONS = [5, 10, 25, 50];
 const SPIN_DURATION = 2000;
 const REEL_COUNT = 3;

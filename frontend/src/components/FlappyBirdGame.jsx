@@ -11,8 +11,8 @@ const PIPE_SPAWN_INTERVAL = 2000;
 const COIN_SPAWN_CHANCE = 0.6;
 const POWERUP_SPAWN_CHANCE = 0.18;
 const SHARK_SIZE = 42;
-const COIN_VALUE = 3;
-const PIPE_PASS_VALUE = 5;
+const COIN_VALUE = 1; // Reduced from 3
+const PIPE_PASS_VALUE = 2; // Reduced from 5
 
 // Baby shark colors
 const SHARK_COLORS = [

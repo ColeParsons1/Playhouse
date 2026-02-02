@@ -5,16 +5,16 @@ const GAME_DURATION = 20000;
 const SPAWN_INTERVAL = 280;
 const FALL_DURATION_MIN = 1912; // 10% faster than previous
 const FALL_DURATION_MAX = 3060; // 10% faster than previous
-const COINS_PER_CATCH = 5;
-const COMBO_THRESHOLD = 500; // ms between catches for combo
-const MAX_COMBO_MULTIPLIER = 4;
+const COINS_PER_CATCH = 2; // Reduced from 5
+const COMBO_THRESHOLD = 400; // ms between catches for combo (tighter window)
+const MAX_COMBO_MULTIPLIER = 2; // Reduced from 4
 
 // Package size (20% smaller than original ~45px average)
 const PRESENT_SIZE = 36;
 
-// Generate random present with coin value between 5-12
+// Generate random present with coin value between 2-5 (reduced from 5-12)
 const pregenRandom = () => {
-  const value = 5 + Math.floor(Math.random() * 8); // Random 5-12
+  const value = 2 + Math.floor(Math.random() * 4); // Random 2-5
 
   return {
     emoji: '🎁',

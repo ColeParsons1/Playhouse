@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import './GooBridgeGame.css';
 
-const COINS_PER_LEVEL = 15;
-const COMPLETION_BONUS = 25;
+const COINS_PER_LEVEL = 5; // Reduced from 15
+const COMPLETION_BONUS = 10; // Reduced from 25
 const TIME_BONUS_THRESHOLD = 20; // seconds left for time bonus
-const TIME_BONUS = 10;
-const PERFECT_BONUS = 20; // use minimum goo balls
+const TIME_BONUS = 5; // Reduced from 10
+const PERFECT_BONUS = 8; // Reduced from 20
 
 // Level configurations with more variety - balanced for playability
 const LEVELS = [

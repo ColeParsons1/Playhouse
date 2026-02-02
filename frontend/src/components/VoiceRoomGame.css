@@ -21,6 +21,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  padding-bottom: 80px;
 }
 
 @keyframes gradientShift {
@@ -51,6 +52,7 @@
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
 }
 
 .leave-btn {
@@ -143,7 +145,8 @@
 }
 
 .mute-btn,
-.settings-btn {
+.settings-btn,
+.music-btn {
   width: 42px;
   height: 42px;
   border: none;
@@ -155,17 +158,64 @@
   font-size: 1.1rem;
   cursor: pointer;
   transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .mute-btn:hover,
-.settings-btn:hover {
+.settings-btn:hover,
+.music-btn:hover {
   background: rgba(255, 255, 255, 0.3);
   transform: scale(1.05);
+}
+
+.mute-btn:active,
+.settings-btn:active,
+.music-btn:active {
+  transform: scale(0.95);
 }
 
 .mute-btn.muted {
   background: rgba(244, 67, 54, 0.6);
   border-color: rgba(244, 67, 54, 0.8);
+}
+
+.music-btn.active {
+  background: rgba(29, 185, 84, 0.6);
+  border-color: rgba(29, 185, 84, 0.8);
+  box-shadow: 0 0 12px rgba(29, 185, 84, 0.4);
+}
+
+/* Music Panel Container */
+.music-panel-container {
+  margin: 8px;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+/* Hidden state - keeps YouTube player mounted but invisible */
+.music-panel-container.hidden {
+  display: none;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.music-panel-container.visible {
+  display: block;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.music-loading {
+  padding: 20px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
 }
 
 /* Prize Pool Banner - Liquid Glass */
@@ -183,6 +233,7 @@
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  flex-shrink: 0;
 }
 
 .prize-item {
@@ -349,6 +400,7 @@
   padding: 14px 16px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  flex-shrink: 0;
 }
 
 .players-strip::-webkit-scrollbar {
@@ -428,8 +480,9 @@
 .bingo-cards-wrapper {
   display: flex;
   flex-direction: column;
-  padding: 0 16px;
+  padding: 16px;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 /* Card selector tabs */
@@ -619,6 +672,7 @@
   display: flex;
   gap: 12px;
   padding: 14px 16px;
+  flex-shrink: 0;
 }
 
 .action-btn {
@@ -677,6 +731,7 @@
 /* Called Numbers Section - Liquid Glass */
 .called-numbers-section {
   padding: 12px 16px;
+  flex-shrink: 0;
 }
 
 .called-numbers-section h4 {
@@ -1272,4 +1327,674 @@
   font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.7);
   font-weight: 500;
+}
+
+/* ============================================
+   PACK DROP FEATURE STYLES
+   ============================================ */
+
+/* Host Drop Packs Button */
+.drop-packs-btn {
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: linear-gradient(135deg, #ff9f43, #ee5a24);
+  border-radius: 50%;
+  font-size: 1.3rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 4px 15px rgba(255, 159, 67, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.drop-packs-btn:hover {
+  transform: scale(1.1);
+  box-shadow:
+    0 6px 20px rgba(255, 159, 67, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.drop-packs-btn:active {
+  transform: scale(0.95);
+}
+
+/* Pack Drop Overlay */
+.pack-drop-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 500;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+/* Pack Drop Header */
+.pack-drop-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
+  z-index: 510;
+}
+
+.pack-drop-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #FFD700;
+  text-shadow:
+    0 0 10px rgba(255, 215, 0, 0.5),
+    0 2px 4px rgba(0, 0, 0, 0.3);
+  animation: titlePulse 0.5s ease infinite alternate;
+}
+
+@keyframes titlePulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.05); }
+}
+
+.pack-coins-earned {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #FFD700;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 8px 16px;
+  border-radius: 20px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Packs Container */
+.packs-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Individual Falling Pack - EXTRA LARGE touch target for better mobile sensitivity */
+.falling-pack {
+  position: absolute;
+  top: 0;
+  width: 90px;
+  height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translateX(-50%);
+  z-index: 520;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Invisible expanded touch target for easier tapping */
+.pack-touch-target {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  z-index: -1;
+}
+
+.falling-pack .pack-emoji {
+  font-size: 3rem;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+  transition: transform 0.1s ease;
+  pointer-events: none;
+}
+
+.falling-pack:active .pack-emoji {
+  transform: scale(0.8);
+}
+
+/* Fast falling packs - red tint to indicate difficulty */
+.falling-pack.fast .pack-emoji {
+  animation: fastPackGlow 0.3s ease infinite alternate;
+}
+
+@keyframes fastPackGlow {
+  from { filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3)) brightness(1); }
+  to { filter: drop-shadow(0 4px 15px rgba(255, 100, 100, 0.5)) brightness(1.1); }
+}
+
+/* Golden packs - more valuable */
+.falling-pack.golden .pack-emoji {
+  animation: goldenGlow 0.4s ease infinite alternate;
+}
+
+@keyframes goldenGlow {
+  from {
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3)) drop-shadow(0 0 10px rgba(255, 215, 0, 0.5));
+    transform: scale(1);
+  }
+  to {
+    filter: drop-shadow(0 4px 15px rgba(255, 215, 0, 0.8)) drop-shadow(0 0 20px rgba(255, 215, 0, 0.8));
+    transform: scale(1.1);
+  }
+}
+
+/* Caught pack animation */
+.falling-pack.caught {
+  pointer-events: none;
+}
+
+.falling-pack.caught .pack-emoji {
+  animation: packCaught 0.3s ease forwards;
+}
+
+@keyframes packCaught {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.8; }
+  100% { transform: scale(0); opacity: 0; }
+}
+
+/* Coins popup when catching */
+.pack-coins-popup {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #FFD700;
+  text-shadow:
+    0 0 10px rgba(255, 215, 0, 0.8),
+    0 2px 4px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Pack Drop Timer Bar */
+.pack-drop-timer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 510;
+}
+
+.timer-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50, #8BC34A, #CDDC39, #FFC107, #FF9800, #FF5722);
+  border-radius: 0 3px 3px 0;
+}
+
+/* Responsive adjustments - Keep large touch targets on mobile */
+@media (max-width: 400px) {
+  .pack-drop-title {
+    font-size: 1.2rem;
+  }
+
+  .pack-coins-earned {
+    font-size: 1.1rem;
+    padding: 6px 12px;
+  }
+
+  /* Keep touch targets large on mobile for easier tapping */
+  .falling-pack {
+    width: 80px;
+    height: 80px;
+  }
+
+  .pack-touch-target {
+    width: 110px;
+    height: 110px;
+  }
+
+  .falling-pack .pack-emoji {
+    font-size: 2.5rem;
+  }
+}
+
+/* ============================================
+   ROOM THEMES
+   ============================================ */
+
+/* Default Theme (already defined in .voice-room-game) */
+.voice-room-game.theme-default {
+  background: linear-gradient(
+    135deg,
+    #667eea 0%,
+    #764ba2 25%,
+    #f093fb 50%,
+    #f5576c 75%,
+    #4facfe 100%
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+/* Sunset Theme */
+.voice-room-game.theme-sunset {
+  background: linear-gradient(
+    135deg,
+    #ff6b6b 0%,
+    #ff8e53 25%,
+    #feca57 50%,
+    #ff9ff3 75%,
+    #54a0ff 100%
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+/* Ocean Theme */
+.voice-room-game.theme-ocean {
+  background: linear-gradient(
+    135deg,
+    #0093E9 0%,
+    #80D0C7 25%,
+    #2193b0 50%,
+    #6dd5ed 75%,
+    #00d2d3 100%
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+/* Forest Theme */
+.voice-room-game.theme-forest {
+  background: linear-gradient(
+    135deg,
+    #134E5E 0%,
+    #71B280 25%,
+    #2d5016 50%,
+    #56ab2f 75%,
+    #a8e063 100%
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+/* Midnight Theme */
+.voice-room-game.theme-midnight {
+  background: linear-gradient(
+    135deg,
+    #0f0c29 0%,
+    #302b63 25%,
+    #24243e 50%,
+    #141E30 75%,
+    #243B55 100%
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+/* Cherry Blossom Theme */
+.voice-room-game.theme-cherry {
+  background: linear-gradient(
+    135deg,
+    #ffecd2 0%,
+    #fcb69f 25%,
+    #ff9a9e 50%,
+    #fecfef 75%,
+    #fdf2f8 100%
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+.voice-room-game.theme-cherry .room-info h3,
+.voice-room-game.theme-cherry .player-count,
+.voice-room-game.theme-cherry .called-numbers-section h4,
+.voice-room-game.theme-cherry .bingo-header span {
+  color: #831843;
+  text-shadow: none;
+}
+
+/* Neon Theme */
+.voice-room-game.theme-neon {
+  background: linear-gradient(
+    135deg,
+    #0a0a0a 0%,
+    #1a0a2e 25%,
+    #16003B 50%,
+    #0a0a0a 75%,
+    #1a1a2e 100%
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+.voice-room-game.theme-neon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 80%, rgba(255, 0, 255, 0.3) 0%, transparent 40%),
+    radial-gradient(circle at 80% 20%, rgba(0, 255, 255, 0.3) 0%, transparent 40%),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 0, 0.1) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.voice-room-game.theme-neon > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Galaxy Theme */
+.voice-room-game.theme-galaxy {
+  background: linear-gradient(
+    135deg,
+    #0f0f23 0%,
+    #1a1a3e 25%,
+    #2d1b4e 50%,
+    #4a2c5e 75%,
+    #1a1a3e 100%
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+.voice-room-game.theme-galaxy::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(2px 2px at 20px 30px, white, transparent),
+    radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,0.8), transparent),
+    radial-gradient(1px 1px at 90px 40px, white, transparent),
+    radial-gradient(2px 2px at 130px 80px, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 160px 120px, white, transparent),
+    radial-gradient(2px 2px at 200px 50px, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1px 1px at 250px 160px, white, transparent),
+    radial-gradient(2px 2px at 300px 100px, rgba(255,255,255,0.5), transparent);
+  background-size: 350px 200px;
+  animation: twinkle 5s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.voice-room-game.theme-galaxy > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Fire Theme */
+.voice-room-game.theme-fire {
+  background: linear-gradient(
+    135deg,
+    #1a0000 0%,
+    #4a0000 25%,
+    #8B0000 50%,
+    #ff4500 75%,
+    #ff6b35 100%
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 10s ease infinite;
+}
+
+/* Ice Theme */
+.voice-room-game.theme-ice {
+  background: linear-gradient(
+    135deg,
+    #e0f7fa 0%,
+    #b2ebf2 25%,
+    #80deea 50%,
+    #4dd0e1 75%,
+    #26c6da 100%
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+.voice-room-game.theme-ice .room-info h3,
+.voice-room-game.theme-ice .player-count,
+.voice-room-game.theme-ice .called-numbers-section h4,
+.voice-room-game.theme-ice .bingo-header span {
+  color: #006064;
+  text-shadow: none;
+}
+
+/* Theme Selector Styles */
+.theme-selector-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.theme-selector-modal {
+  background: rgba(30, 30, 50, 0.95);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  max-width: 500px;
+  width: 100%;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.theme-selector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.theme-selector-header h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: white;
+}
+
+.theme-selector-close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.theme-selector-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.theme-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 20px 24px;
+  overflow-y: auto;
+}
+
+.theme-option {
+  position: relative;
+  height: 100px;
+  border-radius: 16px;
+  border: 3px solid transparent;
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.theme-option:hover {
+  transform: scale(1.02);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.theme-option.active {
+  border-color: #4CAF50;
+  box-shadow: 0 0 20px rgba(76, 175, 80, 0.4);
+}
+
+.theme-option-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 12px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.theme-option.active .theme-option-label::after {
+  content: ' ✓';
+  color: #4CAF50;
+}
+
+/* Theme preview backgrounds */
+.theme-option.theme-preview-default {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f5576c 100%);
+}
+
+.theme-option.theme-preview-sunset {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 50%, #feca57 100%);
+}
+
+.theme-option.theme-preview-ocean {
+  background: linear-gradient(135deg, #0093E9 0%, #80D0C7 50%, #00d2d3 100%);
+}
+
+.theme-option.theme-preview-forest {
+  background: linear-gradient(135deg, #134E5E 0%, #71B280 50%, #a8e063 100%);
+}
+
+.theme-option.theme-preview-midnight {
+  background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #243B55 100%);
+}
+
+.theme-option.theme-preview-cherry {
+  background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 50%, #ff9a9e 100%);
+}
+
+.theme-option.theme-preview-neon {
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a0a2e 50%, #16003B 100%);
+}
+
+.theme-option.theme-preview-galaxy {
+  background: linear-gradient(135deg, #0f0f23 0%, #2d1b4e 50%, #4a2c5e 100%);
+}
+
+.theme-option.theme-preview-fire {
+  background: linear-gradient(135deg, #1a0000 0%, #8B0000 50%, #ff4500 100%);
+}
+
+.theme-option.theme-preview-ice {
+  background: linear-gradient(135deg, #e0f7fa 0%, #80deea 50%, #26c6da 100%);
+}
+
+.theme-option.theme-preview-theater {
+  background: linear-gradient(135deg, #3d2914 0%, #6b4423 50%, #8b6914 100%);
+}
+
+.theme-option.theme-preview-anime_theater {
+  background: linear-gradient(135deg, #c9a66b 0%, #e8d4a8 50%, #d4a574 100%);
+}
+
+.theme-option.theme-preview-fantasy {
+  background: linear-gradient(135deg, #1a0a3e 0%, #4a2c7a 50%, #7b5aa8 100%);
+}
+
+.theme-option.theme-preview-underwater {
+  background: linear-gradient(135deg, #006994 0%, #40c4ff 50%, #80d8ff 100%);
+}
+
+.theme-option.theme-preview-hearts {
+  background: linear-gradient(135deg, #2c3e50 0%, #e8b4a8 50%, #fad0c4 100%);
+}
+
+/* Image-based themes */
+.voice-room-game.theme-theater {
+  background: url('/themes/theater.png') center center / cover no-repeat fixed;
+}
+
+.voice-room-game.theme-anime_theater {
+  background: url('/themes/anime_theater.png') center center / cover no-repeat fixed;
+}
+
+.voice-room-game.theme-fantasy {
+  background: url('/themes/fantasy.png') center center / cover no-repeat fixed;
+}
+
+.voice-room-game.theme-underwater {
+  background: url('/themes/underwater.png') center center / cover no-repeat fixed;
+}
+
+.voice-room-game.theme-hearts {
+  background: url('/themes/hearts.jpg') center center / cover no-repeat fixed;
+}
+
+/* Add overlay for better readability on image themes */
+.voice-room-game.theme-theater::before,
+.voice-room-game.theme-anime_theater::before,
+.voice-room-game.theme-fantasy::before,
+.voice-room-game.theme-underwater::before,
+.voice-room-game.theme-hearts::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.voice-room-game.theme-theater > *,
+.voice-room-game.theme-anime_theater > *,
+.voice-room-game.theme-fantasy > *,
+.voice-room-game.theme-underwater > *,
+.voice-room-game.theme-hearts > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Theme button in header */
+.theme-btn {
+  width: 42px;
+  height: 42px;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+}
+
+.theme-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
 }

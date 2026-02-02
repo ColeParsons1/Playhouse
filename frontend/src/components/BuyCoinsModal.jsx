@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { loadStripe } from '@stripe/stripe-js';
 import {
@@ -32,17 +32,51 @@ const getApiUrl = () => {
 const PaymentButton = ({ pkg, player, onSuccess, onError, onProcessing, onAvailabilityChange }) => {
   const stripe = useStripe();
   const [paymentRequest, setPaymentRequest] = useState(null);
-  const [canMakePayment, setCanMakePayment] = useState(null); // null = loading, false = not available, true = available
+  const [canMakePayment, setCanMakePayment] = useState(null);
+  const [clientSecret, setClientSecret] = useState(null);
 
+  // Create payment intent when package is selected
   useEffect(() => {
-    if (!stripe || !pkg) return;
+    if (!pkg || !player?.id) return;
+
+    const createIntent = async () => {
+      try {
+        const response = await fetch(`${getApiUrl()}/payments/create-intent/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            package_id: pkg.id,
+            player_id: player.id,
+          }),
+        });
+
+        const data = await response.json();
+        if (data.clientSecret) {
+          setClientSecret(data.clientSecret);
+          console.log('Payment intent created:', data);
+        } else if (data.error) {
+          console.error('Error creating payment intent:', data.error);
+          onError(data.error);
+        }
+      } catch (err) {
+        console.error('Failed to create payment intent:', err);
+        onError('Failed to initialize payment');
+      }
+    };
+
+    createIntent();
+  }, [pkg, player?.id, onError]);
+
+  // Set up payment request after we have stripe and client secret
+  useEffect(() => {
+    if (!stripe || !pkg || !clientSecret) return;
 
     const pr = stripe.paymentRequest({
       country: 'US',
       currency: 'usd',
       total: {
-        label: `${pkg.coins.toLocaleString()} Coins`,
-        amount: Math.round(pkg.price * 100), // Convert to cents
+        label: `${pkg.coins.toLocaleString()} Playhouse Coins`,
+        amount: Math.round(pkg.price * 100),
       },
       requestPayerName: true,
       requestPayerEmail: true,
@@ -61,51 +95,41 @@ const PaymentButton = ({ pkg, player, onSuccess, onError, onProcessing, onAvaila
       }
     });
 
-    // Handle the payment
+    // Handle the payment when user authenticates
     pr.on('paymentmethod', async (ev) => {
+      console.log('Payment method received:', ev.paymentMethod.id);
       onProcessing(true);
 
       try {
-        // Create payment intent on backend
-        const response = await fetch(`${getApiUrl()}/payments/create-intent/`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            package_id: pkg.id,
-            player_id: player?.id,
-          }),
-        });
-
-        const { clientSecret, error: backendError } = await response.json();
-
-        if (backendError) {
-          ev.complete('fail');
-          onError(backendError);
-          return;
-        }
-
-        // Confirm the payment
-        const { paymentIntent, error: stripeError } = await stripe.confirmCardPayment(
+        // Confirm the payment with the payment method from Apple Pay
+        const { paymentIntent, error: confirmError } = await stripe.confirmCardPayment(
           clientSecret,
           { payment_method: ev.paymentMethod.id },
           { handleActions: false }
         );
 
-        if (stripeError) {
+        if (confirmError) {
+          console.error('Payment confirmation error:', confirmError);
           ev.complete('fail');
-          onError(stripeError.message);
+          onError(confirmError.message);
+          onProcessing(false);
           return;
         }
 
+        console.log('Payment intent status:', paymentIntent.status);
+
         if (paymentIntent.status === 'requires_action') {
-          const { error: confirmError } = await stripe.confirmCardPayment(clientSecret);
-          if (confirmError) {
+          // Handle 3D Secure if needed
+          const { error: actionError } = await stripe.confirmCardPayment(clientSecret);
+          if (actionError) {
             ev.complete('fail');
-            onError(confirmError.message);
+            onError(actionError.message);
+            onProcessing(false);
             return;
           }
         }
 
+        // Payment successful
         ev.complete('success');
 
         // Confirm with backend and add coins
@@ -119,6 +143,7 @@ const PaymentButton = ({ pkg, player, onSuccess, onError, onProcessing, onAvaila
         });
 
         const confirmData = await confirmResponse.json();
+        console.log('Backend confirm response:', confirmData);
 
         if (confirmData.success) {
           onSuccess(confirmData);
@@ -126,6 +151,7 @@ const PaymentButton = ({ pkg, player, onSuccess, onError, onProcessing, onAvaila
           onError(confirmData.error || 'Failed to add coins');
         }
       } catch (err) {
+        console.error('Payment error:', err);
         ev.complete('fail');
         onError(err.message || 'Payment failed');
       } finally {
@@ -136,9 +162,19 @@ const PaymentButton = ({ pkg, player, onSuccess, onError, onProcessing, onAvaila
     return () => {
       pr.off('paymentmethod');
     };
-  }, [stripe, pkg, player, onSuccess, onError, onProcessing, onAvailabilityChange]);
+  }, [stripe, pkg, clientSecret, player, onSuccess, onError, onProcessing, onAvailabilityChange]);
 
-  // Still checking
+  // Still creating payment intent
+  if (!clientSecret) {
+    return (
+      <div className="payment-checking">
+        <div className="mini-spinner"></div>
+        <span>Preparing payment...</span>
+      </div>
+    );
+  }
+
+  // Still checking payment availability
   if (canMakePayment === null) {
     return (
       <div className="payment-checking">
@@ -154,7 +190,7 @@ const PaymentButton = ({ pkg, player, onSuccess, onError, onProcessing, onAvaila
       <div className="payment-not-available">
         <p>Apple Pay / Google Pay not available on this device.</p>
         <p className="payment-setup-hint">
-          Make sure you have Apple Pay or Google Pay set up in your device settings.
+          Make sure you have Apple Pay or Google Pay set up in your device settings, and you're using Safari (iOS) or Chrome (Android).
         </p>
       </div>
     );
@@ -186,28 +222,29 @@ const BuyCoinsModalContent = ({ player, onClose, onPurchaseComplete }) => {
   const [success, setSuccess] = useState(null);
   const [paymentType, setPaymentType] = useState(null);
 
-  const handleSuccess = (data) => {
+  const handleSuccess = useCallback((data) => {
     setSuccess({
       coins: data.coins_added,
       newBalance: data.new_balance,
     });
     setSelectedPackage(null);
     onPurchaseComplete?.(data.player);
-  };
+  }, [onPurchaseComplete]);
 
-  const handleError = (message) => {
+  const handleError = useCallback((message) => {
+    console.error('Payment error:', message);
     setError(message);
     setTimeout(() => setError(null), 5000);
-  };
+  }, []);
 
   const handleSelectPackage = (pkg) => {
     setSelectedPackage(pkg);
     setError(null);
   };
 
-  const handleAvailabilityChange = (available, type) => {
+  const handleAvailabilityChange = useCallback((available, type) => {
     setPaymentType(type);
-  };
+  }, []);
 
   return (
     <motion.div
@@ -309,6 +346,7 @@ const BuyCoinsModalContent = ({ player, onClose, onPurchaseComplete }) => {
           </div>
 
           <PaymentButton
+            key={selectedPackage.id} // Force remount when package changes
             pkg={selectedPackage}
             player={player}
             onSuccess={handleSuccess}

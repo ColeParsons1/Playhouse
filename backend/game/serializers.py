@@ -57,7 +57,7 @@ class VoiceRoomSerializer(serializers.ModelSerializer):
     class Meta:
         model = VoiceRoom
         fields = [
-            'id', 'room_id', 'name', 'host', 'room_type', 'game_mode',
+            'id', 'room_id', 'name', 'host', 'room_type', 'game_mode', 'theme',
             'entry_fee', 'card_cost', 'max_players', 'is_active', 'is_private',
             'first_prize', 'second_prize', 'third_prize',
             'player_count', 'participants', 'created_at', 'updated_at'
@@ -77,7 +77,7 @@ class VoiceRoomListSerializer(serializers.ModelSerializer):
         model = VoiceRoom
         fields = [
             'id', 'room_id', 'name', 'host_id', 'host_name', 'host_avatar', 'host_followers',
-            'host_country', 'room_type', 'game_mode', 'player_count', 'is_active',
+            'host_country', 'room_type', 'game_mode', 'theme', 'player_count', 'is_active',
             'first_prize', 'entry_fee'
         ]
 

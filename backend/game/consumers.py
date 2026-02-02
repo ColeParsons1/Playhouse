@@ -85,6 +85,12 @@ class RoomConsumer(AsyncWebsocketConsumer):
             await self.handle_webrtc_ice_candidate(data)
         elif message_type == 'webrtc_ready':
             await self.handle_webrtc_ready(data)
+        # Music sync
+        elif message_type == 'music_sync':
+            await self.handle_music_sync(data)
+        # Theme change
+        elif message_type == 'theme_change':
+            await self.handle_theme_change(data)
 
     async def handle_chat_message(self, data):
         """Handle chat messages"""
@@ -267,6 +273,41 @@ class RoomConsumer(AsyncWebsocketConsumer):
             }
         )
 
+    async def handle_music_sync(self, data):
+        """Handle music sync messages - broadcast to all players"""
+        player_data = await self.get_player_data()
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'music_sync',
+                'action': data.get('action'),
+                'videoId': data.get('videoId'),
+                'title': data.get('title'),
+                'thumbnail': data.get('thumbnail'),
+                'startTime': data.get('startTime', 0),
+                'time': data.get('time'),
+                'track': data.get('track'),
+                'queue': data.get('queue'),
+                'from_player': player_data,
+                'sender_channel': self.channel_name
+            }
+        )
+
+    async def handle_theme_change(self, data):
+        """Handle theme change - broadcast to all players"""
+        player_data = await self.get_player_data()
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'theme_change',
+                'theme': data.get('theme'),
+                'from_player': player_data,
+                'sender_channel': self.channel_name
+            }
+        )
+
     # Event handlers (receive from channel layer)
     async def player_joined(self, event):
         await self.send(text_data=json.dumps({
@@ -339,6 +380,31 @@ class RoomConsumer(AsyncWebsocketConsumer):
             'payload': event['payload'],
             'player': event['player']
         }))
+
+    async def music_sync(self, event):
+        """Forward music sync to all players except sender"""
+        if event.get('sender_channel') != self.channel_name:
+            await self.send(text_data=json.dumps({
+                'type': 'music_sync',
+                'action': event['action'],
+                'videoId': event.get('videoId'),
+                'title': event.get('title'),
+                'thumbnail': event.get('thumbnail'),
+                'startTime': event.get('startTime', 0),
+                'time': event.get('time'),
+                'track': event.get('track'),
+                'queue': event.get('queue'),
+                'from_player': event.get('from_player')
+            }))
+
+    async def theme_change(self, event):
+        """Forward theme change to all players except sender"""
+        if event.get('sender_channel') != self.channel_name:
+            await self.send(text_data=json.dumps({
+                'type': 'theme_change',
+                'theme': event.get('theme'),
+                'from_player': event.get('from_player')
+            }))
 
     # WebRTC signaling event handlers
     async def webrtc_ready(self, event):

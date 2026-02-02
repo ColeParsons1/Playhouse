@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     PlayerViewSet, GameSessionViewSet, RewardViewSet, PlayerRewardViewSet,
     AvatarViewSet, AvatarItemViewSet, VoiceRoomViewSet, ShopItemViewSet,
-    create_payment_intent, confirm_payment
+    create_payment_intent, confirm_payment, youtube_search, youtube_suggestions
 )
 
 router = DefaultRouter()
@@ -20,4 +20,6 @@ urlpatterns = [
     path('', include(router.urls)),
     path('payments/create-intent/', create_payment_intent, name='create_payment_intent'),
     path('payments/confirm/', confirm_payment, name='confirm_payment'),
+    path('youtube/search/', youtube_search, name='youtube_search'),
+    path('youtube/suggestions/', youtube_suggestions, name='youtube_suggestions'),
 ]

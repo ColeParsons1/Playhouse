@@ -7,11 +7,12 @@ const COIN_FALL_SPEED = 4; // pixels per frame
 const BASKET_WIDTH = 80;
 const COIN_SIZE = 40;
 
+// Reduced coin values for profit-focused model
 const COIN_TYPES = [
-  { emoji: '🪙', value: 1, weight: 60 },
-  { emoji: '💰', value: 3, weight: 25 },
-  { emoji: '💎', value: 5, weight: 10 },
-  { emoji: '⭐', value: 10, weight: 5 },
+  { emoji: '🪙', value: 1, weight: 70 },
+  { emoji: '💰', value: 2, weight: 20 },
+  { emoji: '💎', value: 3, weight: 8 },
+  { emoji: '⭐', value: 5, weight: 2 },
 ];
 
 const getRandomCoinType = () => {

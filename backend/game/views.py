@@ -11,6 +11,9 @@ import uuid
 import hashlib
 import stripe
 import os
+import subprocess
+import json
+import re
 
 # Configure Stripe
 stripe.api_key = os.environ.get('STRIPE_SECRET_KEY', '')
@@ -1285,3 +1288,131 @@ def confirm_payment(request):
             {'error': str(e)},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+
+@api_view(['GET'])
+def youtube_search(request):
+    """Search YouTube for music using yt-dlp."""
+    query = request.query_params.get('q', '')
+
+    if not query or len(query) < 2:
+        return Response({'items': []})
+
+    try:
+        # Use yt-dlp to search YouTube
+        cmd = [
+            'yt-dlp',
+            '--flat-playlist',
+            '--dump-json',
+            '--default-search', 'ytsearch12',
+            '--no-warnings',
+            '--quiet',
+            f'ytsearch12:{query} music'
+        ]
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+
+        if result.returncode != 0:
+            # Fallback: try without music suffix
+            cmd[-1] = f'ytsearch12:{query}'
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+
+        items = []
+        for line in result.stdout.strip().split('\n'):
+            if not line:
+                continue
+            try:
+                video = json.loads(line)
+                video_id = video.get('id', '')
+                if video_id:
+                    items.append({
+                        'videoId': video_id,
+                        'title': video.get('title', 'Unknown Title'),
+                        'thumbnail': f'https://i.ytimg.com/vi/{video_id}/mqdefault.jpg',
+                        'duration': format_yt_duration(video.get('duration', 0)),
+                        'author': video.get('uploader', video.get('channel', 'Unknown'))
+                    })
+            except json.JSONDecodeError:
+                continue
+
+        return Response({'items': items})
+
+    except subprocess.TimeoutExpired:
+        return Response(
+            {'error': 'Search timed out'},
+            status=status.HTTP_408_REQUEST_TIMEOUT
+        )
+    except FileNotFoundError:
+        return Response(
+            {'error': 'yt-dlp not installed'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['GET'])
+def youtube_suggestions(request):
+    """Get YouTube search suggestions."""
+    query = request.query_params.get('q', '')
+
+    if not query or len(query) < 2:
+        return Response([])
+
+    try:
+        import urllib.request
+        import urllib.parse
+
+        # Use YouTube's suggestion API
+        url = f'https://suggestqueries.google.com/complete/search?client=youtube&ds=yt&q={urllib.parse.quote(query)}'
+
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = response.read().decode('utf-8')
+            # Parse JSONP response
+            match = re.search(r'\[.*\]', data)
+            if match:
+                parsed = json.loads(match.group())
+                if len(parsed) > 1 and isinstance(parsed[1], list):
+                    suggestions = [item[0] for item in parsed[1][:8] if isinstance(item, list)]
+                    return Response(suggestions)
+
+        return Response([])
+
+    except Exception as e:
+        # Return fallback suggestions
+        return Response([
+            f'{query} music',
+            f'{query} song',
+            f'{query} official audio',
+            f'{query} lyrics'
+        ])
+
+
+def format_yt_duration(seconds):
+    """Format seconds to MM:SS."""
+    if not seconds or seconds < 0:
+        return ''
+    try:
+        seconds = int(seconds)
+        mins = seconds // 60
+        secs = seconds % 60
+        return f'{mins}:{secs:02d}'
+    except (ValueError, TypeError):
+        return ''
