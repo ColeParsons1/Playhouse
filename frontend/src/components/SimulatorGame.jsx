@@ -349,28 +349,18 @@ const SimulatorGame = ({ onClose, onExit }) => {
     buildingPositions.forEach(pos => {
       const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
 
-      // Condensed downtown - skyscrapers only in tight core area
-      const isCoreDowntown = distFromCenter < 300; // Tight downtown core
-      const isDowntown = distFromCenter < 600; // Extended downtown
-      const isSuburban = distFromCenter > 1200; // Far from center
+      // TESTING: Only skyscrapers in downtown area, no small buildings outside
+      const isDowntown = distFromCenter < 800;
 
-      // Skyscraper probability based on distance from center
-      let skyscraperChance;
-      if (isCoreDowntown) {
-        skyscraperChance = 0.95; // Almost all skyscrapers in core
-      } else if (isDowntown) {
-        skyscraperChance = 0.5 - (distFromCenter - 300) / 600; // Gradual decrease
-      } else if (isSuburban) {
-        skyscraperChance = 0.02; // Very few tall buildings in suburbs
-      } else {
-        skyscraperChance = 0.15; // Some medium buildings in between
-      }
+      // Skip all non-downtown buildings for testing
+      if (!isDowntown) return;
 
-      const isSkyscraper = Math.random() < skyscraperChance;
+      // All downtown buildings are skyscrapers
+      const isSkyscraper = true;
       const buildingType = Math.random();
 
-      // Height multiplier - tallest in core, shorter as you go out
-      const heightMultiplier = isCoreDowntown ? 1.5 : Math.max(0.2, 1.2 - distFromCenter / 800);
+      // Height multiplier - tallest in center
+      const heightMultiplier = Math.max(1.0, 1.8 - distFromCenter / 600);
 
       // More varied building footprints like a real city
       let width, depth, baseHeight;
