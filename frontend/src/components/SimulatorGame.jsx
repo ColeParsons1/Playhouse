@@ -36,12 +36,6 @@ const SimulatorGame = ({ onClose, onExit }) => {
   const mainLightRef = useRef(null);
   const DAY_CYCLE_DURATION = 300; // 5 minutes in seconds
 
-  // Weather system refs
-  const rainRef = useRef(null);
-  const isRainingRef = useRef(false);
-  const rainTimeRef = useRef(0);
-  const nextRainChangeRef = useRef(Math.random() * 60 + 30); // Random time until weather change (30-90 seconds)
-
   // Check if current player is the host
   const isHost = true;
 
@@ -1755,90 +1749,6 @@ const SimulatorGame = ({ onClose, onExit }) => {
     lookAtPosition.y += 2;
     camera.lookAt(lookAtPosition);
   }, []);
-
-  // Create rain particle system
-  const createRain = useCallback((scene) => {
-    if (!THREE) return;
-
-    const rainCount = 15000;
-    const rainGeometry = new THREE.BufferGeometry();
-    const rainPositions = new Float32Array(rainCount * 3);
-    const rainVelocities = new Float32Array(rainCount);
-
-    // Spread rain over a large area around the player
-    for (let i = 0; i < rainCount; i++) {
-      rainPositions[i * 3] = (Math.random() - 0.5) * 800;     // x
-      rainPositions[i * 3 + 1] = Math.random() * 200;          // y
-      rainPositions[i * 3 + 2] = (Math.random() - 0.5) * 800;  // z
-      rainVelocities[i] = 2 + Math.random() * 3;               // fall speed
-    }
-
-    rainGeometry.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
-    rainGeometry.userData = { velocities: rainVelocities };
-
-    const rainMaterial = new THREE.PointsMaterial({
-      color: 0xaaaacc,
-      size: 0.5,
-      transparent: true,
-      opacity: 0.6,
-      blending: THREE.AdditiveBlending,
-    });
-
-    const rain = new THREE.Points(rainGeometry, rainMaterial);
-    rain.visible = false; // Start with rain hidden
-    scene.add(rain);
-    rainRef.current = rain;
-  }, []);
-
-  // Update weather system - random rain
-  const updateWeather = useCallback(() => {
-    if (!THREE || !sceneRef.current || !rainRef.current || !carRef.current) return;
-
-    const rain = rainRef.current;
-    const car = carRef.current;
-    const scene = sceneRef.current;
-
-    // Check if it's time to toggle rain
-    rainTimeRef.current += 1 / 60; // Assuming 60fps
-    if (rainTimeRef.current >= nextRainChangeRef.current) {
-      rainTimeRef.current = 0;
-      nextRainChangeRef.current = Math.random() * 60 + 30; // 30-90 seconds until next change
-      isRainingRef.current = !isRainingRef.current;
-      rain.visible = isRainingRef.current;
-    }
-
-    if (!isRainingRef.current) return;
-
-    // Update rain particle positions
-    const positions = rain.geometry.attributes.position.array;
-    const velocities = rain.geometry.userData.velocities;
-    const carPos = car.position;
-
-    for (let i = 0; i < positions.length / 3; i++) {
-      // Move rain down
-      positions[i * 3 + 1] -= velocities[i];
-
-      // Reset rain drop when it hits the ground
-      if (positions[i * 3 + 1] < 0) {
-        positions[i * 3] = carPos.x + (Math.random() - 0.5) * 800;
-        positions[i * 3 + 1] = 150 + Math.random() * 50;
-        positions[i * 3 + 2] = carPos.z + (Math.random() - 0.5) * 800;
-      }
-    }
-
-    // Keep rain centered around the car
-    rain.position.x = carPos.x;
-    rain.position.z = carPos.z;
-
-    rain.geometry.attributes.position.needsUpdate = true;
-
-    // Adjust fog density when raining (make it hazier)
-    if (scene.fog) {
-      const baseFar = 2500;
-      scene.fog.far = isRainingRef.current ? baseFar * 0.6 : baseFar;
-    }
-  }, []);
-
   // Update day/night cycle - 5 minute full cycle
   const updateDayNightCycle = useCallback(() => {
     if (!sceneRef.current || !ambientLightRef.current || !hemiLightRef.current || !mainLightRef.current || !THREE) return;
@@ -2024,9 +1934,6 @@ const SimulatorGame = ({ onClose, onExit }) => {
         const car = createCar(scene);
         carRef.current = car;
 
-        // Create rain particle system
-        createRain(scene);
-
         setIsLoading(false);
 
         // Animation loop
@@ -2036,7 +1943,6 @@ const SimulatorGame = ({ onClose, onExit }) => {
           updateCarPhysics();
           updateCamera();
           updateDayNightCycle();
-          updateWeather();
 
           // Update traffic cars
           trafficCarsRef.current.forEach(tc => {
@@ -2095,7 +2001,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
         rendererRef.current.dispose();
       }
     };
-  }, [createCity, createCar, createRain, updateCarPhysics, updateCamera, updateWeather]);
+  }, [createCity, createCar, updateCarPhysics, updateCamera]);
 
   // Touch controls
   const handleSteeringMove = useCallback((e) => {
@@ -2116,14 +2022,6 @@ const SimulatorGame = ({ onClose, onExit }) => {
 
   const handleGasEnd = useCallback(() => {
     touchControlsRef.current.gas = false;
-  }, []);
-
-  const handleBrakeStart = useCallback(() => {
-    touchControlsRef.current.brake = true;
-  }, []);
-
-  const handleBrakeEnd = useCallback(() => {
-    touchControlsRef.current.brake = false;
   }, []);
 
   if (error) {
@@ -2193,16 +2091,6 @@ const SimulatorGame = ({ onClose, onExit }) => {
           </div>
 
           <div className="pedals">
-            <button
-              className="pedal brake-pedal"
-              onTouchStart={handleBrakeStart}
-              onTouchEnd={handleBrakeEnd}
-              onMouseDown={handleBrakeStart}
-              onMouseUp={handleBrakeEnd}
-              onMouseLeave={handleBrakeEnd}
-            >
-              BRAKE
-            </button>
             <button
               className="pedal gas-pedal"
               onTouchStart={handleGasStart}
