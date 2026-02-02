@@ -596,11 +596,18 @@ const SimulatorGame = ({ onClose, onExit }) => {
       roadZPositions.push(i);
     }
 
+    // Helper to check if position is in channel
+    const isInChannelArea = (x, z) => {
+      const channelWidth = 220;
+      return Math.abs(x) < channelWidth / 2 && z > 100 && z < 720;
+    };
+
     // REDUCED density - every 200 units instead of 100
     let lampIndex = 0;
     for (let x = -1800; x <= 1800; x += 200) {
       for (let z of roadZPositions) {
-        if (z < 700) {
+        // Skip if in ocean area OR in channel area
+        if (z < 700 && !isInChannelArea(x, z)) {
           const pole = new THREE.Mesh(poleGeom, poleMaterial);
           pole.position.set(x, 6 * scale, z + 15 * scale);
           scene.add(pole);
@@ -638,11 +645,18 @@ const SimulatorGame = ({ onClose, onExit }) => {
       roadPositions.push(i);
     }
 
+    // Helper to check if position is in channel
+    const isInChannelArea = (x, z) => {
+      const channelWidth = 220;
+      return Math.abs(x) < channelWidth / 2 && z > 100 && z < 720;
+    };
+
     // Only add traffic lights at every 4th intersection for performance
     let count = 0;
     for (let x of roadPositions) {
       for (let z of roadPositions) {
-        if (z < 700 && count % 4 === 0) {
+        // Skip if in ocean area OR in channel area
+        if (z < 700 && !isInChannelArea(x, z) && count % 4 === 0) {
           const pole = new THREE.Mesh(poleGeom, poleMaterial);
           pole.position.set(x + 12 * scale, 4 * scale, z + 12 * scale);
           scene.add(pole);
@@ -1029,17 +1043,17 @@ const SimulatorGame = ({ onClose, onExit }) => {
     // ========== CHANNEL BRIDGE (North-South over the channel, near launch ramp) ==========
     // This bridge crosses the channel at x=0, connecting the road that has the launch ramp
     const channelBridgeSpan = 600; // Long enough to span entire channel (z=150 to z=720)
-    const channelBridgeWidth2 = 50;
-    const channelBridgeHeight2 = 12;
+    const channelBridgeWidth2 = 60; // Wider for visibility
+    const channelBridgeHeight2 = 15; // Higher for visibility
     const channelBridgeZ2 = 435; // Center of channel (150 + 570/2)
 
     console.log('Creating channel bridge at z=', channelBridgeZ2);
 
-    // Channel bridge material - distinct red color to make it visible
-    const channelBridgeMaterial = new THREE.MeshStandardMaterial({ color: 0xcc4444, roughness: 0.6, metalness: 0.4 });
+    // Channel bridge material - bright red color to make it VERY visible
+    const channelBridgeMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // Bright red, no lighting needed
 
-    // Main channel bridge deck
-    const channelBridgeDeckGeom2 = new THREE.BoxGeometry(channelBridgeWidth2, 4, channelBridgeSpan);
+    // Main channel bridge deck - THICK for visibility
+    const channelBridgeDeckGeom2 = new THREE.BoxGeometry(channelBridgeWidth2, 8, channelBridgeSpan);
     const channelBridgeDeck2 = new THREE.Mesh(channelBridgeDeckGeom2, channelBridgeMaterial);
     channelBridgeDeck2.position.set(0, channelBridgeHeight2, channelBridgeZ2);
     channelBridgeDeck2.castShadow = true;
@@ -1651,9 +1665,9 @@ const SimulatorGame = ({ onClose, onExit }) => {
                             physics.position.z > (channelBridgeZ - channelBridgeSpan / 2 - 80) &&
                             physics.position.z < (channelBridgeZ + channelBridgeSpan / 2 + 80);
 
-    // Check if in channel (connects bay to ocean)
+    // Check if in channel (connects bay to ocean) - stops before beach at z=650
     const channelWidth = 180;
-    const inChannel = Math.abs(physics.position.x) < channelWidth / 2 && physics.position.z > 100 && physics.position.z < 700;
+    const inChannel = Math.abs(physics.position.x) < channelWidth / 2 && physics.position.z > 100 && physics.position.z < 650;
 
     // Handle bay bridge height
     if (onBayBridge && !physics.isAirborne) {
@@ -1665,8 +1679,8 @@ const SimulatorGame = ({ onClose, onExit }) => {
     }
     // Handle channel bridge height
     else if (onChannelBridge && !physics.isAirborne) {
-      // Channel bridge deck is at y=14 (channelBridgeHeight2 + road surface)
-      const channelBridgeY = 14;
+      // Channel bridge deck is at y=19 (channelBridgeHeight2=15 + deck thickness/2 + road surface)
+      const channelBridgeY = 19;
       if (physics.position.y < channelBridgeY) {
         physics.position.y = channelBridgeY;
       }
