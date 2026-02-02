@@ -1844,9 +1844,9 @@ const SimulatorGame = ({ onClose, onExit }) => {
           velocity: new THREE.Vector3(),
           angularVelocity: 0,
           speed: 0,
-          maxSpeed: 360, // Doubled from 180
-          acceleration: 0.5, // Doubled for faster acceleration
-          braking: 0.45,
+          maxSpeed: 360,
+          acceleration: 2.5, // Fast acceleration - 0 to max in ~2-3 seconds
+          braking: 1.5, // Faster braking too
           friction: 0.03,
           turnSpeed: 0.025,
           position: new THREE.Vector3(0, 1, 0),
