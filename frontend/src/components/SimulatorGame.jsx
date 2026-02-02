@@ -1102,6 +1102,70 @@ const SimulatorGame = ({ onClose, onExit }) => {
 
     console.log('Channel bridge created successfully');
 
+    // ========== SECOND CHANNEL BRIDGE (at bay entrance, z=160) ==========
+    const bridge3Z = 160; // Right before channel expands into bay
+    const bridge3Length = 350;
+    const bridge3Width = 50;
+    const bridge3Height = 12;
+
+    // Bridge material - blue to distinguish from red bridge
+    const bridge3Material = new THREE.MeshBasicMaterial({ color: 0x0066ff });
+
+    // Main bridge deck
+    const bridge3DeckGeom = new THREE.BoxGeometry(bridge3Length, 6, bridge3Width);
+    const bridge3Deck = new THREE.Mesh(bridge3DeckGeom, bridge3Material);
+    bridge3Deck.position.set(0, bridge3Height, bridge3Z);
+    bridge3Deck.castShadow = true;
+    scene.add(bridge3Deck);
+
+    // Road surface
+    const bridge3RoadGeom = new THREE.BoxGeometry(bridge3Length - 10, 0.5, bridge3Width - 8);
+    const bridge3Road = new THREE.Mesh(bridge3RoadGeom, bridgeRoadMat);
+    bridge3Road.position.set(0, bridge3Height + 3.2, bridge3Z);
+    scene.add(bridge3Road);
+
+    // Center line
+    const bridge3LineGeom = new THREE.BoxGeometry(bridge3Length - 20, 0.6, 1.5);
+    const bridge3Line = new THREE.Mesh(bridge3LineGeom, bridgeLineMat);
+    bridge3Line.position.set(0, bridge3Height + 3.5, bridge3Z);
+    scene.add(bridge3Line);
+
+    // Support pillars
+    const bridge3PillarGeom = new THREE.CylinderGeometry(4, 5, bridge3Height + 6, 8);
+    [-120, -40, 40, 120].forEach(x => {
+      const pillar = new THREE.Mesh(bridge3PillarGeom, pillarMaterial);
+      pillar.position.set(x, (bridge3Height + 6) / 2 - 3, bridge3Z);
+      pillar.castShadow = true;
+      scene.add(pillar);
+    });
+
+    // Railings
+    const bridge3RailingGeom = new THREE.BoxGeometry(bridge3Length, 3, 1);
+    const bridge3RailingMat = new THREE.MeshStandardMaterial({ color: 0xffdd00 });
+    [-1, 1].forEach(side => {
+      const railing = new THREE.Mesh(bridge3RailingGeom, bridge3RailingMat);
+      railing.position.set(0, bridge3Height + 4.5, bridge3Z + side * (bridge3Width / 2 - 2));
+      scene.add(railing);
+    });
+
+    // Approach ramps
+    const bridge3RampLength = 150;
+    const bridge3RampGeom = new THREE.BoxGeometry(bridge3RampLength, 4, bridge3Width);
+
+    // West ramp
+    const bridge3WestRamp = new THREE.Mesh(bridge3RampGeom, bridge3Material);
+    bridge3WestRamp.position.set(-bridge3Length / 2 - bridge3RampLength / 2 + 20, bridge3Height / 2, bridge3Z);
+    bridge3WestRamp.rotation.z = Math.atan2(bridge3Height, bridge3RampLength);
+    scene.add(bridge3WestRamp);
+
+    // East ramp
+    const bridge3EastRamp = new THREE.Mesh(bridge3RampGeom, bridge3Material);
+    bridge3EastRamp.position.set(bridge3Length / 2 + bridge3RampLength / 2 - 20, bridge3Height / 2, bridge3Z);
+    bridge3EastRamp.rotation.z = -Math.atan2(bridge3Height, bridge3RampLength);
+    scene.add(bridge3EastRamp);
+
+    console.log('Bay entrance bridge created at z=160');
+
     createRoads(scene);
     createBuildings(scene);
     createStreetLights(scene);
@@ -1658,6 +1722,11 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const onChannelBridge = Math.abs(physics.position.x) < (channelBridgeLength / 2 + 80) &&
                             Math.abs(physics.position.z - channelBridgeZ) < channelBridgeWidth / 2;
 
+    // Check if on bay entrance bridge (east-west bridge at z=160)
+    const bayEntranceBridgeZ = 160;
+    const onBayEntranceBridge = Math.abs(physics.position.x) < (channelBridgeLength / 2 + 80) &&
+                                 Math.abs(physics.position.z - bayEntranceBridgeZ) < channelBridgeWidth / 2;
+
     // Check if in channel (connects bay to ocean) - stops before beach at z=650
     const channelWidth = 180;
     const inChannel = Math.abs(physics.position.x) < channelWidth / 2 && physics.position.z > 100 && physics.position.z < 650;
@@ -1678,14 +1747,21 @@ const SimulatorGame = ({ onClose, onExit }) => {
         physics.position.y = channelBridgeY;
       }
     }
+    // Handle bay entrance bridge height
+    else if (onBayEntranceBridge && !physics.isAirborne) {
+      const bayEntranceBridgeY = 15;
+      if (physics.position.y < bayEntranceBridgeY) {
+        physics.position.y = bayEntranceBridgeY;
+      }
+    }
     else if (inBay && !onBayBridge) {
       // Push car out of bay if not on bridge
       const angle = Math.atan2(physics.position.z - bayZ, physics.position.x - bayX);
       physics.position.x = bayX + Math.cos(angle) * (bayRadiusX + 10);
       physics.position.z = bayZ + Math.sin(angle) * (bayRadiusZ + 10);
       physics.speed *= 0.3; // Slow down significantly
-    } else if (inChannel && !onChannelBridge && !physics.isAirborne) {
-      // Push car out of channel to nearest bank (unless on channel bridge)
+    } else if (inChannel && !onChannelBridge && !onBayEntranceBridge && !physics.isAirborne) {
+      // Push car out of channel to nearest bank (unless on a bridge)
       if (physics.position.x >= 0) {
         physics.position.x = channelWidth / 2 + 10;
       } else {
