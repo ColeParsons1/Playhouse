@@ -28,6 +28,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
   const [isFlying, setIsFlying] = useState(false);
   const rampsRef = useRef([]);
   const neonLightsRef = useRef([]);
+  const lastHudUpdateRef = useRef(0); // Throttle HUD updates for performance
 
   // Check if current player is the host
   const isHost = true;
@@ -1322,14 +1323,17 @@ const SimulatorGame = ({ onClose, onExit }) => {
       carRef.current.rotation.x = 0;
     }
 
-    // Update HUD
-    const newSpeed = Math.abs(Math.round(physics.speed));
-    const newRpm = Math.min(Math.abs(physics.speed) * 80, 8000);
-
-    setSpeed(newSpeed);
-    setRpm(newRpm);
-    setAltitude(Math.max(0, Math.round(physics.position.y)));
-    setIsFlying(physics.isAirborne || physics.position.y > 10);
+    // Update HUD - throttled to 10fps instead of 60fps for performance
+    const now = Date.now();
+    if (now - lastHudUpdateRef.current > 100) { // Update every 100ms (10fps)
+      lastHudUpdateRef.current = now;
+      const newSpeed = Math.abs(Math.round(physics.speed));
+      const newRpm = Math.min(Math.abs(physics.speed) * 80, 8000);
+      setSpeed(newSpeed);
+      setRpm(newRpm);
+      setAltitude(Math.max(0, Math.round(physics.position.y)));
+      setIsFlying(physics.isAirborne || physics.position.y > 10);
+    }
   }, []);
 
   // Update camera - adjusted for bigger car, FIXED DISTANCE regardless of speed
@@ -1387,15 +1391,15 @@ const SimulatorGame = ({ onClose, onExit }) => {
         // Scene - VICE CITY SUNSET SKY (iconic purple/orange gradient feel)
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x1a0a2e); // Deep purple night sky
-        scene.fog = new THREE.Fog(0x1a0a2e, 100, 2500); // Extended fog for 4K detail visibility
+        scene.fog = new THREE.Fog(0x1a0a2e, 100, 1800); // Fog hides distant objects
         sceneRef.current = scene;
 
-        // Camera - extended far plane for 4K detail
+        // Camera - far plane matches fog for no wasted rendering
         const camera = new THREE.PerspectiveCamera(
           75,
           window.innerWidth / window.innerHeight,
           0.5,  // Lower near plane for sharper close-ups
-          4000  // Extended far plane for more detail
+          2000  // Matches fog distance - no rendering invisible geometry
         );
         camera.position.set(0, 5, -10);
         cameraRef.current = camera;
@@ -1410,13 +1414,13 @@ const SimulatorGame = ({ onClose, onExit }) => {
           preserveDrawingBuffer: false,
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3)); // Up to 3x for 4K displays
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap at 2x (was 3x - 30% perf boost)
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadows
+        renderer.shadowMap.type = THREE.PCFShadowMap; // Faster than PCFSoftShadowMap
         renderer.toneMapping = THREE.ACESFilmicToneMapping; // Cinematic tone mapping
         renderer.toneMappingExposure = 1.2;
         renderer.outputColorSpace = THREE.SRGBColorSpace;
-        renderer.sortObjects = true;
+        renderer.sortObjects = false; // Disabled - buildings are static, no need to sort 10k+ objects
         containerRef.current.appendChild(renderer.domElement);
         rendererRef.current = renderer;
 
@@ -1433,8 +1437,8 @@ const SimulatorGame = ({ onClose, onExit }) => {
         const mainLight = new THREE.DirectionalLight(0xffeedd, 0.8);
         mainLight.position.set(50, 100, 50);
         mainLight.castShadow = true;
-        mainLight.shadow.mapSize.width = 2048;
-        mainLight.shadow.mapSize.height = 2048;
+        mainLight.shadow.mapSize.width = 1024; // Reduced from 2048 for performance
+        mainLight.shadow.mapSize.height = 1024;
         mainLight.shadow.camera.near = 1;
         mainLight.shadow.camera.far = 500;
         mainLight.shadow.camera.left = -100;
@@ -1444,15 +1448,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
         mainLight.shadow.bias = -0.001;
         scene.add(mainLight);
 
-        // Fill light from opposite side
-        const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
-        fillLight.position.set(-30, 50, -30);
-        scene.add(fillLight);
-
-        // Rim light for car highlights
-        const rimLight = new THREE.DirectionalLight(0xff8866, 0.4);
-        rimLight.position.set(0, 20, -50);
-        scene.add(rimLight);
+        // Fill and rim lights removed for performance (ambient + hemi + main is enough)
 
         // Create city and car
         createCity(scene);
