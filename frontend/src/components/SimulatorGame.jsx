@@ -719,50 +719,121 @@ const SimulatorGame = ({ onClose, onExit }) => {
     return car;
   };
 
-  // Shared palm tree geometry and materials (created once)
-  const palmTreeGeomRef = useRef(null);
-  const palmTreeMatsRef = useRef(null);
+  // Palm tree instancing refs
+  const palmTreeInstancesRef = useRef(null);
 
-  // Create palm tree helper - OPTIMIZED with shared geometry
-  const createPalmTree = (scene, x, z, scale) => {
+  // Create all palm trees using InstancedMesh for massive performance boost
+  const createPalmTrees = (scene, scale, roadPositions) => {
     if (!THREE) return;
 
-    // Initialize shared resources once
-    if (!palmTreeGeomRef.current) {
-      palmTreeGeomRef.current = {
-        trunk: new THREE.CylinderGeometry(0.4, 0.6, 15, 4), // Low poly trunk
-        frond: new THREE.ConeGeometry(1.5, 12, 3), // Low poly fronds
-      };
-      palmTreeMatsRef.current = {
-        trunk: new THREE.MeshBasicMaterial({ color: 0x8b7355 }),
-        leaf: new THREE.MeshBasicMaterial({ color: 0x228b22 }),
-      };
+    // First, collect all palm tree positions
+    const palmPositions = [];
+
+    // Beach palm trees - every 80 units
+    for (let x = -2400; x <= 2400; x += 80) {
+      palmPositions.push({
+        x: x + (Math.random() - 0.5) * 10,
+        z: 660 + (Math.random() - 0.5) * 20,
+        scale: scale
+      });
     }
 
-    const geoms = palmTreeGeomRef.current;
-    const mats = palmTreeMatsRef.current;
-
-    // Trunk
-    const trunk = new THREE.Mesh(geoms.trunk, mats.trunk);
-    trunk.position.set(x, 7.5 * scale, z);
-    trunk.scale.set(scale, scale, scale);
-    scene.add(trunk);
-
-    // Simplified fronds - only 4 instead of 8
-    const numFronds = 4;
-    for (let i = 0; i < numFronds; i++) {
-      const frond = new THREE.Mesh(geoms.frond, mats.leaf);
-      const angle = (i / numFronds) * Math.PI * 2;
-      frond.position.set(
-        x + Math.cos(angle) * 3 * scale,
-        15 * scale,
-        z + Math.sin(angle) * 3 * scale
-      );
-      frond.rotation.x = Math.PI / 2 + 0.5;
-      frond.rotation.z = angle;
-      frond.scale.set(scale, scale, scale);
-      scene.add(frond);
+    // Second row of beach palms - every 120 units
+    for (let x = -2400; x <= 2400; x += 120) {
+      palmPositions.push({
+        x: x + (Math.random() - 0.5) * 15,
+        z: 590 + (Math.random() - 0.5) * 15,
+        scale: scale
+      });
     }
+
+    // Palm trees scattered in city
+    for (let i = 0; i < 100; i++) {
+      const x = (Math.random() - 0.5) * 4000;
+      const z = (Math.random() - 0.5) * 2800 - 100;
+
+      const nearHorizontalRoad = roadPositions.some(roadZ => Math.abs(z - roadZ) < 25);
+      const nearVerticalRoad = roadPositions.some(roadX => Math.abs(x - roadX) < 25);
+      const inOcean = z > 600;
+
+      if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean) {
+        palmPositions.push({
+          x: x,
+          z: z,
+          scale: scale * (0.8 + Math.random() * 0.4)
+        });
+      }
+    }
+
+    const count = palmPositions.length;
+    if (count === 0) return;
+
+    // Create geometries
+    const trunkGeom = new THREE.CylinderGeometry(0.4, 0.6, 15, 4);
+    const frondGeom = new THREE.ConeGeometry(1.5, 12, 3);
+
+    // Create materials
+    const trunkMat = new THREE.MeshBasicMaterial({ color: 0x8b7355 });
+    const leafMat = new THREE.MeshBasicMaterial({ color: 0x228b22 });
+
+    // Create instanced meshes
+    const trunkInstances = new THREE.InstancedMesh(trunkGeom, trunkMat, count);
+    const frondInstances0 = new THREE.InstancedMesh(frondGeom, leafMat, count);
+    const frondInstances1 = new THREE.InstancedMesh(frondGeom, leafMat, count);
+    const frondInstances2 = new THREE.InstancedMesh(frondGeom, leafMat, count);
+    const frondInstances3 = new THREE.InstancedMesh(frondGeom, leafMat, count);
+
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const rotation = new THREE.Euler();
+    const quaternion = new THREE.Quaternion();
+    const scaleVec = new THREE.Vector3();
+
+    palmPositions.forEach((palm, i) => {
+      const s = palm.scale;
+
+      // Trunk
+      position.set(palm.x, 7.5 * s, palm.z);
+      scaleVec.set(s, s, s);
+      matrix.compose(position, quaternion.identity(), scaleVec);
+      trunkInstances.setMatrixAt(i, matrix);
+
+      // 4 fronds around the trunk
+      for (let f = 0; f < 4; f++) {
+        const angle = (f / 4) * Math.PI * 2;
+        position.set(
+          palm.x + Math.cos(angle) * 3 * s,
+          15 * s,
+          palm.z + Math.sin(angle) * 3 * s
+        );
+        rotation.set(Math.PI / 2 + 0.5, 0, angle);
+        quaternion.setFromEuler(rotation);
+        scaleVec.set(s, s, s);
+        matrix.compose(position, quaternion, scaleVec);
+
+        if (f === 0) frondInstances0.setMatrixAt(i, matrix);
+        else if (f === 1) frondInstances1.setMatrixAt(i, matrix);
+        else if (f === 2) frondInstances2.setMatrixAt(i, matrix);
+        else frondInstances3.setMatrixAt(i, matrix);
+      }
+    });
+
+    // Update instance matrices
+    trunkInstances.instanceMatrix.needsUpdate = true;
+    frondInstances0.instanceMatrix.needsUpdate = true;
+    frondInstances1.instanceMatrix.needsUpdate = true;
+    frondInstances2.instanceMatrix.needsUpdate = true;
+    frondInstances3.instanceMatrix.needsUpdate = true;
+
+    // Add to scene
+    scene.add(trunkInstances);
+    scene.add(frondInstances0);
+    scene.add(frondInstances1);
+    scene.add(frondInstances2);
+    scene.add(frondInstances3);
+
+    // Store refs for cleanup
+    palmTreeInstancesRef.current = [trunkInstances, frondInstances0, frondInstances1, frondInstances2, frondInstances3];
   };
 
   // Create the city environment - VICE CITY STYLE, 10X LARGER AREA
@@ -829,30 +900,9 @@ const SimulatorGame = ({ onClose, onExit }) => {
       roadPositions.push(i);
     }
 
-    // PALM TREES - REDUCED count for performance
-    // Beach palm trees - every 80 units instead of 40
-    for (let x = -2400; x <= 2400; x += 80) {
-      createPalmTree(scene, x + (Math.random() - 0.5) * 10, 660 + (Math.random() - 0.5) * 20, scale);
-    }
-
-    // Second row of beach palms - every 120 units instead of 60
-    for (let x = -2400; x <= 2400; x += 120) {
-      createPalmTree(scene, x + (Math.random() - 0.5) * 15, 590 + (Math.random() - 0.5) * 15, scale);
-    }
-
-    // Palm trees scattered in city - REDUCED from 400 to 100
-    for (let i = 0; i < 100; i++) {
-      const x = (Math.random() - 0.5) * 4000;
-      const z = (Math.random() - 0.5) * 2800 - 100;
-
-      const nearHorizontalRoad = roadPositions.some(roadZ => Math.abs(z - roadZ) < 25);
-      const nearVerticalRoad = roadPositions.some(roadX => Math.abs(x - roadX) < 25);
-      const inOcean = z > 600;
-
-      if (!nearHorizontalRoad && !nearVerticalRoad && !inOcean) {
-        createPalmTree(scene, x, z, scale * (0.8 + Math.random() * 0.4));
-      }
-    }
+    // PALM TREES - Using InstancedMesh for massive performance boost
+    // All palm trees created with single draw call per mesh type
+    createPalmTrees(scene, scale, roadPositions);
 
     // Beach umbrellas - OPTIMIZED with shared geometry and BasicMaterial
     const umbrellaMat = new THREE.MeshBasicMaterial({ color: 0xff1493 });
