@@ -1060,11 +1060,11 @@ const SimulatorGame = ({ onClose, onExit }) => {
     wideBridgeRoad.position.set(0, wideBridgeHeight + 3.2, wideBridgeCenterZ);
     scene.add(wideBridgeRoad);
 
-    // Lane markings (multiple lanes running north-south)
-    const laneLineGeom = new THREE.BoxGeometry(1.5, 0.6, wideBridgeDepth - 30);
-    [-60, 0, 60].forEach(x => {
+    // Lane markings (multiple lanes running east-west)
+    const laneLineGeom = new THREE.BoxGeometry(wideBridgeLength - 30, 0.6, 1.5);
+    [-80, 0, 80].forEach(z => {
       const laneLine = new THREE.Mesh(laneLineGeom, bridgeLineMat);
-      laneLine.position.set(x, wideBridgeHeight + 3.5, wideBridgeCenterZ);
+      laneLine.position.set(0, wideBridgeHeight + 3.5, wideBridgeCenterZ + z);
       scene.add(laneLine);
     });
 
