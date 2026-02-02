@@ -1379,9 +1379,9 @@ const SimulatorGame = ({ onClose, onExit }) => {
           velocity: new THREE.Vector3(),
           angularVelocity: 0,
           speed: 0,
-          maxSpeed: 180,
-          acceleration: 0.25,
-          braking: 0.45,
+          maxSpeed: 360, // Doubled from 180
+          acceleration: 0.5, // Doubled from 0.25
+          braking: 0.9, // Doubled from 0.45
           friction: 0.03,
           turnSpeed: 0.025,
           position: new THREE.Vector3(0, 1, 0),
@@ -1589,17 +1589,6 @@ const SimulatorGame = ({ onClose, onExit }) => {
       {!isLoading && (
         <div className="simulator-hud">
           <button className="exit-btn" onClick={handleExit}>✕</button>
-
-          <div className="speedometer">
-            <div className="speed-value">{speed}</div>
-            <div className="speed-unit">KM/H</div>
-            <div className="gear-indicator">{gear}</div>
-          </div>
-
-          <div className="rpm-gauge">
-            <div className="rpm-bar" style={{ width: `${(rpm / 8000) * 100}%` }} />
-            <div className="rpm-value">{Math.round(rpm)}</div>
-          </div>
 
           {/* Altitude indicator - shows when flying */}
           {isFlying && (
