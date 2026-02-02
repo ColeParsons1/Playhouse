@@ -796,7 +796,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     createBuildings(scene);
     createStreetLights(scene);
     createTrafficLights(scene);
-    createTrafficCars(scene);
+    // createTrafficCars(scene); // Disabled for 4K performance
 
     const roadPositions = [];
     for (let i = -200 * scale * citySize; i <= 200 * scale * citySize; i += 80 * scale) {
@@ -1468,17 +1468,17 @@ const SimulatorGame = ({ onClose, onExit }) => {
           updateCarPhysics();
           updateCamera();
 
-          // Update traffic cars
-          trafficCarsRef.current.forEach(tc => {
-            tc.progress += tc.route.speed * 0.016;
-            if (tc.progress > 1) tc.progress = 0;
-            if (tc.progress < 0) tc.progress = 1;
-            tc.mesh.position.set(
-              tc.route.startX + (tc.route.endX - tc.route.startX) * tc.progress,
-              0,
-              tc.route.startZ + (tc.route.endZ - tc.route.startZ) * tc.progress
-            );
-          });
+          // Traffic cars disabled for 4K performance
+          // trafficCarsRef.current.forEach(tc => {
+          //   tc.progress += tc.route.speed * 0.016;
+          //   if (tc.progress > 1) tc.progress = 0;
+          //   if (tc.progress < 0) tc.progress = 1;
+          //   tc.mesh.position.set(
+          //     tc.route.startX + (tc.route.endX - tc.route.startX) * tc.progress,
+          //     0,
+          //     tc.route.startZ + (tc.route.endZ - tc.route.startZ) * tc.progress
+          //   );
+          // });
 
           renderer.render(scene, camera);
         };
