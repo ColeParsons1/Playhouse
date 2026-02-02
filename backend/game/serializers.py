@@ -4,6 +4,7 @@ from .models import (
     Avatar, AvatarItem, PlayerAvatarItem, VoiceRoom, RoomParticipant,
     RoomGame, ChatMessage, ShopItem, PlayerShopItem, Follow, Plant
 )
+from .models_connect4 import Connect4Game, Connect4Stats, Connect4Leaderboard
 
 
 class PlayerSerializer(serializers.ModelSerializer):
@@ -222,3 +223,55 @@ class PlantSerializer(serializers.ModelSerializer):
     def get_emoji(self, obj):
         data = Plant.PLANT_DATA.get(obj.plant_type, {})
         return data.get('emoji', '🌱')
+
+
+# Connect 4 Serializers
+
+class Connect4GameSerializer(serializers.ModelSerializer):
+    """Serializer for Connect 4 game records"""
+    player_name = serializers.CharField(source='player.name', read_only=True)
+    
+    class Meta:
+        model = Connect4Game
+        fields = ['id', 'player', 'player_name', 'result', 'score', 'moves_made', 
+                  'created_at', 'duration_seconds']
+
+
+class Connect4StatsSerializer(serializers.ModelSerializer):
+    """Serializer for Connect 4 player statistics"""
+    player_name = serializers.CharField(source='player.name', read_only=True)
+    win_rate = serializers.SerializerMethodField()
+    average_score = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Connect4Stats
+        fields = ['player', 'player_name', 'games_played', 'wins', 'losses', 'draws',
+                  'total_score', 'high_score', 'current_streak', 'best_streak',
+                  'total_moves', 'fastest_win_moves', 'win_rate', 'average_score',
+                  'first_played', 'last_played']
+    
+    def get_win_rate(self, obj):
+        return round(obj.win_rate, 1)
+    
+    def get_average_score(self, obj):
+        return round(obj.average_score, 1)
+
+
+class Connect4LeaderboardSerializer(serializers.ModelSerializer):
+    """Serializer for Connect 4 leaderboard entries"""
+    player_name = serializers.CharField(source='player.name', read_only=True)
+    
+    class Meta:
+        model = Connect4Leaderboard
+        fields = ['player', 'player_name', 'period', 'date', 'games_played', 
+                  'total_score', 'wins']
+
+
+class Connect4GameResultSerializer(serializers.Serializer):
+    """Serializer for submitting a Connect 4 game result"""
+    result = serializers.ChoiceField(choices=['win', 'loss', 'draw'])
+    score = serializers.IntegerField(min_value=0)
+    moves_made = serializers.IntegerField(min_value=0)
+    board_state = serializers.ListField(child=serializers.ListField(child=serializers.CharField(allow_null=True)), required=False)
+    winning_cells = serializers.ListField(child=serializers.ListField(child=serializers.IntegerField()), required=False)
+    duration_seconds = serializers.IntegerField(min_value=0, default=0)

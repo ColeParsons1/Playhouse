@@ -25,7 +25,7 @@ SECRET_KEY = 'placeholder-secret-key'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['172.20.4.93', 'localhost', '127.0.0.1', 'tfplayhouse.com', 'www.tfplayhouse.com', 'GAME_SERVER_IP']
+ALLOWED_HOSTS = ['172.20.4.93', 'localhost', '127.0.0.1', 'tfplayhouse.com', 'www.tfplayhouse.com', 'GAME_SERVER_IP', '192.168.1.51']
 
 
 # Application definition
@@ -141,6 +141,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5174",
     "http://172.20.4.93:5173",
     "http://172.20.4.93:5174",
+    "http://192.168.1.51:5173",
+    "http://192.168.1.51:5174",
     "https://tfplayhouse.com",
     "https://www.tfplayhouse.com",
     "http://tfplayhouse.com",

@@ -1,31 +1,48 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import './PresentCatchGame.css';
 
-const GAME_DURATION = 20000;
-const SPAWN_INTERVAL = 280;
-const FALL_DURATION_MIN = 1912; // 10% faster than previous
-const FALL_DURATION_MAX = 3060; // 10% faster than previous
-const COINS_PER_CATCH = 2; // Reduced from 5
-const COMBO_THRESHOLD = 400; // ms between catches for combo (tighter window)
-const MAX_COMBO_MULTIPLIER = 2; // Reduced from 4
+const GAME_DURATION = 30000;
+const SPAWN_INTERVAL = 400;
+const FALL_DURATION_MIN = 3000;
+const FALL_DURATION_MAX = 4500;
+const BULLET_SPEED = 12;
+const FIRE_RATE = 180; // ms between shots
+const SHIP_WIDTH = 50;
 
-// Package size (20% smaller than original ~45px average)
-const PRESENT_SIZE = 36;
+// Space collectibles with different values
+const SPACE_ITEMS = [
+  { emoji: '⭐', value: 2, rarity: 'common', size: 30 },
+  { emoji: '🌟', value: 3, rarity: 'common', size: 32 },
+  { emoji: '✨', value: 2, rarity: 'common', size: 28 },
+  { emoji: '💫', value: 3, rarity: 'common', size: 30 },
+  { emoji: '🪐', value: 5, rarity: 'uncommon', size: 38 },
+  { emoji: '🌙', value: 4, rarity: 'uncommon', size: 35 },
+  { emoji: '☄️', value: 6, rarity: 'uncommon', size: 36 },
+  { emoji: '🚀', value: 8, rarity: 'rare', size: 34 },
+  { emoji: '🛸', value: 10, rarity: 'rare', size: 40 },
+  { emoji: '🌌', value: 15, rarity: 'epic', size: 42 },
+];
 
-// Generate random present with coin value between 2-5 (reduced from 5-12)
+// Generate random space item
 const pregenRandom = () => {
-  const value = 2 + Math.floor(Math.random() * 4); // Random 2-5
+  const rand = Math.random();
+  let items;
+  if (rand < 0.45) {
+    items = SPACE_ITEMS.filter(i => i.rarity === 'common');
+  } else if (rand < 0.75) {
+    items = SPACE_ITEMS.filter(i => i.rarity === 'uncommon');
+  } else if (rand < 0.92) {
+    items = SPACE_ITEMS.filter(i => i.rarity === 'rare');
+  } else {
+    items = SPACE_ITEMS.filter(i => i.rarity === 'epic');
+  }
+  const item = items[Math.floor(Math.random() * items.length)];
 
   return {
-    emoji: '🎁',
-    value,
-    size: PRESENT_SIZE,
-    isBad: false,
-    left: 8 + Math.random() * 84,
+    ...item,
+    left: 5 + Math.random() * 90,
     fallDuration: FALL_DURATION_MIN + Math.random() * (FALL_DURATION_MAX - FALL_DURATION_MIN),
-    rotation: -20 + Math.random() * 40,
-    wobble: Math.random() * 20 + 10,
-    delay: Math.random() * 0.3,
+    rotation: -15 + Math.random() * 30,
   };
 };
 
@@ -34,27 +51,39 @@ const PresentCatchGame = ({ onGameEnd, onClose }) => {
   const [countdown, setCountdown] = useState(3);
   const [timeLeft, setTimeLeft] = useState(GAME_DURATION / 1000);
   const [score, setScore] = useState(0);
-  const [caught, setCaught] = useState(0);
+  const [destroyed, setDestroyed] = useState(0);
   const [combo, setCombo] = useState(0);
   const [showCombo, setShowCombo] = useState(false);
-  const [screenShake, setScreenShake] = useState(false);
+  const [shipX, setShipX] = useState(50); // percentage
+  const [bullets, setBullets] = useState([]);
+  const [items, setItems] = useState([]);
+  const [explosions, setExplosions] = useState([]);
 
   const scoreRef = useRef(0);
-  const caughtRef = useRef(0);
+  const destroyedRef = useRef(0);
   const comboRef = useRef(0);
-  const lastCatchTimeRef = useRef(0);
-  const presentsRef = useRef(new Map());
-  const presentIdRef = useRef(0);
+  const lastShotRef = useRef(0);
+  const lastComboRef = useRef(0);
   const gameAreaRef = useRef(null);
-  const presentsContainerRef = useRef(null);
   const gameStateRef = useRef('countdown');
-  const lastSpawnRef = useRef(0);
+  const shipXRef = useRef(50);
+  const bulletsRef = useRef([]);
+  const itemsRef = useRef([]);
+  const bulletIdRef = useRef(0);
+  const itemIdRef = useRef(0);
   const rafRef = useRef(null);
-  const particlesRef = useRef([]);
+  const lastSpawnRef = useRef(0);
+  const isTouchingRef = useRef(false);
+  const touchStartXRef = useRef(0);
+  const shipStartXRef = useRef(50);
 
   useEffect(() => {
     gameStateRef.current = gameState;
   }, [gameState]);
+
+  useEffect(() => {
+    shipXRef.current = shipX;
+  }, [shipX]);
 
   // Countdown
   useEffect(() => {
@@ -75,7 +104,7 @@ const PresentCatchGame = ({ onGameEnd, onClose }) => {
         if (prev <= 1) {
           setGameState('ended');
           setScore(scoreRef.current);
-          setCaught(caughtRef.current);
+          setDestroyed(destroyedRef.current);
           return 0;
         }
         return prev - 1;
@@ -84,164 +113,168 @@ const PresentCatchGame = ({ onGameEnd, onClose }) => {
     return () => clearInterval(timer);
   }, [gameState]);
 
-  const createPresentElement = useCallback((id, data) => {
-    const el = document.createElement('div');
-    el.className = `falling-present ${data.value >= 10 ? 'rare-item' : ''}`;
-    el.dataset.id = id;
-    el.innerHTML = `
-      <span class="present-emoji">${data.emoji}</span>
-      ${data.value >= 10 ? '<span class="sparkle-effect"></span>' : ''}
-    `;
-    el.style.cssText = `
-      left: ${data.left}%;
-      font-size: ${data.size}px;
-      animation-duration: ${data.fallDuration}ms;
-      --rotation: ${data.rotation}deg;
-      --wobble: ${data.wobble}px;
-      animation-delay: ${data.delay}s;
-    `;
-    return el;
+  // Create explosion effect
+  const createExplosion = useCallback((x, y, rarity) => {
+    const id = Date.now() + Math.random();
+    const colorSets = {
+      common: '#00ffff',
+      uncommon: '#ff00ff',
+      rare: '#ffff00',
+      epic: '#ff6600',
+    };
+    setExplosions(prev => [...prev, { id, x, y, color: colorSets[rarity] || '#00ffff' }]);
+    setTimeout(() => {
+      setExplosions(prev => prev.filter(e => e.id !== id));
+    }, 500);
   }, []);
 
-  const createParticles = useCallback((x, y, color, count = 8) => {
-    const container = presentsContainerRef.current;
-    if (!container) return;
-
-    for (let i = 0; i < count; i++) {
-      const particle = document.createElement('div');
-      particle.className = 'catch-particle';
-      const angle = (i / count) * Math.PI * 2;
-      const velocity = 50 + Math.random() * 50;
-      const dx = Math.cos(angle) * velocity;
-      const dy = Math.sin(angle) * velocity;
-
-      particle.style.cssText = `
-        left: ${x}px;
-        top: ${y}px;
-        --dx: ${dx}px;
-        --dy: ${dy}px;
-        background: ${color};
-      `;
-      container.appendChild(particle);
-      setTimeout(() => particle.remove(), 600);
-    }
-  }, []);
-
-  const handleCatch = useCallback((id, x, y) => {
-    const present = presentsRef.current.get(id);
-    if (!present) return;
-
-    presentsRef.current.delete(id);
-    if (present.element && present.element.parentNode) {
-      present.element.classList.add('caught');
-      setTimeout(() => present.element.remove(), 150);
-    }
-
+  // Fire bullet
+  const fireBullet = useCallback(() => {
     const now = Date.now();
-    const data = present.data;
+    if (now - lastShotRef.current < FIRE_RATE) return;
+    lastShotRef.current = now;
 
-    // Calculate combo
-    const timeSinceLastCatch = now - lastCatchTimeRef.current;
+    const id = bulletIdRef.current++;
+    const bullet = {
+      id,
+      x: shipXRef.current,
+      y: 85,
+    };
+    bulletsRef.current.push(bullet);
+    setBullets([...bulletsRef.current]);
+  }, []);
 
-    if (timeSinceLastCatch < COMBO_THRESHOLD) {
-      comboRef.current = Math.min(comboRef.current + 1, MAX_COMBO_MULTIPLIER);
-    } else {
-      comboRef.current = 1;
-    }
-
-    const multiplier = comboRef.current;
-    const points = data.value * multiplier;
-
-    scoreRef.current += points;
-    caughtRef.current += 1;
-    lastCatchTimeRef.current = now;
-
-    setCombo(comboRef.current);
-    if (comboRef.current >= 2) {
-      setShowCombo(true);
-      setTimeout(() => setShowCombo(false), 800);
-    }
-
-    // Gold particles
-    const colors = ['#ffd700', '#ffcc00', '#ffaa00', '#ff9500', '#ffe066'];
-    createParticles(x, y, colors[Math.floor(Math.random() * colors.length)], data.value >= 10 ? 15 : 8);
-
-    const pop = document.createElement('div');
-    pop.className = `pop-effect ${multiplier > 1 ? 'combo' : ''}`;
-    pop.innerHTML = `
-      <span class="pop-coins">+${points} 🪙</span>
-      ${multiplier > 1 ? `<span class="combo-text">x${multiplier}</span>` : ''}
-    `;
-    pop.style.left = `${x}px`;
-    pop.style.top = `${y}px`;
-    presentsContainerRef.current?.appendChild(pop);
-    setTimeout(() => pop.remove(), 500);
-
-    if (caughtRef.current % 2 === 0 || caughtRef.current <= 3) {
-      setScore(scoreRef.current);
-      setCaught(caughtRef.current);
-    }
-  }, [createParticles]);
-
-  const handleInteraction = useCallback((e) => {
+  // Handle touch/mouse for ship movement
+  const handlePointerDown = useCallback((e) => {
+    if (gameStateRef.current !== 'playing') return;
     e.preventDefault();
-    e.stopPropagation();
 
-    const touch = e.touches?.[0] || e.changedTouches?.[0] || e;
-    const clientX = touch.clientX;
-    const clientY = touch.clientY;
+    const touch = e.touches?.[0] || e;
+    const rect = gameAreaRef.current?.getBoundingClientRect();
+    if (!rect) return;
 
-    const target = document.elementFromPoint(clientX, clientY);
-    const presentEl = target?.closest('.falling-present');
-    if (!presentEl) return;
+    isTouchingRef.current = true;
+    touchStartXRef.current = touch.clientX;
+    shipStartXRef.current = shipXRef.current;
 
-    const id = parseInt(presentEl.dataset.id, 10);
-    if (isNaN(id)) return;
+    // Fire immediately on tap
+    fireBullet();
+  }, [fireBullet]);
 
-    const rect = presentsContainerRef.current?.getBoundingClientRect();
-    const x = clientX - (rect?.left || 0);
-    const y = clientY - (rect?.top || 0);
+  const handlePointerMove = useCallback((e) => {
+    if (!isTouchingRef.current || gameStateRef.current !== 'playing') return;
+    e.preventDefault();
 
-    handleCatch(id, x, y);
-  }, [handleCatch]);
+    const touch = e.touches?.[0] || e;
+    const rect = gameAreaRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const deltaX = touch.clientX - touchStartXRef.current;
+    const deltaPercent = (deltaX / rect.width) * 100;
+    const newX = Math.max(5, Math.min(95, shipStartXRef.current + deltaPercent));
+
+    setShipX(newX);
+  }, []);
+
+  const handlePointerUp = useCallback(() => {
+    isTouchingRef.current = false;
+  }, []);
+
+  // Auto-fire while touching
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+
+    const fireInterval = setInterval(() => {
+      if (isTouchingRef.current) {
+        fireBullet();
+      }
+    }, FIRE_RATE);
+
+    return () => clearInterval(fireInterval);
+  }, [gameState, fireBullet]);
 
   // Main game loop
   useEffect(() => {
     if (gameState !== 'playing') return;
 
-    const container = presentsContainerRef.current;
-    if (!container) return;
-
     const gameLoop = (timestamp) => {
       if (gameStateRef.current !== 'playing') return;
 
+      // Spawn items
       if (timestamp - lastSpawnRef.current >= SPAWN_INTERVAL) {
         lastSpawnRef.current = timestamp;
-
-        const id = presentIdRef.current++;
+        const id = itemIdRef.current++;
         const data = pregenRandom();
-        const element = createPresentElement(id, data);
-
-        presentsRef.current.set(id, {
-          element,
-          data,
+        const item = {
+          id,
+          ...data,
+          y: -5,
           createdAt: timestamp,
-          fallDuration: data.fallDuration,
-        });
+          speed: (100 + 5) / (data.fallDuration / 16.67), // percent per frame
+        };
+        itemsRef.current.push(item);
+      }
 
-        container.appendChild(element);
+      // Update items (move down)
+      itemsRef.current = itemsRef.current.map(item => ({
+        ...item,
+        y: item.y + item.speed,
+      })).filter(item => item.y < 105);
 
-        const removeTime = data.fallDuration + 500;
-        setTimeout(() => {
-          const present = presentsRef.current.get(id);
-          if (present) {
-            presentsRef.current.delete(id);
-            if (present.element && present.element.parentNode) {
-              present.element.remove();
+      // Update bullets (move up)
+      bulletsRef.current = bulletsRef.current.map(bullet => ({
+        ...bullet,
+        y: bullet.y - BULLET_SPEED * 0.3,
+      })).filter(bullet => bullet.y > -5);
+
+      // Collision detection
+      const bulletsToRemove = new Set();
+      const itemsToRemove = new Set();
+
+      for (const bullet of bulletsRef.current) {
+        for (const item of itemsRef.current) {
+          // Simple distance check (in percentage)
+          const dx = Math.abs(bullet.x - item.left);
+          const dy = Math.abs(bullet.y - item.y);
+          const hitRadius = (item.size / 10) + 2;
+
+          if (dx < hitRadius && dy < hitRadius) {
+            bulletsToRemove.add(bullet.id);
+            itemsToRemove.add(item.id);
+
+            // Score
+            const now = Date.now();
+            if (now - lastComboRef.current < 800) {
+              comboRef.current = Math.min(comboRef.current + 1, 5);
+            } else {
+              comboRef.current = 1;
+            }
+            lastComboRef.current = now;
+
+            const points = item.value * comboRef.current;
+            scoreRef.current += points;
+            destroyedRef.current += 1;
+
+            // Explosion
+            createExplosion(item.left, item.y, item.rarity);
+
+            // Update UI
+            setScore(scoreRef.current);
+            setDestroyed(destroyedRef.current);
+            setCombo(comboRef.current);
+            if (comboRef.current >= 2) {
+              setShowCombo(true);
+              setTimeout(() => setShowCombo(false), 600);
             }
           }
-        }, removeTime);
+        }
       }
+
+      bulletsRef.current = bulletsRef.current.filter(b => !bulletsToRemove.has(b.id));
+      itemsRef.current = itemsRef.current.filter(i => !itemsToRemove.has(i.id));
+
+      setItems([...itemsRef.current]);
+      setBullets([...bulletsRef.current]);
 
       rafRef.current = requestAnimationFrame(gameLoop);
     };
@@ -253,19 +286,17 @@ const PresentCatchGame = ({ onGameEnd, onClose }) => {
         cancelAnimationFrame(rafRef.current);
       }
     };
-  }, [gameState, createPresentElement]);
+  }, [gameState, createExplosion]);
 
-  // Cleanup
+  // Cleanup on game end
   useEffect(() => {
     if (gameState === 'ended') {
-      presentsRef.current.forEach((present) => {
-        if (present.element && present.element.parentNode) {
-          present.element.remove();
-        }
-      });
-      presentsRef.current.clear();
+      itemsRef.current = [];
+      bulletsRef.current = [];
+      setItems([]);
+      setBullets([]);
       setScore(scoreRef.current);
-      setCaught(caughtRef.current);
+      setDestroyed(destroyedRef.current);
     }
   }, [gameState]);
 
@@ -274,7 +305,7 @@ const PresentCatchGame = ({ onGameEnd, onClose }) => {
   }, [onGameEnd]);
 
   return (
-    <div className={`present-game-overlay ${screenShake ? 'shake' : ''}`}>
+    <div className="present-game-overlay shooter-mode">
       <div className="present-game-container" ref={gameAreaRef}>
         {/* Animated Background */}
         <div className="animated-bg">
@@ -311,8 +342,8 @@ const PresentCatchGame = ({ onGameEnd, onClose }) => {
             </div>
           </div>
           <div className="game-stat catch-stat">
-            <span className="stat-icon">🎁</span>
-            <span className="stat-value">{caught}</span>
+            <span className="stat-icon">💥</span>
+            <span className="stat-value">{destroyed}</span>
           </div>
         </div>
 
@@ -335,12 +366,65 @@ const PresentCatchGame = ({ onGameEnd, onClose }) => {
         {/* Game Area */}
         {gameState === 'playing' && (
           <div
-            className="presents-area"
-            ref={presentsContainerRef}
-            onTouchStart={handleInteraction}
-            onTouchEnd={(e) => e.preventDefault()}
-            onClick={handleInteraction}
-          />
+            className="shooter-area"
+            onTouchStart={handlePointerDown}
+            onTouchMove={handlePointerMove}
+            onTouchEnd={handlePointerUp}
+            onMouseDown={handlePointerDown}
+            onMouseMove={handlePointerMove}
+            onMouseUp={handlePointerUp}
+            onMouseLeave={handlePointerUp}
+          >
+            {/* Falling items */}
+            {items.map(item => (
+              <div
+                key={item.id}
+                className={`space-target rarity-${item.rarity}`}
+                style={{
+                  left: `${item.left}%`,
+                  top: `${item.y}%`,
+                  fontSize: `${item.size}px`,
+                  transform: `translate(-50%, -50%) rotate(${item.rotation}deg)`,
+                }}
+              >
+                <span className="target-emoji">{item.emoji}</span>
+              </div>
+            ))}
+
+            {/* Bullets */}
+            {bullets.map(bullet => (
+              <div
+                key={bullet.id}
+                className="laser-bullet"
+                style={{
+                  left: `${bullet.x}%`,
+                  top: `${bullet.y}%`,
+                }}
+              />
+            ))}
+
+            {/* Explosions */}
+            {explosions.map(exp => (
+              <div
+                key={exp.id}
+                className="explosion"
+                style={{
+                  left: `${exp.x}%`,
+                  top: `${exp.y}%`,
+                  '--explosion-color': exp.color,
+                }}
+              />
+            ))}
+
+            {/* Player Ship */}
+            <div
+              className="player-ship"
+              style={{ left: `${shipX}%` }}
+            >
+              <div className="ship-body">🚀</div>
+              <div className="ship-thruster" />
+            </div>
+          </div>
         )}
 
         {/* Game Over Screen */}
@@ -354,17 +438,17 @@ const PresentCatchGame = ({ onGameEnd, onClose }) => {
               </div>
 
               <h2 className="game-over-title">
-                {score >= 200 ? 'PACKED!' : score >= 100 ? 'Great Catch!' : 'Nice Try!'}
+                {score >= 300 ? 'STELLAR!' : score >= 150 ? 'Space Ace!' : 'Nice Flying!'}
               </h2>
 
               <div className="final-stats">
                 <div className="final-stat">
                   <div className="stat-icon-wrapper">
-                    <span className="final-stat-icon">🎁</span>
+                    <span className="final-stat-icon">💥</span>
                   </div>
                   <div className="stat-info">
-                    <span className="final-stat-label">Packages Caught</span>
-                    <span className="final-stat-value">{caught}</span>
+                    <span className="final-stat-label">Targets Destroyed</span>
+                    <span className="final-stat-value">{destroyed}</span>
                   </div>
                 </div>
 
@@ -379,10 +463,10 @@ const PresentCatchGame = ({ onGameEnd, onClose }) => {
                 </div>
               </div>
 
-              {caught >= 25 && (
+              {destroyed >= 30 && (
                 <div className="achievement-badge">
-                  <span className="badge-icon">👑</span>
-                  <span className="badge-text">Pack Master!</span>
+                  <span className="badge-icon">🌌</span>
+                  <span className="badge-text">Galaxy Defender!</span>
                 </div>
               )}
 
@@ -402,11 +486,11 @@ const PresentCatchGame = ({ onGameEnd, onClose }) => {
         {gameState === 'countdown' && countdown === 3 && (
           <div className="game-instructions">
             <div className="instruction-card">
-              <p className="instruction-main">Tap packages to catch them!</p>
+              <p className="instruction-main">Drag to move, hold to shoot!</p>
               <p className="instruction-sub">
-                <span className="good">🎁 Presents = 5-12 coins each!</span>
+                <span className="good">🚀 Destroy cosmic targets!</span>
               </p>
-              <p className="instruction-tip">Chain catches for combo bonus!</p>
+              <p className="instruction-tip">Chain hits for combo bonus!</p>
             </div>
           </div>
         )}

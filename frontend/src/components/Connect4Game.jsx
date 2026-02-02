@@ -17,6 +17,12 @@ const Connect4Game = ({ onGameEnd, onClose }) => {
   const [moveCount, setMoveCount] = useState(0);
 
   const aiTimeoutRef = useRef(null);
+  const boardRef = useRef(board);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    boardRef.current = board;
+  }, [board]);
 
   // Countdown
   useEffect(() => {
@@ -211,7 +217,9 @@ const Connect4Game = ({ onGameEnd, onClose }) => {
 
   // AI move
   const aiMove = useCallback(() => {
-    const availableCols = getAvailableColumns(board);
+    // Use ref to get the latest board state
+    const currentBoard = boardRef.current;
+    const availableCols = getAvailableColumns(currentBoard);
     if (availableCols.length === 0) return;
 
     let bestCol = availableCols[Math.floor(availableCols.length / 2)];
@@ -221,8 +229,8 @@ const Connect4Game = ({ onGameEnd, onClose }) => {
     const depth = moveCount < 8 ? 4 : moveCount < 16 ? 5 : 6;
 
     for (const col of availableCols) {
-      const row = getDropRow(board, col);
-      const newBoard = board.map(r => [...r]);
+      const row = getDropRow(currentBoard, col);
+      const newBoard = currentBoard.map(r => [...r]);
       newBoard[row][col] = 'ai';
 
       // Check for immediate win
@@ -240,9 +248,9 @@ const Connect4Game = ({ onGameEnd, onClose }) => {
     }
 
     // Make the move
-    const row = getDropRow(board, bestCol);
+    const row = getDropRow(currentBoard, bestCol);
     if (row >= 0) {
-      const newBoard = board.map(r => [...r]);
+      const newBoard = currentBoard.map(r => [...r]);
       newBoard[row][bestCol] = 'ai';
       setBoard(newBoard);
       setLastMove({ row, col: bestCol });
@@ -260,7 +268,7 @@ const Connect4Game = ({ onGameEnd, onClose }) => {
         setCurrentPlayer('player');
       }
     }
-  }, [board, moveCount, getAvailableColumns, getDropRow, checkWinner, minimax]);
+  }, [moveCount, getAvailableColumns, getDropRow, checkWinner, minimax]);
 
   // Player move
   const handleColumnClick = useCallback((col) => {

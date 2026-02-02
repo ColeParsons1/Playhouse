@@ -440,6 +440,196 @@
   color: #fff;
 }
 
+/* Critical hit splat */
+.hit-splat.crit {
+  background: linear-gradient(135deg, #ff6600 0%, #ff0000 50%, #ffcc00 100%);
+  color: #fff;
+  font-size: 1.6rem;
+  padding: 6px 14px;
+  border: 2px solid #ffff00;
+  box-shadow: 0 0 20px rgba(255, 100, 0, 0.8), 0 0 40px rgba(255, 200, 0, 0.5);
+  animation: crit-pulse 0.3s ease-out;
+}
+
+@keyframes crit-pulse {
+  0% { transform: scale(1.5); }
+  50% { transform: scale(1.8); }
+  100% { transform: scale(1); }
+}
+
+/* Combo display */
+.combo-display {
+  position: absolute;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 1.3rem;
+  font-weight: bold;
+  text-shadow: 2px 2px 0 #000;
+  z-index: 15;
+  pointer-events: none;
+}
+
+.combo-display.player-combo {
+  left: 10%;
+  top: 50%;
+  background: linear-gradient(135deg, #ff6600 0%, #ff3300 100%);
+  border: 3px solid #ffcc00;
+  color: #fff;
+  animation: combo-bounce 0.5s ease-out;
+}
+
+.combo-display.enemy-combo {
+  right: 10%;
+  top: 50%;
+  background: linear-gradient(135deg, #660000 0%, #330000 100%);
+  border: 3px solid #ff0000;
+  color: #ff6666;
+  animation: combo-bounce 0.5s ease-out;
+}
+
+@keyframes combo-bounce {
+  0% { transform: scale(0) rotate(-10deg); }
+  50% { transform: scale(1.2) rotate(5deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+/* Difficulty indicator */
+.difficulty-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: #aaa;
+  margin-top: 6px;
+}
+
+.difficulty-badge.easy { border: 1px solid #00cc00; color: #00cc00; }
+.difficulty-badge.medium { border: 1px solid #ffcc00; color: #ffcc00; }
+.difficulty-badge.hard { border: 1px solid #ff6600; color: #ff6600; }
+.difficulty-badge.expert { border: 1px solid #ff0000; color: #ff0000; }
+
+/* Difficulty selector grid */
+.difficulty-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.difficulty-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 20px;
+  background: linear-gradient(180deg, #3d2b5e 0%, #2d1b4e 100%);
+  border: 3px solid #5c4c7e;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 100px;
+}
+
+.difficulty-btn:hover {
+  transform: translateY(-2px);
+}
+
+.difficulty-btn.selected {
+  box-shadow: 0 0 15px currentColor;
+}
+
+.difficulty-btn.easy {
+  border-color: #00cc00;
+}
+.difficulty-btn.easy.selected {
+  background: linear-gradient(180deg, #1a4d1a 0%, #0d2b0d 100%);
+}
+.difficulty-btn.easy .diff-name {
+  color: #00ff00;
+}
+
+.difficulty-btn.medium {
+  border-color: #ffcc00;
+}
+.difficulty-btn.medium.selected {
+  background: linear-gradient(180deg, #4d4d1a 0%, #2b2b0d 100%);
+}
+.difficulty-btn.medium .diff-name {
+  color: #ffcc00;
+}
+
+.difficulty-btn.hard {
+  border-color: #ff6600;
+}
+.difficulty-btn.hard.selected {
+  background: linear-gradient(180deg, #4d2b1a 0%, #2b1a0d 100%);
+}
+.difficulty-btn.hard .diff-name {
+  color: #ff6600;
+}
+
+.difficulty-btn.expert {
+  border-color: #ff0000;
+}
+.difficulty-btn.expert.selected {
+  background: linear-gradient(180deg, #4d1a1a 0%, #2b0d0d 100%);
+}
+.difficulty-btn.expert .diff-name {
+  color: #ff0000;
+}
+
+.diff-name {
+  font-size: 1rem;
+  font-weight: bold;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+}
+
+.diff-reward {
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: #00D45F;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+}
+
+.diff-desc {
+  font-size: 0.7rem;
+  color: #aaa;
+}
+
+/* Stake multiplier breakdown */
+.stake-mult {
+  font-size: 0.65rem;
+  color: #888;
+  margin-top: 2px;
+}
+
+/* Result screen reward breakdown */
+.reward-breakdown {
+  font-size: 0.8rem;
+  color: #aaa;
+  margin-top: 4px;
+}
+
+@media (max-width: 500px) {
+  .difficulty-grid {
+    gap: 6px;
+  }
+  .difficulty-btn {
+    padding: 10px 14px;
+    min-width: 80px;
+  }
+  .diff-name {
+    font-size: 0.85rem;
+  }
+  .diff-desc {
+    font-size: 0.6rem;
+  }
+}
+
 /* Bottom HUD */
 .hud-bottom {
   position: absolute;
@@ -447,9 +637,111 @@
   left: 0;
   right: 0;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   padding: 10px;
   background: linear-gradient(0deg, rgba(0,0,0,0.8) 0%, transparent 100%);
+  transition: all 0.3s ease;
+}
+
+.hud-bottom.minimized {
+  padding: 8px;
+  background: rgba(0,0,0,0.7);
+  justify-content: center;
+  gap: 10px;
+}
+
+/* Toggle button */
+.hud-toggle-btn {
+  position: absolute;
+  top: -36px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, #FF6B00 0%, #cc5500 100%);
+  border: 2px solid #ffaa00;
+  border-radius: 8px 8px 0 0;
+  padding: 6px 16px;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: bold;
+  cursor: pointer;
+  z-index: 10;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.3);
+}
+
+.hud-toggle-btn:active {
+  transform: translateX(-50%) scale(0.95);
+}
+
+/* Minimized bar */
+.hud-minimized-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  justify-content: center;
+}
+
+.quick-attack-btn {
+  background: linear-gradient(180deg, #666 0%, #444 100%);
+  border: 2px solid #888;
+  border-radius: 8px;
+  padding: 10px 20px;
+  color: #999;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: not-allowed;
+}
+
+.quick-attack-btn.ready {
+  background: linear-gradient(180deg, #FF2D20 0%, #cc0000 100%);
+  border-color: #ff6666;
+  color: #fff;
+  cursor: pointer;
+  animation: pulse-attack 1s infinite;
+}
+
+@keyframes pulse-attack {
+  0%, 100% { box-shadow: 0 0 5px rgba(255,45,32,0.5); }
+  50% { box-shadow: 0 0 15px rgba(255,45,32,0.8); }
+}
+
+.quick-spec-btn {
+  background: linear-gradient(180deg, #3d2b5e 0%, #2d1b4e 100%);
+  border: 2px solid #5c4c7e;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.quick-spec-btn.active {
+  background: linear-gradient(180deg, #FFD000 0%, #cc9900 100%);
+  border-color: #ffee00;
+}
+
+.quick-spec-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quick-food {
+  display: flex;
+  gap: 6px;
+}
+
+.quick-food-btn {
+  background: linear-gradient(180deg, #3d5e2b 0%, #2d4e1b 100%);
+  border: 2px solid #5c7e4c;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.quick-food-btn:active {
+  transform: scale(0.9);
 }
 
 /* Combat panel */
@@ -832,6 +1124,27 @@
     gap: 8px;
     align-items: center;
     padding: 8px;
+  }
+
+  .hud-bottom.minimized {
+    flex-direction: row;
+    padding: 10px;
+  }
+
+  .hud-toggle-btn {
+    top: -32px;
+    padding: 5px 14px;
+    font-size: 0.75rem;
+  }
+
+  .hud-minimized-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .quick-attack-btn {
+    padding: 12px 24px;
+    font-size: 1.1rem;
   }
 
   .combat-panel,

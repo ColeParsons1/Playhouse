@@ -31,6 +31,7 @@ const DriveGame = lazy(() => import('./SimulatorGame'));
 const FlyGame = lazy(() => import('./FlyGame'));
 const DuelGame = lazy(() => import('./DuelGame'));
 const GardenGame = lazy(() => import('./GardenGame'));
+const OrganizeGame = lazy(() => import('./OrganizeGame'));
 
 // McDonald's PlayPlace color palette - vibrant & saturated
 const PLAYPLACE_COLORS = {
@@ -53,10 +54,10 @@ const GAMES = [
   },
   {
     id: 'presents',
-    name: 'Pack',
-    emoji: '📦',
-    description: 'Catch falling packages!',
-    color: PLAYPLACE_COLORS.blue,
+    name: 'Galaxy Catch',
+    emoji: '🌌',
+    description: 'Collect cosmic treasures!',
+    color: '#7c3aed',
   },
   {
     id: 'runner',
@@ -219,6 +220,13 @@ const GAMES = [
     description: 'Plant, water, harvest!',
     color: '#00A94F',
   },
+  {
+    id: 'organize',
+    name: 'Tidy Up',
+    emoji: '🏠',
+    description: 'Relaxing room organizing!',
+    color: '#81C784',
+  },
 ];
 
 // Loading fallback component
@@ -356,6 +364,7 @@ const GameHub = ({ player, onPlayerUpdate }) => {
       fly: FlyGame,
       duel: DuelGame,
       garden: GardenGame,
+      organize: OrganizeGame,
     }[activeGame];
 
     if (!GameComponent) return null;

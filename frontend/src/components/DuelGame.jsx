@@ -264,6 +264,18 @@ const MAX_HP = 99;
 const MAX_PRAYER = 99;
 const MAX_SPECIAL = 100;
 
+// AI Difficulty levels - rewardMult affects stake payout!
+const AI_DIFFICULTY = {
+  EASY: { prayerAccuracy: 0.5, reactSpeed: 4, eatThreshold: 25, specUseChance: 0.15, weaponSwitchChance: 0.02, rewardMult: 0.5, name: 'Easy' },
+  MEDIUM: { prayerAccuracy: 0.7, reactSpeed: 3, eatThreshold: 35, specUseChance: 0.25, weaponSwitchChance: 0.03, rewardMult: 1.0, name: 'Medium' },
+  HARD: { prayerAccuracy: 0.85, reactSpeed: 2, eatThreshold: 45, specUseChance: 0.4, weaponSwitchChance: 0.05, rewardMult: 1.5, name: 'Hard' },
+  EXPERT: { prayerAccuracy: 0.95, reactSpeed: 1, eatThreshold: 50, specUseChance: 0.5, weaponSwitchChance: 0.08, rewardMult: 2.5, name: 'Expert' },
+};
+
+// Critical hit configuration
+const CRIT_CHANCE = 0.12; // 12% base crit chance
+const CRIT_MULTIPLIER = 1.5; // 50% extra damage on crit
+
 const DuelGame = ({ onGameEnd, onClose, player }) => {
   // Phase management
   const [phase, setPhase] = useState(PHASES.CLASS_SELECT);
@@ -280,19 +292,19 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
   const [playerPrayer, setPlayerPrayer] = useState(MAX_PRAYER);
   const [playerSpecial, setPlayerSpecial] = useState(MAX_SPECIAL);
   const [playerStyle, setPlayerStyle] = useState(COMBAT_STYLES.MELEE);
-  const [playerWeapon, setPlayerWeapon] = useState(WEAPONS.abyssal_whip);
+  const [playerWeapon, setPlayerWeapon] = useState(WEAPONS.foam_sword);
   const [playerPrayers, setPlayerPrayers] = useState({
     melee: false,
     ranged: false,
     magic: false,
   });
   const [playerInventory, setPlayerInventory] = useState([
-    FOOD.shark, FOOD.shark, FOOD.shark, FOOD.shark,
-    FOOD.shark, FOOD.shark, FOOD.shark, FOOD.shark,
-    FOOD.shark, FOOD.shark, FOOD.shark, FOOD.shark,
-    FOOD.karambwan, FOOD.karambwan, FOOD.karambwan, FOOD.karambwan,
-    WEAPONS.dds, WEAPONS.ags, WEAPONS.granite_maul, WEAPONS.rune_crossbow,
-    WEAPONS.ancient_staff, null, null, null,
+    FOOD.cookie, FOOD.cookie, FOOD.cookie, FOOD.cookie,
+    FOOD.cookie, FOOD.cookie, FOOD.cookie, FOOD.cookie,
+    FOOD.pizza, FOOD.pizza, FOOD.pizza, FOOD.pizza,
+    FOOD.gummy, FOOD.gummy, FOOD.gummy, FOOD.gummy,
+    WEAPONS.foam_sword, WEAPONS.pool_noodle, WEAPONS.nerf_blaster, WEAPONS.magic_wand,
+    null, null, null, null,
     null, null, null, null,
   ]);
 
@@ -301,7 +313,7 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
   const [enemyPrayer, setEnemyPrayer] = useState(MAX_PRAYER);
   const [enemySpecial, setEnemySpecial] = useState(MAX_SPECIAL);
   const [enemyStyle, setEnemyStyle] = useState(COMBAT_STYLES.MELEE);
-  const [enemyWeapon, setEnemyWeapon] = useState(WEAPONS.abyssal_whip);
+  const [enemyWeapon, setEnemyWeapon] = useState(WEAPONS.foam_sword);
   const [enemyPrayers, setEnemyPrayers] = useState({
     melee: false,
     ranged: false,
@@ -315,6 +327,7 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
   const [hitSplats, setHitSplats] = useState([]);
   const [specEnabled, setSpecEnabled] = useState(false);
   const [canAttack, setCanAttack] = useState(true);
+  const [hudMinimized, setHudMinimized] = useState(false);
 
   // Stats tracking
   const [stats, setStats] = useState({
@@ -323,6 +336,25 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
     damageTaken: 0,
     enemyPrayerDrained: false,
   });
+
+  // Combo system
+  const [playerCombo, setPlayerCombo] = useState(0);
+  const [enemyCombo, setEnemyCombo] = useState(0);
+  const [lastCrit, setLastCrit] = useState(null); // { target: 'player'|'enemy', damage: number }
+
+  // AI learning - tracks player patterns
+  const [aiDifficulty, setAiDifficulty] = useState(AI_DIFFICULTY.MEDIUM);
+  const playerPatternRef = useRef({
+    styleHistory: [], // Last 10 attack styles used
+    weaponSwitchFrequency: 0,
+    avgTimeBetweenEats: 0,
+    preferredStyle: null,
+    lastEatTick: 0,
+    eatCount: 0,
+  });
+
+  // Screen shake state
+  const [screenShake, setScreenShake] = useState(0);
 
   // Three.js refs
   const containerRef = useRef(null);
@@ -358,8 +390,8 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
   const enemySpecialRef = useRef(MAX_SPECIAL);
   const playerStyleRef = useRef(COMBAT_STYLES.MELEE);
   const enemyStyleRef = useRef(COMBAT_STYLES.MELEE);
-  const playerWeaponRef = useRef(WEAPONS.abyssal_whip);
-  const enemyWeaponRef = useRef(WEAPONS.abyssal_whip);
+  const playerWeaponRef = useRef(WEAPONS.foam_sword);
+  const enemyWeaponRef = useRef(WEAPONS.foam_sword);
   const playerPrayersRef = useRef({ melee: false, ranged: false, magic: false });
   const enemyPrayersRef = useRef({ melee: false, ranged: false, magic: false });
   const specEnabledRef = useRef(false);
@@ -1024,8 +1056,8 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
     processEnemyAI();
   }, []);
 
-  // Calculate hit (with combat triangle and class bonuses!)
-  const calculateHit = useCallback((attacker, defender, weapon, isSpec = false) => {
+  // Calculate hit (with combat triangle, class bonuses, crits, and combos!)
+  const calculateHit = useCallback((attacker, defender, weapon, isSpec = false, comboCount = 0) => {
     const style = weapon.style;
     let defenderPraying = false;
     let defenderStyle = COMBAT_STYLES.MELEE;
@@ -1065,22 +1097,25 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
       triangleBonus = 0.8;
     }
 
+    // Combo bonus: +5% damage per combo, capped at +25%
+    const comboBonus = 1 + Math.min(comboCount * 0.05, 0.25);
+
     // Accuracy roll (with triangle bonus and class bonus)
     const attackRoll = (weapon.attack * triangleBonus * damageBonus) + Math.random() * 50;
     const defenseRoll = (50 * defenseBonus) + Math.random() * 30;
 
     // Prayer blocks 40% of hits
     if (defenderPraying && Math.random() < 0.4) {
-      return 0;
+      return { damage: 0, isCrit: false, isBlocked: true };
     }
 
     // Hit check
     if (attackRoll < defenseRoll && !isSpec) {
-      return 0;
+      return { damage: 0, isCrit: false, isMiss: true };
     }
 
-    // Damage roll (with triangle bonus and class damage bonus)
-    let maxHit = Math.floor((weapon.strength * triangleBonus * damageBonus) / 3) + 10;
+    // Damage roll (with triangle bonus, class damage bonus, and combo bonus)
+    let maxHit = Math.floor((weapon.strength * triangleBonus * damageBonus * comboBonus) / 3) + 10;
 
     // Apply defender's defense bonus (reduces damage taken)
     maxHit = Math.floor(maxHit / defenseBonus);
@@ -1101,7 +1136,18 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
       maxHit = Math.floor(maxHit * 0.6);
     }
 
-    return Math.floor(Math.random() * (maxHit + 1));
+    // Calculate base damage
+    let damage = Math.floor(Math.random() * (maxHit + 1));
+
+    // Critical hit check - higher combo = higher crit chance (up to +10%)
+    const critChance = CRIT_CHANCE + Math.min(comboCount * 0.02, 0.10);
+    const isCrit = Math.random() < critChance;
+
+    if (isCrit && damage > 0) {
+      damage = Math.floor(damage * CRIT_MULTIPLIER);
+    }
+
+    return { damage, isCrit, comboBonus };
   }, []);
 
   // Perform player attack
@@ -1110,6 +1156,18 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
 
     const weapon = playerWeaponRef.current;
     const isSpec = specEnabledRef.current && playerSpecialRef.current >= weapon.specCost;
+    const currentCombo = playerCombo;
+
+    // Track player style pattern for AI learning
+    const pattern = playerPatternRef.current;
+    pattern.styleHistory.push(weapon.style);
+    if (pattern.styleHistory.length > 10) pattern.styleHistory.shift();
+    // Calculate preferred style
+    const styleCounts = pattern.styleHistory.reduce((acc, s) => {
+      acc[s] = (acc[s] || 0) + 1;
+      return acc;
+    }, {});
+    pattern.preferredStyle = Object.entries(styleCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
 
     let hits = [];
 
@@ -1119,53 +1177,64 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
 
       if (weapon.specEffect === 'double_hit' || weapon.specEffect === 'double_hit_boosted') {
         hits = [
-          calculateHit('player', 'enemy', weapon, true),
-          calculateHit('player', 'enemy', weapon, true),
+          calculateHit('player', 'enemy', weapon, true, currentCombo),
+          calculateHit('player', 'enemy', weapon, true, currentCombo + 1),
         ];
       } else if (weapon.specEffect === 'instant_hit') {
-        hits = [calculateHit('player', 'enemy', weapon, true)];
+        hits = [calculateHit('player', 'enemy', weapon, true, currentCombo)];
       } else {
-        hits = [calculateHit('player', 'enemy', weapon, true)];
+        hits = [calculateHit('player', 'enemy', weapon, true, currentCombo)];
       }
     } else {
-      hits = [calculateHit('player', 'enemy', weapon, false)];
+      hits = [calculateHit('player', 'enemy', weapon, false, currentCombo)];
     }
 
+    // Track if any hit landed for combo
+    let anyHitLanded = false;
+
     // Apply damage
-    hits.forEach((dmg, i) => {
+    hits.forEach((hitResult, i) => {
+      const { damage, isCrit, isMiss, isBlocked } = hitResult;
+
       setTimeout(() => {
-        setEnemyHP(prev => {
-          const newHP = Math.max(0, prev - dmg);
-          if (newHP <= 0) {
-            // Death animation - enemy falls over
-            if (enemyModelRef.current) {
-              const fallAnimation = () => {
-                let rotation = 0;
-                const fall = setInterval(() => {
-                  rotation += 0.1;
-                  if (enemyModelRef.current) {
-                    enemyModelRef.current.rotation.z = rotation;
-                    enemyModelRef.current.position.y -= 0.02;
-                  }
-                  if (rotation >= Math.PI / 2) {
-                    clearInterval(fall);
-                  }
-                }, 20);
-              };
-              fallAnimation();
+        if (damage > 0) {
+          anyHitLanded = true;
+
+          setEnemyHP(prev => {
+            const newHP = Math.max(0, prev - damage);
+            if (newHP <= 0) {
+              // Death animation - enemy falls over
+              if (enemyModelRef.current) {
+                const fallAnimation = () => {
+                  let rotation = 0;
+                  const fall = setInterval(() => {
+                    rotation += 0.1;
+                    if (enemyModelRef.current) {
+                      enemyModelRef.current.rotation.z = rotation;
+                      enemyModelRef.current.position.y -= 0.02;
+                    }
+                    if (rotation >= Math.PI / 2) {
+                      clearInterval(fall);
+                    }
+                  }, 20);
+                };
+                fallAnimation();
+              }
+              setTimeout(() => setPhase(PHASES.VICTORY), 1000);
             }
-            setTimeout(() => setPhase(PHASES.VICTORY), 1000);
+            return newHP;
+          });
+
+          // Critical hit effects
+          if (isCrit) {
+            setLastCrit({ target: 'enemy', damage });
+            setScreenShake(10); // Trigger screen shake
+            setTimeout(() => setScreenShake(0), 200);
           }
-          return newHP;
-        });
 
-        // Add hit splat
-        addHitSplat('enemy', dmg);
-
-        // Smite effect (drain 1 prayer per 4 damage, Mage class gets 2x)
-        if (dmg > 0) {
-          const isMage = playerClassRef.current?.id === 'mage';
-          const prayerDrain = Math.floor(dmg / 4) * (isMage ? 2 : 1);
+          // Smite effect (drain 1 prayer per 4 damage, Mage class gets 2x)
+          const isMage = playerClassRef.current?.id === 'wizard_plush';
+          const prayerDrain = Math.floor(damage / 4) * (isMage ? 2 : 1);
           setEnemyPrayer(prev => {
             const newPrayer = Math.max(0, prev - prayerDrain);
             if (newPrayer === 0 && prev > 0) {
@@ -1173,11 +1242,24 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
             }
             return newPrayer;
           });
+
+          setStats(s => ({ ...s, damageDealt: s.damageDealt + damage }));
         }
 
-        setStats(s => ({ ...s, damageDealt: s.damageDealt + dmg }));
+        // Add hit splat (with crit indicator)
+        addHitSplat('enemy', damage, isCrit);
       }, i * 300);
     });
+
+    // Update combo counter
+    setTimeout(() => {
+      if (anyHitLanded || hits.some(h => h.damage > 0)) {
+        setPlayerCombo(prev => prev + hits.filter(h => h.damage > 0).length);
+        setEnemyCombo(0); // Reset enemy combo on successful hit
+      } else {
+        setPlayerCombo(0); // Reset combo on miss
+      }
+    }, hits.length * 300);
 
     // Attack animation
     if (playerModelRef.current?.rightArm) {
@@ -1185,14 +1267,15 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
       arm.rotation.x = -1;
       setTimeout(() => { arm.rotation.x = 0; }, 200);
     }
-  }, [calculateHit]);
+  }, [calculateHit, playerCombo]);
 
   // Perform enemy attack
   const performEnemyAttack = useCallback(() => {
     if (playerHPRef.current <= 0) return;
 
     const weapon = enemyWeaponRef.current;
-    const isSpec = enemySpecialRef.current >= weapon.specCost && Math.random() < 0.3;
+    const currentCombo = enemyCombo;
+    const isSpec = enemySpecialRef.current >= weapon.specCost && Math.random() < aiDifficulty.specUseChance;
 
     let hits = [];
 
@@ -1201,48 +1284,75 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
 
       if (weapon.specEffect === 'double_hit' || weapon.specEffect === 'double_hit_boosted') {
         hits = [
-          calculateHit('enemy', 'player', weapon, true),
-          calculateHit('enemy', 'player', weapon, true),
+          calculateHit('enemy', 'player', weapon, true, currentCombo),
+          calculateHit('enemy', 'player', weapon, true, currentCombo + 1),
         ];
       } else {
-        hits = [calculateHit('enemy', 'player', weapon, true)];
+        hits = [calculateHit('enemy', 'player', weapon, true, currentCombo)];
       }
     } else {
-      hits = [calculateHit('enemy', 'player', weapon, false)];
+      hits = [calculateHit('enemy', 'player', weapon, false, currentCombo)];
     }
 
-    // Apply damage
-    hits.forEach((dmg, i) => {
-      setTimeout(() => {
-        setPlayerHP(prev => {
-          const newHP = Math.max(0, prev - dmg);
-          if (newHP <= 0) {
-            // Death animation - player falls over
-            if (playerModelRef.current) {
-              const fallAnimation = () => {
-                let rotation = 0;
-                const fall = setInterval(() => {
-                  rotation += 0.1;
-                  if (playerModelRef.current) {
-                    playerModelRef.current.rotation.z = -rotation;
-                    playerModelRef.current.position.y -= 0.02;
-                  }
-                  if (rotation >= Math.PI / 2) {
-                    clearInterval(fall);
-                  }
-                }, 20);
-              };
-              fallAnimation();
-            }
-            setTimeout(() => setPhase(PHASES.DEFEAT), 1000);
-          }
-          return newHP;
-        });
+    // Track if any hit landed for combo
+    let anyHitLanded = false;
 
-        addHitSplat('player', dmg);
-        setStats(s => ({ ...s, damageTaken: s.damageTaken + dmg }));
+    // Apply damage
+    hits.forEach((hitResult, i) => {
+      const { damage, isCrit } = hitResult;
+
+      setTimeout(() => {
+        if (damage > 0) {
+          anyHitLanded = true;
+
+          setPlayerHP(prev => {
+            const newHP = Math.max(0, prev - damage);
+            if (newHP <= 0) {
+              // Death animation - player falls over
+              if (playerModelRef.current) {
+                const fallAnimation = () => {
+                  let rotation = 0;
+                  const fall = setInterval(() => {
+                    rotation += 0.1;
+                    if (playerModelRef.current) {
+                      playerModelRef.current.rotation.z = -rotation;
+                      playerModelRef.current.position.y -= 0.02;
+                    }
+                    if (rotation >= Math.PI / 2) {
+                      clearInterval(fall);
+                    }
+                  }, 20);
+                };
+                fallAnimation();
+              }
+              setTimeout(() => setPhase(PHASES.DEFEAT), 1000);
+            }
+            return newHP;
+          });
+
+          // Critical hit effects
+          if (isCrit) {
+            setLastCrit({ target: 'player', damage });
+            setScreenShake(8);
+            setTimeout(() => setScreenShake(0), 200);
+          }
+
+          setStats(s => ({ ...s, damageTaken: s.damageTaken + damage }));
+        }
+
+        addHitSplat('player', damage, isCrit);
       }, i * 300);
     });
+
+    // Update combo counter
+    setTimeout(() => {
+      if (anyHitLanded || hits.some(h => h.damage > 0)) {
+        setEnemyCombo(prev => prev + hits.filter(h => h.damage > 0).length);
+        setPlayerCombo(0); // Reset player combo when enemy hits
+      } else {
+        setEnemyCombo(0); // Reset combo on miss
+      }
+    }, hits.length * 300);
 
     // Attack animation
     if (enemyModelRef.current?.rightArm) {
@@ -1250,46 +1360,112 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
       arm.rotation.x = -1;
       setTimeout(() => { arm.rotation.x = 0; }, 200);
     }
-  }, [calculateHit]);
+  }, [calculateHit, enemyCombo, aiDifficulty]);
 
   // Add hit splat with random offset to prevent overlap
-  const addHitSplat = useCallback((target, damage) => {
+  const addHitSplat = useCallback((target, damage, isCrit = false) => {
     const id = Date.now() + Math.random();
     const offsetX = (Math.random() - 0.5) * 60; // Random horizontal offset
     const offsetY = Math.random() * 30; // Random vertical offset
-    setHitSplats(prev => [...prev, { id, target, damage, offsetX, offsetY }]);
+    setHitSplats(prev => [...prev, { id, target, damage, offsetX, offsetY, isCrit }]);
     setTimeout(() => {
       setHitSplats(prev => prev.filter(s => s.id !== id));
     }, 1500);
   }, []);
 
-  // Enemy AI (with reaction delay - not perfect!)
+  // Smart Enemy AI with pattern recognition and adaptive behavior
   const processEnemyAI = useCallback(() => {
-    // Prayer switching - 70% chance to switch correctly (not perfect)
-    // Also has 2-tick delay built in (only switches every few ticks)
-    if (tickRef.current % 3 === 0 && Math.random() < 0.7) {
-      const playerStyle = playerStyleRef.current;
-      setEnemyPrayers({
-        melee: playerStyle === COMBAT_STYLES.MELEE,
-        ranged: playerStyle === COMBAT_STYLES.RANGED,
-        magic: playerStyle === COMBAT_STYLES.MAGIC,
-      });
+    const diff = aiDifficulty;
+    const pattern = playerPatternRef.current;
+
+    // SMART PRAYER SWITCHING
+    // Uses player pattern to predict next attack style
+    if (tickRef.current % diff.reactSpeed === 0) {
+      let predictedStyle = playerStyleRef.current; // Default: current style
+
+      // If we have enough history, predict based on patterns
+      if (pattern.styleHistory.length >= 3 && Math.random() < diff.prayerAccuracy) {
+        // Check if player tends to stick with one style
+        if (pattern.preferredStyle) {
+          predictedStyle = pattern.preferredStyle;
+        }
+
+        // Check for style-switching patterns (e.g., alternating melee-ranged)
+        const recent = pattern.styleHistory.slice(-3);
+        if (recent[0] === recent[2] && recent[0] !== recent[1]) {
+          // Alternating pattern detected - predict the next one
+          predictedStyle = recent[1];
+        }
+      } else if (Math.random() < diff.prayerAccuracy) {
+        // Use current player style if no pattern detected
+        predictedStyle = playerStyleRef.current;
+      }
+
+      // Apply prayer with some randomness based on difficulty
+      if (Math.random() < diff.prayerAccuracy) {
+        setEnemyPrayers({
+          melee: predictedStyle === COMBAT_STYLES.MELEE,
+          ranged: predictedStyle === COMBAT_STYLES.RANGED,
+          magic: predictedStyle === COMBAT_STYLES.MAGIC,
+        });
+      }
     }
 
-    // Eat food when low - reduced frequency (10% chance, only below 35 HP)
-    if (enemyHPRef.current < 35 && enemyHPRef.current > 0 && Math.random() < 0.1) {
-      setEnemyHP(prev => Math.min(MAX_HP, prev + 20));
-      addHitSplat('enemy', -20);
+    // SMART EATING - More strategic timing
+    const hpPercent = enemyHPRef.current / (enemyClassRef.current?.hp || MAX_HP);
+    const shouldEat = hpPercent < (diff.eatThreshold / 100);
+
+    if (shouldEat && enemyHPRef.current > 0) {
+      // Higher difficulty = smarter eat timing (waits for safe moments)
+      const safeToEat = tickRef.current >= enemyAttackTickRef.current - 1;
+      if (safeToEat && Math.random() < 0.3) {
+        const maxHeal = enemyClassRef.current?.hp || MAX_HP;
+        setEnemyHP(prev => Math.min(maxHeal, prev + 20));
+        addHitSplat('enemy', -20);
+      }
     }
 
-    // Weapon switch occasionally (3% chance)
-    if (Math.random() < 0.03) {
-      const weapons = [WEAPONS.abyssal_whip, WEAPONS.dds, WEAPONS.rune_crossbow];
-      const newWeapon = weapons[Math.floor(Math.random() * weapons.length)];
-      setEnemyWeapon(newWeapon);
-      setEnemyStyle(newWeapon.style);
+    // SMART WEAPON SWITCHING - Counter player's style
+    if (Math.random() < diff.weaponSwitchChance) {
+      const playerStyle = pattern.preferredStyle || playerStyleRef.current;
+      let counterWeapons = [];
+
+      // Combat triangle: pick weapon that beats player's style
+      if (playerStyle === COMBAT_STYLES.MELEE) {
+        // Magic beats Melee
+        counterWeapons = [WEAPONS.magic_wand, WEAPONS.glitter_staff];
+      } else if (playerStyle === COMBAT_STYLES.RANGED) {
+        // Melee beats Ranged
+        counterWeapons = [WEAPONS.foam_sword, WEAPONS.toy_hammer, WEAPONS.pillow];
+      } else if (playerStyle === COMBAT_STYLES.MAGIC) {
+        // Ranged beats Magic
+        counterWeapons = [WEAPONS.nerf_blaster, WEAPONS.water_gun];
+      }
+
+      // Filter to weapons the enemy class can use
+      const classWeapons = enemyClassRef.current?.weapons || [];
+      const available = counterWeapons.filter(w => classWeapons.includes(w.id));
+
+      if (available.length > 0) {
+        const newWeapon = available[Math.floor(Math.random() * available.length)];
+        setEnemyWeapon(newWeapon);
+        setEnemyStyle(newWeapon.style);
+      }
     }
-  }, [addHitSplat]);
+
+    // COMBO BREAKER - Try to break player combos
+    if (playerCombo >= 3 && Math.random() < 0.4) {
+      // Switch to defensive style when player is on a streak
+      const defensiveWeapons = [WEAPONS.pillow]; // Best for defense
+      const classWeapons = enemyClassRef.current?.weapons || [];
+      const available = defensiveWeapons.filter(w => classWeapons.includes(w.id));
+
+      if (available.length > 0) {
+        setEnemyWeapon(available[0]);
+        setEnemyStyle(available[0].style);
+      }
+    }
+  }, [addHitSplat, aiDifficulty, playerCombo]);
 
   // Eat food
   const eatFood = useCallback((index) => {
@@ -1398,6 +1574,20 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
     // Reset stats tracking (include playerMaxHP for contract checks)
     setStats({ foodEaten: 0, damageDealt: 0, damageTaken: 0, enemyPrayerDrained: false, playerMaxHP: selectedClass.hp });
 
+    // Reset combo counters
+    setPlayerCombo(0);
+    setEnemyCombo(0);
+
+    // Reset player pattern tracking
+    playerPatternRef.current = {
+      styleHistory: [],
+      weaponSwitchFrequency: 0,
+      avgTimeBetweenEats: 0,
+      preferredStyle: null,
+      lastEatTick: 0,
+      eatCount: 0,
+    };
+
     setPhase(PHASES.COUNTDOWN);
     setCountdown(3);
   }, [selectedClass]);
@@ -1457,7 +1647,7 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
     return () => clearInterval(interval);
   }, [phase]);
 
-  // Collect reward
+  // Collect reward - applies difficulty multiplier!
   const collectReward = useCallback(() => {
     const won = phase === PHASES.VICTORY;
     let earnedCoins;
@@ -1465,17 +1655,19 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
     if (won) {
       const success = selectedContract.checkSuccess(playerHP, enemyHP, stats);
       if (success) {
-        earnedCoins = Math.floor(selectedStake * selectedContract.multiplier);
+        // Total multiplier = contract multiplier × difficulty multiplier
+        const totalMult = selectedContract.multiplier * aiDifficulty.rewardMult;
+        earnedCoins = Math.floor(selectedStake * totalMult);
       } else {
-        // Won but didn't meet contract
-        earnedCoins = selectedStake; // Just return stake
+        // Won but didn't meet contract - still get difficulty bonus on returned stake
+        earnedCoins = Math.floor(selectedStake * aiDifficulty.rewardMult);
       }
     } else {
       earnedCoins = -selectedStake;
     }
 
     onGameEnd(earnedCoins);
-  }, [phase, selectedContract, selectedStake, playerHP, enemyHP, stats, onGameEnd]);
+  }, [phase, selectedContract, selectedStake, playerHP, enemyHP, stats, onGameEnd, aiDifficulty]);
 
   // Render class selection
   const renderClassSelect = () => (
@@ -1573,6 +1765,28 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
           <span>🪙</span> {player?.coins || 0} coins
         </div>
 
+        <h2 className="section-title">Enemy Difficulty</h2>
+        <div className="difficulty-grid">
+          {Object.entries(AI_DIFFICULTY).map(([key, diff]) => (
+            <motion.button
+              key={key}
+              className={`difficulty-btn ${aiDifficulty === diff ? 'selected' : ''} ${key.toLowerCase()}`}
+              onClick={() => setAiDifficulty(diff)}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <span className="diff-name">{key}</span>
+              <span className="diff-reward">{diff.rewardMult}x coins</span>
+              <span className="diff-desc">
+                {key === 'EASY' && '🌟 For beginners'}
+                {key === 'MEDIUM' && '⭐ Balanced fight'}
+                {key === 'HARD' && '💪 Tough opponent'}
+                {key === 'EXPERT' && '🔥 Ultimate challenge'}
+              </span>
+            </motion.button>
+          ))}
+        </div>
+
         <h2 className="section-title">Choose Contract</h2>
         <div className="contracts-grid">
           {Object.values(CONTRACTS).map(contract => (
@@ -1597,18 +1811,23 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
             <h2 className="section-title">Select Stake</h2>
             <div className="stakes-grid">
               {availableStakes.length > 0 ? (
-                availableStakes.map(stake => (
-                  <motion.button
-                    key={stake}
-                    className={`stake-btn ${selectedStake === stake ? 'selected' : ''}`}
-                    onClick={() => setSelectedStake(stake)}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    <span className="stake-amount">🪙 {stake}</span>
-                    <span className="stake-reward">Win: {Math.floor(stake * selectedContract.multiplier)}</span>
-                  </motion.button>
-                ))
+                availableStakes.map(stake => {
+                  const totalMult = selectedContract.multiplier * aiDifficulty.rewardMult;
+                  const reward = Math.floor(stake * totalMult);
+                  return (
+                    <motion.button
+                      key={stake}
+                      className={`stake-btn ${selectedStake === stake ? 'selected' : ''}`}
+                      onClick={() => setSelectedStake(stake)}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      <span className="stake-amount">🪙 {stake}</span>
+                      <span className="stake-reward">Win: {reward}</span>
+                      <span className="stake-mult">({selectedContract.multiplier}x × {aiDifficulty.rewardMult}x)</span>
+                    </motion.button>
+                  );
+                })
               ) : (
                 <p className="no-stakes">Not enough coins!</p>
               )}
@@ -1719,22 +1938,90 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
         {hitSplats.map(splat => (
           <motion.div
             key={splat.id}
-            className={`hit-splat ${splat.target} ${splat.damage === 0 ? 'zero' : splat.damage < 0 ? 'heal' : 'damage'}`}
+            className={`hit-splat ${splat.target} ${splat.damage === 0 ? 'zero' : splat.damage < 0 ? 'heal' : 'damage'} ${splat.isCrit ? 'crit' : ''}`}
             style={{
               marginLeft: splat.offsetX || 0,
               marginTop: splat.offsetY || 0
             }}
-            initial={{ y: 0, opacity: 1, scale: 1.5 }}
+            initial={{ y: 0, opacity: 1, scale: splat.isCrit ? 2 : 1.5 }}
             animate={{ y: -60, opacity: 0, scale: 1 }}
-            transition={{ duration: 1.2 }}
+            transition={{ duration: splat.isCrit ? 1.5 : 1.2 }}
           >
+            {splat.isCrit && '💥'}
             {splat.damage < 0 ? `+${-splat.damage}` : splat.damage}
+            {splat.isCrit && '!'}
           </motion.div>
         ))}
       </div>
 
+      {/* Combo display */}
+      {playerCombo >= 2 && (
+        <motion.div
+          className="combo-display player-combo"
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          key={playerCombo}
+        >
+          🔥 {playerCombo}x COMBO!
+        </motion.div>
+      )}
+      {enemyCombo >= 2 && (
+        <motion.div
+          className="combo-display enemy-combo"
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          key={enemyCombo}
+        >
+          {enemyCombo}x 💀
+        </motion.div>
+      )}
+
       {/* Bottom controls */}
-      <div className="hud-bottom">
+      <div className={`hud-bottom ${hudMinimized ? 'minimized' : ''}`}>
+        {/* Toggle button */}
+        <button
+          className="hud-toggle-btn"
+          onClick={() => setHudMinimized(!hudMinimized)}
+        >
+          {hudMinimized ? '☰ Controls' : '▼ Hide'}
+        </button>
+
+        {/* Minimized quick actions */}
+        {hudMinimized && (
+          <div className="hud-minimized-bar">
+            <button
+              className={`quick-attack-btn ${canAttack ? 'ready' : ''}`}
+              onClick={handleManualAttack}
+              disabled={enemyHP <= 0 || !canAttack}
+            >
+              💥 {canAttack ? 'BONK!' : '...'}
+            </button>
+            <button
+              className={`quick-spec-btn ${specEnabled ? 'active' : ''}`}
+              onClick={() => setSpecEnabled(!specEnabled)}
+              disabled={playerSpecial < playerWeapon.specCost}
+            >
+              ⚡
+            </button>
+            <div className="quick-food">
+              {playerInventory.slice(0, 4).map((item, i) => (
+                item?.heal && (
+                  <button
+                    key={i}
+                    className="quick-food-btn"
+                    onClick={() => eatFood(i)}
+                  >
+                    {item.emoji}
+                  </button>
+                )
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Full controls - hidden when minimized */}
+        {!hudMinimized && (
+          <>
         {/* Combat styles */}
         <div className="combat-panel">
           <div className="current-weapon">
@@ -1828,6 +2115,8 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
             ))}
           </div>
         </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1875,12 +2164,16 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
               {contractMet ? (
                 <>
                   <span>{selectedContract.emoji} Challenge Complete!</span>
-                  <span className="reward">🪙 +{Math.floor(selectedStake * selectedContract.multiplier)}</span>
+                  <span className="reward">🪙 +{Math.floor(selectedStake * selectedContract.multiplier * aiDifficulty.rewardMult)}</span>
+                  <span className="reward-breakdown">
+                    ({selectedContract.multiplier}x contract × {aiDifficulty.rewardMult}x {aiDifficulty.name})
+                  </span>
                 </>
               ) : (
                 <>
                   <span>Challenge not met</span>
-                  <span className="reward">🪙 +{selectedStake} (bet returned)</span>
+                  <span className="reward">🪙 +{Math.floor(selectedStake * aiDifficulty.rewardMult)}</span>
+                  <span className="reward-breakdown">({aiDifficulty.rewardMult}x {aiDifficulty.name} bonus)</span>
                 </>
               )}
             </div>
@@ -1918,7 +2211,13 @@ const DuelGame = ({ onGameEnd, onClose, player }) => {
 
       {(phase === PHASES.COUNTDOWN || phase === PHASES.FIGHTING ||
         phase === PHASES.VICTORY || phase === PHASES.DEFEAT) && (
-        <div className="duel-arena" ref={containerRef}>
+        <div
+          className="duel-arena"
+          ref={containerRef}
+          style={{
+            transform: screenShake > 0 ? `translate(${(Math.random() - 0.5) * screenShake}px, ${(Math.random() - 0.5) * screenShake}px)` : 'none'
+          }}
+        >
           {phase === PHASES.COUNTDOWN && renderCountdown()}
           {phase === PHASES.FIGHTING && renderGameHUD()}
           {(phase === PHASES.VICTORY || phase === PHASES.DEFEAT) && renderResult()}
