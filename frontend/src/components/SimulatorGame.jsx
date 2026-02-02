@@ -39,16 +39,41 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const scale = 2;
     const citySize = 10;
 
-    // Realistic asphalt - darker gray with slight variation
-    const asphaltMaterial = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
-    // Concrete sidewalks - lighter gray
-    const sidewalkMaterial = new THREE.MeshBasicMaterial({ color: 0x888888 });
+    // 4K QUALITY MATERIALS - Realistic PBR materials
+    // Realistic asphalt - darker gray with roughness
+    const asphaltMaterial = new THREE.MeshStandardMaterial({
+      color: 0x2a2a2a,
+      roughness: 0.9,
+      metalness: 0.1,
+    });
+    // Concrete sidewalks - lighter gray with texture feel
+    const sidewalkMaterial = new THREE.MeshStandardMaterial({
+      color: 0x888888,
+      roughness: 0.85,
+      metalness: 0.05,
+    });
     // Curb material - slightly darker than sidewalk
-    const curbMaterial = new THREE.MeshBasicMaterial({ color: 0x666666 });
-    // Yellow center line
-    const yellowLineMat = new THREE.MeshBasicMaterial({ color: 0xf4d03f });
-    // White lane markings and crosswalks
-    const whiteLineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const curbMaterial = new THREE.MeshStandardMaterial({
+      color: 0x666666,
+      roughness: 0.8,
+      metalness: 0.05,
+    });
+    // Yellow center line - slight gloss for paint
+    const yellowLineMat = new THREE.MeshStandardMaterial({
+      color: 0xf4d03f,
+      roughness: 0.6,
+      metalness: 0.1,
+      emissive: 0xf4d03f,
+      emissiveIntensity: 0.1,
+    });
+    // White lane markings and crosswalks - slight gloss
+    const whiteLineMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.5,
+      metalness: 0.1,
+      emissive: 0xffffff,
+      emissiveIntensity: 0.05,
+    });
 
     const roadWidth = 20 * scale;
     const roadLength = 500 * scale * citySize;
@@ -215,37 +240,47 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const scale = 2;
     const citySize = 10;
 
-    // Realistic building colors - concrete, glass, stucco tones
+    // 4K QUALITY building materials - PBR with proper roughness/metalness
     const buildingColors = [
-      new THREE.MeshBasicMaterial({ color: 0xe8e4e0 }), // Warm concrete
-      new THREE.MeshBasicMaterial({ color: 0xd4d0cc }), // Cool concrete
-      new THREE.MeshBasicMaterial({ color: 0xf5f0eb }), // Light stucco
-      new THREE.MeshBasicMaterial({ color: 0xccc8c4 }), // Gray stone
-      new THREE.MeshBasicMaterial({ color: 0xe0dcd8 }), // Off-white
-      new THREE.MeshBasicMaterial({ color: 0xd8d4d0 }), // Beige
+      new THREE.MeshStandardMaterial({ color: 0xe8e4e0, roughness: 0.85, metalness: 0.05 }), // Warm concrete
+      new THREE.MeshStandardMaterial({ color: 0xd4d0cc, roughness: 0.8, metalness: 0.05 }), // Cool concrete
+      new THREE.MeshStandardMaterial({ color: 0xf5f0eb, roughness: 0.75, metalness: 0.05 }), // Light stucco
+      new THREE.MeshStandardMaterial({ color: 0xccc8c4, roughness: 0.9, metalness: 0.1 }), // Gray stone
+      new THREE.MeshStandardMaterial({ color: 0xe0dcd8, roughness: 0.8, metalness: 0.05 }), // Off-white
+      new THREE.MeshStandardMaterial({ color: 0xd8d4d0, roughness: 0.85, metalness: 0.05 }), // Beige
     ];
 
-    // Window/glass materials - darker for contrast
-    const windowDarkMat = new THREE.MeshBasicMaterial({ color: 0x2a3a4a }); // Dark blue-gray glass
-    const windowReflectMat = new THREE.MeshBasicMaterial({ color: 0x4a6a8a }); // Lighter reflective
+    // Window/glass materials - realistic glass with reflections
+    const windowDarkMat = new THREE.MeshPhysicalMaterial({
+      color: 0x2a3a4a,
+      roughness: 0.05,
+      metalness: 0.9,
+      reflectivity: 0.9,
+    });
+    const windowReflectMat = new THREE.MeshPhysicalMaterial({
+      color: 0x4a6a8a,
+      roughness: 0.0,
+      metalness: 0.95,
+      reflectivity: 1.0,
+    });
 
     // Accent/trim materials
-    const trimMat = new THREE.MeshBasicMaterial({ color: 0x888888 }); // Gray trim
-    const ledgeMat = new THREE.MeshBasicMaterial({ color: 0x999999 }); // Lighter ledges
-    const roofMat = new THREE.MeshBasicMaterial({ color: 0x555555 }); // Dark roof elements
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6, metalness: 0.3 });
+    const ledgeMat = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.5, metalness: 0.2 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9, metalness: 0.1 });
 
-    // Glowing window materials for night effect
+    // Glowing window materials for night effect - with emissive
     const windowGlowMaterials = [
-      new THREE.MeshBasicMaterial({ color: 0xffee88 }), // Warm yellow
-      new THREE.MeshBasicMaterial({ color: 0xffffff }), // White
-      new THREE.MeshBasicMaterial({ color: 0xffcc66 }), // Orange warm
+      new THREE.MeshStandardMaterial({ color: 0xffee88, emissive: 0xffee88, emissiveIntensity: 0.8 }),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffee, emissiveIntensity: 0.6 }),
+      new THREE.MeshStandardMaterial({ color: 0xffcc66, emissive: 0xffcc66, emissiveIntensity: 0.7 }),
     ];
 
-    // Neon accent materials
+    // Neon accent materials - bright emissive
     const neonMaterials = [
-      new THREE.MeshBasicMaterial({ color: 0xff00ff }),
-      new THREE.MeshBasicMaterial({ color: 0x00ffff }),
-      new THREE.MeshBasicMaterial({ color: 0xff1493 }),
+      new THREE.MeshStandardMaterial({ color: 0xff00ff, emissive: 0xff00ff, emissiveIntensity: 2.0 }),
+      new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 2.0 }),
+      new THREE.MeshStandardMaterial({ color: 0xff1493, emissive: 0xff1493, emissiveIntensity: 2.0 }),
     ];
 
     // Road positions for collision checking
@@ -456,15 +491,20 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const scale = 2;
     const citySize = 10;
 
-    const poleMaterial = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
+    const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.7, metalness: 0.8 });
     const lampColors = [0xff00ff, 0x00ffff, 0xff1493];
 
-    // Shared geometries
-    const poleGeom = new THREE.CylinderGeometry(0.15 * scale, 0.25 * scale, 12 * scale, 4); // 4 segments instead of 6
+    // Shared geometries - slightly higher poly for 4K
+    const poleGeom = new THREE.CylinderGeometry(0.15 * scale, 0.25 * scale, 12 * scale, 8);
     const armGeom = new THREE.BoxGeometry(4 * scale, 0.3 * scale, 0.3 * scale);
-    const lampGeom = new THREE.SphereGeometry(0.8 * scale, 4, 4); // Low poly sphere
+    const lampGeom = new THREE.SphereGeometry(0.8 * scale, 8, 8);
 
-    const lampMaterials = lampColors.map(c => new THREE.MeshBasicMaterial({ color: c }));
+    // Lamp materials with strong emissive glow
+    const lampMaterials = lampColors.map(c => new THREE.MeshStandardMaterial({
+      color: c,
+      emissive: c,
+      emissiveIntensity: 2.5,
+    }));
 
     const roadZPositions = [];
     for (let i = -200 * scale * citySize; i <= 200 * scale * citySize; i += 80 * scale) {
@@ -501,11 +541,11 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const scale = 2;
     const citySize = 10;
 
-    const poleMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
-    const boxMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
+    const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7, metalness: 0.8 });
+    const boxMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8, metalness: 0.5 });
 
-    // Shared geometries
-    const poleGeom = new THREE.CylinderGeometry(0.25 * scale, 0.35 * scale, 8 * scale, 4);
+    // Shared geometries - higher poly for 4K
+    const poleGeom = new THREE.CylinderGeometry(0.25 * scale, 0.35 * scale, 8 * scale, 8);
     const boxGeom = new THREE.BoxGeometry(1 * scale, 3 * scale, 0.8 * scale);
 
     const roadPositions = [];
@@ -908,11 +948,14 @@ const SimulatorGame = ({ onClose, onExit }) => {
     const car = new THREE.Group();
     const scale = 2; // Scale factor for bigger car
 
-    // Main body paint - Iconic Vice City WHITE
-    const bodyMaterial = new THREE.MeshStandardMaterial({
+    // Main body paint - Iconic Vice City WHITE with high-quality reflections
+    const bodyMaterial = new THREE.MeshPhysicalMaterial({
       color: 0xf8f8ff,
-      roughness: 0.15,
-      metalness: 0.95
+      roughness: 0.1,
+      metalness: 0.9,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.1,
+      reflectivity: 1.0,
     });
 
     // Lower body / chassis
@@ -941,13 +984,17 @@ const SimulatorGame = ({ onClose, onExit }) => {
     trunk.position.set(0, 0.65 * scale, -2 * scale);
     car.add(trunk);
 
-    // Windshield
-    const glassMaterial = new THREE.MeshStandardMaterial({
+    // Windshield - realistic glass with reflections
+    const glassMaterial = new THREE.MeshPhysicalMaterial({
       color: 0x88aacc,
-      roughness: 0.05,
-      metalness: 0.9,
+      roughness: 0.0,
+      metalness: 0.0,
       transparent: true,
-      opacity: 0.7
+      opacity: 0.4,
+      transmission: 0.9,
+      thickness: 0.1,
+      reflectivity: 0.9,
+      clearcoat: 1.0,
     });
 
     const windshieldGeom = new THREE.BoxGeometry(1.8 * scale, 0.6 * scale, 0.1 * scale);
@@ -978,9 +1025,19 @@ const SimulatorGame = ({ onClose, onExit }) => {
     roof.position.set(0, 1.15 * scale, -0.35 * scale);
     car.add(roof);
 
-    // Wheels with rims
-    const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.95 });
-    const rimMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.2, metalness: 0.9 });
+    // Wheels with rims - realistic rubber and chrome
+    const wheelMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1a1a1a,
+      roughness: 0.9,
+      metalness: 0.0,
+    });
+    const rimMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0xdddddd,
+      roughness: 0.1,
+      metalness: 1.0,
+      clearcoat: 0.8,
+      reflectivity: 1.0,
+    });
 
     const wheelPositions = [
       { x: -1 * scale, y: 0.35 * scale, z: 1.4 * scale },
@@ -1005,11 +1062,11 @@ const SimulatorGame = ({ onClose, onExit }) => {
       car.add(rim);
     });
 
-    // Headlights (more realistic)
+    // Headlights (more realistic with strong glow)
     const headlightMaterial = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       emissive: 0xffffee,
-      emissiveIntensity: 0.5
+      emissiveIntensity: 1.5,
     });
 
     [-0.7, 0.7].forEach(x => {
@@ -1027,11 +1084,11 @@ const SimulatorGame = ({ onClose, onExit }) => {
       car.add(led);
     });
 
-    // Tail lights
+    // Tail lights - brighter glow
     const tailLightMat = new THREE.MeshStandardMaterial({
       color: 0xff0000,
       emissive: 0xff0000,
-      emissiveIntensity: 0.3
+      emissiveIntensity: 1.0,
     });
 
     [-0.7, 0.7].forEach(x => {
@@ -1330,44 +1387,72 @@ const SimulatorGame = ({ onClose, onExit }) => {
         // Scene - VICE CITY SUNSET SKY (iconic purple/orange gradient feel)
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x1a0a2e); // Deep purple night sky
-        scene.fog = new THREE.Fog(0x1a0a2e, 200, 1500); // Closer fog hides distant objects = better performance
+        scene.fog = new THREE.Fog(0x1a0a2e, 100, 2500); // Extended fog for 4K detail visibility
         sceneRef.current = scene;
 
-        // Camera - extended far plane for larger city
+        // Camera - extended far plane for 4K detail
         const camera = new THREE.PerspectiveCamera(
           75,
           window.innerWidth / window.innerHeight,
-          1,    // Near plane increased (less precision needed)
-          2000  // Far plane reduced (fog hides distant anyway)
+          0.5,  // Lower near plane for sharper close-ups
+          4000  // Extended far plane for more detail
         );
         camera.position.set(0, 5, -10);
         cameraRef.current = camera;
 
-        // Renderer - OPTIMIZED settings
+        // Renderer - 4K QUALITY settings
         const renderer = new THREE.WebGLRenderer({
-          antialias: false,
+          antialias: true, // Smooth edges
           powerPreference: 'high-performance',
-          stencil: false,
+          stencil: true,
           depth: true,
           alpha: false,
           preserveDrawingBuffer: false,
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(1); // Force pixel ratio 1 for max performance
-        renderer.shadowMap.enabled = false;
-        renderer.toneMapping = THREE.NoToneMapping;
-        renderer.sortObjects = false; // Skip depth sorting for flat scenes
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3)); // Up to 3x for 4K displays
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadows
+        renderer.toneMapping = THREE.ACESFilmicToneMapping; // Cinematic tone mapping
+        renderer.toneMappingExposure = 1.2;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.sortObjects = true;
         containerRef.current.appendChild(renderer.domElement);
         rendererRef.current = renderer;
 
-        // SIMPLIFIED LIGHTING - only 2 lights instead of 5
-        const ambientLight = new THREE.AmbientLight(0x606080, 0.6); // Brighter ambient to compensate
+        // ENHANCED LIGHTING for 4K quality
+        // Ambient light - slightly blue for night atmosphere
+        const ambientLight = new THREE.AmbientLight(0x404060, 0.4);
         scene.add(ambientLight);
 
-        // Single directional light for sun/mood
-        const mainLight = new THREE.DirectionalLight(0xff8855, 0.5);
-        mainLight.position.set(100, 50, 100);
+        // Hemisphere light for natural sky/ground color blend
+        const hemiLight = new THREE.HemisphereLight(0x6666aa, 0x444422, 0.5);
+        scene.add(hemiLight);
+
+        // Main directional light (moon/sun) with shadows
+        const mainLight = new THREE.DirectionalLight(0xffeedd, 0.8);
+        mainLight.position.set(50, 100, 50);
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.width = 2048;
+        mainLight.shadow.mapSize.height = 2048;
+        mainLight.shadow.camera.near = 1;
+        mainLight.shadow.camera.far = 500;
+        mainLight.shadow.camera.left = -100;
+        mainLight.shadow.camera.right = 100;
+        mainLight.shadow.camera.top = 100;
+        mainLight.shadow.camera.bottom = -100;
+        mainLight.shadow.bias = -0.001;
         scene.add(mainLight);
+
+        // Fill light from opposite side
+        const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
+        fillLight.position.set(-30, 50, -30);
+        scene.add(fillLight);
+
+        // Rim light for car highlights
+        const rimLight = new THREE.DirectionalLight(0xff8866, 0.4);
+        rimLight.position.set(0, 20, -50);
+        scene.add(rimLight);
 
         // Create city and car
         createCity(scene);
