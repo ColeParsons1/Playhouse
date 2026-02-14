@@ -23,21 +23,17 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogTDHUD, Log, All);
 
-// -- TD Color palette --------------------------------------------------------
-static const FLinearColor TDBgColor(0.08f, 0.12f, 0.08f, 0.95f);     // Dark green bg
-static const FLinearColor GrassColor(0.25f, 0.55f, 0.2f, 1.f);       // Green grass
-static const FLinearColor PathColor(0.55f, 0.4f, 0.25f, 1.f);        // Brown path
-static const FLinearColor TowerCellColor(0.35f, 0.35f, 0.5f, 1.f);   // Tower-placed cell
-static const FLinearColor ArrowColor(0.2f, 0.7f, 0.3f, 1.f);         // Green = arrow
-static const FLinearColor CannonColor(0.85f, 0.2f, 0.15f, 1.f);      // Red = cannon
-static const FLinearColor IceColor(0.3f, 0.6f, 0.95f, 1.f);          // Blue = ice
-static const FLinearColor LightningColor(0.9f, 0.85f, 0.2f, 1.f);    // Yellow = lightning
-static const FLinearColor TowerBtnHover(0.9f, 0.9f, 0.9f, 0.2f);
-static const FLinearColor TowerBtnPress(0.5f, 0.5f, 0.5f, 0.3f);
-static const FLinearColor StartWaveBtnColor(0.2f, 0.7f, 0.3f, 1.f);
-static const FLinearColor StartWaveHover(0.3f, 0.8f, 0.4f, 1.f);
-static const FLinearColor StartWavePress(0.15f, 0.55f, 0.2f, 1.f);
-static const FLinearColor StatusBg(0.1f, 0.1f, 0.15f, 0.9f);
+// -- TD Colors used outside Initialize() (wrapped to avoid unity build conflicts) --
+namespace
+{
+const FLinearColor GrassColor(0.25f, 0.55f, 0.2f, 1.f);       // Green grass
+const FLinearColor PathColor(0.55f, 0.4f, 0.25f, 1.f);        // Brown path
+const FLinearColor TowerCellColor(0.35f, 0.35f, 0.5f, 1.f);   // Tower-placed cell
+const FLinearColor ArrowColor(0.2f, 0.7f, 0.3f, 1.f);         // Green = arrow
+const FLinearColor CannonColor(0.85f, 0.2f, 0.15f, 1.f);      // Red = cannon
+const FLinearColor IceColor(0.3f, 0.6f, 0.95f, 1.f);          // Blue = ice
+const FLinearColor LightningColor(0.9f, 0.85f, 0.2f, 1.f);    // Yellow = lightning
+}
 
 // ---------------------------------------------------------------------------
 // Widget lifecycle
@@ -53,6 +49,15 @@ bool UTDHUD::Initialize()
 	{
 		return true;
 	}
+
+	// -- Colors ---------------------------------------------------------------
+	const FLinearColor TDBgColor(0.08f, 0.12f, 0.08f, 0.95f);     // Dark green bg
+	const FLinearColor TowerBtnHover(0.9f, 0.9f, 0.9f, 0.2f);
+	const FLinearColor TowerBtnPress(0.5f, 0.5f, 0.5f, 0.3f);
+	const FLinearColor StartWaveBtnColor(0.2f, 0.7f, 0.3f, 1.f);
+	const FLinearColor StartWaveHover(0.3f, 0.8f, 0.4f, 1.f);
+	const FLinearColor StartWavePress(0.15f, 0.55f, 0.2f, 1.f);
+	const FLinearColor StatusBg(0.1f, 0.1f, 0.15f, 0.9f);
 
 	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
 	if (!RootCanvas)

@@ -1,0 +1,635 @@
+// Copyright PlayhouseCity. All Rights Reserved.
+
+#include "Vehicle/PHCDuneBuggyPawn.h"
+#include "PlayhouseCity.h"
+#include "Components/BoxComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/SpotLightComponent.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Camera/CameraComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
+#include "InputActionValue.h"
+#include "InputMappingContext.h"
+#include "InputModifiers.h"
+#include "Engine/LocalPlayer.h"
+#include "UObject/ConstructorHelpers.h"
+#include "Engine/World.h"
+
+// ---------------------------------------------------------------------------
+// Constructor
+// ---------------------------------------------------------------------------
+
+APHCDuneBuggyPawn::APHCDuneBuggyPawn()
+{
+	PrimaryActorTick.bCanEverTick = true;
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(
+		TEXT("/Engine/BasicShapes/Cube.Cube"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderFinder(
+		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+
+	UStaticMesh* Cube = CubeFinder.Succeeded() ? CubeFinder.Object : nullptr;
+	UStaticMesh* Cyl  = CylinderFinder.Succeeded() ? CylinderFinder.Object : nullptr;
+
+	// ========================================================================
+	// Dune Buggy – open-frame off-road vehicle
+	//
+	// ~350 long × 170 wide × ~160 tall (with roll cage).
+	// Higher ride, open cockpit, tubular roll cage, brush guard.
+	// Cube mesh = 100×100×100 at scale 1.0  →  scale = DesiredSize / 100.
+	// ========================================================================
+
+	// ---- Collision box (root) ----
+	VehicleCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("VehicleCollision"));
+	VehicleCollision->SetBoxExtent(FVector(175.f, 90.f, 30.f));
+	VehicleCollision->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	VehicleCollision->SetCollisionResponseToAllChannels(ECR_Block);
+	VehicleCollision->SetSimulatePhysics(false);
+	VehicleCollision->SetHiddenInGame(true);
+	SetRootComponent(VehicleCollision);
+
+	// Helpers
+	auto MakeCube = [&](const TCHAR* Name, const FVector& Loc,
+		const FVector& SizeUU) -> UStaticMeshComponent*
+	{
+		UStaticMeshComponent* C = CreateDefaultSubobject<UStaticMeshComponent>(Name);
+		C->SetupAttachment(VehicleCollision);
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (Cube)
+		{
+			C->SetStaticMesh(Cube);
+			C->SetRelativeScale3D(SizeUU / 100.f);
+			C->SetRelativeLocation(Loc);
+		}
+		return C;
+	};
+
+	auto MakeCyl = [&](const TCHAR* Name, const FVector& Loc,
+		const FVector& Scale) -> UStaticMeshComponent*
+	{
+		UStaticMeshComponent* W = CreateDefaultSubobject<UStaticMeshComponent>(Name);
+		W->SetupAttachment(VehicleCollision);
+		W->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (Cyl)
+		{
+			W->SetStaticMesh(Cyl);
+			W->SetRelativeScale3D(Scale);
+			W->SetRelativeLocation(Loc);
+			W->SetRelativeRotation(FRotator(0.f, 0.f, 90.f));
+		}
+		return W;
+	};
+
+	// ====================================================================
+	//  BODY
+	// ====================================================================
+
+	// Main chassis slab (flat platform)
+	ChassisMesh = MakeCube(TEXT("ChassisMesh"),
+		FVector(0.f, 0.f, 0.f), FVector(280.f, 160.f, 12.f));
+	BodyColoredMeshes.Add(ChassisMesh);
+
+	// Floor pan (thin plate under chassis)
+	FloorPanMesh = MakeCube(TEXT("FloorPanMesh"),
+		FVector(0.f, 0.f, -8.f), FVector(250.f, 150.f, 4.f));
+	BodyColoredMeshes.Add(FloorPanMesh);
+
+	// ====================================================================
+	//  ROLL CAGE (6 tubular bars forming open cage)
+	// ====================================================================
+
+	// Front pillars (A-pillars going up from chassis)
+	RollCageTopL = MakeCube(TEXT("RollCageTopL"),
+		FVector(-10.f, 68.f, 38.f), FVector(8.f, 8.f, 64.f));
+	MetalFrameMeshes.Add(RollCageTopL);
+
+	RollCageTopR = MakeCube(TEXT("RollCageTopR"),
+		FVector(-10.f, -68.f, 38.f), FVector(8.f, 8.f, 64.f));
+	MetalFrameMeshes.Add(RollCageTopR);
+
+	// Top cross bar (connects front pillars at top)
+	RollCageTopCross = MakeCube(TEXT("RollCageTopCross"),
+		FVector(-10.f, 0.f, 68.f), FVector(8.f, 144.f, 8.f));
+	MetalFrameMeshes.Add(RollCageTopCross);
+
+	// Rear pillars
+	RollCageRearL = MakeCube(TEXT("RollCageRearL"),
+		FVector(-95.f, 60.f, 33.f), FVector(8.f, 8.f, 54.f));
+	MetalFrameMeshes.Add(RollCageRearL);
+
+	RollCageRearR = MakeCube(TEXT("RollCageRearR"),
+		FVector(-95.f, -60.f, 33.f), FVector(8.f, 8.f, 54.f));
+	MetalFrameMeshes.Add(RollCageRearR);
+
+	// Rear cross bar
+	RollCageRearCross = MakeCube(TEXT("RollCageRearCross"),
+		FVector(-95.f, 0.f, 58.f), FVector(8.f, 128.f, 8.f));
+	MetalFrameMeshes.Add(RollCageRearCross);
+
+	// ====================================================================
+	//  FRONT BRUSH GUARD (3 bars)
+	// ====================================================================
+
+	BrushGuardTop = MakeCube(TEXT("BrushGuardTop"),
+		FVector(145.f, 0.f, 10.f), FVector(6.f, 140.f, 6.f));
+	MetalFrameMeshes.Add(BrushGuardTop);
+
+	BrushGuardL = MakeCube(TEXT("BrushGuardL"),
+		FVector(145.f, 65.f, -5.f), FVector(6.f, 6.f, 24.f));
+	MetalFrameMeshes.Add(BrushGuardL);
+
+	BrushGuardR = MakeCube(TEXT("BrushGuardR"),
+		FVector(145.f, -65.f, -5.f), FVector(6.f, 6.f, 24.f));
+	MetalFrameMeshes.Add(BrushGuardR);
+
+	// ====================================================================
+	//  REAR SPARE TIRE
+	// ====================================================================
+
+	SpareTireMesh = MakeCyl(TEXT("SpareTireMesh"),
+		FVector(-145.f, 0.f, 22.f), FVector(0.30f, 0.30f, 0.12f));
+
+	// ====================================================================
+	//  REAR ENGINE BLOCK
+	// ====================================================================
+
+	EngineBlockMesh = MakeCube(TEXT("EngineBlockMesh"),
+		FVector(-75.f, 0.f, 12.f), FVector(60.f, 80.f, 24.f));
+
+	// ====================================================================
+	//  SEAT
+	// ====================================================================
+
+	SeatMesh = MakeCube(TEXT("SeatMesh"),
+		FVector(15.f, 0.f, 14.f), FVector(40.f, 40.f, 22.f));
+
+	// ====================================================================
+	//  WHEELS (off-road: bigger diameter, wider than Aventador)
+	// ====================================================================
+
+	WheelFL = MakeCyl(TEXT("WheelFL"), FVector(110.f, 85.f, -18.f), FVector(0.40f, 0.40f, 0.14f));
+	WheelFR = MakeCyl(TEXT("WheelFR"), FVector(110.f, -85.f, -18.f), FVector(0.40f, 0.40f, 0.14f));
+
+	// Rear: slightly bigger
+	WheelRL = MakeCyl(TEXT("WheelRL"), FVector(-100.f, 90.f, -16.f), FVector(0.42f, 0.42f, 0.16f));
+	WheelRR = MakeCyl(TEXT("WheelRR"), FVector(-100.f, -90.f, -16.f), FVector(0.42f, 0.42f, 0.16f));
+
+	// ====================================================================
+	//  LIGHTS
+	// ====================================================================
+
+	HeadlightMeshL = MakeCube(TEXT("HeadlightL"),
+		FVector(142.f, 45.f, 4.f), FVector(6.f, 16.f, 6.f));
+	HeadlightMeshR = MakeCube(TEXT("HeadlightR"),
+		FVector(142.f, -45.f, 4.f), FVector(6.f, 16.f, 6.f));
+
+	TaillightMeshL = MakeCube(TEXT("TaillightL"),
+		FVector(-140.f, 45.f, 8.f), FVector(4.f, 16.f, 6.f));
+	TaillightMeshR = MakeCube(TEXT("TaillightR"),
+		FVector(-140.f, -45.f, 8.f), FVector(4.f, 16.f, 6.f));
+
+	// ---- Headlight spotlights ----
+	HeadlightSpotL = CreateDefaultSubobject<USpotLightComponent>(TEXT("HeadlightSpotL"));
+	HeadlightSpotL->SetupAttachment(VehicleCollision);
+	HeadlightSpotL->SetRelativeLocation(FVector(144.f, 45.f, 4.f));
+	HeadlightSpotL->SetRelativeRotation(FRotator(-3.f, 0.f, 0.f));
+	HeadlightSpotL->SetIntensity(80000.f);
+	HeadlightSpotL->SetAttenuationRadius(6000.f);
+	HeadlightSpotL->SetOuterConeAngle(28.f);
+	HeadlightSpotL->SetInnerConeAngle(16.f);
+	HeadlightSpotL->SetLightColor(FColor(255, 250, 240));
+	HeadlightSpotL->SetVisibility(false);
+
+	HeadlightSpotR = CreateDefaultSubobject<USpotLightComponent>(TEXT("HeadlightSpotR"));
+	HeadlightSpotR->SetupAttachment(VehicleCollision);
+	HeadlightSpotR->SetRelativeLocation(FVector(144.f, -45.f, 4.f));
+	HeadlightSpotR->SetRelativeRotation(FRotator(-3.f, 0.f, 0.f));
+	HeadlightSpotR->SetIntensity(80000.f);
+	HeadlightSpotR->SetAttenuationRadius(6000.f);
+	HeadlightSpotR->SetOuterConeAngle(28.f);
+	HeadlightSpotR->SetInnerConeAngle(16.f);
+	HeadlightSpotR->SetLightColor(FColor(255, 250, 240));
+	HeadlightSpotR->SetVisibility(false);
+
+	// ---- Camera ----
+	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom->SetupAttachment(VehicleCollision);
+	CameraBoom->TargetArmLength = 600.f;
+	CameraBoom->SocketOffset = FVector(0.f, 0.f, 200.f);
+	CameraBoom->bUsePawnControlRotation = false;
+	CameraBoom->bInheritPitch = false;
+	CameraBoom->bInheritYaw = true;
+	CameraBoom->bInheritRoll = false;
+	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->bEnableCameraLag = true;
+	CameraBoom->CameraLagSpeed = 8.f;
+	CameraBoom->bEnableCameraRotationLag = true;
+	CameraBoom->CameraRotationLagSpeed = 7.f;
+
+	VehicleCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("VehicleCamera"));
+	VehicleCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
+	VehicleCamera->bUsePawnControlRotation = false;
+}
+
+// ---------------------------------------------------------------------------
+// BeginPlay
+// ---------------------------------------------------------------------------
+
+void APHCDuneBuggyPawn::BeginPlay()
+{
+	Super::BeginPlay();
+
+	CreateInputAssets();
+
+	// ---- Apply materials ----
+
+	const FLinearColor DefaultBody(0.35f, 0.42f, 0.18f); // olive/army green
+	const FLinearColor DarkMetal(0.08f, 0.08f, 0.08f);
+	const FLinearColor WheelBlack(0.04f, 0.04f, 0.04f);
+	const FLinearColor EngineGray(0.06f, 0.06f, 0.06f);
+	const FLinearColor SeatBrown(0.05f, 0.04f, 0.03f);
+	const FLinearColor LEDWhite(3.0f, 2.8f, 2.2f);
+	const FLinearColor TailRed(2.5f, 0.02f, 0.02f);
+
+	auto ApplyMat = [](UStaticMeshComponent* Comp, const FLinearColor& Color)
+	{
+		if (!Comp || !Comp->GetStaticMesh()) return;
+		UMaterialInstanceDynamic* M = Cast<UMaterialInstanceDynamic>(Comp->GetMaterial(0));
+		if (!M)
+		{
+			M = UMaterialInstanceDynamic::Create(Comp->GetMaterial(0), Comp);
+			if (M) Comp->SetMaterial(0, M);
+		}
+		if (M) M->SetVectorParameterValue(TEXT("BaseColor"), Color);
+	};
+
+	// Body panels (chassis + floor pan).
+	if (ChassisMesh && ChassisMesh->GetStaticMesh())
+	{
+		BodyMaterial = UMaterialInstanceDynamic::Create(ChassisMesh->GetMaterial(0), ChassisMesh);
+		if (BodyMaterial) { BodyMaterial->SetVectorParameterValue(TEXT("BaseColor"), DefaultBody); ChassisMesh->SetMaterial(0, BodyMaterial); }
+	}
+	for (UStaticMeshComponent* C : BodyColoredMeshes) { ApplyMat(C, DefaultBody); }
+
+	// Metal frame (roll cage + brush guard).
+	for (UStaticMeshComponent* C : MetalFrameMeshes) { ApplyMat(C, DarkMetal); }
+
+	// Engine block.
+	ApplyMat(EngineBlockMesh, EngineGray);
+
+	// Seat.
+	ApplyMat(SeatMesh, SeatBrown);
+
+	// Wheels.
+	ApplyMat(WheelFL, WheelBlack);
+	ApplyMat(WheelFR, WheelBlack);
+	ApplyMat(WheelRL, WheelBlack);
+	ApplyMat(WheelRR, WheelBlack);
+
+	// Spare tire.
+	ApplyMat(SpareTireMesh, WheelBlack);
+
+	// Headlights (bright white LED).
+	ApplyMat(HeadlightMeshL, LEDWhite);
+	ApplyMat(HeadlightMeshR, LEDWhite);
+
+	// Taillights (red).
+	ApplyMat(TaillightMeshL, TailRed);
+	ApplyMat(TaillightMeshR, TailRed);
+}
+
+// ---------------------------------------------------------------------------
+// Input asset creation (identical to PHCVehiclePawn)
+// ---------------------------------------------------------------------------
+
+void APHCDuneBuggyPawn::CreateInputAssets()
+{
+	ThrottleAction = NewObject<UInputAction>(this, TEXT("IA_BuggyThrottle"));
+	ThrottleAction->ValueType = EInputActionValueType::Boolean;
+
+	BrakeAction = NewObject<UInputAction>(this, TEXT("IA_BuggyBrake"));
+	BrakeAction->ValueType = EInputActionValueType::Boolean;
+
+	SteerAction = NewObject<UInputAction>(this, TEXT("IA_BuggySteer"));
+	SteerAction->ValueType = EInputActionValueType::Axis1D;
+
+	ExitVehicleAction = NewObject<UInputAction>(this, TEXT("IA_BuggyExit"));
+	ExitVehicleAction->ValueType = EInputActionValueType::Boolean;
+
+	VehicleMappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Buggy"));
+
+	VehicleMappingContext->MapKey(ThrottleAction, EKeys::W);
+	VehicleMappingContext->MapKey(ThrottleAction, EKeys::Up);
+	VehicleMappingContext->MapKey(BrakeAction, EKeys::S);
+	VehicleMappingContext->MapKey(BrakeAction, EKeys::Down);
+	VehicleMappingContext->MapKey(SteerAction, EKeys::D);
+	VehicleMappingContext->MapKey(SteerAction, EKeys::Right);
+	{
+		FEnhancedActionKeyMapping& M = VehicleMappingContext->MapKey(SteerAction, EKeys::A);
+		UInputModifierNegate* Neg = NewObject<UInputModifierNegate>(this);
+		M.Modifiers.Add(Neg);
+	}
+	{
+		FEnhancedActionKeyMapping& M = VehicleMappingContext->MapKey(SteerAction, EKeys::Left);
+		UInputModifierNegate* Neg = NewObject<UInputModifierNegate>(this);
+		M.Modifiers.Add(Neg);
+	}
+	VehicleMappingContext->MapKey(ExitVehicleAction, EKeys::F);
+	VehicleMappingContext->MapKey(ThrottleAction, EKeys::Gamepad_RightTrigger);
+	VehicleMappingContext->MapKey(BrakeAction, EKeys::Gamepad_LeftTrigger);
+	VehicleMappingContext->MapKey(SteerAction, EKeys::Gamepad_LeftStick_Right);
+	{
+		FEnhancedActionKeyMapping& M = VehicleMappingContext->MapKey(SteerAction, EKeys::Gamepad_LeftStick_Left);
+		UInputModifierNegate* Neg = NewObject<UInputModifierNegate>(this);
+		M.Modifiers.Add(Neg);
+	}
+	VehicleMappingContext->MapKey(ExitVehicleAction, EKeys::Gamepad_FaceButton_Left);
+}
+
+// ---------------------------------------------------------------------------
+// SetupPlayerInputComponent
+// ---------------------------------------------------------------------------
+
+void APHCDuneBuggyPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+{
+	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+	if (const APlayerController* PC = Cast<APlayerController>(Controller))
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Sub =
+				ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+		{
+			if (VehicleMappingContext)
+			{
+				Sub->AddMappingContext(VehicleMappingContext, 1);
+			}
+		}
+	}
+
+	UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent);
+	if (EIC)
+	{
+		if (ThrottleAction)
+		{
+			EIC->BindAction(ThrottleAction, ETriggerEvent::Triggered, this, &APHCDuneBuggyPawn::HandleThrottle);
+			EIC->BindAction(ThrottleAction, ETriggerEvent::Completed, this, &APHCDuneBuggyPawn::HandleThrottleRelease);
+		}
+		if (BrakeAction)
+		{
+			EIC->BindAction(BrakeAction, ETriggerEvent::Triggered, this, &APHCDuneBuggyPawn::HandleBrake);
+			EIC->BindAction(BrakeAction, ETriggerEvent::Completed, this, &APHCDuneBuggyPawn::HandleBrakeRelease);
+		}
+		if (SteerAction)
+		{
+			EIC->BindAction(SteerAction, ETriggerEvent::Triggered, this, &APHCDuneBuggyPawn::HandleSteer);
+			EIC->BindAction(SteerAction, ETriggerEvent::Completed, this, &APHCDuneBuggyPawn::HandleSteerRelease);
+		}
+		if (ExitVehicleAction)
+		{
+			EIC->BindAction(ExitVehicleAction, ETriggerEvent::Started, this, &APHCDuneBuggyPawn::HandleExitVehicle);
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tick -- arcade vehicle physics (same as Aventador, uses member tuning)
+// ---------------------------------------------------------------------------
+
+void APHCDuneBuggyPawn::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (!bIsOccupied) return;
+
+	// ---- Speed update (non-linear – harder to gain speed near top) ----
+	if (ThrottleInput > 0.f)
+	{
+		const float SpeedRatio = FMath::Clamp(CurrentSpeed / MaxSpeed, 0.f, 1.f);
+		const float AccelCurve = 1.f - SpeedRatio * SpeedRatio;
+		CurrentSpeed += Acceleration * AccelCurve * DeltaTime;
+	}
+	else if (ThrottleInput < 0.f)
+	{
+		CurrentSpeed -= BrakeDeceleration * DeltaTime;
+	}
+	else
+	{
+		if (CurrentSpeed > 0.f)
+		{
+			CurrentSpeed -= NaturalDeceleration * DeltaTime;
+			if (CurrentSpeed < 0.f) CurrentSpeed = 0.f;
+		}
+		else if (CurrentSpeed < 0.f)
+		{
+			CurrentSpeed += NaturalDeceleration * DeltaTime;
+			if (CurrentSpeed > 0.f) CurrentSpeed = 0.f;
+		}
+	}
+	CurrentSpeed = FMath::Clamp(CurrentSpeed, -MaxSpeed * 0.3f, MaxSpeed);
+
+	// ---- Steering (inverse speed: responsive at low speed, stable at high) ----
+	if (FMath::Abs(CurrentSpeed) > 10.f)
+	{
+		const float NormSpeed = FMath::Clamp(FMath::Abs(CurrentSpeed) / MaxSpeed, 0.f, 1.f);
+		const float SpeedFactor = FMath::Lerp(1.0f, 0.3f, NormSpeed);
+		const float YawDelta = SteeringInput * SteeringSpeed * SpeedFactor * DeltaTime;
+		FRotator NewRotation = GetActorRotation();
+		NewRotation.Yaw += YawDelta;
+		SetActorRotation(NewRotation);
+	}
+
+	// ---- Wheel spin visual ----
+	{
+		WheelSpinAngle += CurrentSpeed * DeltaTime * 0.5f;
+		const float SteerYaw = SteeringInput * 25.f;
+		const FRotator FrontRot(WheelSpinAngle, SteerYaw, 90.f);
+		if (WheelFL) WheelFL->SetRelativeRotation(FrontRot);
+		if (WheelFR) WheelFR->SetRelativeRotation(FrontRot);
+		const FRotator RearRot(WheelSpinAngle, 0.f, 90.f);
+		if (WheelRL) WheelRL->SetRelativeRotation(RearRot);
+		if (WheelRR) WheelRR->SetRelativeRotation(RearRot);
+	}
+
+	// ---- Movement ----
+	constexpr float HoverHeight = 55.f; // slightly higher ride than Aventador
+	constexpr float LaunchImpulse = 6000.f;
+	constexpr float LaunchGravity = 1800.f;
+
+	FCollisionQueryParams TraceParams;
+	TraceParams.AddIgnoredActor(this);
+
+	auto DoGroundTrace = [&](const FVector& Pos, FHitResult& OutHit) -> bool
+	{
+		return GetWorld()->LineTraceSingleByChannel(OutHit,
+			FVector(Pos.X, Pos.Y, Pos.Z + 10000.f),
+			FVector(Pos.X, Pos.Y, -500.f),
+			ECC_Visibility, TraceParams);
+	};
+
+	if (FMath::Abs(CurrentSpeed) > 1.f)
+	{
+		const FVector Forward = GetActorForwardVector();
+		const FVector Delta = Forward * CurrentSpeed * DeltaTime;
+		const FVector CurrentLoc = GetActorLocation();
+
+		FHitResult GroundHit;
+		const bool bHitGround = DoGroundTrace(CurrentLoc + Delta, GroundHit);
+
+		// Detect launch pads.
+		if (LaunchVelocityZ == 0.f && bHitGround && GroundHit.GetActor() &&
+			GroundHit.GetActor()->ActorHasTag(TEXT("LaunchPad")))
+		{
+			LaunchVelocityZ = LaunchImpulse;
+		}
+
+		float NewZ = CurrentLoc.Z;
+
+		if (LaunchVelocityZ != 0.f)
+		{
+			LaunchVelocityZ -= LaunchGravity * DeltaTime;
+			NewZ += LaunchVelocityZ * DeltaTime;
+
+			if (bHitGround)
+			{
+				const float GroundZ = GroundHit.ImpactPoint.Z + HoverHeight;
+				if (NewZ <= GroundZ && LaunchVelocityZ <= 0.f)
+				{
+					NewZ = GroundZ;
+					LaunchVelocityZ = 0.f;
+				}
+			}
+		}
+		else
+		{
+			if (bHitGround)
+			{
+				const float TargetZ = GroundHit.ImpactPoint.Z + HoverHeight;
+				NewZ = FMath::FInterpTo(CurrentLoc.Z, TargetZ, DeltaTime, 20.f);
+			}
+		}
+
+		SetActorLocation(FVector(CurrentLoc.X, CurrentLoc.Y, NewZ));
+		AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), true);
+
+		// Pitch alignment.
+		FRotator Rot = GetActorRotation();
+		if (LaunchVelocityZ == 0.f && bHitGround)
+		{
+			const FVector Normal = GroundHit.ImpactNormal;
+			const FVector FwdFlat = Forward.GetSafeNormal2D();
+			const float SlopeDot = FVector::DotProduct(Normal, FwdFlat);
+			const float TargetPitch = FMath::RadiansToDegrees(FMath::Asin(-SlopeDot));
+			Rot.Pitch = FMath::FInterpTo(Rot.Pitch, TargetPitch, DeltaTime, 10.f);
+		}
+		else
+		{
+			const float AirPitch = FMath::Clamp(LaunchVelocityZ / 200.f, -30.f, 30.f);
+			Rot.Pitch = FMath::FInterpTo(Rot.Pitch, AirPitch, DeltaTime, 5.f);
+		}
+		SetActorRotation(Rot);
+	}
+	else
+	{
+		// Stationary: stay grounded.
+		FHitResult GroundHit;
+		const FVector Loc = GetActorLocation();
+		if (DoGroundTrace(Loc, GroundHit))
+		{
+			const float TargetZ = GroundHit.ImpactPoint.Z + HoverHeight;
+			if (FMath::Abs(Loc.Z - TargetZ) > 2.f)
+			{
+				SetActorLocation(FVector(Loc.X, Loc.Y,
+					FMath::FInterpTo(Loc.Z, TargetZ, DeltaTime, 8.f)));
+			}
+		}
+
+		FRotator Rot = GetActorRotation();
+		Rot.Pitch = FMath::FInterpTo(Rot.Pitch, 0.f, DeltaTime, 5.f);
+		SetActorRotation(Rot);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Input handlers
+// ---------------------------------------------------------------------------
+
+void APHCDuneBuggyPawn::HandleThrottle(const FInputActionValue&) { ThrottleInput = 1.f; }
+void APHCDuneBuggyPawn::HandleThrottleRelease(const FInputActionValue&) { ThrottleInput = 0.f; }
+void APHCDuneBuggyPawn::HandleBrake(const FInputActionValue&) { ThrottleInput = -1.f; }
+void APHCDuneBuggyPawn::HandleBrakeRelease(const FInputActionValue&)
+{
+	if (ThrottleInput < 0.f) ThrottleInput = 0.f;
+}
+void APHCDuneBuggyPawn::HandleSteer(const FInputActionValue& Value) { SteeringInput = Value.Get<float>(); }
+void APHCDuneBuggyPawn::HandleSteerRelease(const FInputActionValue&) { SteeringInput = 0.f; }
+
+void APHCDuneBuggyPawn::HandleExitVehicle(const FInputActionValue&)
+{
+	if (APlayerController* PC = Cast<APlayerController>(Controller))
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Sub =
+				ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+		{
+			if (VehicleMappingContext)
+			{
+				Sub->RemoveMappingContext(VehicleMappingContext);
+			}
+		}
+
+		static const FName ExitFuncName(TEXT("OnVehicleExitRequested"));
+		UFunction* Func = PC->FindFunction(ExitFuncName);
+		if (Func)
+		{
+			PC->ProcessEvent(Func, nullptr);
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+void APHCDuneBuggyPawn::SetBodyColor(const FLinearColor& Color)
+{
+	auto SetColor = [](UStaticMeshComponent* Comp, const FLinearColor& C)
+	{
+		if (!Comp) return;
+		UMaterialInstanceDynamic* Mat = Cast<UMaterialInstanceDynamic>(Comp->GetMaterial(0));
+		if (!Mat)
+		{
+			Mat = UMaterialInstanceDynamic::Create(Comp->GetMaterial(0), Comp);
+			if (Mat) Comp->SetMaterial(0, Mat);
+		}
+		if (Mat) Mat->SetVectorParameterValue(TEXT("BaseColor"), C);
+	};
+
+	// Main chassis.
+	if (!BodyMaterial && ChassisMesh)
+		BodyMaterial = UMaterialInstanceDynamic::Create(ChassisMesh->GetMaterial(0), ChassisMesh);
+	if (BodyMaterial)
+	{
+		BodyMaterial->SetVectorParameterValue(TEXT("BaseColor"), Color);
+		ChassisMesh->SetMaterial(0, BodyMaterial);
+	}
+
+	// All body-colored parts (chassis is in BodyColoredMeshes too).
+	for (UStaticMeshComponent* C : BodyColoredMeshes)
+	{
+		SetColor(C, Color);
+	}
+}
+
+void APHCDuneBuggyPawn::SetHeadlightsEnabled(bool bEnabled)
+{
+	if (HeadlightSpotL) HeadlightSpotL->SetVisibility(bEnabled);
+	if (HeadlightSpotR) HeadlightSpotR->SetVisibility(bEnabled);
+}
+
+FVector APHCDuneBuggyPawn::GetExitLocation() const
+{
+	return GetActorLocation() + GetActorRightVector() * -300.f + FVector(0.f, 0.f, 100.f);
+}

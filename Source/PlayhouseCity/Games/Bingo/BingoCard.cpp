@@ -8,7 +8,7 @@
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 
-static constexpr int32 BINGO_GRID = 5;
+static constexpr int32 kBingoCard_Grid = 5;
 
 // ---------------------------------------------------------------------------
 // Lifecycle
@@ -165,8 +165,8 @@ void UBingoCard::HandleAnyCellClicked()
 		return;
 	}
 
-	const int32 Row = FoundIndex / BINGO_GRID;
-	const int32 Col = FoundIndex % BINGO_GRID;
+	const int32 Row = FoundIndex / kBingoCard_Grid;
+	const int32 Col = FoundIndex % kBingoCard_Grid;
 
 	// Attempt to mark via game mode.
 	if (GameModeRef)
@@ -199,14 +199,14 @@ void UBingoCard::BuildGrid()
 
 	CellButtons.Reset();
 	CellTexts.Reset();
-	CellButtons.SetNum(BINGO_GRID * BINGO_GRID);
-	CellTexts.SetNum(BINGO_GRID * BINGO_GRID);
+	CellButtons.SetNum(kBingoCard_Grid * kBingoCard_Grid);
+	CellTexts.SetNum(kBingoCard_Grid * kBingoCard_Grid);
 
 	GridPanel->ClearChildren();
 
-	for (int32 Row = 0; Row < BINGO_GRID; ++Row)
+	for (int32 Row = 0; Row < kBingoCard_Grid; ++Row)
 	{
-		for (int32 Col = 0; Col < BINGO_GRID; ++Col)
+		for (int32 Col = 0; Col < kBingoCard_Grid; ++Col)
 		{
 			const int32 Idx = ToIndex(Row, Col);
 

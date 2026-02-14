@@ -13,6 +13,7 @@ class UPHCMiniGameHUD;
 class APHCMiniGameMode;
 class UPHCCityHUD;
 class APHCVehiclePawn;
+class APHCDuneBuggyPawn;
 class APHCCityCharacter;
 
 /**
@@ -99,9 +100,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "PHC|Vehicle")
 	void EnterNearestVehicle();
 
-	/** Spawn an Aventador at the player's location and immediately enter it. */
+	/** Spawn a vehicle at the player's location and immediately enter it.
+	 *  VehicleType: 0 = Aventador, 1 = Dune Buggy. */
 	UFUNCTION(BlueprintCallable, Category = "PHC|Vehicle")
-	void SpawnAndEnterVehicle();
+	void SpawnAndEnterVehicle(int32 VehicleType = 0);
 
 	/** Called by the vehicle pawn when the player presses the exit key. */
 	UFUNCTION()
@@ -140,7 +142,7 @@ private:
 	UPROPERTY()
 	TObjectPtr<APHCCityCharacter> SavedCharacterPawn;
 
-	/** The vehicle we're currently driving. */
+	/** The vehicle we're currently driving (Aventador or Dune Buggy). */
 	UPROPERTY()
-	TObjectPtr<APHCVehiclePawn> CurrentVehicle;
+	TObjectPtr<APawn> CurrentVehicle;
 };

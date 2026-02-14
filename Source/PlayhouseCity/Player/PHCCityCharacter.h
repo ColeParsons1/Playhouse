@@ -77,6 +77,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "PHC|Movement")
 	bool bIsSprinting = false;
 
+	/** Set by HandleInteract to defer vehicle entry to next Tick (avoids
+	 *  crash from changing possession during Enhanced Input evaluation). */
+	bool bPendingVehicleInteract = false;
+
 protected:
 	void HandleMove(const FInputActionValue& Value);
 	void HandleLook(const FInputActionValue& Value);

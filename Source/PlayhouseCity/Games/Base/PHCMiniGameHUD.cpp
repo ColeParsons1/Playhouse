@@ -37,8 +37,8 @@ bool UPHCMiniGameHUD::Initialize()
 	const FLinearColor BarBg(0.05f, 0.05f, 0.1f, 0.9f);
 	const FLinearColor OverlayBg(0.02f, 0.02f, 0.06f, 0.92f);
 	const FLinearColor BtnColor(0.2f, 0.3f, 0.7f, 1.f);
-	const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
-	const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
+	const FLinearColor HUDBtnHover(0.3f, 0.4f, 0.85f, 1.f);
+	const FLinearColor HUDBtnPress(0.15f, 0.2f, 0.5f, 1.f);
 	const FLinearColor DangerColor(0.8f, 0.15f, 0.15f, 1.f);
 	const FLinearColor DangerHover(0.9f, 0.25f, 0.25f, 1.f);
 
@@ -119,14 +119,14 @@ bool UPHCMiniGameHUD::Initialize()
 	TimerSlot->SetPadding(FMargin(16.f, 0.f));
 
 	// Pause button
-	PauseButton = MakeButton(TEXT("PauseButton"), TEXT("Pause"), BtnColor, BtnHover, BtnPress);
+	PauseButton = MakeButton(TEXT("PauseButton"), TEXT("Pause"), BtnColor, HUDBtnHover, HUDBtnPress);
 	UHorizontalBoxSlot* PauseSlot = TopHBox->AddChildToHorizontalBox(PauseButton);
 	PauseSlot->SetVerticalAlignment(VAlign_Center);
 	PauseSlot->SetPadding(FMargin(4.f, 0.f));
 	PauseSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 
 	// Quit button
-	QuitButton = MakeButton(TEXT("QuitButton"), TEXT("Quit"), DangerColor, DangerHover, BtnPress);
+	QuitButton = MakeButton(TEXT("QuitButton"), TEXT("Quit"), DangerColor, DangerHover, HUDBtnPress);
 	UHorizontalBoxSlot* QuitSlot = TopHBox->AddChildToHorizontalBox(QuitButton);
 	QuitSlot->SetVerticalAlignment(VAlign_Center);
 	QuitSlot->SetPadding(FMargin(4.f, 0.f));
@@ -164,12 +164,12 @@ bool UPHCMiniGameHUD::Initialize()
 	PTSlot->SetHorizontalAlignment(HAlign_Center);
 	PTSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 30.f));
 
-	ResumeButton = MakeButton(TEXT("ResumeButton"), TEXT("Resume"), BtnColor, BtnHover, BtnPress);
+	ResumeButton = MakeButton(TEXT("ResumeButton"), TEXT("Resume"), BtnColor, HUDBtnHover, HUDBtnPress);
 	UVerticalBoxSlot* ResSlot = PauseVBox->AddChildToVerticalBox(ResumeButton);
 	ResSlot->SetHorizontalAlignment(HAlign_Center);
 	ResSlot->SetPadding(FMargin(60.f, 8.f));
 
-	QuitConfirmButton = MakeButton(TEXT("QuitConfirmButton"), TEXT("Quit Game"), DangerColor, DangerHover, BtnPress);
+	QuitConfirmButton = MakeButton(TEXT("QuitConfirmButton"), TEXT("Quit Game"), DangerColor, DangerHover, HUDBtnPress);
 	UVerticalBoxSlot* QCSlot = PauseVBox->AddChildToVerticalBox(QuitConfirmButton);
 	QCSlot->SetHorizontalAlignment(HAlign_Center);
 	QCSlot->SetPadding(FMargin(60.f, 8.f));
@@ -228,12 +228,12 @@ bool UPHCMiniGameHUD::Initialize()
 	CESlot->SetHorizontalAlignment(HAlign_Center);
 	CESlot->SetPadding(FMargin(0.f, 0.f, 0.f, 30.f));
 
-	PlayAgainButton = MakeButton(TEXT("PlayAgainButton"), TEXT("Play Again"), BtnColor, BtnHover, BtnPress);
+	PlayAgainButton = MakeButton(TEXT("PlayAgainButton"), TEXT("Play Again"), BtnColor, HUDBtnHover, HUDBtnPress);
 	UVerticalBoxSlot* PASlot = GOVBox->AddChildToVerticalBox(PlayAgainButton);
 	PASlot->SetHorizontalAlignment(HAlign_Center);
 	PASlot->SetPadding(FMargin(60.f, 8.f));
 
-	ReturnButton = MakeButton(TEXT("ReturnButton"), TEXT("Return to Lobby"), DangerColor, DangerHover, BtnPress);
+	ReturnButton = MakeButton(TEXT("ReturnButton"), TEXT("Return to Lobby"), DangerColor, DangerHover, HUDBtnPress);
 	UVerticalBoxSlot* RBSlot = GOVBox->AddChildToVerticalBox(ReturnButton);
 	RBSlot->SetHorizontalAlignment(HAlign_Center);
 	RBSlot->SetPadding(FMargin(60.f, 8.f));

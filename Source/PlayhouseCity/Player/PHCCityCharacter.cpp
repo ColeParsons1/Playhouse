@@ -250,16 +250,28 @@ void APHCCityCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (!TouchInput || !TouchInput->IsActive() || !Controller)
+	// Process deferred vehicle interaction (set by HandleInteract).
+	if (bPendingVehicleInteract)
+	{
+		bPendingVehicleInteract = false;
+		if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetController()))
+		{
+			PC->EnterNearestVehicle();
+			return; // Character is now unpossessed; skip touch input.
+		}
+	}
+
+	if (!TouchInput || !TouchInput->IsActive() || !GetController())
 	{
 		return;
 	}
 
 	// Apply movement from the virtual joystick.
+	AController* MyController = GetController();
 	const FVector2D MoveInput = TouchInput->GetMovementInput();
-	if (!MoveInput.IsNearlyZero())
+	if (MyController && !MoveInput.IsNearlyZero())
 	{
-		const FRotator YawRotation(0.f, Controller->GetControlRotation().Yaw, 0.f);
+		const FRotator YawRotation(0.f, MyController->GetControlRotation().Yaw, 0.f);
 		const FVector ForwardDir = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 		const FVector RightDir = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
@@ -295,7 +307,8 @@ void APHCCityCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 
 void APHCCityCharacter::HandleMove(const FInputActionValue& Value)
 {
-	if (!Controller) return;
+	AController* MyController = GetController();
+	if (!MyController) return;
 
 	const FVector2D MoveVector = Value.Get<FVector2D>();
 	if (MoveVector.IsNearlyZero())
@@ -304,7 +317,7 @@ void APHCCityCharacter::HandleMove(const FInputActionValue& Value)
 	}
 
 	// Build camera-relative movement directions.
-	const FRotator YawRotation(0.f, Controller->GetControlRotation().Yaw, 0.f);
+	const FRotator YawRotation(0.f, MyController->GetControlRotation().Yaw, 0.f);
 	const FVector ForwardDir = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 	const FVector RightDir = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
@@ -314,7 +327,7 @@ void APHCCityCharacter::HandleMove(const FInputActionValue& Value)
 
 void APHCCityCharacter::HandleLook(const FInputActionValue& Value)
 {
-	if (!Controller) return;
+	if (!GetController()) return;
 
 	const FVector2D LookVector = Value.Get<FVector2D>();
 	AddControllerYawInput(LookVector.X);
@@ -345,9 +358,8 @@ void APHCCityCharacter::HandleSprintCompleted(const FInputActionValue& /*Value*/
 
 void APHCCityCharacter::HandleInteract(const FInputActionValue& /*Value*/)
 {
-	// Try to enter a nearby vehicle.
-	if (APHCPlayerController* PC = Cast<APHCPlayerController>(Controller))
-	{
-		PC->EnterNearestVehicle();
-	}
+	// Defer vehicle entry to next Tick so we don't change possession
+	// during Enhanced Input evaluation (which would crash HandleMove if
+	// both MoveAction and InteractAction trigger in the same frame).
+	bPendingVehicleInteract = true;
 }

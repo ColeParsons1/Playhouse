@@ -13,6 +13,7 @@ class UBorder;
 class UCanvasPanel;
 class UPHCMainHUD;
 class APHCVehiclePawn;
+class APHCDuneBuggyPawn;
 
 /**
  * Lightweight HUD overlay for the PlayhouseCity 3D open world.
@@ -52,7 +53,7 @@ public:
 
 	/** Switch to driving mode: show vehicle touch controls, hide walk controls. */
 	UFUNCTION(BlueprintCallable, Category = "PHC|UI")
-	void SetDrivingMode(bool bDriving, APHCVehiclePawn* Vehicle);
+	void SetDrivingMode(bool bDriving, APawn* Vehicle);
 
 protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
@@ -112,7 +113,18 @@ protected:
 
 	/** The vehicle we're currently controlling via touch. */
 	UPROPERTY()
-	TObjectPtr<APHCVehiclePawn> DrivenVehicle;
+	TObjectPtr<APawn> DrivenVehicle;
+
+	// -- Vehicle selection popup -----------------------------------------------
+
+	UPROPERTY()
+	TObjectPtr<UBorder> VehicleSelectOverlay;
+
+	UPROPERTY()
+	TObjectPtr<UButton> SelectAventadorBtn;
+
+	UPROPERTY()
+	TObjectPtr<UButton> SelectBuggyBtn;
 
 	bool bDrivingMode = false;
 
@@ -144,5 +156,15 @@ private:
 	UFUNCTION()
 	void OnExitVehicleClicked();
 
+	UFUNCTION()
+	void OnSelectAventador();
+
+	UFUNCTION()
+	void OnSelectBuggy();
+
+	void ShowVehicleSelection();
+	void HideVehicleSelection();
+
 	bool bMenuOpen = false;
+	bool bVehicleSelectOpen = false;
 };

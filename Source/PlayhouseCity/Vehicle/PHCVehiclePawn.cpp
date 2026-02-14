@@ -258,8 +258,13 @@ void APHCVehiclePawn::BeginPlay()
 	auto ApplyMat = [](UStaticMeshComponent* Comp, const FLinearColor& Color)
 	{
 		if (!Comp || !Comp->GetStaticMesh()) return;
-		UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(Comp->GetMaterial(0), Comp);
-		if (M) { M->SetVectorParameterValue(TEXT("BaseColor"), Color); Comp->SetMaterial(0, M); }
+		UMaterialInstanceDynamic* M = Cast<UMaterialInstanceDynamic>(Comp->GetMaterial(0));
+		if (!M)
+		{
+			M = UMaterialInstanceDynamic::Create(Comp->GetMaterial(0), Comp);
+			if (M) Comp->SetMaterial(0, M);
+		}
+		if (M) M->SetVectorParameterValue(TEXT("BaseColor"), Color);
 	};
 
 	// Body panels (main + nose + engine cover).

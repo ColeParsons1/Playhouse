@@ -21,25 +21,6 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogTanksHUD, Log, All);
 
-// -- Colour palette ---------------------------------------------------------
-
-static const FLinearColor FieldGreen(0.06f, 0.22f, 0.06f, 1.f);      // dark green field
-static const FLinearColor TerrainGreen(0.08f, 0.35f, 0.08f, 1.f);     // terrain silhouette
-static const FLinearColor SkyGradient(0.15f, 0.25f, 0.45f, 1.f);      // sky background tint
-static const FLinearColor PlayerBlue(0.15f, 0.35f, 0.85f, 1.f);       // blue player tank
-static const FLinearColor PlayerTurretBlue(0.25f, 0.50f, 0.95f, 1.f); // lighter turret
-static const FLinearColor EnemyRed(0.85f, 0.15f, 0.15f, 1.f);         // red enemy tank
-static const FLinearColor EnemyTurretRed(0.95f, 0.30f, 0.20f, 1.f);   // lighter turret
-static const FLinearColor HPGreen(0.2f, 0.85f, 0.2f, 1.f);            // health bar fill
-static const FLinearColor HPBg(0.15f, 0.15f, 0.15f, 1.f);             // health bar background
-static const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
-static const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
-static const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
-static const FLinearColor FireBtnNormal(0.85f, 0.30f, 0.10f, 1.f);
-static const FLinearColor FireBtnHover(0.95f, 0.40f, 0.15f, 1.f);
-static const FLinearColor FireBtnPress(0.65f, 0.20f, 0.08f, 1.f);
-static const FLinearColor ControlBg(0.05f, 0.05f, 0.1f, 0.85f);
-
 // ---------------------------------------------------------------------------
 // Initialize - build the Tanks game UI
 // ---------------------------------------------------------------------------
@@ -51,6 +32,24 @@ bool UTanksHUD::Initialize()
 	{
 		return false;
 	}
+
+	// -- Colour palette ---------------------------------------------------------
+	const FLinearColor FieldGreen(0.06f, 0.22f, 0.06f, 1.f);      // dark green field
+	const FLinearColor TerrainGreen(0.08f, 0.35f, 0.08f, 1.f);     // terrain silhouette
+	const FLinearColor SkyGradient(0.15f, 0.25f, 0.45f, 1.f);      // sky background tint
+	const FLinearColor PlayerBlue(0.15f, 0.35f, 0.85f, 1.f);       // blue player tank
+	const FLinearColor PlayerTurretBlue(0.25f, 0.50f, 0.95f, 1.f); // lighter turret
+	const FLinearColor EnemyRed(0.85f, 0.15f, 0.15f, 1.f);         // red enemy tank
+	const FLinearColor EnemyTurretRed(0.95f, 0.30f, 0.20f, 1.f);   // lighter turret
+	const FLinearColor HPGreen(0.2f, 0.85f, 0.2f, 1.f);            // health bar fill
+	const FLinearColor HPBg(0.15f, 0.15f, 0.15f, 1.f);             // health bar background
+	const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
+	const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
+	const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
+	const FLinearColor FireBtnNormal(0.85f, 0.30f, 0.10f, 1.f);
+	const FLinearColor FireBtnHover(0.95f, 0.40f, 0.15f, 1.f);
+	const FLinearColor FireBtnPress(0.65f, 0.20f, 0.08f, 1.f);
+	const FLinearColor ControlBg(0.05f, 0.05f, 0.1f, 0.85f);
 
 	// Guard against double-build.
 	if (GameCanvas)

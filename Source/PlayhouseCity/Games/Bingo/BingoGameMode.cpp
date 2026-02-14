@@ -9,9 +9,9 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-static constexpr int32 BINGO_GRID     = 5;
-static constexpr int32 BINGO_MAX_NUM  = 75;
-static constexpr int32 BINGO_CPU_COUNT = 19;
+static constexpr int32 kBingoGM_Grid     = 5;
+static constexpr int32 kBingoGM_MaxNum  = 75;
+static constexpr int32 kBingoGM_CpuCount = 19;
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -33,8 +33,8 @@ void ABingoGameMode::StartGame()
 	Super::StartGame();
 
 	// Build the number pool (1 - 75) and shuffle.
-	RemainingNumbers.Reset(BINGO_MAX_NUM);
-	for (int32 i = 1; i <= BINGO_MAX_NUM; ++i)
+	RemainingNumbers.Reset(kBingoGM_MaxNum);
+	for (int32 i = 1; i <= kBingoGM_MaxNum; ++i)
 	{
 		RemainingNumbers.Add(i);
 	}
@@ -48,28 +48,28 @@ void ABingoGameMode::StartGame()
 
 	// Generate player card.
 	PlayerCard = GenerateCard();
-	PlayerMarked.SetNum(BINGO_GRID);
-	for (int32 r = 0; r < BINGO_GRID; ++r)
+	PlayerMarked.SetNum(kBingoGM_Grid);
+	for (int32 r = 0; r < kBingoGM_Grid; ++r)
 	{
-		PlayerMarked[r].Init(false, BINGO_GRID);
+		PlayerMarked[r].Init(false, kBingoGM_Grid);
 	}
 	// Centre cell is free.
 	PlayerMarked[2][2] = true;
 
 	// Generate CPU cards.
-	CPUCards.SetNum(BINGO_CPU_COUNT);
-	CPUMarked.SetNum(BINGO_CPU_COUNT);
-	for (int32 c = 0; c < BINGO_CPU_COUNT; ++c)
+	CPUCards.SetNum(kBingoGM_CpuCount);
+	CPUMarked.SetNum(kBingoGM_CpuCount);
+	for (int32 c = 0; c < kBingoGM_CpuCount; ++c)
 	{
 		CPUCards[c] = GenerateCard();
-		CPUMarked[c].SetNum(BINGO_GRID);
-		for (int32 r = 0; r < BINGO_GRID; ++r)
+		CPUMarked[c].SetNum(kBingoGM_Grid);
+		for (int32 r = 0; r < kBingoGM_Grid; ++r)
 		{
-			CPUMarked[c][r].Init(false, BINGO_GRID);
+			CPUMarked[c][r].Init(false, kBingoGM_Grid);
 		}
 		CPUMarked[c][2][2] = true; // free space
 	}
-	ActiveCPUCount = BINGO_CPU_COUNT;
+	ActiveCPUCount = kBingoGM_CpuCount;
 
 	// Start the call timer.
 	if (UWorld* World = GetWorld())
@@ -101,7 +101,7 @@ void ABingoGameMode::EndGame(bool bWon)
 
 bool ABingoGameMode::MarkCell(int32 Row, int32 Col)
 {
-	if (!bGameActive || Row < 0 || Row >= BINGO_GRID || Col < 0 || Col >= BINGO_GRID)
+	if (!bGameActive || Row < 0 || Row >= kBingoGM_Grid || Col < 0 || Col >= kBingoGM_Grid)
 	{
 		return false;
 	}
@@ -164,10 +164,10 @@ int32 ABingoGameMode::GetCPUOpponentsRemaining() const
 TArray<int32> ABingoGameMode::GetPlayerCardFlat() const
 {
 	TArray<int32> Flat;
-	Flat.Reserve(BINGO_GRID * BINGO_GRID);
-	for (int32 r = 0; r < BINGO_GRID; ++r)
+	Flat.Reserve(kBingoGM_Grid * kBingoGM_Grid);
+	for (int32 r = 0; r < kBingoGM_Grid; ++r)
 	{
-		for (int32 c = 0; c < BINGO_GRID; ++c)
+		for (int32 c = 0; c < kBingoGM_Grid; ++c)
 		{
 			Flat.Add(PlayerCard.IsValidIndex(r) && PlayerCard[r].IsValidIndex(c)
 				? PlayerCard[r][c]
@@ -180,10 +180,10 @@ TArray<int32> ABingoGameMode::GetPlayerCardFlat() const
 TArray<bool> ABingoGameMode::GetPlayerMarkedFlat() const
 {
 	TArray<bool> Flat;
-	Flat.Reserve(BINGO_GRID * BINGO_GRID);
-	for (int32 r = 0; r < BINGO_GRID; ++r)
+	Flat.Reserve(kBingoGM_Grid * kBingoGM_Grid);
+	for (int32 r = 0; r < kBingoGM_Grid; ++r)
 	{
-		for (int32 c = 0; c < BINGO_GRID; ++c)
+		for (int32 c = 0; c < kBingoGM_Grid; ++c)
 		{
 			Flat.Add(PlayerMarked.IsValidIndex(r) && PlayerMarked[r].IsValidIndex(c)
 				? PlayerMarked[r][c]
@@ -218,7 +218,7 @@ void ABingoGameMode::CallNextNumber()
 
 void ABingoGameMode::CheckAllCPUCards(int32 CalledNumber)
 {
-	for (int32 c = 0; c < BINGO_CPU_COUNT; ++c)
+	for (int32 c = 0; c < kBingoGM_CpuCount; ++c)
 	{
 		int32 Row, Col;
 		if (FindNumberOnCard(CPUCards[c], CalledNumber, Row, Col))
@@ -242,13 +242,13 @@ void ABingoGameMode::CheckAllCPUCards(int32 CalledNumber)
 TArray<TArray<int32>> ABingoGameMode::GenerateCard()
 {
 	// Column ranges: B(1-15), I(16-30), N(31-45), G(46-60), O(61-75).
-	static const int32 ColMin[BINGO_GRID] = { 1, 16, 31, 46, 61 };
-	static const int32 ColMax[BINGO_GRID] = { 15, 30, 45, 60, 75 };
+	static const int32 ColMin[kBingoGM_Grid] = { 1, 16, 31, 46, 61 };
+	static const int32 ColMax[kBingoGM_Grid] = { 15, 30, 45, 60, 75 };
 
 	TArray<TArray<int32>> Card;
-	Card.SetNum(BINGO_GRID);
+	Card.SetNum(kBingoGM_Grid);
 
-	for (int32 col = 0; col < BINGO_GRID; ++col)
+	for (int32 col = 0; col < kBingoGM_Grid; ++col)
 	{
 		// Build a pool of 15 numbers for this column.
 		TArray<int32> Pool;
@@ -263,11 +263,11 @@ TArray<TArray<int32>> ABingoGameMode::GenerateCard()
 		}
 
 		// Pick the first 5 for the column.
-		for (int32 row = 0; row < BINGO_GRID; ++row)
+		for (int32 row = 0; row < kBingoGM_Grid; ++row)
 		{
 			if (!Card[row].IsValidIndex(0))
 			{
-				Card[row].SetNum(BINGO_GRID);
+				Card[row].SetNum(kBingoGM_Grid);
 			}
 			Card[row][col] = Pool[row];
 		}
@@ -281,16 +281,16 @@ TArray<TArray<int32>> ABingoGameMode::GenerateCard()
 
 bool ABingoGameMode::CheckBingo(const TArray<TArray<bool>>& Marked)
 {
-	if (Marked.Num() < BINGO_GRID)
+	if (Marked.Num() < kBingoGM_Grid)
 	{
 		return false;
 	}
 
 	// Check rows.
-	for (int32 r = 0; r < BINGO_GRID; ++r)
+	for (int32 r = 0; r < kBingoGM_Grid; ++r)
 	{
 		bool bRowComplete = true;
-		for (int32 c = 0; c < BINGO_GRID; ++c)
+		for (int32 c = 0; c < kBingoGM_Grid; ++c)
 		{
 			if (!Marked[r][c]) { bRowComplete = false; break; }
 		}
@@ -298,10 +298,10 @@ bool ABingoGameMode::CheckBingo(const TArray<TArray<bool>>& Marked)
 	}
 
 	// Check columns.
-	for (int32 c = 0; c < BINGO_GRID; ++c)
+	for (int32 c = 0; c < kBingoGM_Grid; ++c)
 	{
 		bool bColComplete = true;
-		for (int32 r = 0; r < BINGO_GRID; ++r)
+		for (int32 r = 0; r < kBingoGM_Grid; ++r)
 		{
 			if (!Marked[r][c]) { bColComplete = false; break; }
 		}
@@ -311,10 +311,10 @@ bool ABingoGameMode::CheckBingo(const TArray<TArray<bool>>& Marked)
 	// Check diagonals.
 	{
 		bool bDiag1 = true, bDiag2 = true;
-		for (int32 i = 0; i < BINGO_GRID; ++i)
+		for (int32 i = 0; i < kBingoGM_Grid; ++i)
 		{
 			if (!Marked[i][i]) bDiag1 = false;
-			if (!Marked[i][BINGO_GRID - 1 - i]) bDiag2 = false;
+			if (!Marked[i][kBingoGM_Grid - 1 - i]) bDiag2 = false;
 		}
 		if (bDiag1 || bDiag2) return true;
 	}
@@ -324,9 +324,9 @@ bool ABingoGameMode::CheckBingo(const TArray<TArray<bool>>& Marked)
 
 bool ABingoGameMode::FindNumberOnCard(const TArray<TArray<int32>>& Card, int32 Number, int32& OutRow, int32& OutCol)
 {
-	for (int32 r = 0; r < BINGO_GRID; ++r)
+	for (int32 r = 0; r < kBingoGM_Grid; ++r)
 	{
-		for (int32 c = 0; c < BINGO_GRID; ++c)
+		for (int32 c = 0; c < kBingoGM_Grid; ++c)
 		{
 			if (Card[r][c] == Number)
 			{

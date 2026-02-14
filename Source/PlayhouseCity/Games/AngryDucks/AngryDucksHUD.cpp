@@ -19,20 +19,6 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogAngryDucksHUD, Log, All);
 
-// -- Colors ---------------------------------------------------------------
-
-static const FLinearColor SkyBlue(0.53f, 0.81f, 0.98f, 1.f);
-static const FLinearColor GroundGreen(0.3f, 0.65f, 0.2f, 1.f);
-static const FLinearColor SlingshotBrown(0.45f, 0.28f, 0.1f, 1.f);
-static const FLinearColor DuckYellow(0.95f, 0.85f, 0.15f, 1.f);
-static const FLinearColor BlockGray(0.55f, 0.55f, 0.55f, 1.f);
-static const FLinearColor PigGreen(0.3f, 0.75f, 0.25f, 1.f);
-static const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
-static const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
-static const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
-static const FLinearColor LaunchRed(0.85f, 0.2f, 0.15f, 1.f);
-static const FLinearColor LaunchRedHover(0.95f, 0.3f, 0.2f, 1.f);
-
 // ---------------------------------------------------------------------------
 // Initialize - build the Angry Ducks game field
 // ---------------------------------------------------------------------------
@@ -50,6 +36,19 @@ bool UAngryDucksHUD::Initialize()
 	{
 		return true;
 	}
+
+	// -- Colors ---------------------------------------------------------------
+	const FLinearColor SkyBlue(0.53f, 0.81f, 0.98f, 1.f);
+	const FLinearColor GroundGreen(0.3f, 0.65f, 0.2f, 1.f);
+	const FLinearColor SlingshotBrown(0.45f, 0.28f, 0.1f, 1.f);
+	const FLinearColor DuckYellow(0.95f, 0.85f, 0.15f, 1.f);
+	const FLinearColor BlockGray(0.55f, 0.55f, 0.55f, 1.f);
+	const FLinearColor PigGreen(0.3f, 0.75f, 0.25f, 1.f);
+	const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
+	const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
+	const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
+	const FLinearColor LaunchRed(0.85f, 0.2f, 0.15f, 1.f);
+	const FLinearColor LaunchRedHover(0.95f, 0.3f, 0.2f, 1.f);
 
 	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
 	if (!RootCanvas)

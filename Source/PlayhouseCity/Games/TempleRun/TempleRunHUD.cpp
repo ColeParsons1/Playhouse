@@ -21,28 +21,15 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogTempleRunHUD, Log, All);
 
-// ---------------------------------------------------------------------------
-// Color palette
-// ---------------------------------------------------------------------------
-
-static const FLinearColor TemplePathColor(0.35f, 0.22f, 0.10f, 1.f);   // Stone/brown
-static const FLinearColor TempleEdgeColor(0.25f, 0.15f, 0.05f, 1.f);   // Darker brown edges
-static const FLinearColor JungleColor(0.06f, 0.20f, 0.06f, 1.f);       // Dark green jungle
-static const FLinearColor LaneLineColor(0.55f, 0.40f, 0.20f, 0.5f);    // Faded stone lines
-static const FLinearColor RunnerColor(0.15f, 0.75f, 0.20f, 1.f);       // Green runner
-static const FLinearColor ObsLowColor(0.85f, 0.30f, 0.10f, 1.f);       // Orange-red (jump over)
-static const FLinearColor ObsHighColor(0.70f, 0.10f, 0.70f, 1.f);      // Purple (slide under)
-static const FLinearColor ObsBlockColor(0.50f, 0.50f, 0.50f, 1.f);     // Gray (lane block)
-static const FLinearColor CoinColor(1.f, 0.85f, 0.f, 1.f);             // Gold coins
-static const FLinearColor DashColor(0.50f, 0.35f, 0.15f, 0.4f);        // Road dash marks
-static const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
-static const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
-static const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
-static const FLinearColor JumpBtnNormal(0.1f, 0.55f, 0.3f, 1.f);
-static const FLinearColor JumpBtnHover(0.15f, 0.7f, 0.4f, 1.f);
-static const FLinearColor SlideBtnNormal(0.55f, 0.35f, 0.1f, 1.f);
-static const FLinearColor SlideBtnHover(0.7f, 0.45f, 0.15f, 1.f);
-static const FLinearColor StatsOverlayBg(0.04f, 0.04f, 0.08f, 0.7f);
+// -- Color palette (anonymous namespace to avoid unity build conflicts) ------
+namespace
+{
+const FLinearColor RunnerColor(0.15f, 0.75f, 0.20f, 1.f);       // Green runner
+const FLinearColor ObsLowColor(0.85f, 0.30f, 0.10f, 1.f);       // Orange-red (jump over)
+const FLinearColor ObsHighColor(0.70f, 0.10f, 0.70f, 1.f);      // Purple (slide under)
+const FLinearColor ObsBlockColor(0.50f, 0.50f, 0.50f, 1.f);     // Gray (lane block)
+const FLinearColor CoinColor(1.f, 0.85f, 0.f, 1.f);             // Gold coins
+}
 
 // ---------------------------------------------------------------------------
 // Initialize - build the widget tree programmatically
@@ -54,6 +41,21 @@ bool UTempleRunHUD::Initialize()
 	{
 		return false;
 	}
+
+	// -- Color palette --------------------------------------------------------
+	const FLinearColor TemplePathColor(0.35f, 0.22f, 0.10f, 1.f);   // Stone/brown
+	const FLinearColor TempleEdgeColor(0.25f, 0.15f, 0.05f, 1.f);   // Darker brown edges
+	const FLinearColor JungleColor(0.06f, 0.20f, 0.06f, 1.f);       // Dark green jungle
+	const FLinearColor LaneLineColor(0.55f, 0.40f, 0.20f, 0.5f);    // Faded stone lines
+	const FLinearColor DashColor(0.50f, 0.35f, 0.15f, 0.4f);        // Road dash marks
+	const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
+	const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
+	const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
+	const FLinearColor JumpBtnNormal(0.1f, 0.55f, 0.3f, 1.f);
+	const FLinearColor JumpBtnHover(0.15f, 0.7f, 0.4f, 1.f);
+	const FLinearColor SlideBtnNormal(0.55f, 0.35f, 0.1f, 1.f);
+	const FLinearColor SlideBtnHover(0.7f, 0.45f, 0.15f, 1.f);
+	const FLinearColor StatsOverlayBg(0.04f, 0.04f, 0.08f, 0.7f);
 
 	// Guard: if already built, skip.
 	if (GameCanvas)

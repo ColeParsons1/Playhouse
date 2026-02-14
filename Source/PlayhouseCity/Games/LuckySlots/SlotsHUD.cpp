@@ -19,19 +19,6 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogSlotsHUD, Log, All);
 
-// -- Casino colour palette ---------------------------------------------------
-
-static const FLinearColor DarkPurpleBg(0.15f, 0.05f, 0.25f, 1.f);
-static const FLinearColor GoldAccent(1.f, 0.843f, 0.f, 1.f);         // #FFD700
-static const FLinearColor ReelBgColor(0.08f, 0.02f, 0.14f, 1.f);
-static const FLinearColor SpinBtnNormal(0.7f, 0.55f, 0.f, 1.f);      // Dark gold
-static const FLinearColor SpinBtnHover(0.85f, 0.7f, 0.1f, 1.f);
-static const FLinearColor SpinBtnPress(0.5f, 0.4f, 0.f, 1.f);
-static const FLinearColor SmallBtnNormal(0.3f, 0.15f, 0.45f, 1.f);
-static const FLinearColor SmallBtnHover(0.45f, 0.25f, 0.6f, 1.f);
-static const FLinearColor SmallBtnPress(0.2f, 0.1f, 0.3f, 1.f);
-static const FLinearColor WinTextColor(0.f, 1.f, 0.4f, 1.f);
-
 // ---------------------------------------------------------------------------
 // Initialize - build the Lucky Slots UI
 // ---------------------------------------------------------------------------
@@ -43,6 +30,18 @@ bool USlotsHUD::Initialize()
 	{
 		return false;
 	}
+
+	// Casino colour palette
+	const FLinearColor DarkPurpleBg(0.15f, 0.05f, 0.25f, 1.f);
+	const FLinearColor GoldAccent(1.f, 0.843f, 0.f, 1.f);         // #FFD700
+	const FLinearColor ReelBgColor(0.08f, 0.02f, 0.14f, 1.f);
+	const FLinearColor SpinBtnNormal(0.7f, 0.55f, 0.f, 1.f);      // Dark gold
+	const FLinearColor SpinBtnHover(0.85f, 0.7f, 0.1f, 1.f);
+	const FLinearColor SpinBtnPress(0.5f, 0.4f, 0.f, 1.f);
+	const FLinearColor SmallBtnNormal(0.3f, 0.15f, 0.45f, 1.f);
+	const FLinearColor SmallBtnHover(0.45f, 0.25f, 0.6f, 1.f);
+	const FLinearColor SmallBtnPress(0.2f, 0.1f, 0.3f, 1.f);
+	const FLinearColor WinTextColor(0.f, 1.f, 0.4f, 1.f);
 
 	if (SpinButton)
 	{

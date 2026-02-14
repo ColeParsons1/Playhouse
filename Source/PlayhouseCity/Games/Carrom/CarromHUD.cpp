@@ -20,33 +20,6 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogCarromHUD, Log, All);
 
-// -- Colour palette ---------------------------------------------------------
-
-static const FLinearColor BoardBrown(0.65f, 0.45f, 0.25f, 1.f);       // main board surface
-static const FLinearColor BoardFrameColor(0.40f, 0.25f, 0.12f, 1.f);   // outer frame
-static const FLinearColor BoardTan(0.78f, 0.65f, 0.42f, 1.f);         // lighter inner surface
-static const FLinearColor PocketDark(0.10f, 0.08f, 0.06f, 1.f);       // dark corner pockets
-static const FLinearColor WhitePiece(0.95f, 0.95f, 0.90f, 1.f);       // white coins
-static const FLinearColor BlackPiece(0.10f, 0.10f, 0.12f, 1.f);       // black coins
-static const FLinearColor QueenRed(0.85f, 0.15f, 0.15f, 1.f);         // red queen
-static const FLinearColor StrikerRed(0.90f, 0.20f, 0.15f, 1.f);       // striker
-static const FLinearColor GameAreaBg(0.08f, 0.08f, 0.12f, 0.9f);      // background behind board
-static const FLinearColor ControlBg(0.05f, 0.05f, 0.1f, 0.85f);       // control bar background
-static const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
-static const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
-static const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
-static const FLinearColor ShootBtnNormal(0.15f, 0.70f, 0.25f, 1.f);
-static const FLinearColor ShootBtnHover(0.20f, 0.85f, 0.30f, 1.f);
-static const FLinearColor ShootBtnPress(0.10f, 0.50f, 0.18f, 1.f);
-
-// Board layout constants.
-static constexpr float BoardSize      = 300.f; // square board dimension
-static constexpr float PocketSize     = 22.f;  // corner pocket diameter
-static constexpr float PieceSize      = 16.f;  // coin widget diameter
-static constexpr float StrikerSize    = 20.f;  // striker widget diameter
-static constexpr int32 NumWhitePieces = 9;
-static constexpr int32 NumBlackPieces = 9;
-
 // ---------------------------------------------------------------------------
 // Initialize - build the Carrom game UI
 // ---------------------------------------------------------------------------
@@ -58,6 +31,32 @@ bool UCarromHUD::Initialize()
 	{
 		return false;
 	}
+
+	// -- Colour palette ---------------------------------------------------------
+	const FLinearColor BoardBrown(0.65f, 0.45f, 0.25f, 1.f);       // main board surface
+	const FLinearColor BoardFrameColor(0.40f, 0.25f, 0.12f, 1.f);   // outer frame
+	const FLinearColor BoardTan(0.78f, 0.65f, 0.42f, 1.f);         // lighter inner surface
+	const FLinearColor PocketDark(0.10f, 0.08f, 0.06f, 1.f);       // dark corner pockets
+	const FLinearColor WhitePiece(0.95f, 0.95f, 0.90f, 1.f);       // white coins
+	const FLinearColor BlackPiece(0.10f, 0.10f, 0.12f, 1.f);       // black coins
+	const FLinearColor QueenRed(0.85f, 0.15f, 0.15f, 1.f);         // red queen
+	const FLinearColor StrikerRed(0.90f, 0.20f, 0.15f, 1.f);       // striker
+	const FLinearColor GameAreaBg(0.08f, 0.08f, 0.12f, 0.9f);      // background behind board
+	const FLinearColor ControlBg(0.05f, 0.05f, 0.1f, 0.85f);       // control bar background
+	const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
+	const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
+	const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
+	const FLinearColor ShootBtnNormal(0.15f, 0.70f, 0.25f, 1.f);
+	const FLinearColor ShootBtnHover(0.20f, 0.85f, 0.30f, 1.f);
+	const FLinearColor ShootBtnPress(0.10f, 0.50f, 0.18f, 1.f);
+
+	// Board layout constants.
+	constexpr float BoardSize      = 300.f; // square board dimension
+	constexpr float PocketSize     = 22.f;  // corner pocket diameter
+	constexpr float PieceSize      = 16.f;  // coin widget diameter
+	constexpr float StrikerSize    = 20.f;  // striker widget diameter
+	constexpr int32 NumWhitePieces = 9;
+	constexpr int32 NumBlackPieces = 9;
 
 	// Guard against double-build.
 	if (BoardCanvas)

@@ -22,17 +22,15 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogColorCardsHUD, Log, All);
 
-// -- Table / card colours -------------------------------------------------
-
-static const FLinearColor TableBgColor(0.05f, 0.2f, 0.05f, 1.f);
-static const FLinearColor CardRed(0.9f, 0.15f, 0.15f, 1.f);
-static const FLinearColor CardBlue(0.15f, 0.3f, 0.9f, 1.f);
-static const FLinearColor CardGreen(0.15f, 0.8f, 0.15f, 1.f);
-static const FLinearColor CardYellow(0.95f, 0.85f, 0.1f, 1.f);
-static const FLinearColor CardWild(0.35f, 0.35f, 0.35f, 1.f);
-static const FLinearColor BtnNormal(0.2f, 0.3f, 0.55f, 1.f);
-static const FLinearColor BtnHover(0.3f, 0.4f, 0.7f, 1.f);
-static const FLinearColor BtnPress(0.15f, 0.2f, 0.4f, 1.f);
+// -- Card colours used outside Initialize() (wrapped to avoid unity build conflicts) --
+namespace
+{
+const FLinearColor CardRed(0.9f, 0.15f, 0.15f, 1.f);
+const FLinearColor CardBlue(0.15f, 0.3f, 0.9f, 1.f);
+const FLinearColor CardGreen(0.15f, 0.8f, 0.15f, 1.f);
+const FLinearColor CardYellow(0.95f, 0.85f, 0.1f, 1.f);
+const FLinearColor CardWild(0.35f, 0.35f, 0.35f, 1.f);
+}
 
 // ---------------------------------------------------------------------------
 // Initialize - build the Color Cards UI programmatically
@@ -49,6 +47,12 @@ bool UColorCardsHUD::Initialize()
 	{
 		return true; // Already built.
 	}
+
+	// -- Colors ---------------------------------------------------------------
+	const FLinearColor TableBgColor(0.05f, 0.2f, 0.05f, 1.f);
+	const FLinearColor BtnNormal(0.2f, 0.3f, 0.55f, 1.f);
+	const FLinearColor BtnHover(0.3f, 0.4f, 0.7f, 1.f);
+	const FLinearColor BtnPress(0.15f, 0.2f, 0.4f, 1.f);
 
 	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
 	if (!RootCanvas)

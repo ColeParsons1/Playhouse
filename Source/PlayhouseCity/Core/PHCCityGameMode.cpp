@@ -71,6 +71,10 @@ void APHCCityGameMode::BeginPlay()
 
 	if (ColorMaterial)
 	{
+		// Engine BasicShapes are "Disregard for GC" objects -- they can only
+		// reference root-set materials.  Add ours so GC verification passes.
+		ColorMaterial->AddToRoot();
+
 		// Override all basic shape default materials so GetMaterial(0) returns ours.
 		auto OverrideMeshMat = [&](UStaticMesh* Mesh)
 		{
@@ -101,6 +105,15 @@ void APHCCityGameMode::BeginPlay()
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCityGameMode::BeginPlay -- Spawning city."));
 	SpawnCityEnvironment();
+}
+
+void APHCCityGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (ColorMaterial)
+	{
+		ColorMaterial->RemoveFromRoot();
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 // ---------------------------------------------------------------------------

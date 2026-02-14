@@ -20,13 +20,13 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogConnect4HUD, Log, All);
 
-static const FLinearColor EmptyCellColor(0.12f, 0.12f, 0.2f, 1.f);
-static const FLinearColor PlayerColor(0.9f, 0.15f, 0.15f, 1.f);    // Red
-static const FLinearColor CPUColor(0.95f, 0.85f, 0.1f, 1.f);       // Yellow
-static const FLinearColor BoardBgColor(0.06f, 0.06f, 0.15f, 1.f);
-static const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
-static const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
-static const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
+// Colors used outside Initialize() - anonymous namespace to avoid unity build conflicts.
+namespace
+{
+const FLinearColor EmptyCellColor(0.12f, 0.12f, 0.2f, 1.f);
+const FLinearColor PlayerColor(0.9f, 0.15f, 0.15f, 1.f);    // Red
+const FLinearColor CPUColor(0.95f, 0.85f, 0.1f, 1.f);       // Yellow
+}
 
 // ---------------------------------------------------------------------------
 // Initialize - build the Connect4 board UI
@@ -39,6 +39,11 @@ bool UConnect4HUD::Initialize()
 	{
 		return false;
 	}
+
+	const FLinearColor BoardBgColor(0.06f, 0.06f, 0.15f, 1.f);
+	const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
+	const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
+	const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
 
 	if (BoardGrid)
 	{

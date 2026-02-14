@@ -5,6 +5,9 @@
 #include "Core/PHCPlayerController.h"
 #include "Player/PHCCityCharacter.h"
 #include "Vehicle/PHCVehiclePawn.h"
+#include "Vehicle/PHCDuneBuggyPawn.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "PlayhouseCity.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CanvasPanel.h"
@@ -285,6 +288,85 @@ bool UPHCCityHUD::Initialize()
 		ExitVehicleButton->SetVisibility(ESlateVisibility::Collapsed);
 #endif
 
+		// ============================================================
+		//  Vehicle selection popup (shown when "Car" button is tapped)
+		// ============================================================
+		VehicleSelectOverlay = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("VehicleSelectOverlay"));
+		VehicleSelectOverlay->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.6f));
+		VehicleSelectOverlay->SetPadding(FMargin(0.f));
+
+		UCanvasPanelSlot* OverlaySlot = RootCanvas->AddChildToCanvas(VehicleSelectOverlay);
+		OverlaySlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+		OverlaySlot->SetOffsets(FMargin(0.f));
+
+		// Inner panel (centered container for the two buttons).
+		UBorder* VehicleSelectPanel = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("VehicleSelectPanel"));
+		VehicleSelectPanel->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.08f, 0.95f));
+		VehicleSelectPanel->SetPadding(FMargin(24.f, 16.f, 24.f, 16.f));
+		VehicleSelectPanel->SetHorizontalAlignment(HAlign_Center);
+		VehicleSelectPanel->SetVerticalAlignment(VAlign_Center);
+		VehicleSelectOverlay->SetContent(VehicleSelectPanel);
+
+		UHorizontalBox* SelectHBox = WidgetTree->ConstructWidget<UHorizontalBox>(
+			UHorizontalBox::StaticClass(), TEXT("VehicleSelectHBox"));
+		VehicleSelectPanel->SetContent(SelectHBox);
+
+		// -- Aventador button (burnt orange) --
+		SelectAventadorBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectAventadorBtn"));
+		{
+			FButtonStyle Style = SelectAventadorBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.55f, 0.22f, 0.02f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.70f, 0.28f, 0.03f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.40f, 0.16f, 0.01f, 1.0f));
+			SelectAventadorBtn->SetStyle(Style);
+		}
+		UTextBlock* AventadorLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("AventadorSelectLabel"));
+		AventadorLabel->SetText(FText::FromString(TEXT("Lamborghini")));
+		AventadorLabel->SetFont(BtnFont);
+		AventadorLabel->SetColorAndOpacity(FSlateColor(White));
+		AventadorLabel->SetJustification(ETextJustify::Center);
+		SelectAventadorBtn->AddChild(AventadorLabel);
+
+		UHorizontalBoxSlot* AvSlot = SelectHBox->AddChildToHorizontalBox(SelectAventadorBtn);
+		AvSlot->SetPadding(FMargin(8.f));
+		AvSlot->SetVerticalAlignment(VAlign_Center);
+		AvSlot->SetHorizontalAlignment(HAlign_Center);
+
+		// Spacer between buttons.
+		USpacer* BtnSpacer = WidgetTree->ConstructWidget<USpacer>(
+			USpacer::StaticClass(), TEXT("VehicleBtnSpacer"));
+		BtnSpacer->SetSize(FVector2D(20.f, 0.f));
+		SelectHBox->AddChildToHorizontalBox(BtnSpacer);
+
+		// -- Dune Buggy button (olive green) --
+		SelectBuggyBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectBuggyBtn"));
+		{
+			FButtonStyle Style = SelectBuggyBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.28f, 0.35f, 0.12f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.35f, 0.42f, 0.18f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.20f, 0.26f, 0.08f, 1.0f));
+			SelectBuggyBtn->SetStyle(Style);
+		}
+		UTextBlock* BuggyLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("BuggySelectLabel"));
+		BuggyLabel->SetText(FText::FromString(TEXT("Dune Buggy")));
+		BuggyLabel->SetFont(BtnFont);
+		BuggyLabel->SetColorAndOpacity(FSlateColor(White));
+		BuggyLabel->SetJustification(ETextJustify::Center);
+		SelectBuggyBtn->AddChild(BuggyLabel);
+
+		UHorizontalBoxSlot* BgSlot = SelectHBox->AddChildToHorizontalBox(SelectBuggyBtn);
+		BgSlot->SetPadding(FMargin(8.f));
+		BgSlot->SetVerticalAlignment(VAlign_Center);
+		BgSlot->SetHorizontalAlignment(HAlign_Center);
+
+		VehicleSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
+
 		UE_LOG(LogPlayhouseCity, Log, TEXT("UPHCCityHUD: Widget tree built programmatically."));
 	}
 
@@ -306,6 +388,14 @@ void UPHCCityHUD::NativeConstruct()
 	if (CarButton)
 	{
 		CarButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnCarButtonClicked);
+	}
+	if (SelectAventadorBtn)
+	{
+		SelectAventadorBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectAventador);
+	}
+	if (SelectBuggyBtn)
+	{
+		SelectBuggyBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectBuggy);
 	}
 
 #if PLATFORM_IOS || PLATFORM_ANDROID
@@ -343,6 +433,14 @@ void UPHCCityHUD::NativeDestruct()
 	if (CarButton)
 	{
 		CarButton->OnClicked.RemoveAll(this);
+	}
+	if (SelectAventadorBtn)
+	{
+		SelectAventadorBtn->OnClicked.RemoveAll(this);
+	}
+	if (SelectBuggyBtn)
+	{
+		SelectBuggyBtn->OnClicked.RemoveAll(this);
 	}
 
 #if PLATFORM_IOS || PLATFORM_ANDROID
@@ -444,8 +542,16 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		}
 	}
 
-	DrivenVehicle->SteeringInput = NewSteering;
-	DrivenVehicle->ThrottleInput = NewThrottle;
+	if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(DrivenVehicle))
+	{
+		V->SteeringInput = NewSteering;
+		V->ThrottleInput = NewThrottle;
+	}
+	else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(DrivenVehicle))
+	{
+		B->SteeringInput = NewSteering;
+		B->ThrottleInput = NewThrottle;
+	}
 #endif
 }
 
@@ -453,7 +559,7 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 // Driving mode
 // ---------------------------------------------------------------------------
 
-void UPHCCityHUD::SetDrivingMode(bool bDriving, APHCVehiclePawn* Vehicle)
+void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 {
 	bDrivingMode = bDriving;
 	DrivenVehicle = Vehicle;
@@ -478,8 +584,16 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APHCVehiclePawn* Vehicle)
 	// Zero out vehicle input when exiting.
 	if (!bDriving && Vehicle)
 	{
-		Vehicle->ThrottleInput = 0.f;
-		Vehicle->SteeringInput = 0.f;
+		if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(Vehicle))
+		{
+			V->ThrottleInput = 0.f;
+			V->SteeringInput = 0.f;
+		}
+		else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(Vehicle))
+		{
+			B->ThrottleInput = 0.f;
+			B->SteeringInput = 0.f;
+		}
 	}
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("UPHCCityHUD: Driving mode %s."),
@@ -579,9 +693,42 @@ void UPHCCityHUD::OnCloseMenuButtonClicked()
 
 void UPHCCityHUD::OnCarButtonClicked()
 {
+	ShowVehicleSelection();
+}
+
+void UPHCCityHUD::ShowVehicleSelection()
+{
+	if (VehicleSelectOverlay)
+	{
+		VehicleSelectOverlay->SetVisibility(ESlateVisibility::Visible);
+		bVehicleSelectOpen = true;
+	}
+}
+
+void UPHCCityHUD::HideVehicleSelection()
+{
+	if (VehicleSelectOverlay)
+	{
+		VehicleSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
+		bVehicleSelectOpen = false;
+	}
+}
+
+void UPHCCityHUD::OnSelectAventador()
+{
+	HideVehicleSelection();
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
-		PC->SpawnAndEnterVehicle();
+		PC->SpawnAndEnterVehicle(0);
+	}
+}
+
+void UPHCCityHUD::OnSelectBuggy()
+{
+	HideVehicleSelection();
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		PC->SpawnAndEnterVehicle(1);
 	}
 }
 

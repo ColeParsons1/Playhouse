@@ -19,23 +19,12 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogCornholeHUD, Log, All);
 
-// -- Color palette ------------------------------------------------------------
-
-static const FLinearColor GrassGreen(0.18f, 0.55f, 0.15f, 1.f);
-static const FLinearColor GrassDark(0.12f, 0.4f, 0.1f, 1.f);
-static const FLinearColor BoardTan(0.72f, 0.58f, 0.35f, 1.f);
-static const FLinearColor BoardEdge(0.55f, 0.42f, 0.25f, 1.f);
-static const FLinearColor HoleColor(0.05f, 0.05f, 0.05f, 1.f);
-static const FLinearColor BagRed(0.82f, 0.15f, 0.12f, 1.f);
-static const FLinearColor BagBlue(0.12f, 0.25f, 0.82f, 1.f);
-static const FLinearColor BtnNormal(0.2f, 0.4f, 0.2f, 1.f);
-static const FLinearColor BtnHover(0.3f, 0.55f, 0.3f, 1.f);
-static const FLinearColor BtnPress(0.15f, 0.3f, 0.15f, 1.f);
-static const FLinearColor ThrowBtnNormal(0.7f, 0.2f, 0.1f, 1.f);
-static const FLinearColor ThrowBtnHover(0.85f, 0.3f, 0.15f, 1.f);
-static const FLinearColor ThrowBtnPress(0.5f, 0.15f, 0.08f, 1.f);
-static const FLinearColor TextWhite(1.f, 1.f, 1.f, 1.f);
-static const FLinearColor ScoreGold(1.f, 0.85f, 0.f, 1.f);
+// Colors used outside Initialize() - anonymous namespace to avoid unity build conflicts.
+namespace
+{
+const FLinearColor BagRed(0.82f, 0.15f, 0.12f, 1.f);
+const FLinearColor BagBlue(0.12f, 0.25f, 0.82f, 1.f);
+}
 
 // ---------------------------------------------------------------------------
 // Initialize - build Cornhole game UI
@@ -48,6 +37,21 @@ bool UCornholeHUD::Initialize()
 	{
 		return false;
 	}
+
+	// -- Color palette --------------------------------------------------------
+	const FLinearColor GrassGreen(0.18f, 0.55f, 0.15f, 1.f);
+	const FLinearColor GrassDark(0.12f, 0.4f, 0.1f, 1.f);
+	const FLinearColor BoardTan(0.72f, 0.58f, 0.35f, 1.f);
+	const FLinearColor BoardEdge(0.55f, 0.42f, 0.25f, 1.f);
+	const FLinearColor HoleColor(0.05f, 0.05f, 0.05f, 1.f);
+	const FLinearColor BtnNormal(0.2f, 0.4f, 0.2f, 1.f);
+	const FLinearColor BtnHover(0.3f, 0.55f, 0.3f, 1.f);
+	const FLinearColor BtnPress(0.15f, 0.3f, 0.15f, 1.f);
+	const FLinearColor ThrowBtnNormal(0.7f, 0.2f, 0.1f, 1.f);
+	const FLinearColor ThrowBtnHover(0.85f, 0.3f, 0.15f, 1.f);
+	const FLinearColor ThrowBtnPress(0.5f, 0.15f, 0.08f, 1.f);
+	const FLinearColor TextWhite(1.f, 1.f, 1.f, 1.f);
+	const FLinearColor ScoreGold(1.f, 0.85f, 0.f, 1.f);
 
 	// Guard against double-build.
 	if (GameCanvas)

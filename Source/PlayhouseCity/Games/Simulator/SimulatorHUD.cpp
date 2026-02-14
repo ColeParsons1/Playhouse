@@ -18,18 +18,13 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogSimulatorHUD, Log, All);
 
-// Color palette
-static const FLinearColor RoadColor(0.15f, 0.15f, 0.18f, 1.f);
-static const FLinearColor GrassColor(0.08f, 0.25f, 0.08f, 1.f);
-static const FLinearColor LaneLineColor(1.f, 1.f, 1.f, 0.5f);
-static const FLinearColor PlayerCarColor(0.1f, 0.5f, 0.9f, 1.f);
-static const FLinearColor ObstacleCarColor(0.9f, 0.15f, 0.15f, 1.f);
-static const FLinearColor BarrierColor(0.6f, 0.6f, 0.6f, 1.f);
-static const FLinearColor CoinColor(1.f, 0.85f, 0.f, 1.f);
-static const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
-static const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
-static const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
-static const FLinearColor DarkBg(0.04f, 0.04f, 0.08f, 1.f);
+// -- Colors used outside Initialize() (wrapped to avoid unity build conflicts) --
+namespace
+{
+const FLinearColor ObstacleCarColor(0.9f, 0.15f, 0.15f, 1.f);
+const FLinearColor BarrierColor(0.6f, 0.6f, 0.6f, 1.f);
+const FLinearColor CoinColor(1.f, 0.85f, 0.f, 1.f);
+}
 
 // ---------------------------------------------------------------------------
 // Initialize
@@ -46,6 +41,16 @@ bool USimulatorHUD::Initialize()
 	{
 		return true; // Already built.
 	}
+
+	// -- Colors ---------------------------------------------------------------
+	const FLinearColor RoadColor(0.15f, 0.15f, 0.18f, 1.f);
+	const FLinearColor GrassColor(0.08f, 0.25f, 0.08f, 1.f);
+	const FLinearColor LaneLineColor(1.f, 1.f, 1.f, 0.5f);
+	const FLinearColor PlayerCarColor(0.1f, 0.5f, 0.9f, 1.f);
+	const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
+	const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
+	const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
+	const FLinearColor DarkBg(0.04f, 0.04f, 0.08f, 1.f);
 
 	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
 	if (!RootCanvas)

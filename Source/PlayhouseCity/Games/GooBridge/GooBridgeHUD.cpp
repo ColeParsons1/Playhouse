@@ -19,24 +19,16 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogGooBridgeHUD, Log, All);
 
-// -- Colors ---------------------------------------------------------------
-
-static const FLinearColor SkyBlue(0.53f, 0.81f, 0.92f, 1.f);
-static const FLinearColor GroundGreen(0.25f, 0.6f, 0.18f, 1.f);
-static const FLinearColor GapBrown(0.35f, 0.22f, 0.1f, 1.f);
-static const FLinearColor NodeBrown(0.55f, 0.35f, 0.15f, 1.f);
-static const FLinearColor StrutGray(0.5f, 0.5f, 0.5f, 1.f);
-static const FLinearColor VehicleRed(0.85f, 0.15f, 0.1f, 1.f);
-static const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
-static const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
-static const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
-static const FLinearColor BtnActive(0.15f, 0.65f, 0.3f, 1.f);
-static const FLinearColor BtnActiveHover(0.2f, 0.75f, 0.4f, 1.f);
-static const FLinearColor GoGreen(0.1f, 0.7f, 0.2f, 1.f);
-static const FLinearColor GoGreenHover(0.15f, 0.8f, 0.3f, 1.f);
-static const FLinearColor DeleteRed(0.8f, 0.15f, 0.15f, 1.f);
-static const FLinearColor DeleteRedHover(0.9f, 0.25f, 0.25f, 1.f);
-static const FLinearColor PanelBg(0.05f, 0.05f, 0.1f, 0.85f);
+// -- Colors used outside Initialize() (wrapped to avoid unity build conflicts) --
+namespace
+{
+const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
+const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
+const FLinearColor BtnActive(0.15f, 0.65f, 0.3f, 1.f);
+const FLinearColor BtnActiveHover(0.2f, 0.75f, 0.4f, 1.f);
+const FLinearColor DeleteRed(0.8f, 0.15f, 0.15f, 1.f);
+const FLinearColor DeleteRedHover(0.9f, 0.25f, 0.25f, 1.f);
+}
 
 // ---------------------------------------------------------------------------
 // Initialize - build the Goo Bridge construction scene
@@ -55,6 +47,18 @@ bool UGooBridgeHUD::Initialize()
 	{
 		return true;
 	}
+
+	// -- Colors ---------------------------------------------------------------
+	const FLinearColor SkyBlue(0.53f, 0.81f, 0.92f, 1.f);
+	const FLinearColor GroundGreen(0.25f, 0.6f, 0.18f, 1.f);
+	const FLinearColor GapBrown(0.35f, 0.22f, 0.1f, 1.f);
+	const FLinearColor NodeBrown(0.55f, 0.35f, 0.15f, 1.f);
+	const FLinearColor StrutGray(0.5f, 0.5f, 0.5f, 1.f);
+	const FLinearColor VehicleRed(0.85f, 0.15f, 0.1f, 1.f);
+	const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
+	const FLinearColor GoGreen(0.1f, 0.7f, 0.2f, 1.f);
+	const FLinearColor GoGreenHover(0.15f, 0.8f, 0.3f, 1.f);
+	const FLinearColor PanelBg(0.05f, 0.05f, 0.1f, 0.85f);
 
 	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
 	if (!RootCanvas)

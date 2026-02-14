@@ -25,19 +25,16 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogJengaHUD, Log, All);
 
-// -- Color palette ------------------------------------------------------------
-
-static const FLinearColor WoodBrown(0.55f, 0.35f, 0.17f, 1.f);
-static const FLinearColor WoodLight(0.65f, 0.42f, 0.22f, 1.f);
-static const FLinearColor WoodDark(0.45f, 0.28f, 0.12f, 1.f);
-static const FLinearColor DarkBrownBg(0.15f, 0.09f, 0.04f, 0.95f);
-static const FLinearColor HighlightYellow(1.f, 0.85f, 0.1f, 0.7f);
-static const FLinearColor StabilityGreen(0.2f, 0.8f, 0.2f, 1.f);
-static const FLinearColor StabilityRed(0.85f, 0.12f, 0.12f, 1.f);
-static const FLinearColor BtnNormal(0.45f, 0.3f, 0.12f, 1.f);
-static const FLinearColor BtnHover(0.6f, 0.4f, 0.18f, 1.f);
-static const FLinearColor BtnPress(0.35f, 0.22f, 0.08f, 1.f);
-static const FLinearColor TextWhite(1.f, 1.f, 1.f, 1.f);
+// -- Colors used outside Initialize() (wrapped to avoid unity build conflicts) --
+namespace
+{
+const FLinearColor WoodBrown(0.55f, 0.35f, 0.17f, 1.f);
+const FLinearColor WoodLight(0.65f, 0.42f, 0.22f, 1.f);
+const FLinearColor WoodDark(0.45f, 0.28f, 0.12f, 1.f);
+const FLinearColor StabilityGreen(0.2f, 0.8f, 0.2f, 1.f);
+const FLinearColor StabilityRed(0.85f, 0.12f, 0.12f, 1.f);
+const FLinearColor TextWhite(1.f, 1.f, 1.f, 1.f);
+}
 
 // -- Row color variation (alternates between light/medium/dark) ---------------
 
@@ -68,6 +65,13 @@ bool UJengaHUD::Initialize()
 	{
 		return true;
 	}
+
+	// -- Colors ---------------------------------------------------------------
+	const FLinearColor DarkBrownBg(0.15f, 0.09f, 0.04f, 0.95f);
+	const FLinearColor HighlightYellow(1.f, 0.85f, 0.1f, 0.7f);
+	const FLinearColor BtnNormal(0.45f, 0.3f, 0.12f, 1.f);
+	const FLinearColor BtnHover(0.6f, 0.4f, 0.18f, 1.f);
+	const FLinearColor BtnPress(0.35f, 0.22f, 0.08f, 1.f);
 
 	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
 	if (!RootCanvas)

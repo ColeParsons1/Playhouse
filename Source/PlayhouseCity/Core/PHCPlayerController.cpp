@@ -38,6 +38,7 @@
 #include "Games/CelDamage/CelDamageGameMode.h"
 #include "Games/Simulator/SimulatorGameMode.h"
 #include "Vehicle/PHCVehiclePawn.h"
+#include "Vehicle/PHCDuneBuggyPawn.h"
 #include "Player/PHCCityCharacter.h"
 #include "Core/PHCCityGameMode.h"
 #include "EnhancedInputSubsystems.h"
@@ -468,7 +469,7 @@ void APHCPlayerController::EnterNearestVehicle()
 
 	// Save character reference and hide it.
 	SavedCharacterPawn = Character;
-	CurrentVehicle = NearestVehicle;
+	CurrentVehicle = Cast<APawn>(NearestVehicle);
 
 	// Remove character's mapping context.
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
@@ -502,7 +503,7 @@ void APHCPlayerController::EnterNearestVehicle()
 
 // ---------------------------------------------------------------------------
 
-void APHCPlayerController::SpawnAndEnterVehicle()
+void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 {
 	APHCCityCharacter* Character = Cast<APHCCityCharacter>(GetPawn());
 	if (!Character) return;
@@ -510,32 +511,57 @@ void APHCPlayerController::SpawnAndEnterVehicle()
 	UWorld* World = GetWorld();
 	if (!World) return;
 
-	// Spawn Aventador right at the character's position, facing same direction.
 	const FVector SpawnLoc = Character->GetActorLocation() + Character->GetActorForwardVector() * 50.f;
 	const FRotator SpawnRot(0.f, Character->GetActorRotation().Yaw, 0.f);
 
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	APHCVehiclePawn* Vehicle = World->SpawnActor<APHCVehiclePawn>(
-		APHCVehiclePawn::StaticClass(), SpawnLoc, SpawnRot, SP);
-	if (!Vehicle)
+
+	APawn* SpawnedVehicle = nullptr;
+
+	if (VehicleType == 1)
 	{
-		UE_LOG(LogPlayhouseCity, Warning, TEXT("SpawnAndEnterVehicle: Failed to spawn vehicle."));
+		// Dune Buggy.
+		APHCDuneBuggyPawn* Buggy = World->SpawnActor<APHCDuneBuggyPawn>(
+			APHCDuneBuggyPawn::StaticClass(), SpawnLoc, SpawnRot, SP);
+		if (Buggy)
+		{
+			Buggy->SetBodyColor(FLinearColor(0.35f, 0.42f, 0.18f));
+			Buggy->bIsOccupied = true;
+			Buggy->CurrentSpeed = 0.f;
+			Buggy->SetHeadlightsEnabled(true);
+			SpawnedVehicle = Buggy;
+		}
+	}
+	else
+	{
+		// Aventador (default).
+		APHCVehiclePawn* Aventador = World->SpawnActor<APHCVehiclePawn>(
+			APHCVehiclePawn::StaticClass(), SpawnLoc, SpawnRot, SP);
+		if (Aventador)
+		{
+			Aventador->SetBodyColor(FLinearColor(0.72f, 0.30f, 0.03f));
+			Aventador->bIsOccupied = true;
+			Aventador->CurrentSpeed = 0.f;
+			Aventador->SetHeadlightsEnabled(true);
+
+			if (APHCCityGameMode* CityGM = Cast<APHCCityGameMode>(World->GetAuthGameMode()))
+			{
+				CityGM->SpawnedVehicles.Add(Aventador);
+			}
+			SpawnedVehicle = Aventador;
+		}
+	}
+
+	if (!SpawnedVehicle)
+	{
+		UE_LOG(LogPlayhouseCity, Warning, TEXT("SpawnAndEnterVehicle: Failed to spawn vehicle (type %d)."), VehicleType);
 		return;
 	}
 
-	// Burnt orange Aventador.
-	Vehicle->SetBodyColor(FLinearColor(0.72f, 0.30f, 0.03f));
-
-	// Register in the game mode's vehicle list.
-	if (APHCCityGameMode* CityGM = Cast<APHCCityGameMode>(World->GetAuthGameMode()))
-	{
-		CityGM->SpawnedVehicles.Add(Vehicle);
-	}
-
-	// Enter the vehicle (same logic as EnterNearestVehicle).
+	// Enter the vehicle.
 	SavedCharacterPawn = Character;
-	CurrentVehicle = Vehicle;
+	CurrentVehicle = SpawnedVehicle;
 
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
 			ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
@@ -549,22 +575,18 @@ void APHCPlayerController::SpawnAndEnterVehicle()
 	Character->SetActorHiddenInGame(true);
 	Character->SetActorEnableCollision(false);
 
-	Vehicle->bIsOccupied = true;
-	Vehicle->CurrentSpeed = 0.f;
-	Vehicle->SetHeadlightsEnabled(true);
 	UnPossess();
-	Possess(Vehicle);
+	Possess(SpawnedVehicle);
 
-	// Tell the city HUD to switch to driving controls.
 	if (UPHCCityHUD* CityHUD = Cast<UPHCCityHUD>(ActiveWidget))
 	{
-		CityHUD->SetDrivingMode(true, Vehicle);
+		CityHUD->SetDrivingMode(true, SpawnedVehicle);
 	}
 
 	SetGameAndUIInputMode();
 
-	UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnAndEnterVehicle: Spawned and entered Aventador at %s"),
-		*Vehicle->GetActorLocation().ToString());
+	UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnAndEnterVehicle: Spawned vehicle type %d at %s"),
+		VehicleType, *SpawnedVehicle->GetActorLocation().ToString());
 }
 
 void APHCPlayerController::OnVehicleExitRequested()
@@ -573,23 +595,38 @@ void APHCPlayerController::OnVehicleExitRequested()
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCPlayerController::OnVehicleExitRequested -- Exiting vehicle."));
 
-	// Get exit location.
-	const FVector ExitLoc = CurrentVehicle->GetExitLocation();
+	// Access vehicle-specific members via cast.
+	FVector ExitLoc = CurrentVehicle->GetActorLocation() + FVector(0.f, -300.f, 100.f);
+	UInputMappingContext* VehicleMC = nullptr;
 
-	// Unmark vehicle.
-	CurrentVehicle->bIsOccupied = false;
-	CurrentVehicle->ThrottleInput = 0.f;
-	CurrentVehicle->SteeringInput = 0.f;
-	CurrentVehicle->CurrentSpeed = 0.f;
-	CurrentVehicle->SetHeadlightsEnabled(false);
+	if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(CurrentVehicle))
+	{
+		ExitLoc = V->GetExitLocation();
+		V->bIsOccupied = false;
+		V->ThrottleInput = 0.f;
+		V->SteeringInput = 0.f;
+		V->CurrentSpeed = 0.f;
+		V->SetHeadlightsEnabled(false);
+		VehicleMC = V->VehicleMappingContext;
+	}
+	else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(CurrentVehicle))
+	{
+		ExitLoc = B->GetExitLocation();
+		B->bIsOccupied = false;
+		B->ThrottleInput = 0.f;
+		B->SteeringInput = 0.f;
+		B->CurrentSpeed = 0.f;
+		B->SetHeadlightsEnabled(false);
+		VehicleMC = B->VehicleMappingContext;
+	}
 
 	// Remove vehicle mapping context.
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
 			ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
 	{
-		if (CurrentVehicle->VehicleMappingContext)
+		if (VehicleMC)
 		{
-			Subsystem->RemoveMappingContext(CurrentVehicle->VehicleMappingContext);
+			Subsystem->RemoveMappingContext(VehicleMC);
 		}
 	}
 
