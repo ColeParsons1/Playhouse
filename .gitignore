@@ -1,0 +1,20 @@
+## Unreal Engine generated directories
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Build/
+Archived/
+
+## IDE / OS files
+.vs/
+.vscode/
+.idea/
+*.xcworkspace/
+*.xcodeproj/
+*.DS_Store
+Thumbs.db
+
+## Compiled assets
+*.uasset.bak
+*.umap.bak

@@ -1,0 +1,656 @@
+// Copyright PlayhouseCity. All Rights Reserved.
+
+#include "UI/PHCCityHUD.h"
+#include "UI/PHCMainHUD.h"
+#include "Core/PHCPlayerController.h"
+#include "Player/PHCCityCharacter.h"
+#include "Vehicle/PHCVehiclePawn.h"
+#include "PlayhouseCity.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/TextBlock.h"
+#include "Components/Button.h"
+#include "Components/Border.h"
+#include "Components/Spacer.h"
+#include "Blueprint/WidgetTree.h"
+#include "Misc/Paths.h"
+
+// ---------------------------------------------------------------------------
+// Constructor
+// ---------------------------------------------------------------------------
+
+UPHCCityHUD::UPHCCityHUD(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	MainHUDClass = UPHCMainHUD::StaticClass();
+}
+
+// ---------------------------------------------------------------------------
+// Widget tree construction
+// ---------------------------------------------------------------------------
+
+bool UPHCCityHUD::Initialize()
+{
+	if (!Super::Initialize())
+	{
+		return false;
+	}
+
+	// Only build programmatically if not already wired from a UMG Blueprint.
+	if (!CoinText)
+	{
+		const FLinearColor BarBg(0.f, 0.f, 0.f, 0.5f);
+		const FLinearColor White(FLinearColor::White);
+		const FSlateFontInfo CurrencyFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 16);
+		const FSlateFontInfo BtnFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 14);
+
+		// ---- Root canvas (full screen) ----
+		UCanvasPanel* RootCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(
+			UCanvasPanel::StaticClass(), TEXT("CityHUDRoot"));
+		WidgetTree->RootWidget = RootCanvas;
+
+		// ============================================================
+		//  TOP-RIGHT: Currency display  (semi-transparent bar)
+		// ============================================================
+		UBorder* CurrencyBar = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("CurrencyBar"));
+		CurrencyBar->SetBrushColor(BarBg);
+		CurrencyBar->SetPadding(FMargin(12.f, 6.f, 12.f, 6.f));
+
+		UCanvasPanelSlot* CurrencySlot = RootCanvas->AddChildToCanvas(CurrencyBar);
+		CurrencySlot->SetAnchors(FAnchors(1.f, 0.f, 1.f, 0.f)); // top-right
+		CurrencySlot->SetAlignment(FVector2D(1.f, 0.f));
+		CurrencySlot->SetOffsets(FMargin(-16.f, 16.f, 0.f, 0.f));
+		CurrencySlot->SetAutoSize(true);
+
+		UHorizontalBox* CurrencyHBox = WidgetTree->ConstructWidget<UHorizontalBox>(
+			UHorizontalBox::StaticClass(), TEXT("CurrencyHBox"));
+		CurrencyBar->SetContent(CurrencyHBox);
+
+		// Coins
+		CoinText = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("CoinText"));
+		CoinText->SetText(FText::FromString(TEXT("Coins: 0")));
+		CoinText->SetFont(CurrencyFont);
+		CoinText->SetColorAndOpacity(FSlateColor(White));
+
+		UHorizontalBoxSlot* CoinSlot = CurrencyHBox->AddChildToHorizontalBox(CoinText);
+		CoinSlot->SetVerticalAlignment(VAlign_Center);
+		CoinSlot->SetPadding(FMargin(0.f, 0.f, 16.f, 0.f));
+
+		// Gems
+		GemText = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("GemText"));
+		GemText->SetText(FText::FromString(TEXT("Gems: 0")));
+		GemText->SetFont(CurrencyFont);
+		GemText->SetColorAndOpacity(FSlateColor(White));
+
+		UHorizontalBoxSlot* GemSlot = CurrencyHBox->AddChildToHorizontalBox(GemText);
+		GemSlot->SetVerticalAlignment(VAlign_Center);
+
+		// ============================================================
+		//  TOP-LEFT: Menu button (opens lobby HUD as overlay)
+		// ============================================================
+		MenuButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("MenuButton"));
+
+		FButtonStyle MenuBtnStyle = MenuButton->GetStyle();
+		MenuBtnStyle.Normal.TintColor  = FSlateColor(BarBg);
+		MenuBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.7f));
+		MenuBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.9f));
+		MenuButton->SetStyle(MenuBtnStyle);
+
+		UTextBlock* MenuLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("MenuLabel"));
+		MenuLabel->SetText(FText::FromString(TEXT("Menu")));
+		MenuLabel->SetFont(BtnFont);
+		MenuLabel->SetColorAndOpacity(FSlateColor(White));
+		MenuLabel->SetJustification(ETextJustify::Center);
+		MenuButton->AddChild(MenuLabel);
+
+		UCanvasPanelSlot* MenuBtnSlot = RootCanvas->AddChildToCanvas(MenuButton);
+		MenuBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f)); // top-left
+		MenuBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
+		MenuBtnSlot->SetOffsets(FMargin(16.f, 16.f, 80.f, 40.f));
+
+		// ============================================================
+		//  TOP-LEFT (below Menu): "Car" button -- spawns Aventador
+		// ============================================================
+		CarButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("CarButton"));
+
+		FButtonStyle CarBtnStyle = CarButton->GetStyle();
+		CarBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.55f, 0.22f, 0.02f, 0.85f));
+		CarBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.70f, 0.28f, 0.03f, 0.95f));
+		CarBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.40f, 0.16f, 0.01f, 1.0f));
+		CarButton->SetStyle(CarBtnStyle);
+
+		UTextBlock* CarLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("CarLabel"));
+		CarLabel->SetText(FText::FromString(TEXT("Car")));
+		CarLabel->SetFont(BtnFont);
+		CarLabel->SetColorAndOpacity(FSlateColor(White));
+		CarLabel->SetJustification(ETextJustify::Center);
+		CarButton->AddChild(CarLabel);
+
+		UCanvasPanelSlot* CarBtnSlot = RootCanvas->AddChildToCanvas(CarButton);
+		CarBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f)); // top-left
+		CarBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
+		CarBtnSlot->SetOffsets(FMargin(16.f, 64.f, 80.f, 40.f));
+
+		// ============================================================
+		//  MOBILE-ONLY: On-foot action buttons (bottom-right)
+		// ============================================================
+#if PLATFORM_IOS || PLATFORM_ANDROID
+		const FLinearColor ActionBtnBg(0.15f, 0.15f, 0.15f, 0.7f);
+		const FLinearColor ActionBtnHover(0.25f, 0.25f, 0.25f, 0.85f);
+		const FLinearColor ActionBtnPress(0.35f, 0.35f, 0.35f, 0.95f);
+
+		auto MakeActionButton = [&](const FName& Name, const FString& Label, float RightOffset, float BottomOffset, float Size) -> UButton*
+		{
+			UButton* Btn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
+			FButtonStyle Style = Btn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(ActionBtnBg);
+			Style.Hovered.TintColor = FSlateColor(ActionBtnHover);
+			Style.Pressed.TintColor = FSlateColor(ActionBtnPress);
+			Btn->SetStyle(Style);
+
+			UTextBlock* BtnLabel = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), FName(*(Name.ToString() + TEXT("_Label"))));
+			BtnLabel->SetText(FText::FromString(Label));
+			BtnLabel->SetFont(BtnFont);
+			BtnLabel->SetColorAndOpacity(FSlateColor(White));
+			BtnLabel->SetJustification(ETextJustify::Center);
+			Btn->AddChild(BtnLabel);
+
+			UCanvasPanelSlot* Slot = RootCanvas->AddChildToCanvas(Btn);
+			Slot->SetAnchors(FAnchors(1.f, 1.f, 1.f, 1.f)); // bottom-right
+			Slot->SetAlignment(FVector2D(1.f, 1.f));
+			Slot->SetOffsets(FMargin(-RightOffset, -BottomOffset, Size, Size));
+			return Btn;
+		};
+
+		// Jump button (large, bottom-right)
+		JumpButton = MakeActionButton(TEXT("JumpButton"), TEXT("Jump"), 20.f, 20.f, 80.f);
+
+		// Sprint button (above jump)
+		SprintButton = MakeActionButton(TEXT("SprintButton"), TEXT("Run"), 20.f, 120.f, 70.f);
+
+		// Interact button (left of jump)
+		InteractButton = MakeActionButton(TEXT("InteractButton"), TEXT("Use"), 120.f, 20.f, 70.f);
+
+		// ============================================================
+		//  MOBILE-ONLY: Driving controls (hidden by default)
+		// ============================================================
+
+		const FSlateFontInfo DriveFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 18);
+		const FSlateFontInfo DriveFontSmall = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 14);
+
+		// -- Steering panel (left side, bottom half) --
+		// Touch position within this panel controls steering:
+		//   Left side of panel = steer left, right side = steer right.
+		SteeringPanel = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("SteeringPanel"));
+		SteeringPanel->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
+		SteeringPanel->SetPadding(FMargin(0.f));
+
+		SteeringLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("SteeringLabel"));
+		SteeringLabel->SetText(FText::FromString(FString::Printf(TEXT("%s   STEER   %s"),
+			UTF8_TO_TCHAR("\xe2\x97\x84"), UTF8_TO_TCHAR("\xe2\x96\xba"))));
+		SteeringLabel->SetFont(DriveFont);
+		SteeringLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.15f)));
+		SteeringLabel->SetJustification(ETextJustify::Center);
+		SteeringPanel->SetContent(SteeringLabel);
+
+		UCanvasPanelSlot* SteerSlot = RootCanvas->AddChildToCanvas(SteeringPanel);
+		// Left 45% of screen, bottom 50% height
+		SteerSlot->SetAnchors(FAnchors(0.f, 0.5f, 0.45f, 1.f));
+		SteerSlot->SetOffsets(FMargin(0.f, 0.f, 0.f, 0.f));
+
+		SteeringPanel->SetVisibility(ESlateVisibility::Collapsed);
+
+		// -- Gas pedal (right side, lower portion) --
+		GasPedalPanel = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("GasPedalPanel"));
+		GasPedalPanel->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
+		GasPedalPanel->SetPadding(FMargin(0.f));
+
+		GasLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("GasLabel"));
+		GasLabel->SetText(FText::FromString(TEXT("GAS")));
+		GasLabel->SetFont(DriveFont);
+		GasLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.15f)));
+		GasLabel->SetJustification(ETextJustify::Center);
+		GasPedalPanel->SetContent(GasLabel);
+
+		UCanvasPanelSlot* GasSlot = RootCanvas->AddChildToCanvas(GasPedalPanel);
+		// Right 45% of screen, bottom 35% height (above brake)
+		GasSlot->SetAnchors(FAnchors(0.55f, 0.5f, 1.f, 0.75f));
+		GasSlot->SetOffsets(FMargin(0.f, 0.f, 0.f, 0.f));
+
+		GasPedalPanel->SetVisibility(ESlateVisibility::Collapsed);
+
+		// -- Brake pedal (right side, very bottom) --
+		BrakePedalPanel = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("BrakePedalPanel"));
+		BrakePedalPanel->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
+		BrakePedalPanel->SetPadding(FMargin(0.f));
+
+		BrakeLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("BrakeLabel"));
+		BrakeLabel->SetText(FText::FromString(TEXT("BRAKE")));
+		BrakeLabel->SetFont(DriveFontSmall);
+		BrakeLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.15f)));
+		BrakeLabel->SetJustification(ETextJustify::Center);
+		BrakePedalPanel->SetContent(BrakeLabel);
+
+		UCanvasPanelSlot* BrakeSlot = RootCanvas->AddChildToCanvas(BrakePedalPanel);
+		// Right 45%, bottom 25% height
+		BrakeSlot->SetAnchors(FAnchors(0.55f, 0.75f, 1.f, 1.f));
+		BrakeSlot->SetOffsets(FMargin(0.f, 0.f, 0.f, 0.f));
+
+		BrakePedalPanel->SetVisibility(ESlateVisibility::Collapsed);
+
+		// -- Exit Vehicle button (top-left, where "Car" button is in walk mode) --
+		ExitVehicleButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("ExitVehicleButton"));
+
+		FButtonStyle ExitBtnStyle = ExitVehicleButton->GetStyle();
+		ExitBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.6f, 0.1f, 0.1f, 0.85f));
+		ExitBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.8f, 0.15f, 0.15f, 0.95f));
+		ExitBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.4f, 0.08f, 0.08f, 1.0f));
+		ExitVehicleButton->SetStyle(ExitBtnStyle);
+
+		UTextBlock* ExitLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("ExitVehicleLabel"));
+		ExitLabel->SetText(FText::FromString(TEXT("Exit")));
+		ExitLabel->SetFont(BtnFont);
+		ExitLabel->SetColorAndOpacity(FSlateColor(White));
+		ExitLabel->SetJustification(ETextJustify::Center);
+		ExitVehicleButton->AddChild(ExitLabel);
+
+		UCanvasPanelSlot* ExitSlot = RootCanvas->AddChildToCanvas(ExitVehicleButton);
+		ExitSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+		ExitSlot->SetAlignment(FVector2D(0.f, 0.f));
+		ExitSlot->SetOffsets(FMargin(16.f, 64.f, 80.f, 40.f));
+
+		ExitVehicleButton->SetVisibility(ESlateVisibility::Collapsed);
+#endif
+
+		UE_LOG(LogPlayhouseCity, Log, TEXT("UPHCCityHUD: Widget tree built programmatically."));
+	}
+
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// NativeConstruct / NativeDestruct
+// ---------------------------------------------------------------------------
+
+void UPHCCityHUD::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	if (MenuButton)
+	{
+		MenuButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnMenuButtonClicked);
+	}
+	if (CarButton)
+	{
+		CarButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnCarButtonClicked);
+	}
+
+#if PLATFORM_IOS || PLATFORM_ANDROID
+	if (JumpButton)
+	{
+		JumpButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnJumpButtonPressed);
+		JumpButton->OnReleased.AddDynamic(this, &UPHCCityHUD::OnJumpButtonReleased);
+	}
+	if (SprintButton)
+	{
+		SprintButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnSprintButtonPressed);
+		SprintButton->OnReleased.AddDynamic(this, &UPHCCityHUD::OnSprintButtonReleased);
+	}
+	if (InteractButton)
+	{
+		InteractButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnInteractButtonClicked);
+	}
+	if (ExitVehicleButton)
+	{
+		ExitVehicleButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnExitVehicleClicked);
+	}
+#endif
+}
+
+void UPHCCityHUD::NativeDestruct()
+{
+	if (MenuButton)
+	{
+		MenuButton->OnClicked.RemoveAll(this);
+	}
+	if (CloseMenuButton)
+	{
+		CloseMenuButton->OnClicked.RemoveAll(this);
+	}
+	if (CarButton)
+	{
+		CarButton->OnClicked.RemoveAll(this);
+	}
+
+#if PLATFORM_IOS || PLATFORM_ANDROID
+	if (JumpButton)
+	{
+		JumpButton->OnPressed.RemoveAll(this);
+		JumpButton->OnReleased.RemoveAll(this);
+	}
+	if (SprintButton)
+	{
+		SprintButton->OnPressed.RemoveAll(this);
+		SprintButton->OnReleased.RemoveAll(this);
+	}
+	if (InteractButton)
+	{
+		InteractButton->OnClicked.RemoveAll(this);
+	}
+	if (ExitVehicleButton)
+	{
+		ExitVehicleButton->OnClicked.RemoveAll(this);
+	}
+#endif
+
+	CloseMenu();
+
+	Super::NativeDestruct();
+}
+
+// ---------------------------------------------------------------------------
+// NativeTick -- apply mobile driving touch input
+// ---------------------------------------------------------------------------
+
+void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+#if PLATFORM_IOS || PLATFORM_ANDROID
+	if (!bDrivingMode || !DrivenVehicle)
+	{
+		return;
+	}
+
+	APlayerController* PC = GetOwningPlayer();
+	if (!PC)
+	{
+		return;
+	}
+
+	int32 VPWidth = 0;
+	int32 VPHeight = 0;
+	PC->GetViewportSize(VPWidth, VPHeight);
+	if (VPWidth == 0 || VPHeight == 0)
+	{
+		return;
+	}
+
+	const float ScreenHalfX = VPWidth * 0.5f;
+	const float ScreenHalfY = VPHeight * 0.5f;
+
+	float NewSteering = 0.f;
+	float NewThrottle = 0.f;
+
+	// Read all active touch points.
+	// Left half of screen = steering (touch X position maps to steering angle).
+	// Right half, upper region = gas, lower region = brake.
+	for (int32 i = 0; i < 5; ++i)
+	{
+		float TouchX = 0.f;
+		float TouchY = 0.f;
+		bool bPressed = false;
+		PC->GetInputTouchState(static_cast<ETouchIndex::Type>(i), TouchX, TouchY, bPressed);
+
+		if (!bPressed)
+		{
+			continue;
+		}
+
+		if (TouchX < ScreenHalfX && TouchY > ScreenHalfY)
+		{
+			// Left side, bottom half = steering zone.
+			// Map [0 .. ScreenHalfX] to [-1 .. +1].
+			NewSteering = (TouchX / ScreenHalfX) * 2.f - 1.f;
+			NewSteering = FMath::Clamp(NewSteering, -1.f, 1.f);
+		}
+		else if (TouchX >= ScreenHalfX && TouchY > ScreenHalfY)
+		{
+			// Right side, bottom half = gas/brake.
+			// Upper portion (50%-75% of screen height) = gas.
+			// Lower portion (75%-100%) = brake.
+			const float ThresholdY = VPHeight * 0.75f;
+			if (TouchY < ThresholdY)
+			{
+				NewThrottle = 1.f;
+			}
+			else
+			{
+				NewThrottle = -1.f;
+			}
+		}
+	}
+
+	DrivenVehicle->SteeringInput = NewSteering;
+	DrivenVehicle->ThrottleInput = NewThrottle;
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Driving mode
+// ---------------------------------------------------------------------------
+
+void UPHCCityHUD::SetDrivingMode(bool bDriving, APHCVehiclePawn* Vehicle)
+{
+	bDrivingMode = bDriving;
+	DrivenVehicle = Vehicle;
+
+	const ESlateVisibility WalkVis = bDriving ? ESlateVisibility::Collapsed : ESlateVisibility::Visible;
+	const ESlateVisibility DriveVis = bDriving ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
+
+	// Toggle on-foot controls.
+	if (CarButton) { CarButton->SetVisibility(WalkVis); }
+#if PLATFORM_IOS || PLATFORM_ANDROID
+	if (JumpButton) { JumpButton->SetVisibility(WalkVis); }
+	if (SprintButton) { SprintButton->SetVisibility(WalkVis); }
+	if (InteractButton) { InteractButton->SetVisibility(WalkVis); }
+
+	// Toggle driving controls.
+	if (SteeringPanel) { SteeringPanel->SetVisibility(DriveVis); }
+	if (GasPedalPanel) { GasPedalPanel->SetVisibility(DriveVis); }
+	if (BrakePedalPanel) { BrakePedalPanel->SetVisibility(DriveVis); }
+	if (ExitVehicleButton) { ExitVehicleButton->SetVisibility(DriveVis); }
+#endif
+
+	// Zero out vehicle input when exiting.
+	if (!bDriving && Vehicle)
+	{
+		Vehicle->ThrottleInput = 0.f;
+		Vehicle->SteeringInput = 0.f;
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("UPHCCityHUD: Driving mode %s."),
+		bDriving ? TEXT("ON") : TEXT("OFF"));
+}
+
+// ---------------------------------------------------------------------------
+// Currency display
+// ---------------------------------------------------------------------------
+
+void UPHCCityHUD::UpdateCurrencyDisplay(int32 Coins, int32 Gems)
+{
+	if (CoinText)
+	{
+		CoinText->SetText(FText::FromString(FString::Printf(TEXT("Coins: %d"), Coins)));
+	}
+	if (GemText)
+	{
+		GemText->SetText(FText::FromString(FString::Printf(TEXT("Gems: %d"), Gems)));
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Menu overlay
+// ---------------------------------------------------------------------------
+
+void UPHCCityHUD::OpenMenu()
+{
+	if (bMenuOpen)
+	{
+		return;
+	}
+
+	APlayerController* PC = GetOwningPlayer();
+	if (!PC || !MainHUDClass)
+	{
+		return;
+	}
+
+	MenuOverlay = CreateWidget<UPHCMainHUD>(PC, MainHUDClass);
+	if (MenuOverlay)
+	{
+		MenuOverlay->AddToViewport(50); // Above the city HUD, below popups
+		bMenuOpen = true;
+
+		// Switch to Game+UI input so the menu is interactable while world is visible.
+		FInputModeGameAndUI InputMode;
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PC->SetInputMode(InputMode);
+
+		UE_LOG(LogPlayhouseCity, Log, TEXT("UPHCCityHUD: Menu opened."));
+	}
+}
+
+void UPHCCityHUD::CloseMenu()
+{
+	if (!bMenuOpen || !MenuOverlay)
+	{
+		return;
+	}
+
+	MenuOverlay->RemoveFromParent();
+	MenuOverlay = nullptr;
+	bMenuOpen = false;
+
+	// Restore game+UI input mode for the 3D world.
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		FInputModeGameAndUI InputMode;
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PC->SetInputMode(InputMode);
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("UPHCCityHUD: Menu closed."));
+}
+
+// ---------------------------------------------------------------------------
+// Button callbacks
+// ---------------------------------------------------------------------------
+
+void UPHCCityHUD::OnMenuButtonClicked()
+{
+	if (bMenuOpen)
+	{
+		CloseMenu();
+	}
+	else
+	{
+		OpenMenu();
+	}
+}
+
+void UPHCCityHUD::OnCloseMenuButtonClicked()
+{
+	CloseMenu();
+}
+
+void UPHCCityHUD::OnCarButtonClicked()
+{
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		PC->SpawnAndEnterVehicle();
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Mobile on-foot button callbacks
+// ---------------------------------------------------------------------------
+
+void UPHCCityHUD::OnJumpButtonPressed()
+{
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->Jump();
+		}
+	}
+}
+
+void UPHCCityHUD::OnJumpButtonReleased()
+{
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->StopJumping();
+		}
+	}
+}
+
+void UPHCCityHUD::OnSprintButtonPressed()
+{
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->bIsSprinting = true;
+			Char->GetCharacterMovement()->MaxWalkSpeed = Char->SprintSpeed;
+		}
+	}
+}
+
+void UPHCCityHUD::OnSprintButtonReleased()
+{
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->bIsSprinting = false;
+			Char->GetCharacterMovement()->MaxWalkSpeed = Char->WalkSpeed;
+		}
+	}
+}
+
+void UPHCCityHUD::OnInteractButtonClicked()
+{
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		PC->EnterNearestVehicle();
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Driving mode button callback
+// ---------------------------------------------------------------------------
+
+void UPHCCityHUD::OnExitVehicleClicked()
+{
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		PC->OnVehicleExitRequested();
+	}
+}

@@ -1,0 +1,146 @@
+// Copyright PlayhouseCity. All Rights Reserved.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/PlayerController.h"
+#include "Core/PHCTypes.h"
+#include "PHCPlayerController.generated.h"
+
+class UPHCGameInstance;
+class UUserWidget;
+class UPHCMiniGameHUD;
+class APHCMiniGameMode;
+class UPHCCityHUD;
+class APHCVehiclePawn;
+class APHCCityCharacter;
+
+/**
+ * Top-level player controller for the PlayhouseCity lobby.
+ *
+ * Responsible for:
+ *  - Checking login state on BeginPlay and routing to auth or main HUD.
+ *  - Creating / destroying the auth-screen and main-HUD widgets.
+ *  - Launching mini-games and returning to the lobby.
+ *  - Supporting both UI-only mode (legacy lobby) and 3D world mode.
+ *  - Listening to GameInstance login/logout delegates to swap screens.
+ */
+UCLASS()
+class PLAYHOUSECITY_API APHCPlayerController : public APlayerController
+{
+	GENERATED_BODY()
+
+public:
+	APHCPlayerController();
+
+	// -- Widget class references (assign in BP or defaults) -------------------
+
+	/** Widget Blueprint class shown when the player is NOT logged in. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "PHC|UI")
+	TSubclassOf<UUserWidget> AuthWidgetClass;
+
+	/** Widget Blueprint class shown as the main HUD after login. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "PHC|UI")
+	TSubclassOf<UUserWidget> MainHUDWidgetClass;
+
+	/** Widget class for the 3D open-world city HUD overlay. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "PHC|UI")
+	TSubclassOf<UPHCCityHUD> CityHUDWidgetClass;
+
+	/** True when the controller is in 3D world mode (character visible,
+	 *  game + UI input) rather than pure UI mode (lobby, auth, mini-game). */
+	UPROPERTY(BlueprintReadOnly, Category = "PHC|UI")
+	bool bIsInWorldMode = false;
+
+	// -- Screen management ----------------------------------------------------
+
+	/** Remove any active widget and show the authentication screen. */
+	UFUNCTION(BlueprintCallable, Category = "PHC|UI")
+	void ShowAuthScreen();
+
+	/** Remove any active widget and show the main lobby HUD. */
+	UFUNCTION(BlueprintCallable, Category = "PHC|UI")
+	void ShowMainHUD();
+
+	/** Switch to 3D world mode: show the city HUD overlay and enable
+	 *  game + UI input so the player can control the character. */
+	UFUNCTION(BlueprintCallable, Category = "PHC|UI")
+	void EnterWorldMode();
+
+	/** Switch from world mode back to full UI mode (for menus/auth). */
+	UFUNCTION(BlueprintCallable, Category = "PHC|UI")
+	void EnterMenuMode();
+
+	// -- Game launch ----------------------------------------------------------
+
+	/** Launches a mini-game: removes lobby HUD, spawns game mode actor,
+	 *  creates the game HUD, and starts the game. */
+	UFUNCTION(BlueprintCallable, Category = "PHC|Game")
+	void LaunchGame(EPHCGameType GameType);
+
+	/** Returns from a mini-game to the lobby: destroys the game mode actor,
+	 *  removes the game HUD, and re-shows the main lobby HUD. */
+	UFUNCTION(BlueprintCallable, Category = "PHC|Game")
+	void ReturnFromGame();
+
+	// -- Delegate callbacks ---------------------------------------------------
+
+	/** Bound to UPHCGameInstance::OnLoginSuccess. */
+	UFUNCTION()
+	void OnLoginSuccess(const FPHCPlayerProfile& PlayerProfile);
+
+	/** Bound to UPHCGameInstance::OnLogoutComplete. */
+	UFUNCTION()
+	void OnLogoutComplete();
+
+	// -- Vehicle interaction -----------------------------------------------
+
+	/** Attempt to enter the nearest vehicle (called by character's interact key). */
+	UFUNCTION(BlueprintCallable, Category = "PHC|Vehicle")
+	void EnterNearestVehicle();
+
+	/** Spawn an Aventador at the player's location and immediately enter it. */
+	UFUNCTION(BlueprintCallable, Category = "PHC|Vehicle")
+	void SpawnAndEnterVehicle();
+
+	/** Called by the vehicle pawn when the player presses the exit key. */
+	UFUNCTION()
+	void OnVehicleExitRequested();
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+private:
+	/** Currently displayed top-level widget (auth or HUD). */
+	UPROPERTY()
+	TObjectPtr<UUserWidget> ActiveWidget;
+
+	/** Active mini-game mode actor (spawned, not the framework game mode). */
+	UPROPERTY()
+	TObjectPtr<APHCMiniGameMode> ActiveMiniGame;
+
+	/** Active mini-game HUD widget. */
+	UPROPERTY()
+	TObjectPtr<UPHCMiniGameHUD> ActiveGameHUD;
+
+	/** Returns the game mode class for a given game type. */
+	TSubclassOf<APHCMiniGameMode> GetGameModeClassForType(EPHCGameType GameType) const;
+
+	/** Helper: remove the current ActiveWidget from viewport and null it. */
+	void ClearActiveWidget();
+
+	/** Helper: configure input mode to UI-only with mouse cursor visible. */
+	void SetUIOnlyInputMode();
+
+	/** Helper: configure input mode for 3D gameplay + UI overlay. */
+	void SetGameAndUIInputMode();
+
+	/** The character pawn we unpossessed when entering a vehicle. */
+	UPROPERTY()
+	TObjectPtr<APHCCityCharacter> SavedCharacterPawn;
+
+	/** The vehicle we're currently driving. */
+	UPROPERTY()
+	TObjectPtr<APHCVehiclePawn> CurrentVehicle;
+};
