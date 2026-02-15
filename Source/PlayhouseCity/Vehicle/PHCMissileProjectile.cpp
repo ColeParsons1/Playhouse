@@ -22,7 +22,12 @@ APHCMissileProjectile::APHCMissileProjectile()
 
 	CollisionSphere = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionSphere"));
 	CollisionSphere->InitSphereRadius(12.f);
-	CollisionSphere->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+	CollisionSphere->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	CollisionSphere->SetCollisionObjectType(ECC_WorldDynamic);
+	CollisionSphere->SetCollisionResponseToAllChannels(ECR_Ignore);
+	CollisionSphere->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	CollisionSphere->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	CollisionSphere->SetCollisionResponseToChannel(ECC_Destructible, ECR_Block);
 	CollisionSphere->SetSimulatePhysics(false);
 	CollisionSphere->BodyInstance.bNotifyRigidBodyCollision = true;
 	SetRootComponent(CollisionSphere);
@@ -30,8 +35,8 @@ APHCMissileProjectile::APHCMissileProjectile()
 	ProjectileMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ProjectileMesh"));
 	ProjectileMesh->SetupAttachment(CollisionSphere);
 	ProjectileMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	// Elongated shape to look like a missile
-	ProjectileMesh->SetRelativeScale3D(FVector(0.5f, 0.25f, 0.25f));
+	// Elongated shape to look like a missile (visible at speed)
+	ProjectileMesh->SetRelativeScale3D(FVector(0.8f, 0.35f, 0.35f));
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(
 		TEXT("/Engine/BasicShapes/Sphere.Sphere"));

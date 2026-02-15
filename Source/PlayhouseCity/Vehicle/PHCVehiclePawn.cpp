@@ -28,12 +28,12 @@ APHCVehiclePawn::APHCVehiclePawn()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// ---- Multiplayer replication (disabled for now) ----
-	// bReplicates = true;
-	// SetReplicateMovement(true);
-	// NetUpdateFrequency = 30.f;
-	// MinNetUpdateFrequency = 15.f;
-	// bAlwaysRelevant = true;
+	// ---- Multiplayer replication ----
+	bReplicates = true;
+	SetReplicateMovement(true);
+	NetUpdateFrequency = 30.f;
+	MinNetUpdateFrequency = 15.f;
+	bAlwaysRelevant = true;
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(
 		TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -506,15 +506,39 @@ void APHCVehiclePawn::Tick(float DeltaTime)
 // Input handlers
 // ---------------------------------------------------------------------------
 
-void APHCVehiclePawn::HandleThrottle(const FInputActionValue&)  { ThrottleInput = 1.f; }
-void APHCVehiclePawn::HandleThrottleRelease(const FInputActionValue&) { ThrottleInput = 0.f; }
-void APHCVehiclePawn::HandleBrake(const FInputActionValue&) { ThrottleInput = -1.f; }
+void APHCVehiclePawn::HandleThrottle(const FInputActionValue&)
+{
+	ThrottleInput = 1.f;
+	if (!HasAuthority()) ServerSetThrottle(1.f);
+}
+void APHCVehiclePawn::HandleThrottleRelease(const FInputActionValue&)
+{
+	ThrottleInput = 0.f;
+	if (!HasAuthority()) ServerSetThrottle(0.f);
+}
+void APHCVehiclePawn::HandleBrake(const FInputActionValue&)
+{
+	ThrottleInput = -1.f;
+	if (!HasAuthority()) ServerSetThrottle(-1.f);
+}
 void APHCVehiclePawn::HandleBrakeRelease(const FInputActionValue&)
 {
-	if (ThrottleInput < 0.f) ThrottleInput = 0.f;
+	if (ThrottleInput < 0.f)
+	{
+		ThrottleInput = 0.f;
+		if (!HasAuthority()) ServerSetThrottle(0.f);
+	}
 }
-void APHCVehiclePawn::HandleSteer(const FInputActionValue& Value) { SteeringInput = Value.Get<float>(); }
-void APHCVehiclePawn::HandleSteerRelease(const FInputActionValue&) { SteeringInput = 0.f; }
+void APHCVehiclePawn::HandleSteer(const FInputActionValue& Value)
+{
+	SteeringInput = Value.Get<float>();
+	if (!HasAuthority()) ServerSetSteering(SteeringInput);
+}
+void APHCVehiclePawn::HandleSteerRelease(const FInputActionValue&)
+{
+	SteeringInput = 0.f;
+	if (!HasAuthority()) ServerSetSteering(0.f);
+}
 
 void APHCVehiclePawn::HandleExitVehicle(const FInputActionValue&)
 {
@@ -604,4 +628,14 @@ void APHCVehiclePawn::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(APHCVehiclePawn, bIsOccupied);
+}
+
+void APHCVehiclePawn::ServerSetThrottle_Implementation(float Value)
+{
+	ThrottleInput = Value;
+}
+
+void APHCVehiclePawn::ServerSetSteering_Implementation(float Value)
+{
+	SteeringInput = Value;
 }

@@ -508,6 +508,17 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 	APHCCityCharacter* Character = Cast<APHCCityCharacter>(GetPawn());
 	if (!Character) return;
 
+	// Save character reference on this machine (needed for exit flow).
+	SavedCharacterPawn = Character;
+
+	if (!HasAuthority())
+	{
+		// Client: ask the server to spawn the vehicle.
+		ServerSpawnAndEnterVehicle(VehicleType);
+		return;
+	}
+
+	// ---- Server-side: spawn and possess ----
 	UWorld* World = GetWorld();
 	if (!World) return;
 
@@ -521,7 +532,6 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 
 	if (VehicleType == 1)
 	{
-		// Dune Buggy.
 		APHCDuneBuggyPawn* Buggy = World->SpawnActor<APHCDuneBuggyPawn>(
 			APHCDuneBuggyPawn::StaticClass(), SpawnLoc, SpawnRot, SP);
 		if (Buggy)
@@ -535,7 +545,6 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 	}
 	else
 	{
-		// Aventador (default).
 		APHCVehiclePawn* Aventador = World->SpawnActor<APHCVehiclePawn>(
 			APHCVehiclePawn::StaticClass(), SpawnLoc, SpawnRot, SP);
 		if (Aventador)
@@ -559,31 +568,15 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 		return;
 	}
 
-	// Enter the vehicle.
-	SavedCharacterPawn = Character;
+	// Server-side: hide character, swap possession.
 	CurrentVehicle = SpawnedVehicle;
-
-	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
-			ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
-	{
-		if (Character->DefaultMappingContext)
-		{
-			Subsystem->RemoveMappingContext(Character->DefaultMappingContext);
-		}
-	}
-
 	Character->SetActorHiddenInGame(true);
 	Character->SetActorEnableCollision(false);
-
 	UnPossess();
 	Possess(SpawnedVehicle);
 
-	if (UPHCCityHUD* CityHUD = Cast<UPHCCityHUD>(ActiveWidget))
-	{
-		CityHUD->SetDrivingMode(true, SpawnedVehicle);
-	}
-
-	SetGameAndUIInputMode();
+	// Tell owning client to update HUD.
+	ClientOnVehicleEntered(SpawnedVehicle);
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnAndEnterVehicle: Spawned vehicle type %d at %s"),
 		VehicleType, *SpawnedVehicle->GetActorLocation().ToString());
@@ -593,11 +586,16 @@ void APHCPlayerController::OnVehicleExitRequested()
 {
 	if (!CurrentVehicle || !SavedCharacterPawn) return;
 
+	if (!HasAuthority())
+	{
+		ServerExitVehicle();
+		return;
+	}
+
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCPlayerController::OnVehicleExitRequested -- Exiting vehicle."));
 
 	// Access vehicle-specific members via cast.
 	FVector ExitLoc = CurrentVehicle->GetActorLocation() + FVector(0.f, -300.f, 100.f);
-	UInputMappingContext* VehicleMC = nullptr;
 
 	if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(CurrentVehicle))
 	{
@@ -607,7 +605,6 @@ void APHCPlayerController::OnVehicleExitRequested()
 		V->SteeringInput = 0.f;
 		V->CurrentSpeed = 0.f;
 		V->SetHeadlightsEnabled(false);
-		VehicleMC = V->VehicleMappingContext;
 	}
 	else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(CurrentVehicle))
 	{
@@ -617,10 +614,70 @@ void APHCPlayerController::OnVehicleExitRequested()
 		B->SteeringInput = 0.f;
 		B->CurrentSpeed = 0.f;
 		B->SetHeadlightsEnabled(false);
+	}
+
+	// Unpossess vehicle, repossess character (server authority).
+	UnPossess();
+	Possess(SavedCharacterPawn);
+	SavedCharacterPawn->SetActorLocation(ExitLoc);
+	SavedCharacterPawn->SetActorHiddenInGame(false);
+	SavedCharacterPawn->SetActorEnableCollision(true);
+
+	// Tell owning client to update HUD.
+	ClientOnVehicleExited();
+
+	CurrentVehicle = nullptr;
+}
+
+void APHCPlayerController::ServerSpawnAndEnterVehicle_Implementation(int32 VehicleType)
+{
+	SpawnAndEnterVehicle(VehicleType);
+}
+
+void APHCPlayerController::ClientOnVehicleEntered_Implementation(APawn* NewVehicle)
+{
+	// Local: swap input contexts and update HUD.
+	CurrentVehicle = NewVehicle;
+
+	if (SavedCharacterPawn)
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
+				ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+		{
+			if (SavedCharacterPawn->DefaultMappingContext)
+			{
+				Subsystem->RemoveMappingContext(SavedCharacterPawn->DefaultMappingContext);
+			}
+		}
+	}
+
+	if (UPHCCityHUD* CityHUD = Cast<UPHCCityHUD>(ActiveWidget))
+	{
+		CityHUD->SetDrivingMode(true, NewVehicle);
+	}
+
+	SetGameAndUIInputMode();
+}
+
+void APHCPlayerController::ServerExitVehicle_Implementation()
+{
+	OnVehicleExitRequested();
+}
+
+void APHCPlayerController::ClientOnVehicleExited_Implementation()
+{
+	// Local: restore character input context, switch HUD.
+	UInputMappingContext* VehicleMC = nullptr;
+
+	if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(CurrentVehicle))
+	{
+		VehicleMC = V->VehicleMappingContext;
+	}
+	else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(CurrentVehicle))
+	{
 		VehicleMC = B->VehicleMappingContext;
 	}
 
-	// Remove vehicle mapping context.
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
 			ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
 	{
@@ -628,37 +685,19 @@ void APHCPlayerController::OnVehicleExitRequested()
 		{
 			Subsystem->RemoveMappingContext(VehicleMC);
 		}
-	}
-
-	// Unpossess vehicle and repossess character.
-	UnPossess();
-	Possess(SavedCharacterPawn);
-
-	// Restore character.
-	SavedCharacterPawn->SetActorLocation(ExitLoc);
-	SavedCharacterPawn->SetActorHiddenInGame(false);
-	SavedCharacterPawn->SetActorEnableCollision(true);
-
-	// Re-register character's mapping context.
-	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
-			ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
-	{
-		if (SavedCharacterPawn->DefaultMappingContext)
+		if (SavedCharacterPawn && SavedCharacterPawn->DefaultMappingContext)
 		{
 			Subsystem->AddMappingContext(SavedCharacterPawn->DefaultMappingContext, 0);
 		}
 	}
 
-	// Tell the city HUD to switch back to walk controls.
 	if (UPHCCityHUD* CityHUD = Cast<UPHCCityHUD>(ActiveWidget))
 	{
 		CityHUD->SetDrivingMode(false, nullptr);
 	}
 
-	CurrentVehicle = nullptr;
-	SavedCharacterPawn = nullptr;
-
 	SetGameAndUIInputMode();
+	CurrentVehicle = nullptr;
 }
 
 // ---------------------------------------------------------------------------

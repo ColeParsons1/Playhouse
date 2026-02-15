@@ -109,6 +109,22 @@ public:
 	UFUNCTION()
 	void OnVehicleExitRequested();
 
+	/** Server RPC: spawn a vehicle on the server and enter it. */
+	UFUNCTION(Server, Reliable)
+	void ServerSpawnAndEnterVehicle(int32 VehicleType);
+
+	/** Client RPC: update local HUD after server possession change (entering vehicle). */
+	UFUNCTION(Client, Reliable)
+	void ClientOnVehicleEntered(APawn* NewVehicle);
+
+	/** Server RPC: exit the current vehicle on the server. */
+	UFUNCTION(Server, Reliable)
+	void ServerExitVehicle();
+
+	/** Client RPC: update local HUD after server possession change (exiting vehicle). */
+	UFUNCTION(Client, Reliable)
+	void ClientOnVehicleExited();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

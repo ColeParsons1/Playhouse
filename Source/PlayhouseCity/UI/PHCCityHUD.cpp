@@ -124,6 +124,9 @@ bool UPHCCityHUD::Initialize()
 		FireBtnStyle.Hovered = MakeRoundBrush(FLinearColor(0.85f, 0.15f, 0.15f, 0.95f));
 		FireBtnStyle.Pressed = MakeRoundBrush(FLinearColor(0.5f, 0.08f, 0.08f, 1.0f));
 		FireButton->SetStyle(FireBtnStyle);
+		FireButton->SetTouchMethod(EButtonTouchMethod::DownAndUp);
+		FireButton->SetClickMethod(EButtonClickMethod::MouseDown);
+		FireButton->SetPressMethod(EButtonPressMethod::ButtonPress);
 
 		UTextBlock* FireLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("FireLabel"));
@@ -742,10 +745,18 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 	float NewSteering = 0.f;
 	float NewThrottle = 0.f;
+	bool bFireTouched = false;
+
+	// Fire button zone: centered at 77% X, from (48%-168px) to 48% Y.
+	const float FireCenterX = VPWidth * 0.77f;
+	const float FireBtnRadius = 84.f; // half of 168
+	const float FireBottomY = VPHeight * 0.48f;
+	const float FireTopY = FireBottomY - FireBtnRadius * 2.f;
 
 	// Read all active touch points.
 	// Left half of screen = steering (touch X position maps to steering angle).
 	// Right half, upper region = gas, lower region = brake.
+	// Fire button zone = upper right (above gas pedal).
 	for (int32 i = 0; i < 5; ++i)
 	{
 		float TouchX = 0.f;
@@ -756,6 +767,14 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		if (!bPressed)
 		{
 			continue;
+		}
+
+		// Check fire button zone first (circle-ish region).
+		if (TouchX >= FireCenterX - FireBtnRadius && TouchX <= FireCenterX + FireBtnRadius &&
+			TouchY >= FireTopY && TouchY <= FireBottomY)
+		{
+			bFireTouched = true;
+			continue; // Don't let this touch also trigger gas/brake.
 		}
 
 		if (TouchX < ScreenHalfX && TouchY > ScreenHalfY)
@@ -786,15 +805,34 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	{
 		V->SteeringInput = NewSteering;
 		V->ThrottleInput = NewThrottle;
+		if (!V->HasAuthority())
+		{
+			V->ServerSetSteering(NewSteering);
+			V->ServerSetThrottle(NewThrottle);
+		}
 	}
 	else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(DrivenVehicle))
 	{
 		B->SteeringInput = NewSteering;
 		B->ThrottleInput = NewThrottle;
+		if (!B->HasAuthority())
+		{
+			B->ServerSetSteering(NewSteering);
+			B->ServerSetThrottle(NewThrottle);
+		}
+	}
+
+	// Fire missile while touching fire zone (mobile touch-based detection).
+	if (bFireTouched && bDrivingMode)
+	{
+		if (APHCDuneBuggyPawn* Buggy = Cast<APHCDuneBuggyPawn>(DrivenVehicle))
+		{
+			Buggy->FireMissile();
+		}
 	}
 #endif
 
-	// Continuous missile fire while Fire button is held
+	// Continuous missile fire while Fire UButton is held (desktop/fallback).
 	if (bFireHeld && bDrivingMode)
 	{
 		if (APHCDuneBuggyPawn* Buggy = Cast<APHCDuneBuggyPawn>(DrivenVehicle))

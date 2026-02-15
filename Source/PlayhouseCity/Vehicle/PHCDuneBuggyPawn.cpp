@@ -20,6 +20,7 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/World.h"
 #include "Vehicle/PHCMissileProjectile.h"
+#include "Components/SphereComponent.h"
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -29,12 +30,12 @@ APHCDuneBuggyPawn::APHCDuneBuggyPawn()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// ---- Multiplayer replication (disabled for now) ----
-	// bReplicates = true;
-	// SetReplicateMovement(true);
-	// NetUpdateFrequency = 30.f;
-	// MinNetUpdateFrequency = 15.f;
-	// bAlwaysRelevant = true;
+	// ---- Multiplayer replication ----
+	bReplicates = true;
+	SetReplicateMovement(true);
+	NetUpdateFrequency = 30.f;
+	MinNetUpdateFrequency = 15.f;
+	bAlwaysRelevant = true;
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(
 		TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -488,15 +489,39 @@ void APHCDuneBuggyPawn::Tick(float DeltaTime)
 // Input handlers
 // ---------------------------------------------------------------------------
 
-void APHCDuneBuggyPawn::HandleThrottle(const FInputActionValue&) { ThrottleInput = 1.f; }
-void APHCDuneBuggyPawn::HandleThrottleRelease(const FInputActionValue&) { ThrottleInput = 0.f; }
-void APHCDuneBuggyPawn::HandleBrake(const FInputActionValue&) { ThrottleInput = -1.f; }
+void APHCDuneBuggyPawn::HandleThrottle(const FInputActionValue&)
+{
+	ThrottleInput = 1.f;
+	if (!HasAuthority()) ServerSetThrottle(1.f);
+}
+void APHCDuneBuggyPawn::HandleThrottleRelease(const FInputActionValue&)
+{
+	ThrottleInput = 0.f;
+	if (!HasAuthority()) ServerSetThrottle(0.f);
+}
+void APHCDuneBuggyPawn::HandleBrake(const FInputActionValue&)
+{
+	ThrottleInput = -1.f;
+	if (!HasAuthority()) ServerSetThrottle(-1.f);
+}
 void APHCDuneBuggyPawn::HandleBrakeRelease(const FInputActionValue&)
 {
-	if (ThrottleInput < 0.f) ThrottleInput = 0.f;
+	if (ThrottleInput < 0.f)
+	{
+		ThrottleInput = 0.f;
+		if (!HasAuthority()) ServerSetThrottle(0.f);
+	}
 }
-void APHCDuneBuggyPawn::HandleSteer(const FInputActionValue& Value) { SteeringInput = Value.Get<float>(); }
-void APHCDuneBuggyPawn::HandleSteerRelease(const FInputActionValue&) { SteeringInput = 0.f; }
+void APHCDuneBuggyPawn::HandleSteer(const FInputActionValue& Value)
+{
+	SteeringInput = Value.Get<float>();
+	if (!HasAuthority()) ServerSetSteering(SteeringInput);
+}
+void APHCDuneBuggyPawn::HandleSteerRelease(const FInputActionValue&)
+{
+	SteeringInput = 0.f;
+	if (!HasAuthority()) ServerSetSteering(0.f);
+}
 
 void APHCDuneBuggyPawn::HandleExitVehicle(const FInputActionValue&)
 {
@@ -594,12 +619,21 @@ void APHCDuneBuggyPawn::ServerFireMissile_Implementation()
 	FActorSpawnParameters SP;
 	SP.Owner = this;
 	SP.Instigator = GetInstigator();
+	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	APHCMissileProjectile* Proj = World->SpawnActor<APHCMissileProjectile>(
 		APHCMissileProjectile::StaticClass(), MuzzleLoc, MuzzleRot, SP);
 	if (Proj)
 	{
 		Proj->OwnerVehicle = this;
+		// Ignore collision with the firing vehicle (BeginPlay already ran, so set up here too).
+		TArray<UPrimitiveComponent*> MyComps;
+		GetComponents<UPrimitiveComponent>(MyComps);
+		for (UPrimitiveComponent* Comp : MyComps)
+		{
+			Proj->CollisionSphere->IgnoreComponentWhenMoving(Comp, true);
+			Comp->IgnoreComponentWhenMoving(Proj->CollisionSphere, true);
+		}
 	}
 }
 
@@ -607,4 +641,14 @@ void APHCDuneBuggyPawn::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(APHCDuneBuggyPawn, bIsOccupied);
+}
+
+void APHCDuneBuggyPawn::ServerSetThrottle_Implementation(float Value)
+{
+	ThrottleInput = Value;
+}
+
+void APHCDuneBuggyPawn::ServerSetSteering_Implementation(float Value)
+{
+	SteeringInput = Value;
 }

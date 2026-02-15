@@ -171,6 +171,14 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerFireMissile();
 
+	/** Server RPC: replicate throttle input from owning client to server. */
+	UFUNCTION(Server, Unreliable)
+	void ServerSetThrottle(float Value);
+
+	/** Server RPC: replicate steering input from owning client to server. */
+	UFUNCTION(Server, Unreliable)
+	void ServerSetSteering(float Value);
+
 	// -- Enhanced Input (created at runtime) --------------------------------
 
 	UPROPERTY(Transient)
