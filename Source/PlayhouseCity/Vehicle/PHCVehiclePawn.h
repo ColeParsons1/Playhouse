@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
+#include "Net/UnrealNetwork.h"
 #include "PHCVehiclePawn.generated.h"
 
 class UStaticMeshComponent;
@@ -34,6 +35,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void BeginPlay() override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// -- Components --------------------------------------------------------
 
@@ -143,7 +145,7 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "PHC|Vehicle")
 	float SteeringInput = 0.f;
 
-	UPROPERTY(BlueprintReadOnly, Category = "PHC|Vehicle")
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Vehicle")
 	bool bIsOccupied = false;
 
 	/** Vertical velocity when launched by a launch pad. */

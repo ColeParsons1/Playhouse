@@ -511,7 +511,7 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 	UWorld* World = GetWorld();
 	if (!World) return;
 
-	const FVector SpawnLoc = Character->GetActorLocation() + Character->GetActorForwardVector() * 50.f;
+	const FVector SpawnLoc = Character->GetActorLocation() + Character->GetActorForwardVector() * 300.f + FVector(0.f, 0.f, 50.f);
 	const FRotator SpawnRot(0.f, Character->GetActorRotation().Yaw, 0.f);
 
 	FActorSpawnParameters SP;

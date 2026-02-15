@@ -2,6 +2,7 @@
 
 #include "Vehicle/PHCDuneBuggyPawn.h"
 #include "PlayhouseCity.h"
+#include "Net/UnrealNetwork.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SpotLightComponent.h"
@@ -18,6 +19,7 @@
 #include "Engine/LocalPlayer.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/World.h"
+#include "Vehicle/PHCMissileProjectile.h"
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -26,6 +28,13 @@
 APHCDuneBuggyPawn::APHCDuneBuggyPawn()
 {
 	PrimaryActorTick.bCanEverTick = true;
+
+	// ---- Multiplayer replication (disabled for now) ----
+	// bReplicates = true;
+	// SetReplicateMovement(true);
+	// NetUpdateFrequency = 30.f;
+	// MinNetUpdateFrequency = 15.f;
+	// bAlwaysRelevant = true;
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(
 		TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -224,7 +233,7 @@ APHCDuneBuggyPawn::APHCDuneBuggyPawn()
 	CameraBoom->bInheritPitch = false;
 	CameraBoom->bInheritYaw = true;
 	CameraBoom->bInheritRoll = false;
-	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->bDoCollisionTest = false;
 	CameraBoom->bEnableCameraLag = true;
 	CameraBoom->CameraLagSpeed = 8.f;
 	CameraBoom->bEnableCameraRotationLag = true;
@@ -403,6 +412,9 @@ void APHCDuneBuggyPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// Tick missile cooldown regardless of occupancy.
+	FireCooldownRemaining = FMath::Max(0.f, FireCooldownRemaining - DeltaTime);
+
 	if (!bIsOccupied) return;
 
 	// ---- Speed update (non-linear – harder to gain speed near top) ----
@@ -454,99 +466,18 @@ void APHCDuneBuggyPawn::Tick(float DeltaTime)
 		if (WheelRR) WheelRR->SetRelativeRotation(RearRot);
 	}
 
-	// ---- Movement ----
-	constexpr float HoverHeight = 55.f; // slightly higher ride than Aventador
-	constexpr float LaunchImpulse = 6000.f;
-	constexpr float LaunchGravity = 1800.f;
-
-	FCollisionQueryParams TraceParams;
-	TraceParams.AddIgnoredActor(this);
-
-	auto DoGroundTrace = [&](const FVector& Pos, FHitResult& OutHit) -> bool
-	{
-		return GetWorld()->LineTraceSingleByChannel(OutHit,
-			FVector(Pos.X, Pos.Y, Pos.Z + 10000.f),
-			FVector(Pos.X, Pos.Y, -500.f),
-			ECC_Visibility, TraceParams);
-	};
-
+	// ---- Movement (flat ground -- no vertical trace) ----
 	if (FMath::Abs(CurrentSpeed) > 1.f)
 	{
 		const FVector Forward = GetActorForwardVector();
 		const FVector Delta = Forward * CurrentSpeed * DeltaTime;
-		const FVector CurrentLoc = GetActorLocation();
 
-		FHitResult GroundHit;
-		const bool bHitGround = DoGroundTrace(CurrentLoc + Delta, GroundHit);
-
-		// Detect launch pads.
-		if (LaunchVelocityZ == 0.f && bHitGround && GroundHit.GetActor() &&
-			GroundHit.GetActor()->ActorHasTag(TEXT("LaunchPad")))
-		{
-			LaunchVelocityZ = LaunchImpulse;
-		}
-
-		float NewZ = CurrentLoc.Z;
-
-		if (LaunchVelocityZ != 0.f)
-		{
-			LaunchVelocityZ -= LaunchGravity * DeltaTime;
-			NewZ += LaunchVelocityZ * DeltaTime;
-
-			if (bHitGround)
-			{
-				const float GroundZ = GroundHit.ImpactPoint.Z + HoverHeight;
-				if (NewZ <= GroundZ && LaunchVelocityZ <= 0.f)
-				{
-					NewZ = GroundZ;
-					LaunchVelocityZ = 0.f;
-				}
-			}
-		}
-		else
-		{
-			if (bHitGround)
-			{
-				const float TargetZ = GroundHit.ImpactPoint.Z + HoverHeight;
-				NewZ = FMath::FInterpTo(CurrentLoc.Z, TargetZ, DeltaTime, 20.f);
-			}
-		}
-
-		SetActorLocation(FVector(CurrentLoc.X, CurrentLoc.Y, NewZ));
-		AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), true);
-
-		// Pitch alignment.
-		FRotator Rot = GetActorRotation();
-		if (LaunchVelocityZ == 0.f && bHitGround)
-		{
-			const FVector Normal = GroundHit.ImpactNormal;
-			const FVector FwdFlat = Forward.GetSafeNormal2D();
-			const float SlopeDot = FVector::DotProduct(Normal, FwdFlat);
-			const float TargetPitch = FMath::RadiansToDegrees(FMath::Asin(-SlopeDot));
-			Rot.Pitch = FMath::FInterpTo(Rot.Pitch, TargetPitch, DeltaTime, 10.f);
-		}
-		else
-		{
-			const float AirPitch = FMath::Clamp(LaunchVelocityZ / 200.f, -30.f, 30.f);
-			Rot.Pitch = FMath::FInterpTo(Rot.Pitch, AirPitch, DeltaTime, 5.f);
-		}
-		SetActorRotation(Rot);
+		// Move horizontally (no sweep -- avoids collision with ground/buildings).
+		AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), false);
 	}
 	else
 	{
-		// Stationary: stay grounded.
-		FHitResult GroundHit;
-		const FVector Loc = GetActorLocation();
-		if (DoGroundTrace(Loc, GroundHit))
-		{
-			const float TargetZ = GroundHit.ImpactPoint.Z + HoverHeight;
-			if (FMath::Abs(Loc.Z - TargetZ) > 2.f)
-			{
-				SetActorLocation(FVector(Loc.X, Loc.Y,
-					FMath::FInterpTo(Loc.Z, TargetZ, DeltaTime, 8.f)));
-			}
-		}
-
+		// Flatten pitch when stationary.
 		FRotator Rot = GetActorRotation();
 		Rot.Pitch = FMath::FInterpTo(Rot.Pitch, 0.f, DeltaTime, 5.f);
 		SetActorRotation(Rot);
@@ -632,4 +563,48 @@ void APHCDuneBuggyPawn::SetHeadlightsEnabled(bool bEnabled)
 FVector APHCDuneBuggyPawn::GetExitLocation() const
 {
 	return GetActorLocation() + GetActorRightVector() * -300.f + FVector(0.f, 0.f, 100.f);
+}
+
+void APHCDuneBuggyPawn::FireMissile()
+{
+	if (FireCooldownRemaining > 0.f)
+	{
+		return;
+	}
+
+	FireCooldownRemaining = FireCooldown;
+
+	// Route through server RPC in multiplayer
+	ServerFireMissile();
+}
+
+void APHCDuneBuggyPawn::ServerFireMissile_Implementation()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FVector MuzzleLoc = GetActorLocation()
+		+ GetActorForwardVector() * 250.f
+		+ FVector(0.f, 0.f, 50.f);
+	const FRotator MuzzleRot = GetActorForwardVector().Rotation();
+
+	FActorSpawnParameters SP;
+	SP.Owner = this;
+	SP.Instigator = GetInstigator();
+
+	APHCMissileProjectile* Proj = World->SpawnActor<APHCMissileProjectile>(
+		APHCMissileProjectile::StaticClass(), MuzzleLoc, MuzzleRot, SP);
+	if (Proj)
+	{
+		Proj->OwnerVehicle = this;
+	}
+}
+
+void APHCDuneBuggyPawn::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(APHCDuneBuggyPawn, bIsOccupied);
 }

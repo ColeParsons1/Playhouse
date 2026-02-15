@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Net/UnrealNetwork.h"
 #include "PHCCityCharacter.generated.h"
 
 class USpringArmComponent;
@@ -14,11 +15,12 @@ class UPHCTouchInputComponent;
 struct FInputActionValue;
 
 /**
- * Third-person player character for the PlayhouseCity open world.
+ * First-person player character for the PlayhouseCity open world.
  *
- * Provides GTA-style over-the-shoulder camera, WASD + mouse look on desktop,
+ * Provides a first-person camera at eye height, WASD + mouse look on desktop,
  * and virtual joystick input on mobile via UPHCTouchInputComponent.
  * Uses the built-in UCharacterMovementComponent for walk, sprint, and jump.
+ * No visible character model -- purely first-person view.
  *
  * Enhanced Input assets (UInputAction, UInputMappingContext) are created
  * programmatically in BeginPlay -- no .uasset files required.
@@ -34,6 +36,7 @@ public:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// -- Components -----------------------------------------------------------
 
@@ -74,7 +77,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Movement")
 	float SprintSpeed = 600.f;
 
-	UPROPERTY(BlueprintReadOnly, Category = "PHC|Movement")
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Movement")
 	bool bIsSprinting = false;
 
 	/** Set by HandleInteract to defer vehicle entry to next Tick (avoids

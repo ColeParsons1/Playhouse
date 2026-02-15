@@ -122,6 +122,29 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "PHC|Auth")
 	void HandleLogout();
 
+	// -- Multiplayer session management ---------------------------------------
+
+	/** Host a listen-server game. Other players connect via this device's IP.
+	 *  Returns true if the listen server started successfully. */
+	UFUNCTION(BlueprintCallable, Category = "PHC|Multiplayer")
+	bool HostGame();
+
+	/** Join a game at the given IP address (e.g., "192.168.1.5"). */
+	UFUNCTION(BlueprintCallable, Category = "PHC|Multiplayer")
+	void JoinGame(const FString& IPAddress);
+
+	/** Leave the current multiplayer session and return to single-player. */
+	UFUNCTION(BlueprintCallable, Category = "PHC|Multiplayer")
+	void LeaveGame();
+
+	/** True when hosting or connected to a multiplayer session. */
+	UPROPERTY(BlueprintReadOnly, Category = "PHC|Multiplayer")
+	bool bInMultiplayerSession = false;
+
+	/** True when this instance is the host (listen server). */
+	UPROPERTY(BlueprintReadOnly, Category = "PHC|Multiplayer")
+	bool bIsHost = false;
+
 private:
 	// -- Owned subsystem instances (outer = this) -----------------------------
 

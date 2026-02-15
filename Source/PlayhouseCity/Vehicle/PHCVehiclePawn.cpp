@@ -2,6 +2,7 @@
 
 #include "Vehicle/PHCVehiclePawn.h"
 #include "PlayhouseCity.h"
+#include "Net/UnrealNetwork.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SpotLightComponent.h"
@@ -26,6 +27,13 @@
 APHCVehiclePawn::APHCVehiclePawn()
 {
 	PrimaryActorTick.bCanEverTick = true;
+
+	// ---- Multiplayer replication (disabled for now) ----
+	// bReplicates = true;
+	// SetReplicateMovement(true);
+	// NetUpdateFrequency = 30.f;
+	// MinNetUpdateFrequency = 15.f;
+	// bAlwaysRelevant = true;
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(
 		TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -225,7 +233,7 @@ APHCVehiclePawn::APHCVehiclePawn()
 	CameraBoom->bInheritPitch = false;
 	CameraBoom->bInheritYaw = true;
 	CameraBoom->bInheritRoll = false;
-	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->bDoCollisionTest = false;
 	CameraBoom->bEnableCameraLag = true;
 	CameraBoom->CameraLagSpeed = 8.f;
 	CameraBoom->bEnableCameraRotationLag = true;
@@ -476,108 +484,17 @@ void APHCVehiclePawn::Tick(float DeltaTime)
 		if (WheelRR) WheelRR->SetRelativeRotation(RearRot);
 	}
 
-	// ---- Movement ----
-	constexpr float HoverHeight = 50.f;
-	constexpr float LaunchImpulse = 6000.f;
-	constexpr float LaunchGravity = 1800.f;
-
-	FCollisionQueryParams TraceParams;
-	TraceParams.AddIgnoredActor(this);
-
-	// Helper: full ground trace returning hit result.
-	auto DoGroundTrace = [&](const FVector& Pos, FHitResult& OutHit) -> bool
-	{
-		return GetWorld()->LineTraceSingleByChannel(OutHit,
-			FVector(Pos.X, Pos.Y, Pos.Z + 10000.f),
-			FVector(Pos.X, Pos.Y, -500.f),
-			ECC_Visibility, TraceParams);
-	};
-
+	// ---- Movement (flat ground -- no vertical trace) ----
 	if (FMath::Abs(CurrentSpeed) > 1.f)
 	{
 		const FVector Forward = GetActorForwardVector();
 		const FVector Delta = Forward * CurrentSpeed * DeltaTime;
-		const FVector CurrentLoc = GetActorLocation();
 
-		// Ground trace at destination.
-		FHitResult GroundHit;
-		const bool bHitGround = DoGroundTrace(CurrentLoc + Delta, GroundHit);
-
-		// Detect launch pads (only when grounded).
-		if (LaunchVelocityZ == 0.f && bHitGround && GroundHit.GetActor() &&
-			GroundHit.GetActor()->ActorHasTag(TEXT("LaunchPad")))
-		{
-			LaunchVelocityZ = LaunchImpulse;
-		}
-
-		float NewZ = CurrentLoc.Z;
-
-		if (LaunchVelocityZ != 0.f)
-		{
-			// Airborne: parabolic arc.
-			LaunchVelocityZ -= LaunchGravity * DeltaTime;
-			NewZ += LaunchVelocityZ * DeltaTime;
-
-			// Land when we descend to ground level.
-			if (bHitGround)
-			{
-				const float GroundZ = GroundHit.ImpactPoint.Z + HoverHeight;
-				if (NewZ <= GroundZ && LaunchVelocityZ <= 0.f)
-				{
-					NewZ = GroundZ;
-					LaunchVelocityZ = 0.f;
-				}
-			}
-		}
-		else
-		{
-			// Grounded: follow terrain surface.
-			if (bHitGround)
-			{
-				const float TargetZ = GroundHit.ImpactPoint.Z + HoverHeight;
-				NewZ = FMath::FInterpTo(CurrentLoc.Z, TargetZ, DeltaTime, 20.f);
-			}
-		}
-
-		// Apply Z first (prevents collision box hitting ramp/pad edges).
-		SetActorLocation(FVector(CurrentLoc.X, CurrentLoc.Y, NewZ));
-		// Move horizontally with sweep (collides with building walls).
-		AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), true);
-
-		// Pitch alignment.
-		FRotator Rot = GetActorRotation();
-		if (LaunchVelocityZ == 0.f && bHitGround)
-		{
-			// Grounded: align to surface slope.
-			const FVector Normal = GroundHit.ImpactNormal;
-			const FVector FwdFlat = Forward.GetSafeNormal2D();
-			const float SlopeDot = FVector::DotProduct(Normal, FwdFlat);
-			const float TargetPitch = FMath::RadiansToDegrees(FMath::Asin(-SlopeDot));
-			Rot.Pitch = FMath::FInterpTo(Rot.Pitch, TargetPitch, DeltaTime, 10.f);
-		}
-		else
-		{
-			// Airborne: nose up/down based on vertical velocity.
-			const float AirPitch = FMath::Clamp(LaunchVelocityZ / 200.f, -30.f, 30.f);
-			Rot.Pitch = FMath::FInterpTo(Rot.Pitch, AirPitch, DeltaTime, 5.f);
-		}
-		SetActorRotation(Rot);
+		// Move horizontally (no sweep -- avoids collision with ground/buildings).
+		AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), false);
 	}
 	else
 	{
-		// Stationary: stay grounded.
-		FHitResult GroundHit;
-		const FVector Loc = GetActorLocation();
-		if (DoGroundTrace(Loc, GroundHit))
-		{
-			const float TargetZ = GroundHit.ImpactPoint.Z + HoverHeight;
-			if (FMath::Abs(Loc.Z - TargetZ) > 2.f)
-			{
-				SetActorLocation(FVector(Loc.X, Loc.Y,
-					FMath::FInterpTo(Loc.Z, TargetZ, DeltaTime, 8.f)));
-			}
-		}
-
 		// Flatten pitch when stationary.
 		FRotator Rot = GetActorRotation();
 		Rot.Pitch = FMath::FInterpTo(Rot.Pitch, 0.f, DeltaTime, 5.f);
@@ -681,4 +598,10 @@ void APHCVehiclePawn::SetHeadlightsEnabled(bool bEnabled)
 FVector APHCVehiclePawn::GetExitLocation() const
 {
 	return GetActorLocation() + GetActorRightVector() * -300.f + FVector(0.f, 0.f, 100.f);
+}
+
+void APHCVehiclePawn::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(APHCVehiclePawn, bIsOccupied);
 }

@@ -50,11 +50,12 @@ void UPHCTouchInputComponent::BeginPlay()
 	}
 
 	APlayerController* PC = Cast<APlayerController>(OwnerPawn->GetController());
-	if (PC)
+	if (PC && PC->InputComponent)
 	{
 		PC->InputComponent->BindTouch(IE_Pressed, this, &UPHCTouchInputComponent::HandleTouchStarted);
 		PC->InputComponent->BindTouch(IE_Repeat, this, &UPHCTouchInputComponent::HandleTouchMoved);
 		PC->InputComponent->BindTouch(IE_Released, this, &UPHCTouchInputComponent::HandleTouchEnded);
+		bTouchBound = true;
 
 		UE_LOG(LogPlayhouseCity, Log,
 			TEXT("PHCTouchInputComponent: Touch input bound on mobile platform."));
@@ -69,6 +70,26 @@ void UPHCTouchInputComponent::TickComponent(float DeltaTime, ELevelTick TickType
                                              FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// Lazy bind: if we haven't bound touch events yet, try now
+	if (bIsMobilePlatform && MoveFingerIndex < 0 && LookFingerIndex < 0 && !bTouchBound)
+	{
+		APawn* OwnerPawn = Cast<APawn>(GetOwner());
+		if (OwnerPawn)
+		{
+			APlayerController* PC = Cast<APlayerController>(OwnerPawn->GetController());
+			if (PC && PC->InputComponent)
+			{
+				PC->InputComponent->BindTouch(IE_Pressed, this, &UPHCTouchInputComponent::HandleTouchStarted);
+				PC->InputComponent->BindTouch(IE_Repeat, this, &UPHCTouchInputComponent::HandleTouchMoved);
+				PC->InputComponent->BindTouch(IE_Released, this, &UPHCTouchInputComponent::HandleTouchEnded);
+				bTouchBound = true;
+
+				UE_LOG(LogPlayhouseCity, Log,
+					TEXT("PHCTouchInputComponent: Touch input late-bound in TickComponent."));
+			}
+		}
+	}
 
 	// Compute look delta from previous to current position.
 	if (LookFingerIndex >= 0)

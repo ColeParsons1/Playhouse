@@ -21,14 +21,14 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogTempleRunHUD, Log, All);
 
-// -- Color palette (anonymous namespace to avoid unity build conflicts) ------
-namespace
+// -- Color palette (named namespace to avoid unity build conflicts) ----------
+namespace TempleRunColors
 {
-const FLinearColor RunnerColor(0.15f, 0.75f, 0.20f, 1.f);       // Green runner
-const FLinearColor ObsLowColor(0.85f, 0.30f, 0.10f, 1.f);       // Orange-red (jump over)
-const FLinearColor ObsHighColor(0.70f, 0.10f, 0.70f, 1.f);      // Purple (slide under)
-const FLinearColor ObsBlockColor(0.50f, 0.50f, 0.50f, 1.f);     // Gray (lane block)
-const FLinearColor CoinColor(1.f, 0.85f, 0.f, 1.f);             // Gold coins
+static const FLinearColor RunnerColor(0.15f, 0.75f, 0.20f, 1.f);       // Green runner
+static const FLinearColor ObsLowColor(0.85f, 0.30f, 0.10f, 1.f);       // Orange-red (jump over)
+static const FLinearColor ObsHighColor(0.70f, 0.10f, 0.70f, 1.f);      // Purple (slide under)
+static const FLinearColor ObsBlockColor(0.50f, 0.50f, 0.50f, 1.f);     // Gray (lane block)
+static const FLinearColor CoinColor(1.f, 0.85f, 0.f, 1.f);             // Gold coins
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@ bool UTempleRunHUD::Initialize()
 
 	RunnerWidget = WidgetTree->ConstructWidget<UBorder>(
 		UBorder::StaticClass(), TEXT("RunnerWidget"));
-	RunnerWidget->SetBrushColor(RunnerColor);
+	RunnerWidget->SetBrushColor(TempleRunColors::RunnerColor);
 	UCanvasPanelSlot* RunnerSlot = GameCanvas->AddChildToCanvas(RunnerWidget);
 	RunnerSlot->SetAnchors(FAnchors(0.f, 0.85f, 0.f, 0.85f));
 	RunnerSlot->SetAlignment(FVector2D(0.5f, 0.5f));
@@ -224,7 +224,7 @@ bool UTempleRunHUD::Initialize()
 		UTextBlock::StaticClass(), TEXT("CoinLabel"));
 	CoinLabel->SetText(FText::FromString(TEXT("Coins: ")));
 	CoinLabel->SetFont(StatsLabelFont);
-	CoinLabel->SetColorAndOpacity(FSlateColor(CoinColor));
+	CoinLabel->SetColorAndOpacity(FSlateColor(TempleRunColors::CoinColor));
 	UHorizontalBoxSlot* CLSlot = CoinRow->AddChildToHorizontalBox(CoinLabel);
 	CLSlot->SetVerticalAlignment(VAlign_Center);
 
@@ -232,7 +232,7 @@ bool UTempleRunHUD::Initialize()
 		UTextBlock::StaticClass(), TEXT("CoinCountText"));
 	CoinCountText->SetText(FText::FromString(TEXT("0")));
 	CoinCountText->SetFont(StatsFont);
-	CoinCountText->SetColorAndOpacity(FSlateColor(CoinColor));
+	CoinCountText->SetColorAndOpacity(FSlateColor(TempleRunColors::CoinColor));
 	UHorizontalBoxSlot* CCSlot = CoinRow->AddChildToHorizontalBox(CoinCountText);
 	CCSlot->SetVerticalAlignment(VAlign_Center);
 
@@ -452,7 +452,7 @@ void UTempleRunHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		}
 		else
 		{
-			RunnerWidget->SetBrushColor(RunnerColor);
+			RunnerWidget->SetBrushColor(TempleRunColors::RunnerColor);
 		}
 	}
 
@@ -687,15 +687,15 @@ void UTempleRunHUD::SpawnObstacleVisual(int32 Lane, EPHCObstacleType Type, float
 	switch (Type)
 	{
 	case EPHCObstacleType::Low:
-		ObsColor = ObsLowColor;
+		ObsColor = TempleRunColors::ObsLowColor;
 		break;
 	case EPHCObstacleType::High:
-		ObsColor = ObsHighColor;
+		ObsColor = TempleRunColors::ObsHighColor;
 		break;
 	case EPHCObstacleType::BlockLeft:
 	case EPHCObstacleType::BlockCenter:
 	case EPHCObstacleType::BlockRight:
-		ObsColor = ObsBlockColor;
+		ObsColor = TempleRunColors::ObsBlockColor;
 		break;
 	}
 	ObsImage->SetColorAndOpacity(ObsColor);
@@ -723,7 +723,7 @@ void UTempleRunHUD::SpawnCoinVisual(int32 Lane, float ZPosition)
 		return;
 	}
 
-	CoinImage->SetColorAndOpacity(CoinColor);
+	CoinImage->SetColorAndOpacity(TempleRunColors::CoinColor);
 
 	UCanvasPanelSlot* Slot = GameCanvas->AddChildToCanvas(CoinImage);
 	if (Slot)
@@ -840,7 +840,7 @@ UBorder* UTempleRunHUD::GetOrCreateObstacleWidget(int32 Index)
 		UBorder* NewObs = WidgetTree->ConstructWidget<UBorder>(
 			UBorder::StaticClass(),
 			*FString::Printf(TEXT("TempleObs_%d"), ObstacleWidgets.Num()));
-		NewObs->SetBrushColor(ObsBlockColor);
+		NewObs->SetBrushColor(TempleRunColors::ObsBlockColor);
 		NewObs->SetVisibility(ESlateVisibility::Collapsed);
 		GameCanvas->AddChildToCanvas(NewObs);
 		ObstacleWidgets.Add(NewObs);
@@ -889,9 +889,9 @@ void UTempleRunHUD::UpdateObstacleWidgets()
 			FLinearColor Color;
 			switch (Obs.Type)
 			{
-			case EPHCObstacleType::Low:     Color = ObsLowColor; break;
-			case EPHCObstacleType::High:    Color = ObsHighColor; break;
-			default:                        Color = ObsBlockColor; break;
+			case EPHCObstacleType::Low:     Color = TempleRunColors::ObsLowColor; break;
+			case EPHCObstacleType::High:    Color = TempleRunColors::ObsHighColor; break;
+			default:                        Color = TempleRunColors::ObsBlockColor; break;
 			}
 			Widget->SetBrushColor(Color);
 
@@ -921,7 +921,7 @@ void UTempleRunHUD::UpdateObstacleWidgets()
 			if (!Widget) continue;
 
 			Widget->SetVisibility(ESlateVisibility::Visible);
-			Widget->SetBrushColor(CoinColor);
+			Widget->SetBrushColor(TempleRunColors::CoinColor);
 
 			UCanvasPanelSlot* Slot = Cast<UCanvasPanelSlot>(Widget->Slot);
 			if (Slot)

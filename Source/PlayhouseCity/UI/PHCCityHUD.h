@@ -80,6 +80,11 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UButton> InteractButton;
 
+	// -- Missile fire button (shown when driving dune buggy) ----------------
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UButton> FireButton;
+
 	// -- Driving mode widgets (mobile only) --------------------------------
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
@@ -126,7 +131,34 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UButton> SelectBuggyBtn;
 
+	// -- Multiplayer UI -------------------------------------------------------
+
+	UPROPERTY()
+	TObjectPtr<UButton> HostButton;
+
+	UPROPERTY()
+	TObjectPtr<UButton> JoinButton;
+
+	UPROPERTY()
+	TObjectPtr<UBorder> JoinOverlay;
+
+	UPROPERTY()
+	TObjectPtr<UButton> JoinConnectButton;
+
+	UPROPERTY()
+	TObjectPtr<UButton> JoinCancelButton;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> PlayerCountText;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> IPInputText;
+
+	/** The IP address string being entered by the user. */
+	FString EnteredIP;
+
 	bool bDrivingMode = false;
+	bool bFireHeld = false;
 
 private:
 	UFUNCTION()
@@ -157,10 +189,28 @@ private:
 	void OnExitVehicleClicked();
 
 	UFUNCTION()
+	void OnFireButtonPressed();
+
+	UFUNCTION()
+	void OnFireButtonReleased();
+
+	UFUNCTION()
 	void OnSelectAventador();
 
 	UFUNCTION()
 	void OnSelectBuggy();
+
+	UFUNCTION()
+	void OnHostButtonClicked();
+
+	UFUNCTION()
+	void OnJoinButtonClicked();
+
+	UFUNCTION()
+	void OnJoinConnectClicked();
+
+	UFUNCTION()
+	void OnJoinCancelClicked();
 
 	void ShowVehicleSelection();
 	void HideVehicleSelection();

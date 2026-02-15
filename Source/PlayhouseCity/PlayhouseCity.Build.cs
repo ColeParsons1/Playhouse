@@ -32,7 +32,8 @@ public class PlayhouseCity : ModuleRules
 			"OnlineSubsystemUtils",
 			"PhysicsCore",
 			"NavigationSystem",
-			"GameplayTags"
+			"GameplayTags",
+			"Networking"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]

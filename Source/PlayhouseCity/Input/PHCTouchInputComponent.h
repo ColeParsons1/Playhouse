@@ -86,6 +86,9 @@ private:
 	/** True on mobile platforms. */
 	bool bIsMobilePlatform = false;
 
+	/** True once touch events have been successfully bound. */
+	bool bTouchBound = false;
+
 	/** Process a touch start event. */
 	void HandleTouchStarted(ETouchIndex::Type FingerIndex, FVector Location);
 

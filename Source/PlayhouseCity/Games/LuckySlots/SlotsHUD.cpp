@@ -33,7 +33,7 @@ bool USlotsHUD::Initialize()
 
 	// Casino colour palette
 	const FLinearColor DarkPurpleBg(0.15f, 0.05f, 0.25f, 1.f);
-	const FLinearColor GoldAccent(1.f, 0.843f, 0.f, 1.f);         // #FFD700
+	const FLinearColor SlotsGoldAccent(1.f, 0.843f, 0.f, 1.f);     // #FFD700
 	const FLinearColor ReelBgColor(0.08f, 0.02f, 0.14f, 1.f);
 	const FLinearColor SpinBtnNormal(0.7f, 0.55f, 0.f, 1.f);      // Dark gold
 	const FLinearColor SpinBtnHover(0.85f, 0.7f, 0.1f, 1.f);
@@ -83,7 +83,7 @@ bool USlotsHUD::Initialize()
 		UTextBlock::StaticClass(), TEXT("SlotsTitleText"));
 	TitleText->SetText(FText::FromString(TEXT("LUCKY SLOTS")));
 	TitleText->SetFont(TitleFont);
-	TitleText->SetColorAndOpacity(FSlateColor(GoldAccent));
+	TitleText->SetColorAndOpacity(FSlateColor(SlotsGoldAccent));
 	TitleText->SetJustification(ETextJustify::Center);
 
 	UVerticalBoxSlot* TitleSlot = ContentVBox->AddChildToVerticalBox(TitleText);
@@ -217,7 +217,7 @@ bool USlotsHUD::Initialize()
 		UTextBlock::StaticClass(), TEXT("SlotsBetText"));
 	BetText->SetText(FText::FromString(TEXT("Bet: 10")));
 	BetText->SetFont(InfoFont);
-	BetText->SetColorAndOpacity(FSlateColor(GoldAccent));
+	BetText->SetColorAndOpacity(FSlateColor(SlotsGoldAccent));
 	BetText->SetJustification(ETextJustify::Center);
 	{
 		UHorizontalBoxSlot* S = BetRow->AddChildToHorizontalBox(BetText);

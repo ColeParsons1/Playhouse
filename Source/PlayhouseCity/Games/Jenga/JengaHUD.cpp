@@ -69,9 +69,9 @@ bool UJengaHUD::Initialize()
 	// -- Colors ---------------------------------------------------------------
 	const FLinearColor DarkBrownBg(0.15f, 0.09f, 0.04f, 0.95f);
 	const FLinearColor HighlightYellow(1.f, 0.85f, 0.1f, 0.7f);
-	const FLinearColor BtnNormal(0.45f, 0.3f, 0.12f, 1.f);
-	const FLinearColor BtnHover(0.6f, 0.4f, 0.18f, 1.f);
-	const FLinearColor BtnPress(0.35f, 0.22f, 0.08f, 1.f);
+	const FLinearColor JengaBtnNorm(0.45f, 0.3f, 0.12f, 1.f);
+	const FLinearColor JengaBtnHov(0.6f, 0.4f, 0.18f, 1.f);
+	const FLinearColor JengaBtnPrs(0.35f, 0.22f, 0.08f, 1.f);
 
 	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
 	if (!RootCanvas)
@@ -291,11 +291,11 @@ bool UJengaHUD::Initialize()
 	BtnRowSlot->SetHorizontalAlignment(HAlign_Center);
 	BtnRowSlot->SetPadding(FMargin(0.f, 4.f, 0.f, 8.f));
 
-	PullLeftButton = MakeButton(TEXT("PullLeftBtn"), TEXT("PULL LEFT"), BtnNormal, BtnHover, BtnPress);
+	PullLeftButton = MakeButton(TEXT("PullLeftBtn"), TEXT("PULL LEFT"), JengaBtnNorm, JengaBtnHov, JengaBtnPrs);
 	UHorizontalBoxSlot* PLSlot = BtnRow->AddChildToHorizontalBox(PullLeftButton);
 	PLSlot->SetPadding(FMargin(4.f, 0.f));
 
-	PullRightButton = MakeButton(TEXT("PullRightBtn"), TEXT("PULL RIGHT"), BtnNormal, BtnHover, BtnPress);
+	PullRightButton = MakeButton(TEXT("PullRightBtn"), TEXT("PULL RIGHT"), JengaBtnNorm, JengaBtnHov, JengaBtnPrs);
 	UHorizontalBoxSlot* PRSlot = BtnRow->AddChildToHorizontalBox(PullRightButton);
 	PRSlot->SetPadding(FMargin(4.f, 0.f));
 

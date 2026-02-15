@@ -4,6 +4,8 @@
 #include "PlayhouseCity.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
+#include "Engine/GameEngine.h"
+#include "Engine/NetDriver.h"
 #include "Kismet/GameplayStatics.h"
 
 // Subsystem headers -- uncomment each as the corresponding class is created.
@@ -92,6 +94,98 @@ void UPHCGameInstance::HandleLogout()
 	LocalPlayerProfile = FPHCPlayerProfile();
 
 	OnLogoutComplete.Broadcast();
+}
+
+// ---------------------------------------------------------------------------
+// Multiplayer session management
+// ---------------------------------------------------------------------------
+
+bool UPHCGameInstance::HostGame()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		UE_LOG(LogPlayhouseCity, Error, TEXT("HostGame: No world available."));
+		return false;
+	}
+
+	if (bInMultiplayerSession)
+	{
+		UE_LOG(LogPlayhouseCity, Warning, TEXT("HostGame: Already in a multiplayer session."));
+		return false;
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("HostGame: Starting listen server on current world..."));
+
+	// Use UWorld::Listen() to open a listen socket on the CURRENT world,
+	// avoiding a full ServerTravel map reload (which is too heavy on iOS
+	// with thousands of procedural city actors).
+	FURL ListenURL;
+	ListenURL.Port = 7777;
+
+	if (World->Listen(ListenURL))
+	{
+		bInMultiplayerSession = true;
+		bIsHost = true;
+		UE_LOG(LogPlayhouseCity, Log, TEXT("HostGame: Listen server started on port 7777. Net mode: %d"), (int32)World->GetNetMode());
+		return true;
+	}
+	else
+	{
+		UE_LOG(LogPlayhouseCity, Error, TEXT("HostGame: Failed to start listen server."));
+		return false;
+	}
+}
+
+void UPHCGameInstance::JoinGame(const FString& IPAddress)
+{
+	if (IPAddress.IsEmpty())
+	{
+		UE_LOG(LogPlayhouseCity, Warning, TEXT("JoinGame: Empty IP address."));
+		return;
+	}
+
+	APlayerController* PC = GetFirstLocalPlayerController();
+	if (!PC)
+	{
+		UE_LOG(LogPlayhouseCity, Error, TEXT("JoinGame: No local player controller."));
+		return;
+	}
+
+	FString TravelURL = FString::Printf(TEXT("%s:7777"), *IPAddress);
+	UE_LOG(LogPlayhouseCity, Log, TEXT("JoinGame: Connecting to %s..."), *TravelURL);
+
+	PC->ClientTravel(TravelURL, TRAVEL_Absolute);
+
+	bInMultiplayerSession = true;
+	bIsHost = false;
+}
+
+void UPHCGameInstance::LeaveGame()
+{
+	UE_LOG(LogPlayhouseCity, Log, TEXT("LeaveGame: Disconnecting from session..."));
+
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		if (bIsHost)
+		{
+			// Host: just travel to the map without ?listen
+			World->ServerTravel(TEXT("/Game/Maps/City_Main"));
+		}
+		else
+		{
+			// Client: disconnect
+			APlayerController* PC = GetFirstLocalPlayerController();
+			if (PC)
+			{
+				PC->ClientTravel(TEXT("/Game/Maps/City_Main"), TRAVEL_Absolute);
+			}
+		}
+	}
+
+	bInMultiplayerSession = false;
+	bIsHost = false;
 }
 
 // ---------------------------------------------------------------------------

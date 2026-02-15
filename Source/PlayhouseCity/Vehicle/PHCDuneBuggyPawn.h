@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
+#include "Net/UnrealNetwork.h"
 #include "PHCDuneBuggyPawn.generated.h"
 
 class UStaticMeshComponent;
@@ -34,6 +35,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void BeginPlay() override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// -- Components --------------------------------------------------------
 
@@ -153,7 +155,7 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "PHC|Vehicle")
 	float SteeringInput = 0.f;
 
-	UPROPERTY(BlueprintReadOnly, Category = "PHC|Vehicle")
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Vehicle")
 	bool bIsOccupied = false;
 
 	float LaunchVelocityZ = 0.f;
@@ -161,6 +163,13 @@ public:
 	void SetBodyColor(const FLinearColor& Color);
 	void SetHeadlightsEnabled(bool bEnabled);
 	FVector GetExitLocation() const;
+
+	/** Fire a missile projectile forward from the buggy. */
+	void FireMissile();
+
+	/** Server RPC: spawn the missile on the server so it replicates to all clients. */
+	UFUNCTION(Server, Reliable)
+	void ServerFireMissile();
 
 	// -- Enhanced Input (created at runtime) --------------------------------
 
@@ -200,4 +209,7 @@ private:
 	TArray<TObjectPtr<UStaticMeshComponent>> MetalFrameMeshes;
 
 	float WheelSpinAngle = 0.f;
+
+	float FireCooldownRemaining = 0.f;
+	static constexpr float FireCooldown = 0.5f;
 };

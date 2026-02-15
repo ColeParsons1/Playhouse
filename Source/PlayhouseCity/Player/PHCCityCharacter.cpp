@@ -14,6 +14,8 @@
 #include "InputModifiers.h"
 #include "Engine/LocalPlayer.h"
 #include "Core/PHCPlayerController.h"
+#include "Net/UnrealNetwork.h"
+#include "Engine/World.h"
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -58,6 +60,7 @@ APHCCityCharacter::APHCCityCharacter()
 
 	// ---- Touch input component -------------------------------------------
 	TouchInput = CreateDefaultSubobject<UPHCTouchInputComponent>(TEXT("TouchInput"));
+
 }
 
 // ---------------------------------------------------------------------------
@@ -267,11 +270,11 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	}
 
 	// Apply movement from the virtual joystick.
-	AController* MyController = GetController();
+	// Use controller rotation for direction (first-person camera follows controller rotation).
 	const FVector2D MoveInput = TouchInput->GetMovementInput();
-	if (MyController && !MoveInput.IsNearlyZero())
+	if (!MoveInput.IsNearlyZero())
 	{
-		const FRotator YawRotation(0.f, MyController->GetControlRotation().Yaw, 0.f);
+		const FRotator YawRotation(0.f, GetControlRotation().Yaw, 0.f);
 		const FVector ForwardDir = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 		const FVector RightDir = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
@@ -362,4 +365,14 @@ void APHCCityCharacter::HandleInteract(const FInputActionValue& /*Value*/)
 	// during Enhanced Input evaluation (which would crash HandleMove if
 	// both MoveAction and InteractAction trigger in the same frame).
 	bPendingVehicleInteract = true;
+}
+
+// ---------------------------------------------------------------------------
+// Replication
+// ---------------------------------------------------------------------------
+
+void APHCCityCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(APHCCityCharacter, bIsSprinting);
 }
