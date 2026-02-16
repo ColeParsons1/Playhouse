@@ -6,6 +6,11 @@ PlayhouseCity is a **UE 5.7 iOS multiplayer open-world city game** built entirel
 
 **Key design principle:** Zero `.uasset` dependencies for gameplay code. All input mappings, materials, meshes, and widgets are created via `NewObject<>` / `CreateDefaultSubobject<>` at runtime.
 
+**Three custom materials** are auto-created by the module startup (`PlayhouseCity.cpp`):
+- `M_PHCColor` — opaque PBR (BaseColor, Metallic, Roughness, EmissiveColor)
+- `M_PHCGlass` — translucent (BaseColor, Opacity, Metallic, Roughness, EmissiveColor)
+- `M_PHCClearCoat` — automotive clear coat paint (BaseColor, Metallic, Roughness, ClearCoat, ClearCoatRoughness, EmissiveColor)
+
 ---
 
 ## Build & Deploy
@@ -57,7 +62,7 @@ UPHCCitySubsystem::OnWorldBeginPlay() (runs on ALL machines independently)
      -> SpawnCityGrid() (24x24 block grid with roads, sidewalks, buildings)
      -> SpawnSkyscrapers() (27 unique downtown towers)
      -> SpawnStreetLights(), SpawnPalmTrees(), SpawnRamps()
-     -> SpawnOutskirts(), SpawnHills(), SpawnStarfield()
+     -> SpawnOutskirts(), SpawnHills(), SpawnStarfield(), SpawnCloudLayer()
 
 APHCPlayerController::BeginPlay()
   -> EnterWorldMode()
@@ -70,14 +75,14 @@ APHCPlayerController::BeginPlay()
 | Class | File | Role |
 |-------|------|------|
 | `APHCCityGameMode` | `Core/PHCCityGameMode.cpp` | Server game mode. Sets default classes, handles PostLogin/Logout. Tracks spawned vehicles. |
-| `UPHCCitySubsystem` | `Core/PHCCitySubsystem.cpp` | **Largest file (~4800 lines).** `UTickableWorldSubsystem` that generates the entire city procedurally and runs the day/night cycle. Runs identically on server and all clients (deterministic seed). |
+| `UPHCCitySubsystem` | `Core/PHCCitySubsystem.cpp` | **Largest file (~5500 lines).** `UTickableWorldSubsystem` that generates the entire city procedurally and runs the day/night cycle. Runs identically on server and all clients (deterministic seed). |
 | `APHCPlayerController` | `Core/PHCPlayerController.cpp` | Player controller. Manages UI screens (auth, main HUD, city HUD), mini-game launching, and vehicle entry/exit. |
 | `UPHCGameInstance` | `Core/PHCGameInstance.cpp` | Root game instance. Owns HTTP/WebSocket/Auth/Economy/Theme subsystems. Handles multiplayer session management (HostGame/JoinGame/LeaveGame). |
 | `APHCGameState` | `Core/PHCGameState.cpp` | Replicates `ServerDayNightTime` so all clients synchronize lighting. |
 | `APHCCityCharacter` | `Player/PHCCityCharacter.cpp` | Third-person character with spring arm camera. Enhanced Input for WASD/gamepad/touch. Has `UPHCTouchInputComponent` for mobile virtual joystick. |
 | `APHCPlayerState` | `Player/PHCPlayerState.cpp` | Per-player replicated state: profile, room ID, ready status. |
-| `APHCVehiclePawn` | `Vehicle/PHCVehiclePawn.cpp` | Lamborghini Aventador. Arcade physics (no UE vehicle system). Built from ~20 static mesh components. Own camera boom + Enhanced Input context. |
-| `APHCDuneBuggyPawn` | `Vehicle/PHCDuneBuggyPawn.cpp` | Off-road buggy. Similar to Aventador but with roll cage, brush guard, missile launcher. |
+| `APHCVehiclePawn` | `Vehicle/PHCVehiclePawn.cpp` | Lamborghini Aventador. Arcade physics (no UE vehicle system). Built from ~20 static mesh components. ClearCoat shading model for automotive paint. Own camera boom + Enhanced Input context. |
+| `APHCDuneBuggyPawn` | `Vehicle/PHCDuneBuggyPawn.cpp` | Off-road buggy. Similar to Aventador but with roll cage, brush guard, missile launcher. ClearCoat paint. |
 | `APHCMissileProjectile` | `Vehicle/PHCMissileProjectile.cpp` | Projectile fired from dune buggy. Uses `UProjectileMovementComponent`. |
 | `UPHCCityHUD` | `UI/PHCCityHUD.cpp` | Main in-game HUD. All widgets constructed in `Initialize()` via `WidgetTree->ConstructWidget<>`. Has currency display, vehicle selection popup, multiplayer Host/Join buttons, mobile touch controls for walking and driving. |
 | `UPHCTouchInputComponent` | `Input/PHCTouchInputComponent.cpp` | Mobile virtual joystick (left half = move, right half = camera look). Attaches to character. |
@@ -88,15 +93,25 @@ The city is a **24x24 grid** of blocks. Each block is ~3600 UU. Block types are 
 
 - **Downtown core (blocks 7-10, 10-15):** 27 unique skyscrapers with architectural details
 - **Midtown:** Tall commercial buildings, institutional buildings
-- **Residential (outer ring):** Houses with pitched roofs, lawns, garages, chimneys
-- **Waterfront:** Beach, bay, ocean with sand and shallow water
-- **Industrial:** Warehouses with loading docks
-- **Parks:** Trees, paths, fountains scattered throughout
+- **Residential (outer ring):** Brick houses with pitched roofs, lawns, garages, cylinder chimneys with cone caps, corner pilasters, foundation bush spheres, doorway arches
+- **Waterfront:** Beach, bay, ocean with wave animation
+- **Industrial:** Warehouses with loading docks, cylinder smokestacks with cone caps
+- **Parks:** Trees, paths, fountains, hedge sphere rows, cone topiary trees
 - **Arts district:** Buildings with murals and colorful walls
 
 Each block has roads (dark asphalt) on all four sides with sidewalks. Street lights line intersections. Palm trees along boulevards.
 
-**Day/night cycle** runs in `Tick()`: sun rotates, sky light recaptures, fog color shifts, window lights toggle on at night with warm glow.
+**Day/night cycle** runs in `Tick()` with GTA V-style graphics:
+- Sun rotates with god rays (`bEnableLightShaftBloom`)
+- 4-phase color grading (Dawn/Day/Sunset/Night) via `ColorGain`/`ColorOffset`
+- Filmic tone mapping (FilmSlope=0.88, FilmToe=0.55, FilmShoulder=0.26)
+- Chromatic aberration, film grain, depth of field
+- Directional fog inscattering (warm haze at dawn/dusk)
+- Cloud layer drift animation (two translucent planes at Z=15000/16500)
+- Ocean wave heave (amplitude 3 UU, base Z=-8)
+- Wet roads at night (roughness drops, base color darkens)
+- Street lights use `USpotLightComponent` (downward cone, warm sodium)
+- Window lights toggle on at night with warm glow
 
 **Ground plane:** `/Engine/BasicShapes/Plane` at `(0, 0, 0)` scaled to `(1400, 1400, 1)`. Ground surface is at **Z=0**.
 
@@ -143,6 +158,37 @@ All input uses **UE5 Enhanced Input** created programmatically (no `.uasset` fil
 1. `UPHCTouchInputComponent` on the character handles walk-mode joystick/look
 2. `UPHCCityHUD::NativeTick()` handles driving-mode touch zones (gas/brake/steering)
 
+### Visual / Rendering System
+
+The city uses a GTA V-inspired rendering pipeline, all configured programmatically:
+
+**Post-Process Volume** (created in `SpawnSkyAndLighting()`):
+- Filmic tone mapping: `FilmSlope=0.88`, `FilmToe=0.55`, `FilmShoulder=0.26`, `FilmBlackClip=0.0`, `FilmWhiteClip=0.04`
+- Chromatic aberration: `SceneFringeIntensity=0.4`
+- Film grain: `FilmGrainIntensity=0.06`
+- Depth of field: `FocalDistance=3000`, `Fstop=22` (walking) / `Fstop=4` (driving), `SensorWidth=24.576`
+- Color grading animated per time-of-day in `Tick()` via `ColorGain`/`ColorOffset`
+
+**Lighting:**
+- Directional light (sun) with god rays (`bEnableLightShaftBloom=true`, `BloomScale=1.2`)
+- `USpotLightComponent` street lights (downward cone, warm sodium `FColor(255,200,120)`, outer cone 55 deg)
+- Directional fog inscattering at dawn/dusk
+
+**Materials:**
+- `M_PHCColor` — standard opaque PBR for buildings, ground, etc.
+- `M_PHCGlass` — translucent for glass surfaces, cloud layers, ocean
+- `M_PHCClearCoat` — `MSM_ClearCoat` shading model for vehicle body panels (Metallic=0.9, Roughness=0.35, ClearCoat=1.0, ClearCoatRoughness=0.03)
+
+**Mesh variety (de-blockify):**
+All 5 basic shapes are actively used:
+- `CubeMesh` — building bodies, roofs, windows, doors, awnings, roads
+- `CylinderMesh` — corner pilasters, chimneys, porch posts, columns, flagpoles, awning supports, neon tubes, smokestacks, building corner edges, lamp poles
+- `SphereMesh` — foundation bushes, hedge rows, rooftop domes, fountain spouts, lamp globes, starfield, palm canopy
+- `ConeMesh` — chimney caps, smokestack caps, rooftop spires, topiary trees, lamp shades
+- `PlaneMesh` — ground, roads, sidewalks, lawns, ocean, cloud layers, starfield
+
+**Residential colors** are brick tones (classic red, warm red, dark red, orange, brown, tan, burgundy, terracotta) with high roughness (0.92) for matte brick texture.
+
 ### Multiplayer
 
 - **Architecture:** Listen server (one player hosts, others connect via IP)
@@ -180,7 +226,7 @@ Source/PlayhouseCity/
 
   Core/
     PHCCityGameMode.h/cpp      -- Server game mode (64 lines)
-    PHCCitySubsystem.h/cpp     -- City generation + day/night (~4800 lines)
+    PHCCitySubsystem.h/cpp     -- City generation + day/night + GTA V graphics (~5500 lines)
     PHCPlayerController.h/cpp  -- UI management, game launch, vehicle entry/exit
     PHCGameInstance.h/cpp      -- Root instance, subsystems, multiplayer sessions
     PHCGameState.h/cpp         -- Replicated day/night time
@@ -220,31 +266,49 @@ Source/PlayhouseCity/
 
 ---
 
-## Known Issues & Recent Changes
+## Known Issues & Open Items
 
-### Vehicle Floating Bug (FIXED)
-**Problem:** When entering a vehicle, it would fly up into the sky.
-**Root cause:** The vehicle `Tick()` had a ground trace (`LineTraceSingleByChannel`) that started from `Pos.Z + 10000` downward using `ECC_Visibility`. This hit building roofs (houses, shops have `QueryAndPhysics` collision) instead of the actual ground, teleporting the vehicle to rooftop height.
-**Fix:** Removed all ground trace and Z-adjustment code from both vehicle Ticks. Vehicles now move on a flat plane with no vertical adjustment. This means vehicles currently don't follow terrain or interact with ramps/launch pads.
-
-### Vehicle Camera Clipping (FIXED)
-**Problem:** After entering a vehicle, the camera showed a first-person view inside the car.
-**Root cause:** The vehicle's `USpringArmComponent` had `bDoCollisionTest = true`. Building meshes with collision caused the spring arm to collapse to zero length.
-**Fix:** Set `bDoCollisionTest = false` on both vehicle camera booms.
-
-### Vehicle Movement Blocked (FIXED)
-**Problem:** Gas pedal didn't work - vehicle wouldn't move.
-**Root cause:** `AddActorWorldOffset()` was called with `bSweep = true`. The vehicle's collision box (`SetCollisionResponseToAllChannels(ECR_Block)`) was blocked by the ground plane's collision.
-**Fix:** Changed sweep to `false`. Vehicles now pass through buildings freely (no wall collision). This is a temporary fix - proper collision channels should be set up.
-
-### Mountains Removed
-53 outskirts mountains were removed from `PHCCitySubsystem::SpawnHills()` during debugging. Hills along the highway corridor and at compass points remain.
+### Vehicle No-Collision (temporary)
+Vehicles use `AddActorWorldOffset(bSweep=false)` so they pass through buildings. Proper collision channels need to be set up. Ground trace was removed (caused floating bug), so vehicles don't follow terrain or interact with ramps.
 
 ### Multiplayer Replication Disabled
-Vehicle `bReplicates`, `SetReplicateMovement()`, etc. are commented out in both vehicle constructors. Character replication properties exist (`bIsSprinting` with `DOREPLIFETIME`) but character `bReplicates` is also commented out. Re-enable these when vehicle entry/exit is stable in multiplayer.
+Vehicle `bReplicates`, `SetReplicateMovement()`, etc. are commented out in both vehicle constructors. Character `bReplicates` also commented out. Re-enable when vehicle entry/exit is stable in multiplayer.
 
 ### No PlayerStart Actor
-The original `APHCCityGameMode` created a `PlayerStart` during city generation. When city gen moved to `UPHCCitySubsystem`, the PlayerStart was not recreated. Characters spawn at world origin `(0,0,0)` via UE's default logic. This works because the ground plane is at Z=0, but a proper spawn point at a nice city location would be better.
+Characters spawn at world origin `(0,0,0)` via UE's default logic. A proper spawn point at a nice city location would be better.
+
+### Mountains Removed
+53 outskirts mountains were removed from `SpawnHills()` during debugging. Hills along the highway corridor and at compass points remain.
+
+### Dead Code in Vehicle Headers
+`ExhaustPuffs`, `ExhaustPuffAge`, `NextExhaustPuff`, `ExhaustSpawnTimer` members exist in both `PHCVehiclePawn.h` and `PHCDuneBuggyPawn.h` but the exhaust system was removed. These should be cleaned up.
+
+---
+
+## Recent Changes (latest first)
+
+### City De-Blockify
+Added cylinders, spheres, and cones throughout city to break up cubic monotony:
+- **Houses:** 4 corner pilasters (cylinder), cylinder chimney + cone cap, doorway arch (cylinder), foundation bushes (spheres)
+- **Shops:** Corner trim cylinders, awning support posts (cylinder), neon tube (cylinder)
+- **Buildings:** Corner edge cylinders, rooftop spires (cone) and domes (sphere)
+- **Institutions:** Hemisphere dome on roof, flagpole cylinder
+- **Warehouses:** Cone caps on smokestacks
+- **Parks:** Hedge sphere rows along paths, cone topiary trees
+- **Street lights:** Inverted cone lamp shade above sphere globe
+
+### GTA V Graphics Overhaul
+- Filmic tone mapping, chromatic aberration, film grain, depth of field
+- 4-phase time-of-day color grading (Dawn warm pink-amber / Day subtle / Sunset golden / Night cool blue)
+- God rays on directional light, directional fog inscattering
+- Spot light street pools (replaced point lights), cloud layer drift
+- Ocean wave animation (3 UU amplitude), wet roads at night
+- ClearCoat shading model on vehicle body panels (M_PHCClearCoat material)
+- Brick residential colors (8 tones), high roughness (0.92)
+
+### PBR Material System
+- All building types, ground, roads, sidewalks, vehicles, trees, and lights use proper PBR parameters (Metallic, Roughness, EmissiveColor)
+- Three auto-created materials: M_PHCColor, M_PHCGlass, M_PHCClearCoat
 
 ---
 
@@ -252,7 +316,7 @@ The original `APHCCityGameMode` created a `PlayerStart` during city generation. 
 
 - **All UI built in C++** via `WidgetTree->ConstructWidget<>` in `Initialize()` overrides. No UMG Blueprint widgets.
 - **All input created at runtime** via `NewObject<UInputAction>` and `NewObject<UInputMappingContext>`. No `.uasset` input assets.
-- **All meshes are engine basic shapes** (`/Engine/BasicShapes/Cube`, etc.) with `UMaterialInstanceDynamic` for colors via `SetVectorParameterValue("BaseColor", Color)`.
+- **All meshes are engine basic shapes** (`/Engine/BasicShapes/Cube`, `Cylinder`, `Sphere`, `Plane`, `Cone`) with `UMaterialInstanceDynamic` for PBR via `SetVectorParameterValue("BaseColor", Color)`, `SetScalarParameterValue("Roughness", ...)`, etc.
 - **Log category:** `LogPlayhouseCity` (declared in `PlayhouseCity.h`)
 - **Class prefix:** `PHC` (PlayHouseCity) for all custom classes
 - **Header guards:** `#pragma once`
