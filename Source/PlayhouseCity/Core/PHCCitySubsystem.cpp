@@ -10,6 +10,7 @@
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/SpotLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/BoxComponent.h"
 #include "Engine/DirectionalLight.h"
@@ -17,7 +18,10 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "UObject/ConstructorHelpers.h"
+#include "UObject/Package.h"
 #include "Engine/Engine.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
+#include "Engine/PostProcessVolume.h"
 
 // ---------------------------------------------------------------------------
 // Centralized city-grid constants (used across multiple Spawn* functions).
@@ -28,6 +32,45 @@ static constexpr float RoadWidth = 900.f;
 static constexpr float SidewalkWidth = 250.f;
 static constexpr float CityHalfExtent = (NumRoads - 1) * RoadSpacing * 0.5f + 2000.f; // 50000
 static constexpr float FirstRoad = -(NumRoads - 1) * RoadSpacing * 0.5f; // -48000
+
+// ---- PBR Material Helpers ------------------------------------------------
+
+static void ApplyPBR(UStaticMeshComponent* MC, const FLinearColor& Color,
+	float Metallic = 0.f, float Roughness = 0.5f,
+	const FLinearColor& Emissive = FLinearColor::Black)
+{
+	if (!MC) return;
+	UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
+	if (!Mat) return;
+	Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
+	if (Metallic != 0.f)
+		Mat->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+	if (Roughness != 0.5f)
+		Mat->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+	if (Emissive != FLinearColor::Black)
+		Mat->SetVectorParameterValue(TEXT("EmissiveColor"), Emissive);
+	MC->SetMaterial(0, Mat);
+}
+
+static UMaterialInstanceDynamic* ApplyPBRGlass(UStaticMeshComponent* MC,
+	UMaterial* GlassMat, const FLinearColor& Color,
+	float Opacity = 0.3f, float Metallic = 0.f, float Roughness = 0.05f,
+	const FLinearColor& Emissive = FLinearColor::Black)
+{
+	if (!MC || !GlassMat) return nullptr;
+	UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(GlassMat, MC);
+	if (!Mat) return nullptr;
+	Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
+	Mat->SetScalarParameterValue(TEXT("Opacity"), Opacity);
+	if (Metallic != 0.f)
+		Mat->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+	if (Roughness != 0.05f)
+		Mat->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+	if (Emissive != FLinearColor::Black)
+		Mat->SetVectorParameterValue(TEXT("EmissiveColor"), Emissive);
+	MC->SetMaterial(0, Mat);
+	return Mat;
+}
 
 // ---------------------------------------------------------------------------
 
@@ -62,12 +105,13 @@ void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	// in editor/cook builds and then cooked for iOS. On editor, fall back to
 	// creating it inline if the asset hasn't been saved yet.
 	ColorMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCColor.M_PHCColor"));
+	GlassMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCGlass.M_PHCGlass"));
 
 #if WITH_EDITORONLY_DATA
 	if (!ColorMaterial)
 	{
 		// First editor run before the .uasset exists -- create inline.
-		ColorMaterial = NewObject<UMaterial>(GetTransientPackage(), TEXT("PHC_ColorMaterial"));
+		ColorMaterial = NewObject<UMaterial>(GetTransientPackage(), FName(TEXT("PHC_ColorMaterial")));
 
 		UMaterialExpressionVectorParameter* ColorParam =
 			NewObject<UMaterialExpressionVectorParameter>(ColorMaterial);
@@ -78,8 +122,69 @@ void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		EditorData->ExpressionCollection.Expressions.Add(ColorParam);
 		EditorData->BaseColor.Expression = ColorParam;
 
+		UMaterialExpressionScalarParameter* MetParam = NewObject<UMaterialExpressionScalarParameter>(ColorMaterial);
+		MetParam->ParameterName = TEXT("Metallic");
+		MetParam->DefaultValue = 0.0f;
+		EditorData->ExpressionCollection.Expressions.Add(MetParam);
+		EditorData->Metallic.Expression = MetParam;
+
+		UMaterialExpressionScalarParameter* RghParam = NewObject<UMaterialExpressionScalarParameter>(ColorMaterial);
+		RghParam->ParameterName = TEXT("Roughness");
+		RghParam->DefaultValue = 0.5f;
+		EditorData->ExpressionCollection.Expressions.Add(RghParam);
+		EditorData->Roughness.Expression = RghParam;
+
+		UMaterialExpressionVectorParameter* EmParam = NewObject<UMaterialExpressionVectorParameter>(ColorMaterial);
+		EmParam->ParameterName = TEXT("EmissiveColor");
+		EmParam->DefaultValue = FLinearColor::Black;
+		EditorData->ExpressionCollection.Expressions.Add(EmParam);
+		EditorData->EmissiveColor.Expression = EmParam;
+
 		ColorMaterial->PreEditChange(nullptr);
 		ColorMaterial->PostEditChange();
+	}
+
+	if (!GlassMaterial)
+	{
+		GlassMaterial = NewObject<UMaterial>(GetTransientPackage(), FName(TEXT("PHC_GlassMaterial")));
+		GlassMaterial->BlendMode = BLEND_Translucent;
+		GlassMaterial->TranslucencyLightingMode = TLM_SurfacePerPixelLighting;
+
+		// BaseColor
+		UMaterialExpressionVectorParameter* GBC = NewObject<UMaterialExpressionVectorParameter>(GlassMaterial);
+		GBC->ParameterName = TEXT("BaseColor");
+		GBC->DefaultValue = FLinearColor(0.1f, 0.15f, 0.2f, 1.f);
+
+		// Opacity
+		UMaterialExpressionScalarParameter* GOp = NewObject<UMaterialExpressionScalarParameter>(GlassMaterial);
+		GOp->ParameterName = TEXT("Opacity");
+		GOp->DefaultValue = 0.3f;
+
+		// Metallic
+		UMaterialExpressionScalarParameter* GMet = NewObject<UMaterialExpressionScalarParameter>(GlassMaterial);
+		GMet->ParameterName = TEXT("Metallic");
+		GMet->DefaultValue = 0.0f;
+
+		// Roughness
+		UMaterialExpressionScalarParameter* GRgh = NewObject<UMaterialExpressionScalarParameter>(GlassMaterial);
+		GRgh->ParameterName = TEXT("Roughness");
+		GRgh->DefaultValue = 0.05f;
+
+		// EmissiveColor
+		UMaterialExpressionVectorParameter* GEm = NewObject<UMaterialExpressionVectorParameter>(GlassMaterial);
+		GEm->ParameterName = TEXT("EmissiveColor");
+		GEm->DefaultValue = FLinearColor::Black;
+
+		UMaterialEditorOnlyData* GED = GlassMaterial->GetEditorOnlyData();
+		GED->ExpressionCollection.Expressions = { GBC, GOp, GMet, GRgh, GEm };
+		GED->BaseColor.Expression = GBC;
+		GED->Opacity.Expression = GOp;
+		GED->Metallic.Expression = GMet;
+		GED->Roughness.Expression = GRgh;
+		GED->EmissiveColor.Expression = GEm;
+
+		GlassMaterial->PreEditChange(nullptr);
+		GlassMaterial->PostEditChange();
 	}
 #endif
 
@@ -110,6 +215,11 @@ void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		UE_LOG(LogPlayhouseCity, Warning, TEXT("PHCCityGameMode: ColorMaterial not found! Shapes will be uncolored."));
 	}
 
+	if (GlassMaterial)
+	{
+		GlassMaterial->AddToRoot();
+	}
+
 	// Disable ALL on-screen debug/log text (yellow messages).
 	GAreScreenMessagesEnabled = false;
 	if (GEngine)
@@ -126,6 +236,10 @@ void UPHCCitySubsystem::Deinitialize()
 	if (ColorMaterial)
 	{
 		ColorMaterial->RemoveFromRoot();
+	}
+	if (GlassMaterial)
+	{
+		GlassMaterial->RemoveFromRoot();
 	}
 	Super::Deinitialize();
 }
@@ -222,11 +336,96 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		}
 	}
 
-	// ---- Fog (thicker at night) ----
+	// ---- Fog (thicker at night, directional inscattering for god rays) ----
 	if (FogComp)
 	{
 		const float NightFactor = FMath::Max(0.f, -SunSine);
 		FogComp->SetFogDensity(FMath::Lerp(0.0008f, 0.0015f, NightFactor));
+		FogComp->SetVolumetricFogDistance(FMath::Lerp(20000.f, 12000.f, NightFactor));
+
+		// GTA V-style directional inscattering -- warm haze at dawn/dusk
+		const float DawnDusk = 1.f - FMath::Abs(SunSine);
+		FogComp->SetDirectionalInscatteringExponent(8.f);
+		FogComp->SetDirectionalInscatteringStartDistance(5000.f);
+		const FLinearColor NeutralFog(0.6f, 0.6f, 0.7f);
+		const FLinearColor WarmHaze(1.0f, 0.7f, 0.3f);
+		const FLinearColor InscatterColor = FMath::Lerp(NeutralFog, WarmHaze, DawnDusk);
+		FogComp->SetFogInscatteringColor(InscatterColor);
+	}
+
+	// ---- Post-process day/night transition (GTA V color grading) ----
+	if (PostProcessVolume)
+	{
+		FPostProcessSettings& PP = PostProcessVolume->Settings;
+		const float NF = FMath::Max(0.f, -SunSine);
+		const float DawnDuskFactor = 1.f - FMath::Abs(SunSine);
+		const float Elevation = FMath::Max(0.f, SunSine);
+
+		PP.BloomThreshold = FMath::Lerp(1.0f, 0.2f, NF);
+		PP.BloomIntensity = FMath::Lerp(0.8f, 1.2f, NF);
+
+		// GTA V 4-phase color grading (ColorGain + ColorOffset)
+		// Determine time-of-day phase: dawn (T~0), day (T~0.25), sunset (T~0.5), night (T~0.75)
+		FVector4 TargetGain;
+		FVector4 TargetOffset;
+		if (T < 0.125f || T >= 0.875f)
+		{
+			// Dawn: warm pink-amber
+			TargetGain = FVector4(1.15f, 0.95f, 0.85f, 1.0f);
+			TargetOffset = FVector4(0.02f, 0.005f, -0.01f, 0.0f);
+		}
+		else if (T < 0.375f)
+		{
+			// Day: subtle warm
+			TargetGain = FVector4(1.02f, 1.00f, 0.96f, 1.0f);
+			TargetOffset = FVector4(0.0f, 0.0f, 0.0f, 0.0f);
+		}
+		else if (T < 0.625f)
+		{
+			// Sunset: golden amber
+			TargetGain = FVector4(1.20f, 0.90f, 0.70f, 1.0f);
+			TargetOffset = FVector4(0.03f, 0.01f, -0.02f, 0.0f);
+		}
+		else
+		{
+			// Night: cool blue
+			TargetGain = FVector4(0.85f, 0.90f, 1.10f, 1.0f);
+			TargetOffset = FVector4(-0.01f, 0.0f, 0.02f, 0.0f);
+		}
+		// Smooth interpolation to target
+		PP.ColorGain = FMath::Lerp(PP.ColorGain, TargetGain, FMath::Min(1.f, DeltaTime * 2.f));
+		PP.ColorOffset = FMath::Lerp(PP.ColorOffset, TargetOffset, FMath::Min(1.f, DeltaTime * 2.f));
+
+		// Legacy ColorGamma still used for base warmth
+		const float WarmR = FMath::Lerp(1.0f, 1.05f, NF);
+		const float WarmB = FMath::Lerp(0.92f, 0.85f, NF);
+		PP.ColorGamma = FVector4(WarmR, 0.97f, WarmB, 1.0f);
+
+		PP.VignetteIntensity = FMath::Lerp(0.25f, 0.45f, DawnDuskFactor);
+
+		PP.AutoExposureMinBrightness = FMath::Lerp(0.5f, 0.05f, NF);
+		PP.AutoExposureMaxBrightness = FMath::Lerp(3.0f, 1.5f, NF);
+
+		// ---- Depth of Field: sharper when walking, blurry background when driving ----
+		// Check if any local player is currently possessing a vehicle
+		bool bDriving = false;
+		if (UWorld* W = GetWorld())
+		{
+			if (APlayerController* PC = W->GetFirstPlayerController())
+			{
+				bDriving = (PC->GetPawn() && PC->GetPawn()->IsA(APawn::StaticClass()) &&
+					PC->GetPawn()->GetClass()->GetName().Contains(TEXT("Vehicle")));
+			}
+		}
+		const float TargetFstop = bDriving ? 4.0f : 22.0f;
+		PP.DepthOfFieldFstop = FMath::FInterpTo(PP.DepthOfFieldFstop, TargetFstop, DeltaTime, 3.f);
+	}
+
+	// ---- God ray toggle (disable when sun below horizon) ----
+	if (SunLightComp)
+	{
+		const float Elevation = FMath::Max(0.f, SunSine);
+		SunLightComp->bEnableLightShaftBloom = (Elevation > 0.05f);
 	}
 
 	// ---- Starfield visibility ----
@@ -236,6 +435,55 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		if (StarfieldActor->IsHidden() != !bShowStars)
 		{
 			StarfieldActor->SetActorHiddenInGame(!bShowStars);
+		}
+	}
+
+	// ---- Cloud layer drift + sunset tinting ----
+	{
+		const float CloudDriftSpeed = 500.f; // UU per minute eastward
+		const float CloudDrift = DeltaTime * (CloudDriftSpeed / 60.f);
+		const float DawnDusk = 1.f - FMath::Abs(SunSine);
+
+		if (CloudLayerActor)
+		{
+			CloudLayerActor->AddActorWorldOffset(FVector(CloudDrift, CloudDrift * 0.3f, 0.f));
+		}
+		if (CloudLayerActor2)
+		{
+			// Second layer drifts slower for parallax
+			CloudLayerActor2->AddActorWorldOffset(FVector(CloudDrift * 0.6f, CloudDrift * 0.15f, 0.f));
+		}
+	}
+
+	// ---- Ocean wave heave ----
+	if (OceanActor)
+	{
+		WaterTime += DeltaTime;
+		const float WaveZ = -8.f + FMath::Sin(WaterTime * 0.15f * 2.f * UE_PI) * 3.f;
+		FVector OceanLoc = OceanActor->GetActorLocation();
+		OceanLoc.Z = WaveZ;
+		OceanActor->SetActorLocation(OceanLoc);
+	}
+
+	// ---- Wet roads at night (dew/humidity effect) ----
+	if (RoadMaterials.Num() > 0)
+	{
+		const float NightFactor = FMath::Max(0.f, -SunSine);
+		const float TargetWetness = NightFactor * 0.4f; // up to 40% wetness at midnight
+		if (FMath::Abs(TargetWetness - GlobalWetness) > 0.02f)
+		{
+			GlobalWetness = FMath::FInterpTo(GlobalWetness, TargetWetness, DeltaTime, 0.5f);
+			const float WetRoughness = FMath::Lerp(0.85f, 0.15f, GlobalWetness);
+			const float DarkenFactor = FMath::Lerp(1.0f, 0.6f, GlobalWetness);
+			for (auto& RoadMat : RoadMaterials)
+			{
+				if (RoadMat)
+				{
+					RoadMat->SetScalarParameterValue(TEXT("Roughness"), WetRoughness);
+					RoadMat->SetVectorParameterValue(TEXT("BaseColor"),
+						FLinearColor(0.015f * DarkenFactor, 0.015f * DarkenFactor, 0.018f * DarkenFactor));
+				}
+			}
 		}
 	}
 
@@ -294,14 +542,14 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 
 				if (NightWindowLitStates[i] && NightWindowBrightness > 0.01f)
 				{
-					// Lerp from dark glass to warm glow based on brightness.
-					const FLinearColor WinColor = FMath::Lerp(
-						DarkGlass, NightWindowLitColors[i], NightWindowBrightness);
-					NightWindowMaterials[i]->SetVectorParameterValue(TEXT("BaseColor"), WinColor);
+					NightWindowMaterials[i]->SetVectorParameterValue(TEXT("BaseColor"), DarkGlass);
+					const FLinearColor EmissiveGlow = NightWindowLitColors[i] * NightWindowBrightness * 2.0f;
+					NightWindowMaterials[i]->SetVectorParameterValue(TEXT("EmissiveColor"), EmissiveGlow);
 				}
 				else
 				{
 					NightWindowMaterials[i]->SetVectorParameterValue(TEXT("BaseColor"), DarkGlass);
+					NightWindowMaterials[i]->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
 				}
 			}
 		}
@@ -322,6 +570,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnOutskirts();
 	SpawnHills();
 	SpawnStarfield();
+	SpawnCloudLayer();
 }
 
 // ---------------------------------------------------------------------------
@@ -351,7 +600,7 @@ void UPHCCitySubsystem::SpawnGround()
 		MC->RegisterComponent();
 		GA->SetRootComponent(MC);
 		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
-		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), GrassColor); MC->SetMaterial(0, Mat); }
+		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), GrassColor); Mat->SetScalarParameterValue(TEXT("Roughness"), 0.9f); MC->SetMaterial(0, Mat); }
 		GA->AddInstanceComponent(MC);
 	};
 
@@ -377,10 +626,12 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 	UWorld* World = GetWorld();
 	if (!World || !PlaneMesh) return;
 
-	auto SpawnWater = [&](const FVector& Loc, const FVector& Scale, const FLinearColor& Color, const TCHAR* Label)
+	AActor* LastSpawnedWater = nullptr;
+	auto SpawnWater = [&](const FVector& Loc, const FVector& Scale, const FLinearColor& Color, const TCHAR* Label, bool bIsWater = false)
 	{
 		AActor* WA = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
 		if (!WA) return;
+		LastSpawnedWater = WA;
 #if WITH_EDITOR
 		WA->SetActorLabel(Label);
 #endif
@@ -392,8 +643,23 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 		MC->SetCollisionResponseToAllChannels(ECR_Block);
 		MC->RegisterComponent();
 		WA->SetRootComponent(MC);
-		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
-		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); MC->SetMaterial(0, Mat); }
+		if (bIsWater && GlassMaterial)
+		{
+			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(GlassMaterial, MC);
+			if (Mat)
+			{
+				Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
+				Mat->SetScalarParameterValue(TEXT("Opacity"), 0.85f);
+				Mat->SetScalarParameterValue(TEXT("Roughness"), 0.02f);
+				Mat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.01f, 0.03f, 0.06f));
+				MC->SetMaterial(0, Mat);
+			}
+		}
+		else
+		{
+			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
+			if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); Mat->SetScalarParameterValue(TEXT("Roughness"), bIsWater ? 0.02f : 0.85f); MC->SetMaterial(0, Mat); }
+		}
 		WA->AddInstanceComponent(MC);
 	};
 
@@ -402,10 +668,11 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 	const FLinearColor Sand(0.76f, 0.70f, 0.55f);
 
 	// Global ocean floor — massive, covers everything below land
-	SpawnWater(FVector(0.f, 0.f, -8.f), FVector(4000.f, 4000.f, 1.f), DeepOcean, TEXT("OceanFloor"));
+	SpawnWater(FVector(0.f, 0.f, -8.f), FVector(4000.f, 4000.f, 1.f), DeepOcean, TEXT("OceanFloor"), true);
+	OceanActor = LastSpawnedWater; // Store for wave animation in Tick()
 
 	// Bay inlet (NE corner) — shallow water sitting above ocean
-	SpawnWater(FVector(45000.f, 60000.f, -3.f), FVector(250.f, 150.f, 1.f), ShallowWater, TEXT("BayInlet"));
+	SpawnWater(FVector(45000.f, 60000.f, -3.f), FVector(250.f, 150.f, 1.f), ShallowWater, TEXT("BayInlet"), true);
 
 	// ---- Beach strips (sandy shores around the peninsula) ----
 
@@ -459,6 +726,12 @@ void UPHCCitySubsystem::SpawnSkyAndLighting()
 			SunLightComp->SetWorldRotation(FRotator(-5.f, 90.f, 0.f));
 			SunLightComp->SetCastShadows(true);
 			SunLightComp->bAtmosphereSunLight = true;
+
+			// ---- God Rays / Light Shafts ----
+			SunLightComp->bEnableLightShaftBloom = true;
+			SunLightComp->BloomScale = 1.2f;
+			SunLightComp->BloomThreshold = 0.5f;
+
 			SunLightComp->RegisterComponent();
 			SunActor->SetRootComponent(SunLightComp);
 			SunActor->AddInstanceComponent(SunLightComp);
@@ -517,7 +790,10 @@ void UPHCCitySubsystem::SpawnSkyAndLighting()
 			FogComp->SetFogHeightFalloff(0.08f);
 			FogComp->SetFogMaxOpacity(0.45f);
 			FogComp->SetStartDistance(15000.f);
-			FogComp->SetVolumetricFog(false);
+			FogComp->SetVolumetricFog(true);
+			FogComp->SetVolumetricFogScatteringDistribution(0.2f);
+			FogComp->SetVolumetricFogExtinctionScale(1.0f);
+			FogComp->SetVolumetricFogDistance(20000.f);
 			FogComp->RegisterComponent();
 			FogActor->SetRootComponent(FogComp);
 			FogActor->AddInstanceComponent(FogComp);
@@ -542,6 +818,88 @@ void UPHCCitySubsystem::SpawnSkyAndLighting()
 			MoonLightComp->RegisterComponent();
 			MoonActor->SetRootComponent(MoonLightComp);
 			MoonActor->AddInstanceComponent(MoonLightComp);
+		}
+	}
+
+	// ---- Global Post-Process Volume (cinematic look) ----
+	{
+		PostProcessVolume = World->SpawnActor<APostProcessVolume>(
+			APostProcessVolume::StaticClass(),
+			FVector::ZeroVector, FRotator::ZeroRotator);
+		if (PostProcessVolume)
+		{
+#if WITH_EDITOR
+			PostProcessVolume->SetActorLabel(TEXT("CityPostProcess"));
+#endif
+			PostProcessVolume->bUnbound = true;
+
+			FPostProcessSettings& PP = PostProcessVolume->Settings;
+
+			// Bloom
+			PP.bOverride_BloomIntensity = true;
+			PP.BloomIntensity = 0.8f;
+			PP.bOverride_BloomThreshold = true;
+			PP.BloomThreshold = 1.0f;
+
+			// Ambient Occlusion
+			PP.bOverride_AmbientOcclusionIntensity = true;
+			PP.AmbientOcclusionIntensity = 0.5f;
+			PP.bOverride_AmbientOcclusionRadius = true;
+			PP.AmbientOcclusionRadius = 200.f;
+
+			// Vignette
+			PP.bOverride_VignetteIntensity = true;
+			PP.VignetteIntensity = 0.25f;
+
+			// Auto Exposure
+			PP.bOverride_AutoExposureMinBrightness = true;
+			PP.AutoExposureMinBrightness = 0.5f;
+			PP.bOverride_AutoExposureMaxBrightness = true;
+			PP.AutoExposureMaxBrightness = 3.0f;
+			PP.bOverride_AutoExposureSpeedUp = true;
+			PP.AutoExposureSpeedUp = 2.0f;
+			PP.bOverride_AutoExposureSpeedDown = true;
+			PP.AutoExposureSpeedDown = 1.0f;
+
+			// Color Grading (warm cinematic tone)
+			PP.bOverride_ColorGamma = true;
+			PP.ColorGamma = FVector4(1.0f, 0.97f, 0.92f, 1.0f);
+			PP.bOverride_ColorSaturation = true;
+			PP.ColorSaturation = FVector4(1.05f, 1.05f, 1.05f, 1.0f);
+
+			// ---- GTA V Filmic Tone Mapping ----
+			PP.bOverride_FilmSlope = true;
+			PP.FilmSlope = 0.88f;
+			PP.bOverride_FilmToe = true;
+			PP.FilmToe = 0.55f;
+			PP.bOverride_FilmShoulder = true;
+			PP.FilmShoulder = 0.26f;
+			PP.bOverride_FilmBlackClip = true;
+			PP.FilmBlackClip = 0.0f;
+			PP.bOverride_FilmWhiteClip = true;
+			PP.FilmWhiteClip = 0.04f;
+
+			// ---- Chromatic Aberration (subtle lens fringing) ----
+			PP.bOverride_SceneFringeIntensity = true;
+			PP.SceneFringeIntensity = 0.4f;
+
+			// ---- Film Grain (cinematic texture) ----
+			PP.bOverride_FilmGrainIntensity = true;
+			PP.FilmGrainIntensity = 0.06f;
+
+			// ---- Depth of Field (cinematic background blur) ----
+			PP.bOverride_DepthOfFieldFocalDistance = true;
+			PP.DepthOfFieldFocalDistance = 3000.f;
+			PP.bOverride_DepthOfFieldFstop = true;
+			PP.DepthOfFieldFstop = 22.f; // Sharp by default, f/4 when driving
+			PP.bOverride_DepthOfFieldSensorWidth = true;
+			PP.DepthOfFieldSensorWidth = 24.576f; // APS-C sensor
+
+			// ---- Color Gain/Offset for GTA V time-of-day grading ----
+			PP.bOverride_ColorGain = true;
+			PP.ColorGain = FVector4(1.02f, 1.00f, 0.96f, 1.0f);
+			PP.bOverride_ColorOffset = true;
+			PP.ColorOffset = FVector4(0.0f, 0.0f, 0.0f, 0.0f);
 		}
 	}
 }
@@ -657,14 +1015,14 @@ void UPHCCitySubsystem::SpawnCityGrid()
 	const int32 NumMidtownColors = UE_ARRAY_COUNT(MidtownColors);
 
 	const FLinearColor ResidentialColors[] = {
-		FLinearColor(0.70f, 0.82f, 0.92f),  // pastel blue
-		FLinearColor(0.65f, 0.85f, 0.68f),  // pastel green
-		FLinearColor(0.95f, 0.92f, 0.60f),  // pastel yellow
-		FLinearColor(0.95f, 0.65f, 0.55f),  // coral
-		FLinearColor(0.75f, 0.65f, 0.85f),  // lavender
-		FLinearColor(0.96f, 0.94f, 0.88f),  // cream
-		FLinearColor(0.55f, 0.68f, 0.52f),  // sage green
-		FLinearColor(0.85f, 0.62f, 0.65f),  // dusty rose
+		FLinearColor(0.45f, 0.22f, 0.12f),  // classic red brick
+		FLinearColor(0.52f, 0.28f, 0.15f),  // warm red brick
+		FLinearColor(0.38f, 0.18f, 0.10f),  // dark red brick
+		FLinearColor(0.55f, 0.35f, 0.22f),  // orange brick
+		FLinearColor(0.40f, 0.25f, 0.18f),  // brown brick
+		FLinearColor(0.60f, 0.42f, 0.28f),  // tan brick
+		FLinearColor(0.35f, 0.20f, 0.12f),  // deep burgundy brick
+		FLinearColor(0.48f, 0.30f, 0.20f),  // terracotta brick
 		FLinearColor(0.62f, 0.78f, 0.92f),  // sky blue
 		FLinearColor(0.94f, 0.92f, 0.90f),  // warm white
 		FLinearColor(0.82f, 0.52f, 0.32f),  // terracotta
@@ -1595,8 +1953,31 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 	Body->RegisterComponent();
 	House->SetRootComponent(Body);
 	UMaterialInstanceDynamic* BodyMat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
-	if (BodyMat) { BodyMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor); Body->SetMaterial(0, BodyMat); }
+	if (BodyMat) { BodyMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor); BodyMat->SetScalarParameterValue(TEXT("Roughness"), 0.92f); Body->SetMaterial(0, BodyMat); }
 	House->AddInstanceComponent(Body);
+
+	// ---- Brick corner pilasters (rounded cylinders soften sharp corners) ----
+	if (CylinderMesh)
+	{
+		const float PilR = 8.f;
+		const float PilH = BodyH;
+		const FLinearColor PilColor = WallColor * 1.08f; // slightly lighter
+		for (int32 Ci = 0; Ci < 4; ++Ci)
+		{
+			const float CXSign = (Ci & 1) ? 1.f : -1.f;
+			const float CYSign = (Ci & 2) ? 1.f : -1.f;
+			FString PName = FString::Printf(TEXT("HousePilaster_%d"), Ci);
+			UStaticMeshComponent* Pil = NewObject<UStaticMeshComponent>(House, *PName);
+			Pil->SetStaticMesh(CylinderMesh);
+			Pil->SetWorldScale3D(FVector(PilR / 50.f, PilR / 50.f, PilH / 100.f));
+			Pil->SetWorldLocation(FVector(Loc.X + CXSign * W * 0.5f, Loc.Y + CYSign * D * 0.5f, PilH * 0.5f));
+			Pil->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Pil->RegisterComponent();
+			UMaterialInstanceDynamic* PilMat = UMaterialInstanceDynamic::Create(Pil->GetMaterial(0), Pil);
+			if (PilMat) { PilMat->SetVectorParameterValue(TEXT("BaseColor"), PilColor); PilMat->SetScalarParameterValue(TEXT("Roughness"), 0.90f); Pil->SetMaterial(0, PilMat); }
+			House->AddInstanceComponent(Pil);
+		}
+	}
 
 	// ---- Pitched roof (two sloped halves forming a gable) ----
 	const float RoofOverhang = 40.f;
@@ -1619,7 +2000,7 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 		Roof->SetCollisionResponseToAllChannels(ECR_Block);
 		Roof->RegisterComponent();
 		UMaterialInstanceDynamic* RMat = UMaterialInstanceDynamic::Create(Roof->GetMaterial(0), Roof);
-		if (RMat) { RMat->SetVectorParameterValue(TEXT("BaseColor"), RoofColor); Roof->SetMaterial(0, RMat); }
+		if (RMat) { RMat->SetVectorParameterValue(TEXT("BaseColor"), RoofColor); RMat->SetScalarParameterValue(TEXT("Roughness"), 0.65f); Roof->SetMaterial(0, RMat); }
 		House->AddInstanceComponent(Roof);
 	}
 
@@ -1631,7 +2012,7 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 	Ridge->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Ridge->RegisterComponent();
 	UMaterialInstanceDynamic* RidgeMat = UMaterialInstanceDynamic::Create(Ridge->GetMaterial(0), Ridge);
-	if (RidgeMat) { RidgeMat->SetVectorParameterValue(TEXT("BaseColor"), RoofColor * 0.8f); Ridge->SetMaterial(0, RidgeMat); }
+	if (RidgeMat) { RidgeMat->SetVectorParameterValue(TEXT("BaseColor"), RoofColor * 0.8f); RidgeMat->SetScalarParameterValue(TEXT("Roughness"), 0.6f); Ridge->SetMaterial(0, RidgeMat); }
 	House->AddInstanceComponent(Ridge);
 
 	// ---- Windows (front and back faces) ----
@@ -1669,6 +2050,8 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 				if (WMat)
 				{
 					WMat->SetVectorParameterValue(TEXT("BaseColor"), DarkGlass);
+					WMat->SetScalarParameterValue(TEXT("Metallic"), 0.1f);
+					WMat->SetScalarParameterValue(TEXT("Roughness"), 0.05f);
 					Win->SetMaterial(0, WMat);
 					NightWindowMaterials.Add(WMat);
 					NightWindowLitColors.Add(WarmColors[CityRandom.RandRange(0, 3)]);
@@ -1687,8 +2070,23 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 		Door->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Door->RegisterComponent();
 		UMaterialInstanceDynamic* DMat = UMaterialInstanceDynamic::Create(Door->GetMaterial(0), Door);
-		if (DMat) { DMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.18f, 0.12f, 0.06f)); Door->SetMaterial(0, DMat); }
+		if (DMat) { DMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.18f, 0.12f, 0.06f)); DMat->SetScalarParameterValue(TEXT("Roughness"), 0.7f); Door->SetMaterial(0, DMat); }
 		House->AddInstanceComponent(Door);
+
+		// Doorway arch (half-cylinder above door)
+		if (CylinderMesh)
+		{
+			UStaticMeshComponent* Arch = NewObject<UStaticMeshComponent>(House, TEXT("DoorArch"));
+			Arch->SetStaticMesh(CylinderMesh);
+			Arch->SetWorldScale3D(FVector(0.35f, 0.08f, 0.04f));
+			Arch->SetWorldLocation(FVector(Loc.X, Loc.Y + D * 0.5f + 4.f, 128.f));
+			Arch->SetWorldRotation(FRotator(0.f, 0.f, 90.f));
+			Arch->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Arch->RegisterComponent();
+			UMaterialInstanceDynamic* ArMat = UMaterialInstanceDynamic::Create(Arch->GetMaterial(0), Arch);
+			if (ArMat) { ArMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor * 0.85f); ArMat->SetScalarParameterValue(TEXT("Roughness"), 0.85f); Arch->SetMaterial(0, ArMat); }
+			House->AddInstanceComponent(Arch);
+		}
 	}
 
 	// ---- Lawn (green plane slightly larger than footprint) ----
@@ -1701,8 +2099,30 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 		Lawn->SetCollisionResponseToAllChannels(ECR_Block);
 		Lawn->RegisterComponent();
 		UMaterialInstanceDynamic* LMat = UMaterialInstanceDynamic::Create(Lawn->GetMaterial(0), Lawn);
-		if (LMat) { LMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.15f, 0.35f, 0.08f)); Lawn->SetMaterial(0, LMat); }
+		if (LMat) { LMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.15f, 0.35f, 0.08f)); LMat->SetScalarParameterValue(TEXT("Roughness"), 0.9f); Lawn->SetMaterial(0, LMat); }
 		House->AddInstanceComponent(Lawn);
+	}
+
+	// ---- Foundation bushes (sphere clusters at base of walls) ----
+	if (SphereMesh && DetailRandom.FRand() < 0.60f)
+	{
+		const int32 NumBushes = DetailRandom.RandRange(2, 4);
+		for (int32 Bi = 0; Bi < NumBushes; ++Bi)
+		{
+			const float BushX = Loc.X + DetailRandom.FRandRange(-W * 0.4f, W * 0.4f);
+			const float BushY = Loc.Y + (DetailRandom.FRand() < 0.5f ? D * 0.48f : -D * 0.48f);
+			const float BushScale = DetailRandom.FRandRange(0.4f, 0.7f);
+			FString BName = FString::Printf(TEXT("HouseBush_%d"), Bi);
+			UStaticMeshComponent* Bush = NewObject<UStaticMeshComponent>(House, *BName);
+			Bush->SetStaticMesh(SphereMesh);
+			Bush->SetWorldScale3D(FVector(BushScale, BushScale, BushScale * 0.7f));
+			Bush->SetWorldLocation(FVector(BushX, BushY, BushScale * 20.f));
+			Bush->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Bush->RegisterComponent();
+			UMaterialInstanceDynamic* BuMat = UMaterialInstanceDynamic::Create(Bush->GetMaterial(0), Bush);
+			if (BuMat) { BuMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.10f, 0.28f + DetailRandom.FRandRange(-0.05f, 0.05f), 0.06f)); BuMat->SetScalarParameterValue(TEXT("Roughness"), 0.92f); Bush->SetMaterial(0, BuMat); }
+			House->AddInstanceComponent(Bush);
+		}
 	}
 
 	// ---- Optional garage (30% chance) ----
@@ -1721,7 +2141,7 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 		Garage->SetCollisionResponseToAllChannels(ECR_Block);
 		Garage->RegisterComponent();
 		UMaterialInstanceDynamic* GMat = UMaterialInstanceDynamic::Create(Garage->GetMaterial(0), Garage);
-		if (GMat) { GMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor); Garage->SetMaterial(0, GMat); }
+		if (GMat) { GMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor); GMat->SetScalarParameterValue(TEXT("Roughness"), 0.7f); Garage->SetMaterial(0, GMat); }
 		House->AddInstanceComponent(Garage);
 
 		// Garage door face.
@@ -1732,37 +2152,36 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 		GDoor->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		GDoor->RegisterComponent();
 		UMaterialInstanceDynamic* GDMat = UMaterialInstanceDynamic::Create(GDoor->GetMaterial(0), GDoor);
-		if (GDMat) { GDMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.22f, 0.20f, 0.18f)); GDoor->SetMaterial(0, GDMat); }
+		if (GDMat) { GDMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.22f, 0.20f, 0.18f)); GDMat->SetScalarParameterValue(TEXT("Roughness"), 0.6f); GDoor->SetMaterial(0, GDMat); }
 		House->AddInstanceComponent(GDoor);
 	}
 
-	// ---- Chimney (35% chance) ----
-	if (DetailRandom.FRand() < 0.35f)
+	// ---- Chimney (35% chance) -- round cylinder with cone cap ----
+	if (DetailRandom.FRand() < 0.35f && CylinderMesh && ConeMesh)
 	{
-		const float ChW = 35.f;
-		const float ChD = 30.f;
+		const float ChR = 16.f;
 		const float ChH = 120.f;
 		const float ChX = Loc.X + W * 0.25f;
 		const float ChZ = BodyH + D * 0.5f * FMath::Tan(FMath::DegreesToRadians(30.f)) * 0.5f;
 		UStaticMeshComponent* Chimney = NewObject<UStaticMeshComponent>(House, TEXT("Chimney"));
-		Chimney->SetStaticMesh(CubeMesh);
-		Chimney->SetWorldScale3D(FVector(ChW / 100.f, ChD / 100.f, ChH / 100.f));
+		Chimney->SetStaticMesh(CylinderMesh);
+		Chimney->SetWorldScale3D(FVector(ChR / 50.f, ChR / 50.f, ChH / 100.f));
 		Chimney->SetWorldLocation(FVector(ChX, Loc.Y - D * 0.2f, ChZ + ChH * 0.5f));
 		Chimney->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Chimney->RegisterComponent();
 		UMaterialInstanceDynamic* ChMat = UMaterialInstanceDynamic::Create(Chimney->GetMaterial(0), Chimney);
-		if (ChMat) { ChMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.45f, 0.25f, 0.18f)); Chimney->SetMaterial(0, ChMat); }
+		if (ChMat) { ChMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.45f, 0.25f, 0.18f)); ChMat->SetScalarParameterValue(TEXT("Roughness"), 0.8f); Chimney->SetMaterial(0, ChMat); }
 		House->AddInstanceComponent(Chimney);
 
-		// Chimney cap
+		// Cone cap
 		UStaticMeshComponent* Cap = NewObject<UStaticMeshComponent>(House, TEXT("ChimneyCap"));
-		Cap->SetStaticMesh(CubeMesh);
-		Cap->SetWorldScale3D(FVector((ChW + 10.f) / 100.f, (ChD + 10.f) / 100.f, 0.08f));
-		Cap->SetWorldLocation(FVector(ChX, Loc.Y - D * 0.2f, ChZ + ChH + 4.f));
+		Cap->SetStaticMesh(ConeMesh);
+		Cap->SetWorldScale3D(FVector((ChR + 5.f) / 50.f, (ChR + 5.f) / 50.f, 0.35f));
+		Cap->SetWorldLocation(FVector(ChX, Loc.Y - D * 0.2f, ChZ + ChH + 12.f));
 		Cap->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Cap->RegisterComponent();
 		UMaterialInstanceDynamic* CapMat = UMaterialInstanceDynamic::Create(Cap->GetMaterial(0), Cap);
-		if (CapMat) { CapMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.3f, 0.3f, 0.28f)); Cap->SetMaterial(0, CapMat); }
+		if (CapMat) { CapMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.3f, 0.3f, 0.28f)); CapMat->SetScalarParameterValue(TEXT("Roughness"), 0.8f); Cap->SetMaterial(0, CapMat); }
 		House->AddInstanceComponent(Cap);
 	}
 
@@ -1780,7 +2199,7 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 		Porch->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Porch->RegisterComponent();
 		UMaterialInstanceDynamic* PchMat = UMaterialInstanceDynamic::Create(Porch->GetMaterial(0), Porch);
-		if (PchMat) { PchMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.40f, 0.30f, 0.20f)); Porch->SetMaterial(0, PchMat); }
+		if (PchMat) { PchMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.40f, 0.30f, 0.20f)); PchMat->SetScalarParameterValue(TEXT("Roughness"), 0.7f); Porch->SetMaterial(0, PchMat); }
 		House->AddInstanceComponent(Porch);
 
 		// Two support posts
@@ -1797,7 +2216,7 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 				Post->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 				Post->RegisterComponent();
 				UMaterialInstanceDynamic* PostMat = UMaterialInstanceDynamic::Create(Post->GetMaterial(0), Post);
-				if (PostMat) { PostMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.85f, 0.85f, 0.82f)); Post->SetMaterial(0, PostMat); }
+				if (PostMat) { PostMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.85f, 0.85f, 0.82f)); PostMat->SetScalarParameterValue(TEXT("Roughness"), 0.7f); Post->SetMaterial(0, PostMat); }
 				House->AddInstanceComponent(Post);
 			}
 		}
@@ -1810,7 +2229,7 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 		PRoof->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		PRoof->RegisterComponent();
 		UMaterialInstanceDynamic* PRMat = UMaterialInstanceDynamic::Create(PRoof->GetMaterial(0), PRoof);
-		if (PRMat) { PRMat->SetVectorParameterValue(TEXT("BaseColor"), RoofColor); PRoof->SetMaterial(0, PRMat); }
+		if (PRMat) { PRMat->SetVectorParameterValue(TEXT("BaseColor"), RoofColor); PRMat->SetScalarParameterValue(TEXT("Roughness"), 0.65f); PRoof->SetMaterial(0, PRMat); }
 		House->AddInstanceComponent(PRoof);
 	}
 }
@@ -1845,8 +2264,27 @@ void UPHCCitySubsystem::SpawnShop(const FVector& Loc, float W, float D, int32 St
 	Body->RegisterComponent();
 	Shop->SetRootComponent(Body);
 	UMaterialInstanceDynamic* BodyMat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
-	if (BodyMat) { BodyMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor); Body->SetMaterial(0, BodyMat); }
+	if (BodyMat) { BodyMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor); BodyMat->SetScalarParameterValue(TEXT("Roughness"), 0.55f); Body->SetMaterial(0, BodyMat); }
 	Shop->AddInstanceComponent(Body);
+
+	// ---- Front face corner trim (decorative vertical cylinders) ----
+	if (CylinderMesh)
+	{
+		for (int32 Ti = 0; Ti < 2; ++Ti)
+		{
+			const float TSign = (Ti == 0) ? -1.f : 1.f;
+			FString TName = FString::Printf(TEXT("ShopTrim_%d"), Ti);
+			UStaticMeshComponent* Trim = NewObject<UStaticMeshComponent>(Shop, *TName);
+			Trim->SetStaticMesh(CylinderMesh);
+			Trim->SetWorldScale3D(FVector(0.06f, 0.06f, BodyH / 100.f));
+			Trim->SetWorldLocation(FVector(Loc.X + TSign * W * 0.5f, Loc.Y + D * 0.5f + 2.f, BodyH * 0.5f));
+			Trim->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Trim->RegisterComponent();
+			UMaterialInstanceDynamic* TrMat = UMaterialInstanceDynamic::Create(Trim->GetMaterial(0), Trim);
+			if (TrMat) { TrMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor * 0.85f); TrMat->SetScalarParameterValue(TEXT("Roughness"), 0.5f); Trim->SetMaterial(0, TrMat); }
+			Shop->AddInstanceComponent(Trim);
+		}
+	}
 
 	// ---- Roof parapet (thin strip along top) ----
 	{
@@ -1857,7 +2295,7 @@ void UPHCCitySubsystem::SpawnShop(const FVector& Loc, float W, float D, int32 St
 		Parapet->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Parapet->RegisterComponent();
 		UMaterialInstanceDynamic* PMat = UMaterialInstanceDynamic::Create(Parapet->GetMaterial(0), Parapet);
-		if (PMat) { PMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor * 0.9f); Parapet->SetMaterial(0, PMat); }
+		if (PMat) { PMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor * 0.9f); PMat->SetScalarParameterValue(TEXT("Roughness"), 0.55f); Parapet->SetMaterial(0, PMat); }
 		Shop->AddInstanceComponent(Parapet);
 	}
 
@@ -1886,6 +2324,8 @@ void UPHCCitySubsystem::SpawnShop(const FVector& Loc, float W, float D, int32 St
 		if (SFMat)
 		{
 			SFMat->SetVectorParameterValue(TEXT("BaseColor"), DarkGlass);
+			SFMat->SetScalarParameterValue(TEXT("Metallic"), 0.1f);
+			SFMat->SetScalarParameterValue(TEXT("Roughness"), 0.05f);
 			SF->SetMaterial(0, SFMat);
 			NightWindowMaterials.Add(SFMat);
 			NightWindowLitColors.Add(WarmColors[CityRandom.RandRange(0, 3)]);
@@ -1904,8 +2344,27 @@ void UPHCCitySubsystem::SpawnShop(const FVector& Loc, float W, float D, int32 St
 		Awning->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Awning->RegisterComponent();
 		UMaterialInstanceDynamic* AMat = UMaterialInstanceDynamic::Create(Awning->GetMaterial(0), Awning);
-		if (AMat) { AMat->SetVectorParameterValue(TEXT("BaseColor"), AwningColor); Awning->SetMaterial(0, AMat); }
+		if (AMat) { AMat->SetVectorParameterValue(TEXT("BaseColor"), AwningColor); AMat->SetScalarParameterValue(TEXT("Roughness"), 0.6f); Awning->SetMaterial(0, AMat); }
 		Shop->AddInstanceComponent(Awning);
+
+		// Awning support posts (cylinders)
+		if (CylinderMesh)
+		{
+			for (int32 Ai = 0; Ai < 2; ++Ai)
+			{
+				const float ASign = (Ai == 0) ? -1.f : 1.f;
+				FString AName = FString::Printf(TEXT("AwningPost_%d"), Ai);
+				UStaticMeshComponent* APost = NewObject<UStaticMeshComponent>(Shop, *AName);
+				APost->SetStaticMesh(CylinderMesh);
+				APost->SetWorldScale3D(FVector(0.04f, 0.04f, AwningZ / 100.f));
+				APost->SetWorldLocation(FVector(Loc.X + ASign * W * 0.38f, Loc.Y + D * 0.5f + AwningProtrude, AwningZ * 0.5f));
+				APost->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				APost->RegisterComponent();
+				UMaterialInstanceDynamic* APMat = UMaterialInstanceDynamic::Create(APost->GetMaterial(0), APost);
+				if (APMat) { APMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.20f, 0.20f, 0.22f)); APMat->SetScalarParameterValue(TEXT("Metallic"), 0.7f); APMat->SetScalarParameterValue(TEXT("Roughness"), 0.3f); APost->SetMaterial(0, APMat); }
+				Shop->AddInstanceComponent(APost);
+			}
+		}
 	}
 
 	// ---- Sign strip (above awning) ----
@@ -1918,7 +2377,7 @@ void UPHCCitySubsystem::SpawnShop(const FVector& Loc, float W, float D, int32 St
 		Sign->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Sign->RegisterComponent();
 		UMaterialInstanceDynamic* SMat = UMaterialInstanceDynamic::Create(Sign->GetMaterial(0), Sign);
-		if (SMat) { SMat->SetVectorParameterValue(TEXT("BaseColor"), AwningColor * 1.15f); Sign->SetMaterial(0, SMat); }
+		if (SMat) { SMat->SetVectorParameterValue(TEXT("BaseColor"), AwningColor * 1.15f); SMat->SetScalarParameterValue(TEXT("Roughness"), 0.3f); Sign->SetMaterial(0, SMat); }
 		Shop->AddInstanceComponent(Sign);
 	}
 
@@ -1945,6 +2404,8 @@ void UPHCCitySubsystem::SpawnShop(const FVector& Loc, float W, float D, int32 St
 			if (WMat)
 			{
 				WMat->SetVectorParameterValue(TEXT("BaseColor"), DarkGlass);
+				WMat->SetScalarParameterValue(TEXT("Metallic"), 0.1f);
+				WMat->SetScalarParameterValue(TEXT("Roughness"), 0.05f);
 				Win->SetMaterial(0, WMat);
 				NightWindowMaterials.Add(WMat);
 				NightWindowLitColors.Add(WarmColors[CityRandom.RandRange(0, 3)]);
@@ -1996,8 +2457,17 @@ void UPHCCitySubsystem::SpawnShop(const FVector& Loc, float W, float D, int32 St
 		const float NeonZ = StoryH * 0.92f;
 
 		UStaticMeshComponent* Neon = NewObject<UStaticMeshComponent>(Shop, TEXT("NeonSign"));
-		Neon->SetStaticMesh(CubeMesh);
-		Neon->SetWorldScale3D(FVector(NeonW / 100.f, 3.f / 100.f, NeonH / 100.f));
+		Neon->SetStaticMesh(CylinderMesh ? CylinderMesh : CubeMesh);
+		if (CylinderMesh)
+		{
+			// Horizontal tube neon sign
+			Neon->SetWorldScale3D(FVector(NeonW / 100.f, NeonH * 0.5f / 50.f, NeonH * 0.5f / 50.f));
+			Neon->SetWorldRotation(FRotator(0.f, 0.f, 90.f));
+		}
+		else
+		{
+			Neon->SetWorldScale3D(FVector(NeonW / 100.f, 3.f / 100.f, NeonH / 100.f));
+		}
 		Neon->SetWorldLocation(FVector(Loc.X, Loc.Y + D * 0.5f + 6.f, NeonZ));
 		Neon->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Neon->RegisterComponent();
@@ -2007,6 +2477,7 @@ void UPHCCitySubsystem::SpawnShop(const FVector& Loc, float W, float D, int32 St
 		if (NMat)
 		{
 			NMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.08f, 0.08f, 0.10f));
+			NMat->SetScalarParameterValue(TEXT("Roughness"), 0.3f);
 			Neon->SetMaterial(0, NMat);
 			NightWindowMaterials.Add(NMat);
 			NightWindowLitColors.Add(NeonCol);
@@ -2043,7 +2514,7 @@ void UPHCCitySubsystem::SpawnInstitution(const FVector& Loc, float W, float D, f
 	Body->RegisterComponent();
 	Inst->SetRootComponent(Body);
 	UMaterialInstanceDynamic* BodyMat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
-	if (BodyMat) { BodyMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor); Body->SetMaterial(0, BodyMat); }
+	if (BodyMat) { BodyMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor); BodyMat->SetScalarParameterValue(TEXT("Roughness"), 0.6f); Body->SetMaterial(0, BodyMat); }
 	Inst->AddInstanceComponent(Body);
 
 	// ---- Accent stripe (colored horizontal band at ground floor) ----
@@ -2056,7 +2527,7 @@ void UPHCCitySubsystem::SpawnInstitution(const FVector& Loc, float W, float D, f
 		Stripe->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Stripe->RegisterComponent();
 		UMaterialInstanceDynamic* SMat = UMaterialInstanceDynamic::Create(Stripe->GetMaterial(0), Stripe);
-		if (SMat) { SMat->SetVectorParameterValue(TEXT("BaseColor"), AccentColor); Stripe->SetMaterial(0, SMat); }
+		if (SMat) { SMat->SetVectorParameterValue(TEXT("BaseColor"), AccentColor); SMat->SetScalarParameterValue(TEXT("Metallic"), 0.3f); SMat->SetScalarParameterValue(TEXT("Roughness"), 0.4f); Stripe->SetMaterial(0, SMat); }
 		Inst->AddInstanceComponent(Stripe);
 	}
 
@@ -2071,7 +2542,7 @@ void UPHCCitySubsystem::SpawnInstitution(const FVector& Loc, float W, float D, f
 		Overhang->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Overhang->RegisterComponent();
 		UMaterialInstanceDynamic* OMat = UMaterialInstanceDynamic::Create(Overhang->GetMaterial(0), Overhang);
-		if (OMat) { OMat->SetVectorParameterValue(TEXT("BaseColor"), AccentColor); Overhang->SetMaterial(0, OMat); }
+		if (OMat) { OMat->SetVectorParameterValue(TEXT("BaseColor"), AccentColor); OMat->SetScalarParameterValue(TEXT("Roughness"), 0.5f); Overhang->SetMaterial(0, OMat); }
 		Inst->AddInstanceComponent(Overhang);
 	}
 
@@ -2111,6 +2582,8 @@ void UPHCCitySubsystem::SpawnInstitution(const FVector& Loc, float W, float D, f
 				if (WMat)
 				{
 					WMat->SetVectorParameterValue(TEXT("BaseColor"), DarkGlass);
+					WMat->SetScalarParameterValue(TEXT("Metallic"), 0.1f);
+					WMat->SetScalarParameterValue(TEXT("Roughness"), 0.05f);
 					Win->SetMaterial(0, WMat);
 					NightWindowMaterials.Add(WMat);
 					NightWindowLitColors.Add(WarmColors[CityRandom.RandRange(0, 2)]);
@@ -2137,7 +2610,7 @@ void UPHCCitySubsystem::SpawnInstitution(const FVector& Loc, float W, float D, f
 			Col->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			Col->RegisterComponent();
 			UMaterialInstanceDynamic* CMat = UMaterialInstanceDynamic::Create(Col->GetMaterial(0), Col);
-			if (CMat) { CMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.80f, 0.78f, 0.75f)); Col->SetMaterial(0, CMat); }
+			if (CMat) { CMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.80f, 0.78f, 0.75f)); CMat->SetScalarParameterValue(TEXT("Roughness"), 0.5f); Col->SetMaterial(0, CMat); }
 			Inst->AddInstanceComponent(Col);
 		}
 	}
@@ -2151,8 +2624,38 @@ void UPHCCitySubsystem::SpawnInstitution(const FVector& Loc, float W, float D, f
 		Door->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Door->RegisterComponent();
 		UMaterialInstanceDynamic* DMat = UMaterialInstanceDynamic::Create(Door->GetMaterial(0), Door);
-		if (DMat) { DMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.15f, 0.10f, 0.05f)); Door->SetMaterial(0, DMat); }
+		if (DMat) { DMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.15f, 0.10f, 0.05f)); DMat->SetScalarParameterValue(TEXT("Roughness"), 0.5f); Door->SetMaterial(0, DMat); }
 		Inst->AddInstanceComponent(Door);
+	}
+
+	// ---- Dome (hemisphere on roof -- classical government look) ----
+	if (SphereMesh)
+	{
+		const float DomeR = FMath::Min(W, D) * 0.3f;
+		UStaticMeshComponent* Dome = NewObject<UStaticMeshComponent>(Inst, TEXT("InstDome"));
+		Dome->SetStaticMesh(SphereMesh);
+		Dome->SetWorldScale3D(FVector(DomeR / 50.f, DomeR / 50.f, DomeR * 0.5f / 50.f));
+		Dome->SetWorldLocation(FVector(Loc.X, Loc.Y, H + DomeR * 0.25f));
+		Dome->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Dome->RegisterComponent();
+		UMaterialInstanceDynamic* DmMat = UMaterialInstanceDynamic::Create(Dome->GetMaterial(0), Dome);
+		if (DmMat) { DmMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.55f, 0.55f, 0.52f)); DmMat->SetScalarParameterValue(TEXT("Metallic"), 0.6f); DmMat->SetScalarParameterValue(TEXT("Roughness"), 0.35f); Dome->SetMaterial(0, DmMat); }
+		Inst->AddInstanceComponent(Dome);
+	}
+
+	// ---- Flagpole (thin tall cylinder rising from rooftop) ----
+	if (CylinderMesh)
+	{
+		const float FlagH = 200.f;
+		UStaticMeshComponent* Flag = NewObject<UStaticMeshComponent>(Inst, TEXT("Flagpole"));
+		Flag->SetStaticMesh(CylinderMesh);
+		Flag->SetWorldScale3D(FVector(0.03f, 0.03f, FlagH / 100.f));
+		Flag->SetWorldLocation(FVector(Loc.X + W * 0.35f, Loc.Y + D * 0.5f + 20.f, H + FlagH * 0.5f));
+		Flag->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Flag->RegisterComponent();
+		UMaterialInstanceDynamic* FpMat = UMaterialInstanceDynamic::Create(Flag->GetMaterial(0), Flag);
+		if (FpMat) { FpMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.70f, 0.70f, 0.68f)); FpMat->SetScalarParameterValue(TEXT("Metallic"), 0.8f); FpMat->SetScalarParameterValue(TEXT("Roughness"), 0.25f); Flag->SetMaterial(0, FpMat); }
+		Inst->AddInstanceComponent(Flag);
 	}
 }
 
@@ -2185,7 +2688,7 @@ void UPHCCitySubsystem::SpawnWarehouse(const FVector& Loc, float W, float D, flo
 	Body->RegisterComponent();
 	Bldg->SetRootComponent(Body);
 	UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
-	if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); Body->SetMaterial(0, Mat); }
+	if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); Mat->SetScalarParameterValue(TEXT("Roughness"), 0.7f); Body->SetMaterial(0, Mat); }
 	Bldg->AddInstanceComponent(Body);
 
 	// Loading dock (30% chance) — flat platform on one side
@@ -2201,11 +2704,11 @@ void UPHCCitySubsystem::SpawnWarehouse(const FVector& Loc, float W, float D, flo
 		Dock->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Dock->RegisterComponent();
 		UMaterialInstanceDynamic* DM = UMaterialInstanceDynamic::Create(Dock->GetMaterial(0), Dock);
-		if (DM) { DM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.4f, 0.4f, 0.38f)); Dock->SetMaterial(0, DM); }
+		if (DM) { DM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.4f, 0.4f, 0.38f)); DM->SetScalarParameterValue(TEXT("Metallic"), 0.6f); DM->SetScalarParameterValue(TEXT("Roughness"), 0.4f); Dock->SetMaterial(0, DM); }
 		Bldg->AddInstanceComponent(Dock);
 	}
 
-	// Smokestack (20% chance) — thin cylinder on roof
+	// Smokestack (35% chance) — cylinder on roof with cone cap
 	if (CityRandom.FRand() < 0.35f && CylinderMesh)
 	{
 		UStaticMeshComponent* Stack = NewObject<UStaticMeshComponent>(Bldg, TEXT("Stack"));
@@ -2215,8 +2718,22 @@ void UPHCCitySubsystem::SpawnWarehouse(const FVector& Loc, float W, float D, flo
 		Stack->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Stack->RegisterComponent();
 		UMaterialInstanceDynamic* SM = UMaterialInstanceDynamic::Create(Stack->GetMaterial(0), Stack);
-		if (SM) { SM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.35f, 0.35f, 0.33f)); Stack->SetMaterial(0, SM); }
+		if (SM) { SM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.35f, 0.35f, 0.33f)); SM->SetScalarParameterValue(TEXT("Metallic"), 0.6f); SM->SetScalarParameterValue(TEXT("Roughness"), 0.4f); Stack->SetMaterial(0, SM); }
 		Bldg->AddInstanceComponent(Stack);
+
+		// Cone cap on smokestack
+		if (ConeMesh)
+		{
+			UStaticMeshComponent* StackCap = NewObject<UStaticMeshComponent>(Bldg, TEXT("StackCap"));
+			StackCap->SetStaticMesh(ConeMesh);
+			StackCap->SetWorldScale3D(FVector(0.55f, 0.55f, 0.5f));
+			StackCap->SetWorldLocation(FVector(Loc.X + W * 0.3f, Loc.Y, H + 225.f));
+			StackCap->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			StackCap->RegisterComponent();
+			UMaterialInstanceDynamic* SCMat = UMaterialInstanceDynamic::Create(StackCap->GetMaterial(0), StackCap);
+			if (SCMat) { SCMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.30f, 0.30f, 0.28f)); SCMat->SetScalarParameterValue(TEXT("Metallic"), 0.6f); SCMat->SetScalarParameterValue(TEXT("Roughness"), 0.4f); StackCap->SetMaterial(0, SCMat); }
+			Bldg->AddInstanceComponent(StackCap);
+		}
 	}
 
 	// ---- Roll-up bay doors (1-3 on front face) ----
@@ -2235,7 +2752,7 @@ void UPHCCitySubsystem::SpawnWarehouse(const FVector& Loc, float W, float D, flo
 			Bay->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			Bay->RegisterComponent();
 			UMaterialInstanceDynamic* BDMat = UMaterialInstanceDynamic::Create(Bay->GetMaterial(0), Bay);
-			if (BDMat) { BDMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.25f, 0.25f, 0.23f)); Bay->SetMaterial(0, BDMat); }
+			if (BDMat) { BDMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.25f, 0.25f, 0.23f)); BDMat->SetScalarParameterValue(TEXT("Metallic"), 0.6f); BDMat->SetScalarParameterValue(TEXT("Roughness"), 0.4f); Bay->SetMaterial(0, BDMat); }
 			Bldg->AddInstanceComponent(Bay);
 
 			// Accent strip above door
@@ -2247,7 +2764,7 @@ void UPHCCitySubsystem::SpawnWarehouse(const FVector& Loc, float W, float D, flo
 			Accent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			Accent->RegisterComponent();
 			UMaterialInstanceDynamic* AMat = UMaterialInstanceDynamic::Create(Accent->GetMaterial(0), Accent);
-			if (AMat) { AMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.60f, 0.35f, 0.10f)); Accent->SetMaterial(0, AMat); }
+			if (AMat) { AMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.60f, 0.35f, 0.10f)); AMat->SetScalarParameterValue(TEXT("Metallic"), 0.6f); AMat->SetScalarParameterValue(TEXT("Roughness"), 0.4f); Accent->SetMaterial(0, AMat); }
 			Bldg->AddInstanceComponent(Accent);
 		}
 	}
@@ -2303,6 +2820,53 @@ void UPHCCitySubsystem::SpawnParkBlock(const FVector& ParkCenter, float ParkSize
 	SpawnPath(FVector(ParkCenter.X, ParkCenter.Y, 4.f), FVector(1.5f, ParkSize / 100.f, 1.f));
 	// E-W path
 	SpawnPath(FVector(ParkCenter.X, ParkCenter.Y, 4.f), FVector(ParkSize / 100.f, 1.5f, 1.f));
+
+	// ---- Hedge rows (sphere clusters along path edges) ----
+	if (SphereMesh)
+	{
+		const int32 NumHedges = 8;
+		for (int32 Hi = 0; Hi < NumHedges; ++Hi)
+		{
+			const float Frac = (Hi + 0.5f) / (float)NumHedges;
+			// Alternate along N-S and E-W paths
+			FVector HLoc;
+			if (Hi < NumHedges / 2)
+				HLoc = FVector(ParkCenter.X + 50.f, ParkCenter.Y + ParkSize * (Frac * 2.f - 0.5f), 0.f);
+			else
+				HLoc = FVector(ParkCenter.X + ParkSize * ((Frac - 0.5f) * 2.f - 0.5f), ParkCenter.Y + 50.f, 0.f);
+
+			const float HScale = DetailRandom.FRandRange(0.3f, 0.5f);
+			FString HName = FString::Printf(TEXT("Hedge_%d"), Hi);
+			UStaticMeshComponent* Hedge = NewObject<UStaticMeshComponent>(Park, *HName);
+			Hedge->SetStaticMesh(SphereMesh);
+			Hedge->SetWorldScale3D(FVector(HScale, HScale, HScale * 0.6f));
+			Hedge->SetWorldLocation(FVector(HLoc.X, HLoc.Y, HScale * 18.f));
+			Hedge->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Hedge->RegisterComponent();
+			UMaterialInstanceDynamic* HM = UMaterialInstanceDynamic::Create(Hedge->GetMaterial(0), Hedge);
+			if (HM) { HM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.08f, 0.25f, 0.05f)); HM->SetScalarParameterValue(TEXT("Roughness"), 0.92f); Hedge->SetMaterial(0, HM); }
+			Park->AddInstanceComponent(Hedge);
+		}
+	}
+
+	// ---- Topiary cones (cone-shaped trees at path intersections) ----
+	if (ConeMesh)
+	{
+		for (int32 Ti = 0; Ti < 2; ++Ti)
+		{
+			const float TSign = (Ti == 0) ? -1.f : 1.f;
+			FString TName = FString::Printf(TEXT("Topiary_%d"), Ti);
+			UStaticMeshComponent* Topiary = NewObject<UStaticMeshComponent>(Park, *TName);
+			Topiary->SetStaticMesh(ConeMesh);
+			Topiary->SetWorldScale3D(FVector(0.5f, 0.5f, 2.5f));
+			Topiary->SetWorldLocation(FVector(ParkCenter.X + TSign * 120.f, ParkCenter.Y + TSign * 120.f, 125.f));
+			Topiary->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Topiary->RegisterComponent();
+			UMaterialInstanceDynamic* TM = UMaterialInstanceDynamic::Create(Topiary->GetMaterial(0), Topiary);
+			if (TM) { TM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.05f, 0.22f, 0.04f)); TM->SetScalarParameterValue(TEXT("Roughness"), 0.90f); Topiary->SetMaterial(0, TM); }
+			Park->AddInstanceComponent(Topiary);
+		}
+	}
 
 	// Benches (4-6 along paths)
 	const int32 NumBenches = CityRandom.RandRange(4, 6);
@@ -2405,9 +2969,33 @@ void UPHCCitySubsystem::SpawnBuilding(const FVector& Location, const FVector& Si
 	if (Mat)
 	{
 		Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
+		Mat->SetScalarParameterValue(TEXT("Roughness"), 0.55f);
 		MC->SetMaterial(0, Mat);
 	}
 	Building->AddInstanceComponent(MC);
+
+	// ---- Corner edge cylinders (soften sharp 90-degree corners) ----
+	if (CylinderMesh && Size.Z > 400.f)
+	{
+		const float CornerR = 6.f;
+		const float HExtX = Size.X * 0.5f;
+		const float HExtY = Size.Y * 0.5f;
+		for (int32 Ci = 0; Ci < 4; ++Ci)
+		{
+			const float CXSign = (Ci & 1) ? 1.f : -1.f;
+			const float CYSign = (Ci & 2) ? 1.f : -1.f;
+			FString CName = FString::Printf(TEXT("BldgCorner_%d"), Ci);
+			UStaticMeshComponent* Corner = NewObject<UStaticMeshComponent>(Building, *CName);
+			Corner->SetStaticMesh(CylinderMesh);
+			Corner->SetWorldScale3D(FVector(CornerR / 50.f, CornerR / 50.f, Size.Z / 100.f));
+			Corner->SetWorldLocation(FVector(Location.X + CXSign * HExtX, Location.Y + CYSign * HExtY, Size.Z * 0.5f));
+			Corner->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Corner->RegisterComponent();
+			UMaterialInstanceDynamic* CMat = UMaterialInstanceDynamic::Create(Corner->GetMaterial(0), Corner);
+			if (CMat) { CMat->SetVectorParameterValue(TEXT("BaseColor"), Color * 0.92f); CMat->SetScalarParameterValue(TEXT("Roughness"), 0.55f); Corner->SetMaterial(0, CMat); }
+			Building->AddInstanceComponent(Corner);
+		}
+	}
 
 	// ---- Ground-floor storefront awning (adds street-level character) ----
 	if (bAddWindows && Size.Z > 400.f && CityRandom.FRand() < 0.35f)
@@ -2512,7 +3100,7 @@ void UPHCCitySubsystem::SpawnBuilding(const FVector& Location, const FVector& Si
 				WB->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 				WB->RegisterComponent();
 				UMaterialInstanceDynamic* WM = UMaterialInstanceDynamic::Create(WB->GetMaterial(0), WB);
-				if (WM) { WM->SetVectorParameterValue(TEXT("BaseColor"), BandColor); WB->SetMaterial(0, WM); }
+				if (WM) { WM->SetVectorParameterValue(TEXT("BaseColor"), BandColor); WM->SetScalarParameterValue(TEXT("Metallic"), 0.1f); WM->SetScalarParameterValue(TEXT("Roughness"), 0.05f); WB->SetMaterial(0, WM); }
 				Building->AddInstanceComponent(WB);
 			}
 		}
@@ -2605,6 +3193,8 @@ void UPHCCitySubsystem::SpawnBuilding(const FVector& Location, const FVector& Si
 					{
 						// Start dark (game begins at sunrise).
 						WinMat->SetVectorParameterValue(TEXT("BaseColor"), DarkGlass);
+						WinMat->SetScalarParameterValue(TEXT("Metallic"), 0.1f);
+						WinMat->SetScalarParameterValue(TEXT("Roughness"), 0.05f);
 						WinMC->SetMaterial(0, WinMat);
 
 						NightWindowMaterials.Add(WinMat);
@@ -2632,11 +3222,12 @@ void UPHCCitySubsystem::SpawnBuilding(const FVector& Location, const FVector& Si
 		Building->AddInstanceComponent(Door);
 	}
 
-	// ---- Rooftop detail (25% -- AC unit or water tank) ----
-	if (DetailRandom.FRand() < 0.25f && Size.Z > 600.f)
+	// ---- Rooftop detail (35% -- AC unit, water tank, spire, or dome) ----
+	if (DetailRandom.FRand() < 0.35f && Size.Z > 600.f)
 	{
 		const float RoofZ = Size.Z + 2.f;
-		if (DetailRandom.FRand() < 0.5f)
+		const float RoofRoll = DetailRandom.FRand();
+		if (RoofRoll < 0.25f)
 		{
 			// AC unit (cube)
 			UStaticMeshComponent* AC = NewObject<UStaticMeshComponent>(Building, TEXT("RooftopAC"));
@@ -2646,10 +3237,10 @@ void UPHCCitySubsystem::SpawnBuilding(const FVector& Location, const FVector& Si
 			AC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			AC->RegisterComponent();
 			UMaterialInstanceDynamic* ACMat = UMaterialInstanceDynamic::Create(AC->GetMaterial(0), AC);
-			if (ACMat) { ACMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.50f, 0.50f, 0.48f)); AC->SetMaterial(0, ACMat); }
+			if (ACMat) { ACMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.50f, 0.50f, 0.48f)); ACMat->SetScalarParameterValue(TEXT("Metallic"), 0.5f); ACMat->SetScalarParameterValue(TEXT("Roughness"), 0.4f); AC->SetMaterial(0, ACMat); }
 			Building->AddInstanceComponent(AC);
 		}
-		else if (CylinderMesh)
+		else if (RoofRoll < 0.50f && CylinderMesh)
 		{
 			// Water tank (cylinder)
 			UStaticMeshComponent* Tank = NewObject<UStaticMeshComponent>(Building, TEXT("RooftopTank"));
@@ -2659,8 +3250,34 @@ void UPHCCitySubsystem::SpawnBuilding(const FVector& Location, const FVector& Si
 			Tank->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			Tank->RegisterComponent();
 			UMaterialInstanceDynamic* TkMat = UMaterialInstanceDynamic::Create(Tank->GetMaterial(0), Tank);
-			if (TkMat) { TkMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.40f, 0.40f, 0.38f)); Tank->SetMaterial(0, TkMat); }
+			if (TkMat) { TkMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.40f, 0.40f, 0.38f)); TkMat->SetScalarParameterValue(TEXT("Metallic"), 0.5f); TkMat->SetScalarParameterValue(TEXT("Roughness"), 0.4f); Tank->SetMaterial(0, TkMat); }
 			Building->AddInstanceComponent(Tank);
+		}
+		else if (RoofRoll < 0.75f && ConeMesh)
+		{
+			// Spire (cone pointing up)
+			UStaticMeshComponent* Spire = NewObject<UStaticMeshComponent>(Building, TEXT("RooftopSpire"));
+			Spire->SetStaticMesh(ConeMesh);
+			Spire->SetWorldScale3D(FVector(0.3f, 0.3f, 1.8f));
+			Spire->SetWorldLocation(FVector(Location.X, Location.Y, RoofZ + 90.f));
+			Spire->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Spire->RegisterComponent();
+			UMaterialInstanceDynamic* SpMat = UMaterialInstanceDynamic::Create(Spire->GetMaterial(0), Spire);
+			if (SpMat) { SpMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.55f, 0.55f, 0.52f)); SpMat->SetScalarParameterValue(TEXT("Metallic"), 0.6f); SpMat->SetScalarParameterValue(TEXT("Roughness"), 0.3f); Spire->SetMaterial(0, SpMat); }
+			Building->AddInstanceComponent(Spire);
+		}
+		else if (SphereMesh)
+		{
+			// Dome (flattened sphere)
+			UStaticMeshComponent* Dome = NewObject<UStaticMeshComponent>(Building, TEXT("RooftopDome"));
+			Dome->SetStaticMesh(SphereMesh);
+			Dome->SetWorldScale3D(FVector(FMath::Min(Size.X, Size.Y) * 0.004f, FMath::Min(Size.X, Size.Y) * 0.004f, 0.4f));
+			Dome->SetWorldLocation(FVector(Location.X, Location.Y, RoofZ + 20.f));
+			Dome->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Dome->RegisterComponent();
+			UMaterialInstanceDynamic* DmMat = UMaterialInstanceDynamic::Create(Dome->GetMaterial(0), Dome);
+			if (DmMat) { DmMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.48f, 0.48f, 0.45f)); DmMat->SetScalarParameterValue(TEXT("Metallic"), 0.5f); DmMat->SetScalarParameterValue(TEXT("Roughness"), 0.35f); Dome->SetMaterial(0, DmMat); }
+			Building->AddInstanceComponent(Dome);
 		}
 	}
 }
@@ -2695,7 +3312,9 @@ void UPHCCitySubsystem::SpawnRoadStrip(const FVector& Center, float LengthX, flo
 	{
 		// Black asphalt road surface.
 		Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.015f, 0.015f, 0.018f));
+		Mat->SetScalarParameterValue(TEXT("Roughness"), 0.85f);
 		MC->SetMaterial(0, Mat);
+		RoadMaterials.Add(Mat); // Store for wet road effect in Tick()
 	}
 	Road->AddInstanceComponent(MC);
 
@@ -2706,7 +3325,7 @@ void UPHCCitySubsystem::SpawnRoadStrip(const FVector& Center, float LengthX, flo
 	const float RoadLen = bAlongX ? LengthX : LengthY;
 	const float RoadWid = bAlongX ? LengthY : LengthX;
 
-	auto SpawnLine = [&](const FVector& LineLoc, const FLinearColor& LineColor)
+	auto SpawnLine = [&](const FVector& LineLoc, const FLinearColor& LineColor, const FLinearColor& Emissive = FLinearColor::Black)
 	{
 		UStaticMeshComponent* LineMC = NewObject<UStaticMeshComponent>(Road);
 		LineMC->SetStaticMesh(CubeMesh);
@@ -2721,6 +3340,10 @@ void UPHCCitySubsystem::SpawnRoadStrip(const FVector& Center, float LengthX, flo
 		if (LMat)
 		{
 			LMat->SetVectorParameterValue(TEXT("BaseColor"), LineColor);
+			LMat->SetScalarParameterValue(TEXT("Metallic"), 0.3f); // retroreflective paint
+			LMat->SetScalarParameterValue(TEXT("Roughness"), 0.25f);
+			if (Emissive != FLinearColor::Black)
+				LMat->SetVectorParameterValue(TEXT("EmissiveColor"), Emissive);
 			LineMC->SetMaterial(0, LMat);
 		}
 		Road->AddInstanceComponent(LineMC);
@@ -2730,19 +3353,20 @@ void UPHCCitySubsystem::SpawnRoadStrip(const FVector& Center, float LengthX, flo
 	const FLinearColor WhiteLine(0.7f, 0.7f, 0.7f);
 	const float LineZ = 3.5f;
 
-	// Center line.
-	SpawnLine(FVector(Center.X, Center.Y, LineZ), YellowLine);
+	// Center line (boosted emissive for GTA V night glow).
+	SpawnLine(FVector(Center.X, Center.Y, LineZ), YellowLine, FLinearColor(0.6f, 0.5f, 0.0f));
 
-	// Edge lines.
+	// Edge lines (brighter retroreflective).
+	const FLinearColor WhiteEmissive(0.2f, 0.2f, 0.2f);
 	if (bAlongX)
 	{
-		SpawnLine(FVector(Center.X, Center.Y - RoadWid * 0.5f + 50.f, LineZ), WhiteLine);
-		SpawnLine(FVector(Center.X, Center.Y + RoadWid * 0.5f - 50.f, LineZ), WhiteLine);
+		SpawnLine(FVector(Center.X, Center.Y - RoadWid * 0.5f + 50.f, LineZ), WhiteLine, WhiteEmissive);
+		SpawnLine(FVector(Center.X, Center.Y + RoadWid * 0.5f - 50.f, LineZ), WhiteLine, WhiteEmissive);
 	}
 	else
 	{
-		SpawnLine(FVector(Center.X - RoadWid * 0.5f + 50.f, Center.Y, LineZ), WhiteLine);
-		SpawnLine(FVector(Center.X + RoadWid * 0.5f - 50.f, Center.Y, LineZ), WhiteLine);
+		SpawnLine(FVector(Center.X - RoadWid * 0.5f + 50.f, Center.Y, LineZ), WhiteLine, WhiteEmissive);
+		SpawnLine(FVector(Center.X + RoadWid * 0.5f - 50.f, Center.Y, LineZ), WhiteLine, WhiteEmissive);
 	}
 }
 
@@ -2776,6 +3400,7 @@ void UPHCCitySubsystem::SpawnSidewalk(const FVector& Center, float LengthX, floa
 	{
 		// Concrete sidewalk.
 		Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.40f, 0.38f, 0.35f));
+		Mat->SetScalarParameterValue(TEXT("Roughness"), 0.75f);
 		MC->SetMaterial(0, Mat);
 	}
 	Walk->AddInstanceComponent(MC);
@@ -2814,19 +3439,59 @@ void UPHCCitySubsystem::SpawnStreetLight(const FVector& Location)
 	if (PoleMat)
 	{
 		PoleMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.15f, 0.15f, 0.16f));
+		PoleMat->SetScalarParameterValue(TEXT("Metallic"), 0.7f);
+		PoleMat->SetScalarParameterValue(TEXT("Roughness"), 0.35f);
 		PoleMC->SetMaterial(0, PoleMat);
 	}
 	LampActor->AddInstanceComponent(PoleMC);
 
-	// ---- Point light (warm sodium street light) ----
-	UPointLightComponent* PL = NewObject<UPointLightComponent>(LampActor, TEXT("LampLight"));
-	PL->SetWorldLocation(FVector(Location.X, Location.Y, PoleHeight));
-	PL->SetIntensity(12000.f);
-	PL->SetAttenuationRadius(2500.f);
-	PL->SetLightColor(FColor(255, 200, 120));
-	PL->SetCastShadows(false); // Performance: no shadows from street lights
-	PL->RegisterComponent();
-	LampActor->AddInstanceComponent(PL);
+	// Lamp fixture (warm emissive sphere at top of pole)
+	UStaticMeshComponent* FixtureMC = NewObject<UStaticMeshComponent>(LampActor, TEXT("LampFixture"));
+	FixtureMC->SetStaticMesh(SphereMesh);
+	FixtureMC->SetWorldScale3D(FVector(0.35f, 0.35f, 0.25f));
+	FixtureMC->SetWorldLocation(FVector(Location.X, Location.Y, PoleHeight));
+	FixtureMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FixtureMC->RegisterComponent();
+	LampActor->AddInstanceComponent(FixtureMC);
+	{
+		UMaterialInstanceDynamic* FM = UMaterialInstanceDynamic::Create(FixtureMC->GetMaterial(0), FixtureMC);
+		if (FM)
+		{
+			FM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.9f, 0.8f, 0.5f));
+			FM->SetScalarParameterValue(TEXT("Metallic"), 0.6f);
+			FM->SetScalarParameterValue(TEXT("Roughness"), 0.3f);
+			FM->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(1.5f, 1.2f, 0.7f));
+			FixtureMC->SetMaterial(0, FM);
+		}
+	}
+
+	// ---- Lamp shade (inverted cone above the globe) ----
+	if (ConeMesh)
+	{
+		UStaticMeshComponent* Shade = NewObject<UStaticMeshComponent>(LampActor, TEXT("LampShade"));
+		Shade->SetStaticMesh(ConeMesh);
+		Shade->SetWorldScale3D(FVector(0.45f, 0.45f, 0.25f));
+		Shade->SetWorldLocation(FVector(Location.X, Location.Y, PoleHeight + 18.f));
+		Shade->SetWorldRotation(FRotator(180.f, 0.f, 0.f)); // inverted, pointing down
+		Shade->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Shade->RegisterComponent();
+		UMaterialInstanceDynamic* ShMat = UMaterialInstanceDynamic::Create(Shade->GetMaterial(0), Shade);
+		if (ShMat) { ShMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.15f, 0.15f, 0.16f)); ShMat->SetScalarParameterValue(TEXT("Metallic"), 0.7f); ShMat->SetScalarParameterValue(TEXT("Roughness"), 0.35f); Shade->SetMaterial(0, ShMat); }
+		LampActor->AddInstanceComponent(Shade);
+	}
+
+	// ---- Spot light (GTA V-style downward cone, realistic street pool) ----
+	USpotLightComponent* SL = NewObject<USpotLightComponent>(LampActor, TEXT("LampLight"));
+	SL->SetWorldLocation(FVector(Location.X, Location.Y, PoleHeight));
+	SL->SetWorldRotation(FRotator(-85.f, 0.f, 0.f)); // pointing down
+	SL->SetIntensity(20000.f);
+	SL->SetAttenuationRadius(2000.f);
+	SL->SetOuterConeAngle(55.f);
+	SL->SetInnerConeAngle(30.f);
+	SL->SetLightColor(FColor(255, 200, 120)); // warm sodium
+	SL->SetCastShadows(false); // Performance: no shadows from street lights
+	SL->RegisterComponent();
+	LampActor->AddInstanceComponent(SL);
 }
 
 // ---------------------------------------------------------------------------
@@ -2882,6 +3547,7 @@ void UPHCCitySubsystem::SpawnPalmTree(const FVector& Location, float Height, boo
 		if (SegMat)
 		{
 			SegMat->SetVectorParameterValue(TEXT("BaseColor"), TrunkColor);
+			SegMat->SetScalarParameterValue(TEXT("Roughness"), 0.8f); // bark
 			Seg->SetMaterial(0, SegMat);
 		}
 		Tree->AddInstanceComponent(Seg);
@@ -2930,6 +3596,7 @@ void UPHCCitySubsystem::SpawnPalmTree(const FVector& Location, float Height, boo
 		if (FMat)
 		{
 			FMat->SetVectorParameterValue(TEXT("BaseColor"), FrondColor);
+			FMat->SetScalarParameterValue(TEXT("Roughness"), 0.7f); // leaf
 			Frond->SetMaterial(0, FMat);
 		}
 		Tree->AddInstanceComponent(Frond);
@@ -3291,7 +3958,13 @@ void UPHCCitySubsystem::SpawnStarfield()
 		SC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		SC->RegisterComponent();
 		UMaterialInstanceDynamic* SM = UMaterialInstanceDynamic::Create(SC->GetMaterial(0), SC);
-		if (SM) { SM->SetVectorParameterValue(TEXT("BaseColor"), Col); SC->SetMaterial(0, SM); }
+		if (SM)
+		{
+			SM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.1f, 0.1f, 0.1f));
+			SM->SetScalarParameterValue(TEXT("Roughness"), 0.f);
+			SM->SetVectorParameterValue(TEXT("EmissiveColor"), Col);
+			SC->SetMaterial(0, SM);
+		}
 		StarfieldActor->AddInstanceComponent(SC);
 	}
 
@@ -3326,11 +3999,58 @@ void UPHCCitySubsystem::SpawnStarfield()
 		SC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		SC->RegisterComponent();
 		UMaterialInstanceDynamic* SM = UMaterialInstanceDynamic::Create(SC->GetMaterial(0), SC);
-		if (SM) { SM->SetVectorParameterValue(TEXT("BaseColor"), Col); SC->SetMaterial(0, SM); }
+		if (SM)
+		{
+			SM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.1f, 0.1f, 0.1f));
+			SM->SetScalarParameterValue(TEXT("Roughness"), 0.f);
+			SM->SetVectorParameterValue(TEXT("EmissiveColor"), Col);
+			SC->SetMaterial(0, SM);
+		}
 		StarfieldActor->AddInstanceComponent(SC);
 	}
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCityGameMode: Spawned %d stars (180 bg + 250 Milky Way)."), StarIdx);
+}
+
+// ---------------------------------------------------------------------------
+// Cloud Layer -- two overlapping planes at high altitude for parallax depth
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::SpawnCloudLayer()
+{
+	UWorld* World = GetWorld();
+	if (!World || !PlaneMesh || !GlassMaterial) return;
+
+	auto SpawnCloudPlane = [&](float Z, float Opacity, const TCHAR* Label) -> AActor*
+	{
+		AActor* CA = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(0.f, 0.f, Z), FRotator::ZeroRotator);
+		if (!CA) return nullptr;
+#if WITH_EDITOR
+		CA->SetActorLabel(Label);
+#endif
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(CA, TEXT("CloudMesh"));
+		MC->SetStaticMesh(PlaneMesh);
+		MC->SetWorldScale3D(FVector(3000.f, 3000.f, 1.f)); // massive sky plane
+		MC->SetWorldLocation(FVector(0.f, 0.f, Z));
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->RegisterComponent();
+		CA->SetRootComponent(MC);
+
+		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(GlassMaterial, MC);
+		if (Mat)
+		{
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.85f, 0.85f, 0.88f));
+			Mat->SetScalarParameterValue(TEXT("Opacity"), Opacity);
+			Mat->SetScalarParameterValue(TEXT("Roughness"), 1.0f);
+			MC->SetMaterial(0, Mat);
+		}
+		CA->AddInstanceComponent(MC);
+		return CA;
+	};
+
+	CloudLayerActor = SpawnCloudPlane(15000.f, 0.10f, TEXT("CloudLayer1"));
+	CloudLayerActor2 = SpawnCloudPlane(16500.f, 0.08f, TEXT("CloudLayer2"));
 }
 
 // ---------------------------------------------------------------------------
@@ -3362,7 +4082,9 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 
 	// Note: Size parameter is in UU; BasicShapes are 100 UU, so divide by 100 for scale.
 	auto MakeCubeMC = [&](AActor* Owner, const FVector& Loc, const FVector& Size,
-		const FLinearColor& Color, const TCHAR* Name) -> UStaticMeshComponent*
+		const FLinearColor& Color, const TCHAR* Name,
+		float Metallic = 0.f, float Roughness = 0.5f,
+		const FLinearColor& Emissive = FLinearColor::Black) -> UStaticMeshComponent*
 	{
 		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, Name);
 		MC->SetStaticMesh(CubeMesh);
@@ -3371,13 +4093,25 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->RegisterComponent();
 		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, MC);
-		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); MC->SetMaterial(0, Mat); }
+		if (Mat)
+		{
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
+			if (Metallic != 0.f)
+				Mat->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+			if (Roughness != 0.5f)
+				Mat->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+			if (Emissive != FLinearColor::Black)
+				Mat->SetVectorParameterValue(TEXT("EmissiveColor"), Emissive);
+			MC->SetMaterial(0, Mat);
+		}
 		Owner->AddInstanceComponent(MC);
 		return MC;
 	};
 
 	auto MakeCylMC = [&](AActor* Owner, const FVector& Loc, const FVector& Size,
-		const FLinearColor& Color, const TCHAR* Name) -> UStaticMeshComponent*
+		const FLinearColor& Color, const TCHAR* Name,
+		float Metallic = 0.f, float Roughness = 0.5f,
+		const FLinearColor& Emissive = FLinearColor::Black) -> UStaticMeshComponent*
 	{
 		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, Name);
 		MC->SetStaticMesh(CylinderMesh);
@@ -3386,13 +4120,25 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->RegisterComponent();
 		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, MC);
-		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); MC->SetMaterial(0, Mat); }
+		if (Mat)
+		{
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
+			if (Metallic != 0.f)
+				Mat->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+			if (Roughness != 0.5f)
+				Mat->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+			if (Emissive != FLinearColor::Black)
+				Mat->SetVectorParameterValue(TEXT("EmissiveColor"), Emissive);
+			MC->SetMaterial(0, Mat);
+		}
 		Owner->AddInstanceComponent(MC);
 		return MC;
 	};
 
 	auto MakeSphereMC = [&](AActor* Owner, const FVector& Loc, const FVector& Size,
-		const FLinearColor& Color, const TCHAR* Name) -> UStaticMeshComponent*
+		const FLinearColor& Color, const TCHAR* Name,
+		float Metallic = 0.f, float Roughness = 0.5f,
+		const FLinearColor& Emissive = FLinearColor::Black) -> UStaticMeshComponent*
 	{
 		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, Name);
 		MC->SetStaticMesh(SphereMesh);
@@ -3401,7 +4147,17 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->RegisterComponent();
 		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, MC);
-		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); MC->SetMaterial(0, Mat); }
+		if (Mat)
+		{
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
+			if (Metallic != 0.f)
+				Mat->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+			if (Roughness != 0.5f)
+				Mat->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+			if (Emissive != FLinearColor::Black)
+				Mat->SetVectorParameterValue(TEXT("EmissiveColor"), Emissive);
+			MC->SetMaterial(0, Mat);
+		}
 		Owner->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -3474,6 +4230,8 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 					UMaterialInstanceDynamic* WMat = Cast<UMaterialInstanceDynamic>(WMC->GetMaterial(0));
 					if (WMat)
 					{
+						WMat->SetScalarParameterValue(TEXT("Metallic"), 0.1f);
+						WMat->SetScalarParameterValue(TEXT("Roughness"), 0.05f);
 						NightWindowMaterials.Add(WMat);
 						NightWindowLitColors.Add(WarmColors[CityRandom.RandRange(0, 5)]);
 						NightWindowLitStates.Add(CityRandom.FRand() < 0.5f);
@@ -3500,16 +4258,16 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 			FString NnX = FString::Printf(TEXT("Band_%d"), BIdx++);
 			// +Y face
 			MakeCubeMC(Owner, FVector(BaseLoc.X, BaseLoc.Y + D * 0.5f + 3.f, BZ),
-				FVector(W, BandD, BandH), GlassColor, *NY);
+				FVector(W, BandD, BandH), GlassColor, *NY, 0.1f, 0.05f);
 			// -Y face
 			MakeCubeMC(Owner, FVector(BaseLoc.X, BaseLoc.Y - D * 0.5f - 3.f, BZ),
-				FVector(W, BandD, BandH), GlassColor, *NnY);
+				FVector(W, BandD, BandH), GlassColor, *NnY, 0.1f, 0.05f);
 			// +X face
 			MakeCubeMC(Owner, FVector(BaseLoc.X + W * 0.5f + 3.f, BaseLoc.Y, BZ),
-				FVector(BandD, D, BandH), GlassColor, *NX);
+				FVector(BandD, D, BandH), GlassColor, *NX, 0.1f, 0.05f);
 			// -X face
 			MakeCubeMC(Owner, FVector(BaseLoc.X - W * 0.5f - 3.f, BaseLoc.Y, BZ),
-				FVector(BandD, D, BandH), GlassColor, *NnX);
+				FVector(BandD, D, BandH), GlassColor, *NnX, 0.1f, 0.05f);
 		}
 	};
 
@@ -3528,7 +4286,7 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 		for (int32 ci = 0; ci < 4; ++ci)
 		{
 			FString CN = FString::Printf(TEXT("Col_%d_%d"), BandIdx++, ci);
-			MakeCubeMC(Owner, Corners[ci], FVector(ColW, ColW, H), Color, *CN);
+			MakeCubeMC(Owner, Corners[ci], FVector(ColW, ColW, H), Color, *CN, 0.85f, 0.3f);
 		}
 	};
 
@@ -3580,28 +4338,28 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Pinnacle"));
 		if (T)
 		{
-			// Wide podium base (3 stories)
+			// Wide podium base (3 stories) -- sandstone concrete
 			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 500.f),
-				FVector(900.f, 800.f, 1000.f), SandStone, TEXT("Pinnacle_Pod"));
+				FVector(900.f, 800.f, 1000.f), SandStone, TEXT("Pinnacle_Pod"), 0.f, 0.6f);
 			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			Body->SetCollisionResponseToAllChannels(ECR_Block);
 
-			// Main tower
+			// Main tower -- concrete
 			const float MainH = 5000.f;
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1000.f + MainH * 0.5f),
-				FVector(550.f, 500.f, MainH), WarmConcrete, TEXT("Pinnacle_Main"));
+				FVector(550.f, 500.f, MainH), WarmConcrete, TEXT("Pinnacle_Main"), 0.f, 0.6f);
 
-			// First setback
+			// First setback -- concrete
 			const float Set1H = 1800.f;
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1000.f + MainH + Set1H * 0.5f),
-				FVector(400.f, 380.f, Set1H), WarmConcrete * 0.95f, TEXT("Pinnacle_Set1"));
+				FVector(400.f, 380.f, Set1H), WarmConcrete * 0.95f, TEXT("Pinnacle_Set1"), 0.f, 0.6f);
 
-			// Second setback (crown)
+			// Second setback (crown) -- sandstone concrete
 			const float Set2H = 900.f;
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1000.f + MainH + Set1H + Set2H * 0.5f),
-				FVector(250.f, 240.f, Set2H), SandStone, TEXT("Pinnacle_Set2"));
+				FVector(250.f, 240.f, Set2H), SandStone, TEXT("Pinnacle_Set2"), 0.f, 0.6f);
 
-			// Decorative crown ledges
+			// Decorative crown ledges -- gold trim
 			const float CrownZ = 1000.f + MainH + Set1H + Set2H;
 			for (int32 i = 0; i < 4; ++i)
 			{
@@ -3609,22 +4367,23 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 				const float LW = 260.f - i * 15.f;
 				FString LN = FString::Printf(TEXT("Pinnacle_Ledge_%d"), i);
 				MakeCubeMC(T, FVector(Loc.X, Loc.Y, LZ),
-					FVector(LW + 30.f, LW + 20.f, 25.f), GoldAccent, *LN);
+					FVector(LW + 30.f, LW + 20.f, 25.f), GoldAccent, *LN, 0.95f, 0.2f);
 			}
 
-			// Antenna spire
+			// Antenna spire -- steel
 			MakeCylMC(T, FVector(Loc.X, Loc.Y, CrownZ + 600.f),
-				FVector(15.f, 15.f, 1200.f), LightGray, TEXT("Pinnacle_Spire"));
+				FVector(15.f, 15.f, 1200.f), LightGray, TEXT("Pinnacle_Spire"), 0.85f, 0.3f);
 			MakeSphereMC(T, FVector(Loc.X, Loc.Y, CrownZ + 1200.f),
-				FVector(25.f, 25.f, 25.f), AntennaRed, TEXT("Pinnacle_Light"));
+				FVector(25.f, 25.f, 25.f), AntennaRed, TEXT("Pinnacle_Light"), 0.f, 0.5f,
+				FLinearColor(2.0f, 0.2f, 0.2f));
 
 			AddCornerColumns(T, FVector(Loc.X, Loc.Y, 1000.f), 560.f, 510.f, MainH, 35.f, SandStone * 0.8f);
 			AddGlassBands(T, FVector(Loc.X, Loc.Y, 1000.f), 550.f, 500.f, MainH, TintedGlass, BandIdx);
 			AddWindows(T, FVector(Loc.X, Loc.Y, 1000.f), 550.f, 500.f, MainH + Set1H, WinIdx);
 
-			// Ground floor canopy
+			// Ground floor canopy -- gold trim
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y + 410.f, 280.f),
-				FVector(400.f, 120.f, 15.f), GoldAccent, TEXT("Pinnacle_Canopy"));
+				FVector(400.f, 120.f, 15.f), GoldAccent, TEXT("Pinnacle_Canopy"), 0.95f, 0.2f);
 
 			T->SetRootComponent(Body);
 			SkyCount++;
@@ -3641,28 +4400,29 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 		if (T)
 		{
 			const float H = 5500.f;
+			// Glass tower facade
 			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(500.f, 450.f, H), MidnightBlue, TEXT("Glass_Main"));
+				FVector(500.f, 450.f, H), MidnightBlue, TEXT("Glass_Main"), 0.1f, 0.02f);
 			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			Body->SetCollisionResponseToAllChannels(ECR_Block);
 
 			AddGlassBands(T, Loc, 500.f, 450.f, H, SkyGlass, BandIdx);
 
-			// Mechanical penthouse
+			// Mechanical penthouse -- steel
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 200.f),
-				FVector(300.f, 250.f, 400.f), DarkSteel, TEXT("Glass_Pent"));
+				FVector(300.f, 250.f, 400.f), DarkSteel, TEXT("Glass_Pent"), 0.85f, 0.3f);
 
-			// Rooftop antenna array
+			// Rooftop antenna array -- steel
 			for (int32 i = -1; i <= 1; ++i)
 			{
 				FString AN = FString::Printf(TEXT("Glass_Ant_%d"), i + 1);
 				MakeCylMC(T, FVector(Loc.X + i * 80.f, Loc.Y, H + 400.f + 300.f),
-					FVector(8.f, 8.f, 600.f), LightGray, *AN);
+					FVector(8.f, 8.f, 600.f), LightGray, *AN, 0.85f, 0.3f);
 			}
 
 			// Ground floor glass lobby
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y + 230.f, 200.f),
-				FVector(480.f, 20.f, 380.f), SkyGlass * 1.5f, TEXT("Glass_Lobby"));
+				FVector(480.f, 20.f, 380.f), SkyGlass * 1.5f, TEXT("Glass_Lobby"), 0.1f, 0.02f);
 
 			AddWindows(T, Loc, 500.f, 450.f, H, WinIdx);
 
@@ -3680,30 +4440,30 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 		AActor* T = MakeTower(Loc, TEXT("Skyscraper_CrownPlaza"));
 		if (T)
 		{
-			// Wide base (6 stories)
+			// Wide base (6 stories) -- concrete
 			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1000.f),
-				FVector(1000.f, 900.f, 2000.f), LightConcrete, TEXT("Crown_Base"));
+				FVector(1000.f, 900.f, 2000.f), LightConcrete, TEXT("Crown_Base"), 0.f, 0.6f);
 			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			Body->SetCollisionResponseToAllChannels(ECR_Block);
 
-			// Main tower rising from base
+			// Main tower rising from base -- concrete
 			const float TH = 4500.f;
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2000.f + TH * 0.5f),
-				FVector(600.f, 550.f, TH), CoolWhite, TEXT("Crown_Tower"));
+				FVector(600.f, 550.f, TH), CoolWhite, TEXT("Crown_Tower"), 0.f, 0.6f);
 
 			// Gold crown cap
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2000.f + TH + 100.f),
-				FVector(650.f, 600.f, 200.f), GoldAccent, TEXT("Crown_Cap1"));
+				FVector(650.f, 600.f, 200.f), GoldAccent, TEXT("Crown_Cap1"), 0.95f, 0.2f);
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2000.f + TH + 250.f),
-				FVector(550.f, 500.f, 100.f), GoldAccent, TEXT("Crown_Cap2"));
+				FVector(550.f, 500.f, 100.f), GoldAccent, TEXT("Crown_Cap2"), 0.95f, 0.2f);
 
 			AddCornerColumns(T, FVector(Loc.X, Loc.Y, 2000.f), 610.f, 560.f, TH, 40.f, LightConcrete * 0.85f);
 
-			// Center vertical spines
+			// Center vertical spines -- steel structural
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y + 280.f, 2000.f + TH * 0.5f),
-				FVector(40.f, 8.f, TH), LightConcrete * 0.8f, TEXT("Crown_SpineA"));
+				FVector(40.f, 8.f, TH), LightConcrete * 0.8f, TEXT("Crown_SpineA"), 0.85f, 0.3f);
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y - 280.f, 2000.f + TH * 0.5f),
-				FVector(40.f, 8.f, TH), LightConcrete * 0.8f, TEXT("Crown_SpineB"));
+				FVector(40.f, 8.f, TH), LightConcrete * 0.8f, TEXT("Crown_SpineB"), 0.85f, 0.3f);
 
 			AddGlassBands(T, FVector(Loc.X, Loc.Y, 2000.f), 600.f, 550.f, TH, TintedGlass, BandIdx);
 			AddWindows(T, FVector(Loc.X, Loc.Y, 2000.f), 600.f, 550.f, TH, WinIdx);
@@ -3725,30 +4485,32 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 			const float H = 5000.f;
 			const float R = 280.f;
 
+			// Steel cylinder body
 			auto* Body = MakeCylMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(R, R, H), SteelGray, TEXT("Cyl_Main"));
+				FVector(R, R, H), SteelGray, TEXT("Cyl_Main"), 0.85f, 0.3f);
 			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			Body->SetCollisionResponseToAllChannels(ECR_Block);
 
-			// Observation deck ring
+			// Observation deck ring -- glass
 			MakeCylMC(T, FVector(Loc.X, Loc.Y, H * 0.82f),
-				FVector(R + 80.f, R + 80.f, 180.f), DarkGlass, TEXT("Cyl_ObsDeck"));
+				FVector(R + 80.f, R + 80.f, 180.f), DarkGlass, TEXT("Cyl_ObsDeck"), 0.1f, 0.02f);
 			MakeCylMC(T, FVector(Loc.X, Loc.Y, H * 0.82f - 80.f),
-				FVector(R + 90.f, R + 90.f, 20.f), LightGray, TEXT("Cyl_ObsFloor"));
+				FVector(R + 90.f, R + 90.f, 20.f), LightGray, TEXT("Cyl_ObsFloor"), 0.85f, 0.3f);
 
-			// Roof disc
+			// Roof disc -- steel
 			MakeCylMC(T, FVector(Loc.X, Loc.Y, H + 10.f),
-				FVector(R + 20.f, R + 20.f, 20.f), DarkSteel, TEXT("Cyl_Roof"));
+				FVector(R + 20.f, R + 20.f, 20.f), DarkSteel, TEXT("Cyl_Roof"), 0.85f, 0.3f);
 
-			// Antenna
+			// Antenna -- steel
 			MakeCylMC(T, FVector(Loc.X, Loc.Y, H + 600.f),
-				FVector(12.f, 12.f, 1200.f), LightGray, TEXT("Cyl_Ant"));
+				FVector(12.f, 12.f, 1200.f), LightGray, TEXT("Cyl_Ant"), 0.85f, 0.3f);
 			MakeSphereMC(T, FVector(Loc.X, Loc.Y, H + 1200.f),
-				FVector(20.f, 20.f, 20.f), AntennaRed, TEXT("Cyl_AntLight"));
+				FVector(20.f, 20.f, 20.f), AntennaRed, TEXT("Cyl_AntLight"), 0.f, 0.5f,
+				FLinearColor(2.0f, 0.2f, 0.2f));
 
-			// Ground floor entrance
+			// Ground floor entrance -- glass
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y + R + 50.f, 200.f),
-				FVector(300.f, 100.f, 380.f), SkyGlass * 1.5f, TEXT("Cyl_Entrance"));
+				FVector(300.f, 100.f, 380.f), SkyGlass * 1.5f, TEXT("Cyl_Entrance"), 0.1f, 0.02f);
 
 			AddWindows(T, Loc, R * 2.f, R * 2.f, H, WinIdx);
 
@@ -3766,35 +4528,36 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Monolith"));
 		if (T)
 		{
-			// Tier 1: wide base
+			// Tier 1: wide base -- steel
 			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1200.f),
-				FVector(800.f, 700.f, 2400.f), SteelGray, TEXT("Mono_T1"));
+				FVector(800.f, 700.f, 2400.f), SteelGray, TEXT("Mono_T1"), 0.85f, 0.3f);
 			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			Body->SetCollisionResponseToAllChannels(ECR_Block);
 
-			// Tier 2
+			// Tier 2 -- steel
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2400.f + 1500.f),
-				FVector(600.f, 520.f, 3000.f), SteelGray * 0.95f, TEXT("Mono_T2"));
-			// Tier 3
+				FVector(600.f, 520.f, 3000.f), SteelGray * 0.95f, TEXT("Mono_T2"), 0.85f, 0.3f);
+			// Tier 3 -- steel
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 5400.f + 1000.f),
-				FVector(420.f, 380.f, 2000.f), SteelGray * 0.9f, TEXT("Mono_T3"));
-			// Tier 4: crown
+				FVector(420.f, 380.f, 2000.f), SteelGray * 0.9f, TEXT("Mono_T3"), 0.85f, 0.3f);
+			// Tier 4: crown -- dark steel
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 7400.f + 400.f),
-				FVector(250.f, 230.f, 800.f), DarkSteel, TEXT("Mono_T4"));
+				FVector(250.f, 230.f, 800.f), DarkSteel, TEXT("Mono_T4"), 0.85f, 0.3f);
 
-			// Setback ledges
+			// Setback ledges -- copper accents
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2400.f),
-				FVector(820.f, 720.f, 40.f), CopperAccent, TEXT("Mono_L1"));
+				FVector(820.f, 720.f, 40.f), CopperAccent, TEXT("Mono_L1"), 0.9f, 0.25f);
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 5400.f),
-				FVector(620.f, 540.f, 40.f), CopperAccent, TEXT("Mono_L2"));
+				FVector(620.f, 540.f, 40.f), CopperAccent, TEXT("Mono_L2"), 0.9f, 0.25f);
 			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 7400.f),
-				FVector(440.f, 400.f, 40.f), CopperAccent, TEXT("Mono_L3"));
+				FVector(440.f, 400.f, 40.f), CopperAccent, TEXT("Mono_L3"), 0.9f, 0.25f);
 
-			// Spire
+			// Spire -- steel
 			MakeCylMC(T, FVector(Loc.X, Loc.Y, 8200.f + 700.f),
-				FVector(18.f, 18.f, 1400.f), LightGray, TEXT("Mono_Spire"));
+				FVector(18.f, 18.f, 1400.f), LightGray, TEXT("Mono_Spire"), 0.85f, 0.3f);
 			MakeSphereMC(T, FVector(Loc.X, Loc.Y, 9600.f),
-				FVector(28.f, 28.f, 28.f), AntennaRed, TEXT("Mono_Light"));
+				FVector(28.f, 28.f, 28.f), AntennaRed, TEXT("Mono_Light"), 0.f, 0.5f,
+				FLinearColor(2.0f, 0.2f, 0.2f));
 
 			AddGlassBands(T, Loc, 800.f, 700.f, 2400.f, DarkGlass, BandIdx);
 			AddGlassBands(T, FVector(Loc.X, Loc.Y, 2400.f), 600.f, 520.f, 3000.f, DarkGlass, BandIdx);

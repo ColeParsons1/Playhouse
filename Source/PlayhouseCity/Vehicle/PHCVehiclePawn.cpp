@@ -19,6 +19,7 @@
 #include "Engine/LocalPlayer.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/World.h"
+#include "Materials/Material.h"
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -263,7 +264,9 @@ void APHCVehiclePawn::BeginPlay()
 	const FLinearColor LEDWhite(3.0f, 2.8f, 2.2f);
 	const FLinearColor TailRed(2.5f, 0.02f, 0.02f);
 
-	auto ApplyMat = [](UStaticMeshComponent* Comp, const FLinearColor& Color)
+	auto ApplyMat = [](UStaticMeshComponent* Comp, const FLinearColor& Color,
+		float Metallic = 0.f, float Roughness = 0.5f,
+		const FLinearColor& Emissive = FLinearColor::Black)
 	{
 		if (!Comp || !Comp->GetStaticMesh()) return;
 		UMaterialInstanceDynamic* M = Cast<UMaterialInstanceDynamic>(Comp->GetMaterial(0));
@@ -272,49 +275,88 @@ void APHCVehiclePawn::BeginPlay()
 			M = UMaterialInstanceDynamic::Create(Comp->GetMaterial(0), Comp);
 			if (M) Comp->SetMaterial(0, M);
 		}
-		if (M) M->SetVectorParameterValue(TEXT("BaseColor"), Color);
+		if (M)
+		{
+			M->SetVectorParameterValue(TEXT("BaseColor"), Color);
+			if (Metallic != 0.f)
+				M->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+			if (Roughness != 0.5f)
+				M->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+			if (Emissive != FLinearColor::Black)
+				M->SetVectorParameterValue(TEXT("EmissiveColor"), Emissive);
+		}
 	};
 
-	// Body panels (main + nose + engine cover).
+	// Load ClearCoat material for automotive paint (GTA V style)
+	ClearCoatMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCClearCoat.M_PHCClearCoat"));
+
+	// Body panels (main + nose + engine cover) -- ClearCoat for glossy automotive paint.
+	auto ApplyClearCoat = [&](UStaticMeshComponent* Comp, const FLinearColor& Color)
+	{
+		if (!Comp || !Comp->GetStaticMesh()) return;
+		UMaterialInterface* BaseMat = ClearCoatMaterial ? (UMaterialInterface*)ClearCoatMaterial : Comp->GetMaterial(0);
+		UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(BaseMat, Comp);
+		if (M)
+		{
+			M->SetVectorParameterValue(TEXT("BaseColor"), Color);
+			M->SetScalarParameterValue(TEXT("Metallic"), 0.9f);
+			M->SetScalarParameterValue(TEXT("Roughness"), 0.35f);
+			Comp->SetMaterial(0, M);
+		}
+	};
+
 	if (BodyMesh && BodyMesh->GetStaticMesh())
 	{
-		BodyMaterial = UMaterialInstanceDynamic::Create(BodyMesh->GetMaterial(0), BodyMesh);
-		if (BodyMaterial) { BodyMaterial->SetVectorParameterValue(TEXT("BaseColor"), DefaultBody); BodyMesh->SetMaterial(0, BodyMaterial); }
+		UMaterialInterface* BaseMat = ClearCoatMaterial ? (UMaterialInterface*)ClearCoatMaterial : BodyMesh->GetMaterial(0);
+		BodyMaterial = UMaterialInstanceDynamic::Create(BaseMat, BodyMesh);
+		if (BodyMaterial)
+		{
+			BodyMaterial->SetVectorParameterValue(TEXT("BaseColor"), DefaultBody);
+			BodyMaterial->SetScalarParameterValue(TEXT("Metallic"), 0.9f);
+			BodyMaterial->SetScalarParameterValue(TEXT("Roughness"), 0.35f);
+			BodyMesh->SetMaterial(0, BodyMaterial);
+		}
 	}
-	ApplyMat(FrontNoseMesh, DefaultBody);
-	ApplyMat(RearEngineMesh, DefaultBody * 0.9f); // slightly darker
-	ApplyMat(RearSpoilerMesh, DefaultBody);
+	ApplyClearCoat(FrontNoseMesh, DefaultBody);
+	ApplyClearCoat(RearEngineMesh, DefaultBody * 0.9f);
+	ApplyClearCoat(RearSpoilerMesh, DefaultBody);
 
 	// All body-colored detail pieces.
-	for (UStaticMeshComponent* C : BodyColoredMeshes) { ApplyMat(C, DefaultBody); }
+	for (UStaticMeshComponent* C : BodyColoredMeshes) { ApplyClearCoat(C, DefaultBody); }
 
 	// Windshield.
 	if (CabinMesh && CabinMesh->GetStaticMesh())
 	{
 		CabinMaterial = UMaterialInstanceDynamic::Create(CabinMesh->GetMaterial(0), CabinMesh);
-		if (CabinMaterial) { CabinMaterial->SetVectorParameterValue(TEXT("BaseColor"), DarkGlass); CabinMesh->SetMaterial(0, CabinMaterial); }
+		if (CabinMaterial)
+		{
+			CabinMaterial->SetVectorParameterValue(TEXT("BaseColor"), DarkGlass);
+			CabinMaterial->SetScalarParameterValue(TEXT("Metallic"), 0.1f);
+			CabinMaterial->SetScalarParameterValue(TEXT("Roughness"), 0.02f);
+			CabinMesh->SetMaterial(0, CabinMaterial);
+		}
 	}
 
 	// Dark carbon / trim pieces.
-	ApplyMat(SideIntakeL, DarkCarbon);
-	ApplyMat(SideIntakeR, DarkCarbon);
-	ApplyMat(FrontSplitterMesh, DarkCarbon);
-	ApplyMat(RearDiffuserMesh, DarkCarbon);
-	for (UStaticMeshComponent* C : DarkTrimMeshes) { ApplyMat(C, DarkCarbon); }
+	ApplyMat(SideIntakeL, DarkCarbon, 0.3f, 0.4f);
+	ApplyMat(SideIntakeR, DarkCarbon, 0.3f, 0.4f);
+	ApplyMat(FrontSplitterMesh, DarkCarbon, 0.3f, 0.4f);
+	ApplyMat(RearDiffuserMesh, DarkCarbon, 0.3f, 0.4f);
+	for (UStaticMeshComponent* C : DarkTrimMeshes) { ApplyMat(C, DarkCarbon, 0.3f, 0.4f); }
 
 	// Wheels.
-	ApplyMat(WheelFL, WheelBlack);
-	ApplyMat(WheelFR, WheelBlack);
-	ApplyMat(WheelRL, WheelBlack);
-	ApplyMat(WheelRR, WheelBlack);
+	ApplyMat(WheelFL, WheelBlack, 0.0f, 0.9f);
+	ApplyMat(WheelFR, WheelBlack, 0.0f, 0.9f);
+	ApplyMat(WheelRL, WheelBlack, 0.0f, 0.9f);
+	ApplyMat(WheelRR, WheelBlack, 0.0f, 0.9f);
 
 	// Headlights (bright white LED).
-	ApplyMat(HeadlightMeshL, LEDWhite);
-	ApplyMat(HeadlightMeshR, LEDWhite);
+	ApplyMat(HeadlightMeshL, LEDWhite, 0.0f, 0.1f, LEDWhite);
+	ApplyMat(HeadlightMeshR, LEDWhite, 0.0f, 0.1f, LEDWhite);
 
 	// Tail lights (Aventador red strip).
-	ApplyMat(TaillightMeshL, TailRed);
-	ApplyMat(TaillightMeshR, TailRed);
+	ApplyMat(TaillightMeshL, TailRed, 0.0f, 0.1f, TailRed);
+	ApplyMat(TaillightMeshR, TailRed, 0.0f, 0.1f, TailRed);
 
 	// Tail light connecting bar.
 	TArray<USceneComponent*> Children;
@@ -322,8 +364,9 @@ void APHCVehiclePawn::BeginPlay()
 	for (USceneComponent* Child : Children)
 	{
 		if (Child->GetName().Contains(TEXT("TailLightBar")))
-			ApplyMat(Cast<UStaticMeshComponent>(Child), TailRed * 0.5f);
+			ApplyMat(Cast<UStaticMeshComponent>(Child), TailRed * 0.5f, 0.0f, 0.1f, TailRed * 0.5f);
 	}
+
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +543,7 @@ void APHCVehiclePawn::Tick(float DeltaTime)
 		Rot.Pitch = FMath::FInterpTo(Rot.Pitch, 0.f, DeltaTime, 5.f);
 		SetActorRotation(Rot);
 	}
+
 }
 
 // ---------------------------------------------------------------------------
@@ -568,7 +612,8 @@ void APHCVehiclePawn::HandleExitVehicle(const FInputActionValue&)
 
 void APHCVehiclePawn::SetBodyColor(const FLinearColor& Color)
 {
-	auto SetColor = [](UStaticMeshComponent* Comp, const FLinearColor& C)
+	auto SetColor = [](UStaticMeshComponent* Comp, const FLinearColor& C,
+		float Metallic = 0.f, float Roughness = 0.5f)
 	{
 		if (!Comp) return;
 		UMaterialInstanceDynamic* Mat = Cast<UMaterialInstanceDynamic>(Comp->GetMaterial(0));
@@ -577,30 +622,42 @@ void APHCVehiclePawn::SetBodyColor(const FLinearColor& Color)
 			Mat = UMaterialInstanceDynamic::Create(Comp->GetMaterial(0), Comp);
 			if (Mat) Comp->SetMaterial(0, Mat);
 		}
-		if (Mat) Mat->SetVectorParameterValue(TEXT("BaseColor"), C);
+		if (Mat)
+		{
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), C);
+			if (Metallic != 0.f)
+				Mat->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+			if (Roughness != 0.5f)
+				Mat->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+		}
 	};
 
-	// Main body.
+	// Main body (ClearCoat automotive paint).
 	if (!BodyMaterial && BodyMesh)
-		BodyMaterial = UMaterialInstanceDynamic::Create(BodyMesh->GetMaterial(0), BodyMesh);
+	{
+		UMaterialInterface* BaseMat = ClearCoatMaterial ? (UMaterialInterface*)ClearCoatMaterial : BodyMesh->GetMaterial(0);
+		BodyMaterial = UMaterialInstanceDynamic::Create(BaseMat, BodyMesh);
+	}
 	if (BodyMaterial)
 	{
 		BodyMaterial->SetVectorParameterValue(TEXT("BaseColor"), Color);
+		BodyMaterial->SetScalarParameterValue(TEXT("Metallic"), 0.9f);
+		BodyMaterial->SetScalarParameterValue(TEXT("Roughness"), 0.35f);
 		BodyMesh->SetMaterial(0, BodyMaterial);
 	}
 
 	// Front nose, spoiler: match body.
-	SetColor(FrontNoseMesh, Color);
-	SetColor(RearSpoilerMesh, Color);
+	SetColor(FrontNoseMesh, Color, 0.9f, 0.35f);
+	SetColor(RearSpoilerMesh, Color, 0.9f, 0.35f);
 
 	// Engine cover: slightly darker.
 	FLinearColor Darker = Color * 0.85f; Darker.A = 1.f;
-	SetColor(RearEngineMesh, Darker);
+	SetColor(RearEngineMesh, Darker, 0.9f, 0.35f);
 
 	// All body-colored detail meshes (fenders, A-pillars, cockpit walls, etc.).
 	for (UStaticMeshComponent* C : BodyColoredMeshes)
 	{
-		SetColor(C, Color);
+		SetColor(C, Color, 0.85f, 0.15f);
 	}
 
 	// Windshield: stays dark tinted glass.
@@ -609,6 +666,8 @@ void APHCVehiclePawn::SetBodyColor(const FLinearColor& Color)
 	if (CabinMaterial)
 	{
 		CabinMaterial->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.03f, 0.03f, 0.07f));
+		CabinMaterial->SetScalarParameterValue(TEXT("Metallic"), 0.1f);
+		CabinMaterial->SetScalarParameterValue(TEXT("Roughness"), 0.02f);
 		CabinMesh->SetMaterial(0, CabinMaterial);
 	}
 }

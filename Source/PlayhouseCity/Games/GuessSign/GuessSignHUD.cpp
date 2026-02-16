@@ -21,18 +21,19 @@
 DEFINE_LOG_CATEGORY_STATIC(LogGuessSignHUD, Log, All);
 
 // -- Color palette -----------------------------------------------------------
-
-static const FLinearColor DarkPurpleBg(0.12f, 0.06f, 0.18f, 1.f);
-static const FLinearColor SignAreaBg(0.18f, 0.08f, 0.28f, 1.f);
-static const FLinearColor ChoiceBtnNormal(0.25f, 0.12f, 0.4f, 1.f);
-static const FLinearColor ChoiceBtnHover(0.35f, 0.18f, 0.55f, 1.f);
-static const FLinearColor ChoiceBtnPress(0.18f, 0.08f, 0.3f, 1.f);
-static const FLinearColor CorrectGreen(0.15f, 0.75f, 0.3f, 1.f);
-static const FLinearColor IncorrectRed(0.85f, 0.15f, 0.15f, 1.f);
-static const FLinearColor NextBtnNormal(0.2f, 0.3f, 0.7f, 1.f);
-static const FLinearColor NextBtnHover(0.3f, 0.4f, 0.85f, 1.f);
-static const FLinearColor NextBtnPress(0.15f, 0.2f, 0.5f, 1.f);
-static const FLinearColor TimerBarBg(0.1f, 0.05f, 0.15f, 1.f);
+namespace {
+const FLinearColor DarkPurpleBg(0.12f, 0.06f, 0.18f, 1.f);
+const FLinearColor SignAreaBg(0.18f, 0.08f, 0.28f, 1.f);
+const FLinearColor ChoiceBtnNormal(0.25f, 0.12f, 0.4f, 1.f);
+const FLinearColor ChoiceBtnHover(0.35f, 0.18f, 0.55f, 1.f);
+const FLinearColor ChoiceBtnPress(0.18f, 0.08f, 0.3f, 1.f);
+const FLinearColor CorrectGreen(0.15f, 0.75f, 0.3f, 1.f);
+const FLinearColor IncorrectRed(0.85f, 0.15f, 0.15f, 1.f);
+const FLinearColor NextBtnNormal(0.2f, 0.3f, 0.7f, 1.f);
+const FLinearColor NextBtnHover(0.3f, 0.4f, 0.85f, 1.f);
+const FLinearColor NextBtnPress(0.15f, 0.2f, 0.5f, 1.f);
+const FLinearColor TimerBarBg(0.1f, 0.05f, 0.15f, 1.f);
+}
 
 // ---------------------------------------------------------------------------
 // Initialize - build the Guess the Sign game UI

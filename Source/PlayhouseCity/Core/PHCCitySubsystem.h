@@ -11,6 +11,8 @@ class UMaterialInstanceDynamic;
 class UDirectionalLightComponent;
 class USkyLightComponent;
 class UExponentialHeightFogComponent;
+class USpotLightComponent;
+class APostProcessVolume;
 
 /** City district types for zone-based procedural generation. */
 enum class ECityDistrict : uint8
@@ -60,6 +62,7 @@ private:
 	void SpawnBlockStreets();
 	void SpawnStarfield();
 	void SpawnHills();
+	void SpawnCloudLayer();
 
 	/** Spawn a single building with optional window lights. */
 	void SpawnBuilding(const FVector& Location, const FVector& Size,
@@ -106,12 +109,18 @@ private:
 	/** Base material with an exposed "BaseColor" vector parameter. */
 	UPROPERTY(Transient) TObjectPtr<UMaterial> ColorMaterial;
 
+	/** Translucent glass/water material with BaseColor, Opacity, Metallic, Roughness, EmissiveColor. */
+	UPROPERTY(Transient) TObjectPtr<UMaterial> GlassMaterial;
+
 	/** Cached lighting components for day/night cycle. */
 	UPROPERTY(Transient) TObjectPtr<UDirectionalLightComponent> SunLightComp;
 	UPROPERTY(Transient) TObjectPtr<USkyLightComponent> SkyLightComp;
 	UPROPERTY(Transient) TObjectPtr<UExponentialHeightFogComponent> FogComp;
 	UPROPERTY(Transient) TObjectPtr<UDirectionalLightComponent> MoonLightComp;
 	UPROPERTY(Transient) TObjectPtr<AActor> StarfieldActor;
+
+	/** Global unbound post-process volume for cinematic look. */
+	UPROPERTY(Transient) TObjectPtr<APostProcessVolume> PostProcessVolume;
 
 	/** Normalized time in the day/night cycle (0 = sunrise, 0.25 = noon, 0.5 = sunset, 0.75 = midnight). */
 	float DayNightTime = 0.f;
@@ -123,6 +132,23 @@ private:
 	float NightWindowBrightness = 0.f;
 	float WindowToggleTimer = 0.f;
 	float SkyRecaptureTimer = 0.f;
+
+	/** Cloud layer actors for parallax drift. */
+	UPROPERTY(Transient) TObjectPtr<AActor> CloudLayerActor;
+	UPROPERTY(Transient) TObjectPtr<AActor> CloudLayerActor2;
+
+	/** Ocean actor reference for wave animation. */
+	UPROPERTY(Transient) TObjectPtr<AActor> OceanActor;
+	float WaterTime = 0.f;
+
+	/** Road materials for wet road effect at night. */
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> RoadMaterials;
+	float GlobalWetness = 0.f;
+
+	/** Weather state. */
+	float WeatherTimer = 0.f;
+	float WeatherTransitionAlpha = 1.f;
+	bool bIsRaining = false;
 
 	/** Deterministic random stream for city generation. */
 	FRandomStream CityRandom;

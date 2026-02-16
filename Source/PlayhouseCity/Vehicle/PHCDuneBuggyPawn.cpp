@@ -10,6 +10,7 @@
 #include "Camera/CameraComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/Material.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -265,7 +266,9 @@ void APHCDuneBuggyPawn::BeginPlay()
 	const FLinearColor LEDWhite(3.0f, 2.8f, 2.2f);
 	const FLinearColor TailRed(2.5f, 0.02f, 0.02f);
 
-	auto ApplyMat = [](UStaticMeshComponent* Comp, const FLinearColor& Color)
+	auto ApplyMat = [](UStaticMeshComponent* Comp, const FLinearColor& Color,
+		float Metallic = 0.f, float Roughness = 0.5f,
+		const FLinearColor& Emissive = FLinearColor::Black)
 	{
 		if (!Comp || !Comp->GetStaticMesh()) return;
 		UMaterialInstanceDynamic* M = Cast<UMaterialInstanceDynamic>(Comp->GetMaterial(0));
@@ -274,42 +277,76 @@ void APHCDuneBuggyPawn::BeginPlay()
 			M = UMaterialInstanceDynamic::Create(Comp->GetMaterial(0), Comp);
 			if (M) Comp->SetMaterial(0, M);
 		}
-		if (M) M->SetVectorParameterValue(TEXT("BaseColor"), Color);
+		if (M)
+		{
+			M->SetVectorParameterValue(TEXT("BaseColor"), Color);
+			if (Metallic != 0.f)
+				M->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+			if (Roughness != 0.5f)
+				M->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+			if (Emissive != FLinearColor::Black)
+				M->SetVectorParameterValue(TEXT("EmissiveColor"), Emissive);
+		}
 	};
 
-	// Body panels (chassis + floor pan).
+	// Load ClearCoat material for automotive paint (GTA V style)
+	ClearCoatMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCClearCoat.M_PHCClearCoat"));
+
+	// Body panels (chassis + floor pan) -- ClearCoat for glossy automotive paint.
+	auto ApplyClearCoat = [&](UStaticMeshComponent* Comp, const FLinearColor& Color)
+	{
+		if (!Comp || !Comp->GetStaticMesh()) return;
+		UMaterialInterface* BaseMat = ClearCoatMaterial ? (UMaterialInterface*)ClearCoatMaterial : Comp->GetMaterial(0);
+		UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(BaseMat, Comp);
+		if (M)
+		{
+			M->SetVectorParameterValue(TEXT("BaseColor"), Color);
+			M->SetScalarParameterValue(TEXT("Metallic"), 0.9f);
+			M->SetScalarParameterValue(TEXT("Roughness"), 0.35f);
+			Comp->SetMaterial(0, M);
+		}
+	};
+
 	if (ChassisMesh && ChassisMesh->GetStaticMesh())
 	{
-		BodyMaterial = UMaterialInstanceDynamic::Create(ChassisMesh->GetMaterial(0), ChassisMesh);
-		if (BodyMaterial) { BodyMaterial->SetVectorParameterValue(TEXT("BaseColor"), DefaultBody); ChassisMesh->SetMaterial(0, BodyMaterial); }
+		UMaterialInterface* BaseMat = ClearCoatMaterial ? (UMaterialInterface*)ClearCoatMaterial : ChassisMesh->GetMaterial(0);
+		BodyMaterial = UMaterialInstanceDynamic::Create(BaseMat, ChassisMesh);
+		if (BodyMaterial)
+		{
+			BodyMaterial->SetVectorParameterValue(TEXT("BaseColor"), DefaultBody);
+			BodyMaterial->SetScalarParameterValue(TEXT("Metallic"), 0.9f);
+			BodyMaterial->SetScalarParameterValue(TEXT("Roughness"), 0.35f);
+			ChassisMesh->SetMaterial(0, BodyMaterial);
+		}
 	}
-	for (UStaticMeshComponent* C : BodyColoredMeshes) { ApplyMat(C, DefaultBody); }
+	for (UStaticMeshComponent* C : BodyColoredMeshes) { ApplyClearCoat(C, DefaultBody); }
 
 	// Metal frame (roll cage + brush guard).
-	for (UStaticMeshComponent* C : MetalFrameMeshes) { ApplyMat(C, DarkMetal); }
+	for (UStaticMeshComponent* C : MetalFrameMeshes) { ApplyMat(C, DarkMetal, 0.85f, 0.3f); }
 
 	// Engine block.
-	ApplyMat(EngineBlockMesh, EngineGray);
+	ApplyMat(EngineBlockMesh, EngineGray, 0.8f, 0.35f);
 
 	// Seat.
-	ApplyMat(SeatMesh, SeatBrown);
+	ApplyMat(SeatMesh, SeatBrown, 0.0f, 0.65f);
 
 	// Wheels.
-	ApplyMat(WheelFL, WheelBlack);
-	ApplyMat(WheelFR, WheelBlack);
-	ApplyMat(WheelRL, WheelBlack);
-	ApplyMat(WheelRR, WheelBlack);
+	ApplyMat(WheelFL, WheelBlack, 0.0f, 0.9f);
+	ApplyMat(WheelFR, WheelBlack, 0.0f, 0.9f);
+	ApplyMat(WheelRL, WheelBlack, 0.0f, 0.9f);
+	ApplyMat(WheelRR, WheelBlack, 0.0f, 0.9f);
 
 	// Spare tire.
-	ApplyMat(SpareTireMesh, WheelBlack);
+	ApplyMat(SpareTireMesh, WheelBlack, 0.0f, 0.9f);
 
 	// Headlights (bright white LED).
-	ApplyMat(HeadlightMeshL, LEDWhite);
-	ApplyMat(HeadlightMeshR, LEDWhite);
+	ApplyMat(HeadlightMeshL, LEDWhite, 0.0f, 0.1f, LEDWhite);
+	ApplyMat(HeadlightMeshR, LEDWhite, 0.0f, 0.1f, LEDWhite);
 
 	// Taillights (red).
-	ApplyMat(TaillightMeshL, TailRed);
-	ApplyMat(TaillightMeshR, TailRed);
+	ApplyMat(TaillightMeshL, TailRed, 0.0f, 0.1f, TailRed);
+	ApplyMat(TaillightMeshR, TailRed, 0.0f, 0.1f, TailRed);
+
 }
 
 // ---------------------------------------------------------------------------
@@ -483,6 +520,7 @@ void APHCDuneBuggyPawn::Tick(float DeltaTime)
 		Rot.Pitch = FMath::FInterpTo(Rot.Pitch, 0.f, DeltaTime, 5.f);
 		SetActorRotation(Rot);
 	}
+
 }
 
 // ---------------------------------------------------------------------------
@@ -551,7 +589,8 @@ void APHCDuneBuggyPawn::HandleExitVehicle(const FInputActionValue&)
 
 void APHCDuneBuggyPawn::SetBodyColor(const FLinearColor& Color)
 {
-	auto SetColor = [](UStaticMeshComponent* Comp, const FLinearColor& C)
+	auto SetColor = [](UStaticMeshComponent* Comp, const FLinearColor& C,
+		float Metallic = 0.f, float Roughness = 0.5f)
 	{
 		if (!Comp) return;
 		UMaterialInstanceDynamic* Mat = Cast<UMaterialInstanceDynamic>(Comp->GetMaterial(0));
@@ -560,22 +599,34 @@ void APHCDuneBuggyPawn::SetBodyColor(const FLinearColor& Color)
 			Mat = UMaterialInstanceDynamic::Create(Comp->GetMaterial(0), Comp);
 			if (Mat) Comp->SetMaterial(0, Mat);
 		}
-		if (Mat) Mat->SetVectorParameterValue(TEXT("BaseColor"), C);
+		if (Mat)
+		{
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), C);
+			if (Metallic != 0.f)
+				Mat->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+			if (Roughness != 0.5f)
+				Mat->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+		}
 	};
 
-	// Main chassis.
+	// Main chassis (ClearCoat automotive paint).
 	if (!BodyMaterial && ChassisMesh)
-		BodyMaterial = UMaterialInstanceDynamic::Create(ChassisMesh->GetMaterial(0), ChassisMesh);
+	{
+		UMaterialInterface* BaseMat = ClearCoatMaterial ? (UMaterialInterface*)ClearCoatMaterial : ChassisMesh->GetMaterial(0);
+		BodyMaterial = UMaterialInstanceDynamic::Create(BaseMat, ChassisMesh);
+	}
 	if (BodyMaterial)
 	{
 		BodyMaterial->SetVectorParameterValue(TEXT("BaseColor"), Color);
+		BodyMaterial->SetScalarParameterValue(TEXT("Metallic"), 0.9f);
+		BodyMaterial->SetScalarParameterValue(TEXT("Roughness"), 0.35f);
 		ChassisMesh->SetMaterial(0, BodyMaterial);
 	}
 
 	// All body-colored parts (chassis is in BodyColoredMeshes too).
 	for (UStaticMeshComponent* C : BodyColoredMeshes)
 	{
-		SetColor(C, Color);
+		SetColor(C, Color, 0.9f, 0.35f);
 	}
 }
 

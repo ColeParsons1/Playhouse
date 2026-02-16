@@ -6,6 +6,7 @@
 #if WITH_EDITOR
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
 #include "Misc/PackageName.h"
@@ -21,15 +22,17 @@ void FPlayhouseCityModule::StartupModule()
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PlayhouseCity module starting up"));
 
 #if WITH_EDITOR
-	// Create and save a simple color material so it's available in cooked
-	// (non-editor) iOS builds. The material has a single "BaseColor" vector
-	// parameter that we set per-mesh via UMaterialInstanceDynamic.
-	const FString PackagePath = TEXT("/Game/Materials/M_PHCColor");
-	const FString FilePath = FPackageName::LongPackageNameToFilename(
-		PackagePath, FPackageName::GetAssetPackageExtension());
-
-	if (!FPaths::FileExists(FilePath))
+	// ---------------------------------------------------------------------------
+	// M_PHCColor -- opaque PBR material with BaseColor, Metallic, Roughness,
+	// and EmissiveColor parameters.  Only created if the .uasset does not exist.
+	// ---------------------------------------------------------------------------
 	{
+		const FString PackagePath = TEXT("/Game/Materials/M_PHCColor");
+		const FString FilePath = FPackageName::LongPackageNameToFilename(
+			PackagePath, FPackageName::GetAssetPackageExtension());
+		if (!FPaths::FileExists(FilePath))
+		{
+
 		// Ensure the Content/Materials directory exists.
 		const FString DirPath = FPaths::GetPath(FilePath);
 		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
@@ -39,14 +42,39 @@ void FPlayhouseCityModule::StartupModule()
 		UMaterial* Mat = NewObject<UMaterial>(Package, TEXT("M_PHCColor"),
 			RF_Public | RF_Standalone);
 
-		UMaterialExpressionVectorParameter* Param =
+		// BaseColor (Vector)
+		UMaterialExpressionVectorParameter* BaseColorParam =
 			NewObject<UMaterialExpressionVectorParameter>(Mat);
-		Param->ParameterName = TEXT("BaseColor");
-		Param->DefaultValue = FLinearColor(1.f, 1.f, 1.f, 1.f);
+		BaseColorParam->ParameterName = TEXT("BaseColor");
+		BaseColorParam->DefaultValue = FLinearColor(1.f, 1.f, 1.f, 1.f);
 
 		UMaterialEditorOnlyData* EditorData = Mat->GetEditorOnlyData();
-		EditorData->ExpressionCollection.Expressions.Add(Param);
-		EditorData->BaseColor.Expression = Param;
+		EditorData->ExpressionCollection.Expressions.Add(BaseColorParam);
+		EditorData->BaseColor.Expression = BaseColorParam;
+
+		// Metallic (Scalar)
+		UMaterialExpressionScalarParameter* MetallicParam =
+			NewObject<UMaterialExpressionScalarParameter>(Mat);
+		MetallicParam->ParameterName = TEXT("Metallic");
+		MetallicParam->DefaultValue = 0.0f;
+		EditorData->ExpressionCollection.Expressions.Add(MetallicParam);
+		EditorData->Metallic.Expression = MetallicParam;
+
+		// Roughness (Scalar)
+		UMaterialExpressionScalarParameter* RoughnessParam =
+			NewObject<UMaterialExpressionScalarParameter>(Mat);
+		RoughnessParam->ParameterName = TEXT("Roughness");
+		RoughnessParam->DefaultValue = 0.5f;
+		EditorData->ExpressionCollection.Expressions.Add(RoughnessParam);
+		EditorData->Roughness.Expression = RoughnessParam;
+
+		// EmissiveColor (Vector)
+		UMaterialExpressionVectorParameter* EmissiveParam =
+			NewObject<UMaterialExpressionVectorParameter>(Mat);
+		EmissiveParam->ParameterName = TEXT("EmissiveColor");
+		EmissiveParam->DefaultValue = FLinearColor::Black;
+		EditorData->ExpressionCollection.Expressions.Add(EmissiveParam);
+		EditorData->EmissiveColor.Expression = EmissiveParam;
 
 		Mat->PreEditChange(nullptr);
 		Mat->PostEditChange();
@@ -57,6 +85,165 @@ void FPlayhouseCityModule::StartupModule()
 
 		UE_LOG(LogPlayhouseCity, Log,
 			TEXT("PHC: Created and saved M_PHCColor material to %s"), *FilePath);
+		}
+	}
+
+	// ---------------------------------------------------------------------------
+	// M_PHCGlass -- translucent material for glass and water surfaces.
+	// ---------------------------------------------------------------------------
+	{
+		const FString PackagePath = TEXT("/Game/Materials/M_PHCGlass");
+		const FString FilePath = FPackageName::LongPackageNameToFilename(
+			PackagePath, FPackageName::GetAssetPackageExtension());
+		if (!FPaths::FileExists(FilePath))
+		{
+		// Ensure the Content/Materials directory exists.
+		const FString DirPath = FPaths::GetPath(FilePath);
+		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+		PlatformFile.CreateDirectoryTree(*DirPath);
+
+		UPackage* Package = CreatePackage(*PackagePath);
+		UMaterial* Mat = NewObject<UMaterial>(Package, TEXT("M_PHCGlass"),
+			RF_Public | RF_Standalone);
+
+		Mat->BlendMode = BLEND_Translucent;
+		Mat->TranslucencyLightingMode = TLM_SurfacePerPixelLighting;
+
+		UMaterialEditorOnlyData* EditorData = Mat->GetEditorOnlyData();
+
+		// BaseColor (Vector)
+		UMaterialExpressionVectorParameter* BaseColorParam =
+			NewObject<UMaterialExpressionVectorParameter>(Mat);
+		BaseColorParam->ParameterName = TEXT("BaseColor");
+		BaseColorParam->DefaultValue = FLinearColor(0.1f, 0.15f, 0.2f, 1.f);
+		EditorData->ExpressionCollection.Expressions.Add(BaseColorParam);
+		EditorData->BaseColor.Expression = BaseColorParam;
+
+		// Opacity (Scalar)
+		UMaterialExpressionScalarParameter* OpacityParam =
+			NewObject<UMaterialExpressionScalarParameter>(Mat);
+		OpacityParam->ParameterName = TEXT("Opacity");
+		OpacityParam->DefaultValue = 0.3f;
+		EditorData->ExpressionCollection.Expressions.Add(OpacityParam);
+		EditorData->Opacity.Expression = OpacityParam;
+
+		// Metallic (Scalar)
+		UMaterialExpressionScalarParameter* MetallicParam =
+			NewObject<UMaterialExpressionScalarParameter>(Mat);
+		MetallicParam->ParameterName = TEXT("Metallic");
+		MetallicParam->DefaultValue = 0.0f;
+		EditorData->ExpressionCollection.Expressions.Add(MetallicParam);
+		EditorData->Metallic.Expression = MetallicParam;
+
+		// Roughness (Scalar)
+		UMaterialExpressionScalarParameter* RoughnessParam =
+			NewObject<UMaterialExpressionScalarParameter>(Mat);
+		RoughnessParam->ParameterName = TEXT("Roughness");
+		RoughnessParam->DefaultValue = 0.05f;
+		EditorData->ExpressionCollection.Expressions.Add(RoughnessParam);
+		EditorData->Roughness.Expression = RoughnessParam;
+
+		// EmissiveColor (Vector)
+		UMaterialExpressionVectorParameter* EmissiveParam =
+			NewObject<UMaterialExpressionVectorParameter>(Mat);
+		EmissiveParam->ParameterName = TEXT("EmissiveColor");
+		EmissiveParam->DefaultValue = FLinearColor::Black;
+		EditorData->ExpressionCollection.Expressions.Add(EmissiveParam);
+		EditorData->EmissiveColor.Expression = EmissiveParam;
+
+		Mat->PreEditChange(nullptr);
+		Mat->PostEditChange();
+
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		UPackage::SavePackage(Package, Mat, *FilePath, SaveArgs);
+
+		UE_LOG(LogPlayhouseCity, Log,
+			TEXT("PHC: Created and saved M_PHCGlass material to %s"), *FilePath);
+		}
+	}
+
+	// ---------------------------------------------------------------------------
+	// M_PHCClearCoat -- automotive clear coat paint for vehicle bodies.
+	// ClearCoat shading model: glossy topcoat over metallic paint.
+	// ---------------------------------------------------------------------------
+	{
+		const FString PackagePath = TEXT("/Game/Materials/M_PHCClearCoat");
+		const FString FilePath = FPackageName::LongPackageNameToFilename(
+			PackagePath, FPackageName::GetAssetPackageExtension());
+		if (!FPaths::FileExists(FilePath))
+		{
+		const FString DirPath = FPaths::GetPath(FilePath);
+		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+		PlatformFile.CreateDirectoryTree(*DirPath);
+
+		UPackage* Package = CreatePackage(*PackagePath);
+		UMaterial* Mat = NewObject<UMaterial>(Package, TEXT("M_PHCClearCoat"),
+			RF_Public | RF_Standalone);
+
+		// Set ClearCoat shading model for automotive paint
+		Mat->SetShadingModel(MSM_ClearCoat);
+
+		UMaterialEditorOnlyData* EditorData = Mat->GetEditorOnlyData();
+
+		// BaseColor (Vector) - paint color
+		UMaterialExpressionVectorParameter* BaseColorParam =
+			NewObject<UMaterialExpressionVectorParameter>(Mat);
+		BaseColorParam->ParameterName = TEXT("BaseColor");
+		BaseColorParam->DefaultValue = FLinearColor(0.8f, 0.1f, 0.1f, 1.f); // default red
+		EditorData->ExpressionCollection.Expressions.Add(BaseColorParam);
+		EditorData->BaseColor.Expression = BaseColorParam;
+
+		// Metallic (Scalar) - high for metallic paint
+		UMaterialExpressionScalarParameter* MetallicParam =
+			NewObject<UMaterialExpressionScalarParameter>(Mat);
+		MetallicParam->ParameterName = TEXT("Metallic");
+		MetallicParam->DefaultValue = 0.9f;
+		EditorData->ExpressionCollection.Expressions.Add(MetallicParam);
+		EditorData->Metallic.Expression = MetallicParam;
+
+		// Roughness (Scalar) - base layer roughness
+		UMaterialExpressionScalarParameter* RoughnessParam =
+			NewObject<UMaterialExpressionScalarParameter>(Mat);
+		RoughnessParam->ParameterName = TEXT("Roughness");
+		RoughnessParam->DefaultValue = 0.35f;
+		EditorData->ExpressionCollection.Expressions.Add(RoughnessParam);
+		EditorData->Roughness.Expression = RoughnessParam;
+
+		// ClearCoat (Scalar) - strength of clear coat layer
+		UMaterialExpressionScalarParameter* ClearCoatParam =
+			NewObject<UMaterialExpressionScalarParameter>(Mat);
+		ClearCoatParam->ParameterName = TEXT("ClearCoat");
+		ClearCoatParam->DefaultValue = 1.0f;
+		EditorData->ExpressionCollection.Expressions.Add(ClearCoatParam);
+		EditorData->ClearCoat.Expression = ClearCoatParam;
+
+		// ClearCoatRoughness (Scalar) - ultra-smooth topcoat
+		UMaterialExpressionScalarParameter* ClearCoatRoughnessParam =
+			NewObject<UMaterialExpressionScalarParameter>(Mat);
+		ClearCoatRoughnessParam->ParameterName = TEXT("ClearCoatRoughness");
+		ClearCoatRoughnessParam->DefaultValue = 0.03f;
+		EditorData->ExpressionCollection.Expressions.Add(ClearCoatRoughnessParam);
+		EditorData->ClearCoatRoughness.Expression = ClearCoatRoughnessParam;
+
+		// EmissiveColor (Vector) - for headlight/taillight glow
+		UMaterialExpressionVectorParameter* EmissiveParam =
+			NewObject<UMaterialExpressionVectorParameter>(Mat);
+		EmissiveParam->ParameterName = TEXT("EmissiveColor");
+		EmissiveParam->DefaultValue = FLinearColor::Black;
+		EditorData->ExpressionCollection.Expressions.Add(EmissiveParam);
+		EditorData->EmissiveColor.Expression = EmissiveParam;
+
+		Mat->PreEditChange(nullptr);
+		Mat->PostEditChange();
+
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		UPackage::SavePackage(Package, Mat, *FilePath, SaveArgs);
+
+		UE_LOG(LogPlayhouseCity, Log,
+			TEXT("PHC: Created and saved M_PHCClearCoat material to %s"), *FilePath);
+		}
 	}
 #endif
 }

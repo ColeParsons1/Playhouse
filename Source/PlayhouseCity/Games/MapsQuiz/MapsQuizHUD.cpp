@@ -21,16 +21,18 @@
 DEFINE_LOG_CATEGORY_STATIC(LogMapsQuizHUD, Log, All);
 
 // Globe / geography theme colours.
-static const FLinearColor MapsBgColor(0.04f, 0.06f, 0.18f, 1.f);        // Dark navy blue
-static const FLinearColor DisplayAreaColor(0.06f, 0.09f, 0.24f, 1.f);    // Slightly lighter navy
-static const FLinearColor ChoiceBtnNormal(0.12f, 0.22f, 0.52f, 1.f);     // Globe blue
-static const FLinearColor ChoiceBtnHover(0.18f, 0.32f, 0.68f, 1.f);
-static const FLinearColor ChoiceBtnPress(0.08f, 0.14f, 0.38f, 1.f);
-static const FLinearColor NextBtnNormal(0.15f, 0.55f, 0.3f, 1.f);       // Green
-static const FLinearColor NextBtnHover(0.2f, 0.7f, 0.4f, 1.f);
-static const FLinearColor NextBtnPress(0.1f, 0.4f, 0.2f, 1.f);
-static const FLinearColor TimerBarBgColor(0.08f, 0.08f, 0.16f, 1.f);
-static const FLinearColor FeedbackOverlayBg(0.02f, 0.03f, 0.1f, 0.88f);
+namespace {
+const FLinearColor MapsBgColor(0.04f, 0.06f, 0.18f, 1.f);        // Dark navy blue
+const FLinearColor DisplayAreaColor(0.06f, 0.09f, 0.24f, 1.f);    // Slightly lighter navy
+const FLinearColor ChoiceBtnNormal(0.12f, 0.22f, 0.52f, 1.f);     // Globe blue
+const FLinearColor ChoiceBtnHover(0.18f, 0.32f, 0.68f, 1.f);
+const FLinearColor ChoiceBtnPress(0.08f, 0.14f, 0.38f, 1.f);
+const FLinearColor NextBtnNormal(0.15f, 0.55f, 0.3f, 1.f);       // Green
+const FLinearColor NextBtnHover(0.2f, 0.7f, 0.4f, 1.f);
+const FLinearColor NextBtnPress(0.1f, 0.4f, 0.2f, 1.f);
+const FLinearColor TimerBarBgColor(0.08f, 0.08f, 0.16f, 1.f);
+const FLinearColor FeedbackOverlayBg(0.02f, 0.03f, 0.1f, 0.88f);
+}
 
 // ---------------------------------------------------------------------------
 // Initialize - build the Maps Quiz UI programmatically

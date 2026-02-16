@@ -14,6 +14,7 @@ class UCameraComponent;
 class USpotLightComponent;
 class UInputMappingContext;
 class UInputAction;
+class UMaterial;
 class UMaterialInstanceDynamic;
 struct FInputActionValue;
 
@@ -212,4 +213,13 @@ private:
 
 	/** Accumulated wheel spin angle for visual rotation. */
 	float WheelSpinAngle = 0.f;
+
+	/** ClearCoat material for automotive paint. */
+	UPROPERTY(Transient) TObjectPtr<UMaterial> ClearCoatMaterial;
+
+	/** Exhaust puff pool (recycled small spheres). */
+	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> ExhaustPuffs;
+	TArray<float> ExhaustPuffAge;
+	int32 NextExhaustPuff = 0;
+	float ExhaustSpawnTimer = 0.f;
 };
