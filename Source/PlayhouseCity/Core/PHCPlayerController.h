@@ -14,6 +14,7 @@ class APHCMiniGameMode;
 class UPHCCityHUD;
 class APHCVehiclePawn;
 class APHCDuneBuggyPawn;
+class APHCRaptorPawn;
 class APHCCityCharacter;
 
 /**
@@ -101,7 +102,7 @@ public:
 	void EnterNearestVehicle();
 
 	/** Spawn a vehicle at the player's location and immediately enter it.
-	 *  VehicleType: 0 = Aventador, 1 = Dune Buggy. */
+	 *  VehicleType: 0 = Aventador, 1 = Dune Buggy, 2 = F-22 Raptor. */
 	UFUNCTION(BlueprintCallable, Category = "PHC|Vehicle")
 	void SpawnAndEnterVehicle(int32 VehicleType = 0);
 

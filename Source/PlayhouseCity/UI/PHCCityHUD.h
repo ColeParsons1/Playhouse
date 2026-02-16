@@ -14,6 +14,7 @@ class UCanvasPanel;
 class UPHCMainHUD;
 class APHCVehiclePawn;
 class APHCDuneBuggyPawn;
+class APHCRaptorPawn;
 
 /**
  * Lightweight HUD overlay for the PlayhouseCity 3D open world.
@@ -85,6 +86,11 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UButton> FireButton;
 
+	// -- Bomb drop button (shown when driving raptor) ---------------------
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UButton> DropBombButton;
+
 	// -- Driving mode widgets (mobile only) --------------------------------
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
@@ -130,6 +136,9 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UButton> SelectBuggyBtn;
+
+	UPROPERTY()
+	TObjectPtr<UButton> SelectRaptorBtn;
 
 	// -- Multiplayer UI -------------------------------------------------------
 
@@ -203,6 +212,12 @@ private:
 
 	UFUNCTION()
 	void OnSelectBuggy();
+
+	UFUNCTION()
+	void OnSelectRaptor();
+
+	UFUNCTION()
+	void OnDropBombClicked();
 
 	UFUNCTION()
 	void OnHostButtonClicked();

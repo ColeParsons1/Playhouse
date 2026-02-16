@@ -8,6 +8,7 @@
 #include "Player/PHCCityCharacter.h"
 #include "Vehicle/PHCVehiclePawn.h"
 #include "Vehicle/PHCDuneBuggyPawn.h"
+#include "Vehicle/PHCRaptorPawn.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "PlayhouseCity.h"
@@ -171,6 +172,50 @@ bool UPHCCityHUD::Initialize()
 		FireBtnSlot->SetOffsets(FMargin(0.f, 0.f, FireBtnSize, FireBtnSize));
 
 		FireButton->SetVisibility(ESlateVisibility::Collapsed);
+
+		// ============================================================
+		//  RIGHT (next to Fire): "Drop" button -- bomb drop
+		// ============================================================
+		DropBombButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("DropBombButton"));
+
+		const float DropBtnSize = 140.f;
+		const float DropCornerR = DropBtnSize * 0.5f;
+
+		auto MakeRoundBrushDrop = [&](const FLinearColor& Color) -> FSlateBrush
+		{
+			FSlateBrush Brush;
+			Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
+			Brush.TintColor = FSlateColor(Color);
+			Brush.OutlineSettings.CornerRadii = FVector4(DropCornerR, DropCornerR, DropCornerR, DropCornerR);
+			Brush.OutlineSettings.Color = FSlateColor(FLinearColor::Transparent);
+			Brush.OutlineSettings.Width = 0.f;
+			return Brush;
+		};
+
+		FButtonStyle DropBtnStyle = DropBombButton->GetStyle();
+		DropBtnStyle.Normal  = MakeRoundBrushDrop(FLinearColor(0.15f, 0.08f, 0.45f, 0.85f));
+		DropBtnStyle.Hovered = MakeRoundBrushDrop(FLinearColor(0.22f, 0.12f, 0.55f, 0.95f));
+		DropBtnStyle.Pressed = MakeRoundBrushDrop(FLinearColor(0.10f, 0.05f, 0.35f, 1.0f));
+		DropBombButton->SetStyle(DropBtnStyle);
+
+		UTextBlock* DropLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("DropBombLabel"));
+		const FSlateFontInfo DropFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 18);
+		DropLabel->SetText(FText::FromString(TEXT("DROP")));
+		DropLabel->SetFont(DropFont);
+		DropLabel->SetColorAndOpacity(FSlateColor(White));
+		DropLabel->SetJustification(ETextJustify::Center);
+		DropBombButton->AddChild(DropLabel);
+
+		UCanvasPanelSlot* DropBtnSlot = RootCanvas->AddChildToCanvas(DropBombButton);
+		// To the right of Fire button (Fire at 0.77, Drop at 0.91)
+		DropBtnSlot->SetAnchors(FAnchors(0.91f, 0.48f, 0.91f, 0.48f));
+		DropBtnSlot->SetAlignment(FVector2D(0.5f, 1.f));
+		DropBtnSlot->SetOffsets(FMargin(0.f, 0.f, DropBtnSize, DropBtnSize));
+
+		DropBombButton->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
 		//  TOP-LEFT: Menu button (opens lobby HUD as overlay)
@@ -441,6 +486,35 @@ bool UPHCCityHUD::Initialize()
 		BgSlot->SetVerticalAlignment(VAlign_Center);
 		BgSlot->SetHorizontalAlignment(HAlign_Center);
 
+		// Spacer between Buggy and Raptor buttons.
+		USpacer* BtnSpacer2 = WidgetTree->ConstructWidget<USpacer>(
+			USpacer::StaticClass(), TEXT("VehicleBtnSpacer2"));
+		BtnSpacer2->SetSize(FVector2D(20.f, 0.f));
+		SelectHBox->AddChildToHorizontalBox(BtnSpacer2);
+
+		// -- F-22 Raptor button (stealth gray) --
+		SelectRaptorBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectRaptorBtn"));
+		{
+			FButtonStyle Style = SelectRaptorBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.28f, 0.30f, 0.32f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.35f, 0.37f, 0.40f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.20f, 0.22f, 0.24f, 1.0f));
+			SelectRaptorBtn->SetStyle(Style);
+		}
+		UTextBlock* RaptorLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("RaptorSelectLabel"));
+		RaptorLabel->SetText(FText::FromString(TEXT("F-22 Raptor")));
+		RaptorLabel->SetFont(BtnFont);
+		RaptorLabel->SetColorAndOpacity(FSlateColor(White));
+		RaptorLabel->SetJustification(ETextJustify::Center);
+		SelectRaptorBtn->AddChild(RaptorLabel);
+
+		UHorizontalBoxSlot* RpSlot = SelectHBox->AddChildToHorizontalBox(SelectRaptorBtn);
+		RpSlot->SetPadding(FMargin(8.f));
+		RpSlot->SetVerticalAlignment(VAlign_Center);
+		RpSlot->SetHorizontalAlignment(HAlign_Center);
+
 		VehicleSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
@@ -622,10 +696,18 @@ void UPHCCityHUD::NativeConstruct()
 	{
 		SelectBuggyBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectBuggy);
 	}
+	if (SelectRaptorBtn)
+	{
+		SelectRaptorBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectRaptor);
+	}
 	if (FireButton)
 	{
 		FireButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnFireButtonPressed);
 		FireButton->OnReleased.AddDynamic(this, &UPHCCityHUD::OnFireButtonReleased);
+	}
+	if (DropBombButton)
+	{
+		DropBombButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDropBombClicked);
 	}
 	if (HostButton)
 	{
@@ -688,10 +770,18 @@ void UPHCCityHUD::NativeDestruct()
 	{
 		SelectBuggyBtn->OnClicked.RemoveAll(this);
 	}
+	if (SelectRaptorBtn)
+	{
+		SelectRaptorBtn->OnClicked.RemoveAll(this);
+	}
 	if (FireButton)
 	{
 		FireButton->OnPressed.RemoveAll(this);
 		FireButton->OnReleased.RemoveAll(this);
+	}
+	if (DropBombButton)
+	{
+		DropBombButton->OnClicked.RemoveAll(this);
 	}
 	if (HostButton) { HostButton->OnClicked.RemoveAll(this); }
 	if (JoinButton) { JoinButton->OnClicked.RemoveAll(this); }
@@ -785,6 +875,7 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 	float NewSteering = 0.f;
 	float NewThrottle = 0.f;
+	float NewPitch = 0.f;
 	bool bFireTouched = false;
 
 	// Fire button zone: centered at 77% X, from (48%-168px) to 48% Y.
@@ -823,6 +914,12 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			// Map [0 .. ScreenHalfX] to [-1 .. +1].
 			NewSteering = (TouchX / ScreenHalfX) * 2.f - 1.f;
 			NewSteering = FMath::Clamp(NewSteering, -1.f, 1.f);
+
+			// For Raptor: vertical position in this zone = pitch.
+			// Map [ScreenHalfY .. VPHeight] to [+1 .. -1] (top = climb, bottom = dive).
+			const float NormY = (TouchY - ScreenHalfY) / ScreenHalfY; // 0..1 (top..bottom)
+			NewPitch = 1.f - NormY * 2.f; // +1 (top) .. -1 (bottom)
+			NewPitch = FMath::Clamp(NewPitch, -1.f, 1.f);
 		}
 		else if (TouchX >= ScreenHalfX && TouchY > ScreenHalfY)
 		{
@@ -861,23 +958,43 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			B->ServerSetThrottle(NewThrottle);
 		}
 	}
+	else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(DrivenVehicle))
+	{
+		R->SteeringInput = NewSteering;
+		R->ThrottleInput = NewThrottle;
+		R->PitchInput = NewPitch;
+		if (!R->HasAuthority())
+		{
+			R->ServerSetSteering(NewSteering);
+			R->ServerSetThrottle(NewThrottle);
+			R->ServerSetPitch(NewPitch);
+		}
+	}
 
-	// Fire missile while touching fire zone (mobile touch-based detection).
+	// Fire missile/rocket while touching fire zone (mobile touch-based detection).
 	if (bFireTouched && bDrivingMode)
 	{
 		if (APHCDuneBuggyPawn* Buggy = Cast<APHCDuneBuggyPawn>(DrivenVehicle))
 		{
 			Buggy->FireMissile();
 		}
+		else if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle))
+		{
+			Raptor->FireRocket();
+		}
 	}
 #endif
 
-	// Continuous missile fire while Fire UButton is held (desktop/fallback).
+	// Continuous fire while Fire UButton is held (desktop/fallback).
 	if (bFireHeld && bDrivingMode)
 	{
 		if (APHCDuneBuggyPawn* Buggy = Cast<APHCDuneBuggyPawn>(DrivenVehicle))
 		{
 			Buggy->FireMissile();
+		}
+		else if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle))
+		{
+			Raptor->FireRocket();
 		}
 	}
 }
@@ -894,11 +1011,19 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 	const ESlateVisibility WalkVis = bDriving ? ESlateVisibility::Collapsed : ESlateVisibility::Visible;
 	const ESlateVisibility DriveVis = bDriving ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
 
-	// Show fire button only for dune buggy.
+	// Show fire button for dune buggy and raptor.
 	if (FireButton)
 	{
-		const bool bShowFire = bDriving && Cast<APHCDuneBuggyPawn>(Vehicle) != nullptr;
+		const bool bShowFire = bDriving &&
+			(Cast<APHCDuneBuggyPawn>(Vehicle) != nullptr || Cast<APHCRaptorPawn>(Vehicle) != nullptr);
 		FireButton->SetVisibility(bShowFire ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+
+	// Show drop bomb button only for raptor.
+	if (DropBombButton)
+	{
+		const bool bShowDrop = bDriving && Cast<APHCRaptorPawn>(Vehicle) != nullptr;
+		DropBombButton->SetVisibility(bShowDrop ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 
 	// Toggle on-foot controls.
@@ -929,6 +1054,12 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 		{
 			B->ThrottleInput = 0.f;
 			B->SteeringInput = 0.f;
+		}
+		else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(Vehicle))
+		{
+			R->ThrottleInput = 0.f;
+			R->SteeringInput = 0.f;
+			R->PitchInput = 0.f;
 		}
 	}
 
@@ -1035,6 +1166,10 @@ void UPHCCityHUD::OnFireButtonPressed()
 	{
 		Buggy->FireMissile();
 	}
+	else if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle))
+	{
+		Raptor->FireRocket();
+	}
 }
 
 void UPHCCityHUD::OnFireButtonReleased()
@@ -1082,6 +1217,24 @@ void UPHCCityHUD::OnSelectBuggy()
 	{
 		PC->SpawnAndEnterVehicle(1);
 		SetDrivingMode(true, PC->GetPawn());
+	}
+}
+
+void UPHCCityHUD::OnSelectRaptor()
+{
+	HideVehicleSelection();
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		PC->SpawnAndEnterVehicle(2);
+		SetDrivingMode(true, PC->GetPawn());
+	}
+}
+
+void UPHCCityHUD::OnDropBombClicked()
+{
+	if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle))
+	{
+		Raptor->DropBomb();
 	}
 }
 

@@ -39,6 +39,7 @@
 #include "Games/Simulator/SimulatorGameMode.h"
 #include "Vehicle/PHCVehiclePawn.h"
 #include "Vehicle/PHCDuneBuggyPawn.h"
+#include "Vehicle/PHCRaptorPawn.h"
 #include "Player/PHCCityCharacter.h"
 #include "Core/PHCCityGameMode.h"
 #include "EnhancedInputSubsystems.h"
@@ -530,7 +531,19 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 
 	APawn* SpawnedVehicle = nullptr;
 
-	if (VehicleType == 1)
+	if (VehicleType == 2)
+	{
+		APHCRaptorPawn* Raptor = World->SpawnActor<APHCRaptorPawn>(
+			APHCRaptorPawn::StaticClass(), SpawnLoc, SpawnRot, SP);
+		if (Raptor)
+		{
+			Raptor->SetBodyColor(FLinearColor(0.35f, 0.37f, 0.38f));
+			Raptor->bIsOccupied = true;
+			Raptor->CurrentSpeed = 0.f;
+			SpawnedVehicle = Raptor;
+		}
+	}
+	else if (VehicleType == 1)
 	{
 		APHCDuneBuggyPawn* Buggy = World->SpawnActor<APHCDuneBuggyPawn>(
 			APHCDuneBuggyPawn::StaticClass(), SpawnLoc, SpawnRot, SP);
@@ -615,6 +628,15 @@ void APHCPlayerController::OnVehicleExitRequested()
 		B->CurrentSpeed = 0.f;
 		B->SetHeadlightsEnabled(false);
 	}
+	else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(CurrentVehicle))
+	{
+		ExitLoc = R->GetExitLocation();
+		R->bIsOccupied = false;
+		R->ThrottleInput = 0.f;
+		R->SteeringInput = 0.f;
+		R->PitchInput = 0.f;
+		R->CurrentSpeed = 0.f;
+	}
 
 	// Unpossess vehicle, repossess character (server authority).
 	UnPossess();
@@ -676,6 +698,10 @@ void APHCPlayerController::ClientOnVehicleExited_Implementation()
 	else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(CurrentVehicle))
 	{
 		VehicleMC = B->VehicleMappingContext;
+	}
+	else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(CurrentVehicle))
+	{
+		VehicleMC = R->VehicleMappingContext;
 	}
 
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
