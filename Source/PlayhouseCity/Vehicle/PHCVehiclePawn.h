@@ -121,7 +121,7 @@ public:
 	// -- Vehicle tuning ----------------------------------------------------
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Vehicle")
-	float MaxSpeed = 6000.f;
+	float MaxSpeed = 7200.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Vehicle")
 	float Acceleration = 3800.f;
@@ -149,8 +149,14 @@ public:
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Vehicle")
 	bool bIsOccupied = false;
 
-	/** Vertical velocity when launched by a launch pad. */
-	float LaunchVelocityZ = 0.f;
+	/** Vertical velocity for airborne physics (launch pads / ramps). */
+	float VerticalVelocity = 0.f;
+
+	/** True when grounded on previous frame (for launch detection). */
+	bool bWasGrounded = false;
+
+	/** True after the vehicle has touched ground at least once (prevents falling on spawn). */
+	bool bHasBeenGrounded = false;
 
 	/** Set the body/cabin color (dynamic material). */
 	void SetBodyColor(const FLinearColor& Color);

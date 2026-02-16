@@ -63,6 +63,7 @@ private:
 	void SpawnStarfield();
 	void SpawnHills();
 	void SpawnCloudLayer();
+	void SpawnUndergroundCavern();
 
 	/** Spawn a single building with optional window lights. */
 	void SpawnBuilding(const FVector& Location, const FVector& Size,

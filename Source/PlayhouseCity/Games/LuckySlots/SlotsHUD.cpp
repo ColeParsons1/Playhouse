@@ -32,7 +32,7 @@ bool USlotsHUD::Initialize()
 	}
 
 	// Casino colour palette
-	const FLinearColor DarkPurpleBg(0.15f, 0.05f, 0.25f, 1.f);
+	const FLinearColor SlotsDarkPurpleBg(0.15f, 0.05f, 0.25f, 1.f);
 	const FLinearColor SlotsGoldAccent(1.f, 0.843f, 0.f, 1.f);     // #FFD700
 	const FLinearColor ReelBgColor(0.08f, 0.02f, 0.14f, 1.f);
 	const FLinearColor SpinBtnNormal(0.7f, 0.55f, 0.f, 1.f);      // Dark gold
@@ -67,7 +67,7 @@ bool USlotsHUD::Initialize()
 
 	// ---- Game content area (dark purple background) ----
 	UBorder* GameArea = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SlotsGameArea"));
-	GameArea->SetBrushColor(DarkPurpleBg);
+	GameArea->SetBrushColor(SlotsDarkPurpleBg);
 	GameArea->SetPadding(FMargin(20.f));
 
 	UCanvasPanelSlot* GameSlot = RootCanvas->AddChildToCanvas(GameArea);

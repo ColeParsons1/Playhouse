@@ -47,9 +47,9 @@ bool USimulatorHUD::Initialize()
 	const FLinearColor GrassColor(0.08f, 0.25f, 0.08f, 1.f);
 	const FLinearColor LaneLineColor(1.f, 1.f, 1.f, 0.5f);
 	const FLinearColor PlayerCarColor(0.1f, 0.5f, 0.9f, 1.f);
-	const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
-	const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
-	const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
+	const FLinearColor SimBtnNormal(0.2f, 0.3f, 0.7f, 1.f);
+	const FLinearColor SimBtnHover(0.3f, 0.4f, 0.85f, 1.f);
+	const FLinearColor SimBtnPress(0.15f, 0.2f, 0.5f, 1.f);
 	const FLinearColor DarkBg(0.04f, 0.04f, 0.08f, 1.f);
 
 	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
@@ -172,9 +172,9 @@ bool USimulatorHUD::Initialize()
 		UButton* Btn = WidgetTree->ConstructWidget<UButton>(
 			UButton::StaticClass(), Name);
 		FButtonStyle Style = Btn->GetStyle();
-		Style.Normal.TintColor = FSlateColor(BtnNormal);
-		Style.Hovered.TintColor = FSlateColor(BtnHover);
-		Style.Pressed.TintColor = FSlateColor(BtnPress);
+		Style.Normal.TintColor = FSlateColor(SimBtnNormal);
+		Style.Hovered.TintColor = FSlateColor(SimBtnHover);
+		Style.Pressed.TintColor = FSlateColor(SimBtnPress);
 		Btn->SetStyle(Style);
 
 		UTextBlock* BtnLabel = WidgetTree->ConstructWidget<UTextBlock>(

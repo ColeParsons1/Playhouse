@@ -151,6 +151,10 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UTextBlock> PlayerCountText;
 
+	/** Live coordinate display at top of screen. */
+	UPROPERTY()
+	TObjectPtr<UTextBlock> LocationText;
+
 	UPROPERTY()
 	TObjectPtr<UTextBlock> IPInputText;
 

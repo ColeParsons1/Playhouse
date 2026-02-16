@@ -159,7 +159,14 @@ public:
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Vehicle")
 	bool bIsOccupied = false;
 
-	float LaunchVelocityZ = 0.f;
+	/** Vertical velocity for airborne physics (launch pads / ramps). */
+	float VerticalVelocity = 0.f;
+
+	/** True when grounded on previous frame (for launch detection). */
+	bool bWasGrounded = false;
+
+	/** True after the vehicle has touched ground at least once (prevents falling on spawn). */
+	bool bHasBeenGrounded = false;
 
 	void SetBodyColor(const FLinearColor& Color);
 	void SetHeadlightsEnabled(bool bEnabled);

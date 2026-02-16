@@ -244,6 +244,11 @@ APHCDuneBuggyPawn::APHCDuneBuggyPawn()
 	VehicleCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("VehicleCamera"));
 	VehicleCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	VehicleCamera->bUsePawnControlRotation = false;
+
+	// Inflate bounds to prevent frustum-culling the car body on mobile
+	VehicleCollision->SetBoundsScale(10.f);
+	if (ChassisMesh) ChassisMesh->SetBoundsScale(5.f);
+	if (FloorPanMesh) FloorPanMesh->SetBoundsScale(5.f);
 }
 
 // ---------------------------------------------------------------------------
@@ -504,21 +509,72 @@ void APHCDuneBuggyPawn::Tick(float DeltaTime)
 		if (WheelRR) WheelRR->SetRelativeRotation(RearRot);
 	}
 
-	// ---- Movement (flat ground -- no vertical trace) ----
+	// ---- Movement ----
 	if (FMath::Abs(CurrentSpeed) > 1.f)
 	{
 		const FVector Forward = GetActorForwardVector();
 		const FVector Delta = Forward * CurrentSpeed * DeltaTime;
-
-		// Move horizontally (no sweep -- avoids collision with ground/buildings).
 		AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), false);
 	}
-	else
+
+	// ---- Ground following (downward trace to ride slopes, ramps, ocean floor) ----
 	{
-		// Flatten pitch when stationary.
-		FRotator Rot = GetActorRotation();
-		Rot.Pitch = FMath::FInterpTo(Rot.Pitch, 0.f, DeltaTime, 5.f);
-		SetActorRotation(Rot);
+		const FVector Pos = GetActorLocation();
+		const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 100.f);
+		const FVector TraceEnd(Pos.X, Pos.Y, Pos.Z - 2000.f);
+		FCollisionQueryParams Params;
+		Params.AddIgnoredActor(this);
+		Params.bTraceComplex = true;
+
+		TArray<FHitResult> Hits;
+		bool bFoundSurface = false;
+		if (GetWorld()->LineTraceMultiByChannel(Hits, TraceStart, TraceEnd, ECC_WorldStatic, Params))
+		{
+			for (const FHitResult& Hit : Hits)
+			{
+				if (Hit.bStartPenetrating) continue;
+
+				const float TargetZ = Hit.ImpactPoint.Z;
+
+				// Follow surfaces at or below the vehicle (+200 tolerance for ramp ascent at speed)
+				if (TargetZ <= Pos.Z + 200.f)
+				{
+					bFoundSurface = true;
+					bHasBeenGrounded = true;
+					VerticalVelocity = 0.f;
+					const float NewZ = FMath::FInterpTo(Pos.Z, TargetZ, DeltaTime, 12.f);
+					SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
+
+					// Tilt pitch to match slope
+					const FVector Forward2D = FVector(GetActorForwardVector().X, GetActorForwardVector().Y, 0.f).GetSafeNormal();
+					const float ForwardSlope = -(Hit.ImpactNormal.X * Forward2D.X + Hit.ImpactNormal.Y * Forward2D.Y) / FMath::Max(Hit.ImpactNormal.Z, 0.01f);
+					const float TargetPitch = FMath::RadiansToDegrees(FMath::Atan(ForwardSlope));
+					FRotator Rot = GetActorRotation();
+					Rot.Pitch = FMath::FInterpTo(Rot.Pitch, TargetPitch, DeltaTime, 5.f);
+					SetActorRotation(Rot);
+					break;
+				}
+			}
+		}
+		if (!bFoundSurface && bHasBeenGrounded)
+		{
+			// Airborne: if we just left the ground, calculate launch velocity from pitch
+			if (bWasGrounded)
+			{
+				const float PitchRad = FMath::DegreesToRadians(GetActorRotation().Pitch);
+				VerticalVelocity = FMath::Abs(CurrentSpeed) * FMath::Sin(PitchRad);
+			}
+			// Apply gravity
+			VerticalVelocity -= 980.f * DeltaTime;
+			const float NewZ = Pos.Z + VerticalVelocity * DeltaTime;
+			SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
+
+			// Flatten pitch while airborne
+			FRotator Rot = GetActorRotation();
+			Rot.Pitch = FMath::FInterpTo(Rot.Pitch, 0.f, DeltaTime, 3.f);
+			SetActorRotation(Rot);
+		}
+		bWasGrounded = bFoundSurface;
 	}
 
 }

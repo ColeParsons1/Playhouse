@@ -24,12 +24,12 @@ DEFINE_LOG_CATEGORY_STATIC(LogMapsQuizHUD, Log, All);
 namespace {
 const FLinearColor MapsBgColor(0.04f, 0.06f, 0.18f, 1.f);        // Dark navy blue
 const FLinearColor DisplayAreaColor(0.06f, 0.09f, 0.24f, 1.f);    // Slightly lighter navy
-const FLinearColor ChoiceBtnNormal(0.12f, 0.22f, 0.52f, 1.f);     // Globe blue
-const FLinearColor ChoiceBtnHover(0.18f, 0.32f, 0.68f, 1.f);
-const FLinearColor ChoiceBtnPress(0.08f, 0.14f, 0.38f, 1.f);
-const FLinearColor NextBtnNormal(0.15f, 0.55f, 0.3f, 1.f);       // Green
-const FLinearColor NextBtnHover(0.2f, 0.7f, 0.4f, 1.f);
-const FLinearColor NextBtnPress(0.1f, 0.4f, 0.2f, 1.f);
+const FLinearColor MQChoiceBtnNormal(0.12f, 0.22f, 0.52f, 1.f);     // Globe blue
+const FLinearColor MQChoiceBtnHover(0.18f, 0.32f, 0.68f, 1.f);
+const FLinearColor MQChoiceBtnPress(0.08f, 0.14f, 0.38f, 1.f);
+const FLinearColor MQNextBtnNormal(0.15f, 0.55f, 0.3f, 1.f);       // Green
+const FLinearColor MQNextBtnHover(0.2f, 0.7f, 0.4f, 1.f);
+const FLinearColor MQNextBtnPress(0.1f, 0.4f, 0.2f, 1.f);
 const FLinearColor TimerBarBgColor(0.08f, 0.08f, 0.16f, 1.f);
 const FLinearColor FeedbackOverlayBg(0.02f, 0.03f, 0.1f, 0.88f);
 }
@@ -236,9 +236,9 @@ bool UMapsQuizHUD::Initialize()
 		OutButton = WidgetTree->ConstructWidget<UButton>(
 			UButton::StaticClass(), BtnName);
 		FButtonStyle Style = OutButton->GetStyle();
-		Style.Normal.TintColor = FSlateColor(ChoiceBtnNormal);
-		Style.Hovered.TintColor = FSlateColor(ChoiceBtnHover);
-		Style.Pressed.TintColor = FSlateColor(ChoiceBtnPress);
+		Style.Normal.TintColor = FSlateColor(MQChoiceBtnNormal);
+		Style.Hovered.TintColor = FSlateColor(MQChoiceBtnHover);
+		Style.Pressed.TintColor = FSlateColor(MQChoiceBtnPress);
 		OutButton->SetStyle(Style);
 
 		OutText = WidgetTree->ConstructWidget<UTextBlock>(
@@ -367,9 +367,9 @@ bool UMapsQuizHUD::Initialize()
 		NextButton = WidgetTree->ConstructWidget<UButton>(
 			UButton::StaticClass(), TEXT("NextButton"));
 		FButtonStyle Style = NextButton->GetStyle();
-		Style.Normal.TintColor = FSlateColor(NextBtnNormal);
-		Style.Hovered.TintColor = FSlateColor(NextBtnHover);
-		Style.Pressed.TintColor = FSlateColor(NextBtnPress);
+		Style.Normal.TintColor = FSlateColor(MQNextBtnNormal);
+		Style.Hovered.TintColor = FSlateColor(MQNextBtnHover);
+		Style.Pressed.TintColor = FSlateColor(MQNextBtnPress);
 		NextButton->SetStyle(Style);
 		NextButton->SetVisibility(ESlateVisibility::Collapsed);
 

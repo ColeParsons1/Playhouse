@@ -65,9 +65,9 @@ bool UPegGameHUD::Initialize()
 		FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 14);
 
 	// ---- Button color scheme ----
-	const FLinearColor BtnNormal(0.2f, 0.3f, 0.7f, 1.f);
-	const FLinearColor BtnHover(0.3f, 0.4f, 0.85f, 1.f);
-	const FLinearColor BtnPress(0.15f, 0.2f, 0.5f, 1.f);
+	const FLinearColor PegBtnNormal(0.2f, 0.3f, 0.7f, 1.f);
+	const FLinearColor PegBtnHover(0.3f, 0.4f, 0.85f, 1.f);
+	const FLinearColor PegBtnPress(0.15f, 0.2f, 0.5f, 1.f);
 
 	// Helper: create a styled button with a text label.
 	auto MakeButton = [&](const FName& Name, const FString& Label,
@@ -244,7 +244,7 @@ bool UPegGameHUD::Initialize()
 	BtnRowSlot->SetPadding(FMargin(0.f, 10.f, 0.f, 4.f));
 
 	// Undo button.
-	UndoButton = MakeButton(TEXT("UndoButton"), TEXT("Undo"), BtnNormal, BtnHover, BtnPress);
+	UndoButton = MakeButton(TEXT("UndoButton"), TEXT("Undo"), PegBtnNormal, PegBtnHover, PegBtnPress);
 	UHorizontalBoxSlot* UndoBtnSlot = ButtonRow->AddChildToHorizontalBox(UndoButton);
 	UndoBtnSlot->SetHorizontalAlignment(HAlign_Center);
 	UndoBtnSlot->SetVerticalAlignment(VAlign_Center);

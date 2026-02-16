@@ -569,6 +569,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnRamps();
 	SpawnOutskirts();
 	SpawnHills();
+	SpawnUndergroundCavern();
 	SpawnStarfield();
 	SpawnCloudLayer();
 }
@@ -605,7 +606,9 @@ void UPHCCitySubsystem::SpawnGround()
 	};
 
 	// Main city ground: covers the expanded 24x24 grid + margin
-	SpawnGroundPlane(FVector(0.f, 0.f, 0.f), FVector(1400.f, 1400.f, 1.f), TEXT("CityGround"));
+	// Shrunk from 1400 to 1260 (±63000 UU) so coastline zone (63k-70k) has no ground collision,
+	// allowing vehicles to descend onto ocean floor ramps and drive submerged.
+	SpawnGroundPlane(FVector(0.f, 0.f, 0.f), FVector(1260.f, 1260.f, 1.f), TEXT("CityGround"));
 
 	// Northwest fill: extends ground beyond north edge
 	SpawnGroundPlane(FVector(-30000.f, 75000.f, 0.f), FVector(700.f, 200.f, 1.f), TEXT("NorthwestFill"));
@@ -613,8 +616,13 @@ void UPHCCitySubsystem::SpawnGround()
 	// Outskirts ground: west of city extending along highway
 	SpawnGroundPlane(FVector(-130000.f, 0.f, 0.f), FVector(2000.f, 1400.f, 1.f), TEXT("OutskirtsMain"));
 
-	// Far outskirts: very far west
-	SpawnGroundPlane(FVector(-280000.f, 0.f, 0.f), FVector(1000.f, 1000.f, 1.f), TEXT("OutskirtsFar"));
+	// Far outskirts: split into 4 pieces with a hole for the underground cavern tunnel
+	// Original was (-280000, 0) scale (1000,1000) = X:-330k to -230k, Y:-50k to 50k
+	// Hole for cavern: X:-264k to -237k, Y:-13k to -41k (must start north of tunnel entrance at Y:-13500)
+	SpawnGroundPlane(FVector(-280000.f, 18500.f, 0.f), FVector(1000.f, 630.f, 1.f), TEXT("OutskirtsFarN"));   // north strip: Y -13k to 50k
+	SpawnGroundPlane(FVector(-280000.f, -45500.f, 0.f), FVector(1000.f, 90.f, 1.f), TEXT("OutskirtsFarS"));   // south strip: Y -50k to -41k
+	SpawnGroundPlane(FVector(-297000.f, -27000.f, 0.f), FVector(660.f, 280.f, 1.f), TEXT("OutskirtsFarW"));   // west strip: X -330k to -264k, Y -41k to -13k
+	SpawnGroundPlane(FVector(-233500.f, -27000.f, 0.f), FVector(70.f, 280.f, 1.f), TEXT("OutskirtsFarE"));    // east strip: X -237k to -230k, Y -41k to -13k
 }
 
 // ---------------------------------------------------------------------------
@@ -639,8 +647,15 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 		MC->SetStaticMesh(PlaneMesh);
 		MC->SetWorldScale3D(Scale);
 		MC->SetWorldLocation(Loc);
-		MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		MC->SetCollisionResponseToAllChannels(ECR_Block);
+		if (bIsWater)
+		{
+			MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+		else
+		{
+			MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			MC->SetCollisionResponseToAllChannels(ECR_Block);
+		}
 		MC->RegisterComponent();
 		WA->SetRootComponent(MC);
 		if (bIsWater && GlassMaterial)
@@ -696,6 +711,79 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 
 	// Waterfront boardwalk beach — along NE coast within waterfront district
 	SpawnWater(FVector(55000.f, 55000.f, -1.f), FVector(100.f, 80.f, 1.f), Sand, TEXT("WaterfrontBeach"));
+
+	// ========================================================================
+	// Ocean floor: sloped ramps from shore down to deep seabed
+	// ========================================================================
+	if (!CubeMesh) return;
+
+	const float SeabedZ = -3000.f;          // deep ocean floor — way below sea level
+	const float RampLen = 10000.f;           // shorter run = steeper slope
+	const float RampDrop = FMath::Abs(SeabedZ);
+	const float RampAngle = FMath::RadiansToDegrees(FMath::Atan2(RampDrop, RampLen)); // ~16.7°
+	const float RampHyp = FMath::Sqrt(RampLen * RampLen + RampDrop * RampDrop);
+	const float RampCenterZ = SeabedZ * 0.5f; // midpoint of slope
+	const float GroundEdge = 63000.f;        // matches shrunk ground plane (1260 scale)
+	const float RampCenterOffset = GroundEdge + RampLen * 0.5f; // 68000
+
+	const FLinearColor SeabedColor(0.08f, 0.10f, 0.07f); // dark sandy ocean floor
+
+	// Helper to spawn a collision ramp or floor slab
+	auto SpawnOceanFloor = [&](const FVector& Loc, const FVector& Scale, const FRotator& Rot, const TCHAR* Label)
+	{
+		AActor* RA = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
+		if (!RA) return;
+#if WITH_EDITOR
+		RA->SetActorLabel(Label);
+#endif
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(RA, TEXT("FloorMesh"));
+		MC->SetStaticMesh(CubeMesh);
+		MC->SetWorldScale3D(Scale);
+		MC->SetWorldLocation(Loc);
+		MC->SetWorldRotation(Rot);
+		MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		MC->SetCollisionResponseToAllChannels(ECR_Block);
+		MC->RegisterComponent();
+		RA->SetRootComponent(MC);
+		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
+		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), SeabedColor); Mat->SetScalarParameterValue(TEXT("Roughness"), 0.92f); MC->SetMaterial(0, Mat); }
+		RA->AddInstanceComponent(MC);
+	};
+
+	// Deep seabed — massive flat floor beneath all water
+	SpawnOceanFloor(
+		FVector(0.f, 0.f, SeabedZ),
+		FVector(4000.f, 4000.f, 0.5f),
+		FRotator::ZeroRotator,
+		TEXT("Seabed"));
+
+	// East coast ramp (slopes down toward +X)
+	SpawnOceanFloor(
+		FVector(RampCenterOffset, 0.f, RampCenterZ),
+		FVector(RampHyp / 100.f, 2000.f, 0.5f),
+		FRotator(-RampAngle, 0.f, 0.f),
+		TEXT("EastRamp"));
+
+	// West coast ramp (slopes down toward -X)
+	SpawnOceanFloor(
+		FVector(-RampCenterOffset, 0.f, RampCenterZ),
+		FVector(RampHyp / 100.f, 2000.f, 0.5f),
+		FRotator(RampAngle, 0.f, 0.f),
+		TEXT("WestRamp"));
+
+	// South coast ramp (slopes down toward -Y)
+	SpawnOceanFloor(
+		FVector(0.f, -RampCenterOffset, RampCenterZ),
+		FVector(2000.f, RampHyp / 100.f, 0.5f),
+		FRotator(0.f, 0.f, RampAngle),
+		TEXT("SouthRamp"));
+
+	// North coast ramp (slopes down toward +Y)
+	SpawnOceanFloor(
+		FVector(0.f, RampCenterOffset, RampCenterZ),
+		FVector(2000.f, RampHyp / 100.f, 0.5f),
+		FRotator(0.f, 0.f, -RampAngle),
+		TEXT("NorthRamp"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1901,23 +1989,63 @@ void UPHCCitySubsystem::SpawnRamps()
 			RampActor->AddInstanceComponent(StripeMC);
 		}
 
-		// Arrow indicator pointing away from origin
-		FVector ArrowDir = FVector(Loc.X, Loc.Y, 0.f);
-		ArrowDir.Normalize();
-		float ArrowYaw = FMath::Atan2(ArrowDir.Y, ArrowDir.X) * (180.f / PI);
+		// Direction pointing away from city center
+		FVector Dir2DRamp = FVector(Loc.X, Loc.Y, 0.f);
+		Dir2DRamp.Normalize();
+		float RampYaw = FMath::Atan2(Dir2DRamp.Y, Dir2DRamp.X) * (180.f / PI);
 
-		FVector ArrowLoc = Loc + ArrowDir * 300.f;
+		// Arrow indicator pointing away from origin
+		FVector ArrowLoc = Loc + Dir2DRamp * 300.f;
 		ArrowLoc.Z = Loc.Z + 130.f;
 
 		UStaticMeshComponent* ArrowMC = NewObject<UStaticMeshComponent>(RampActor, *FString::Printf(TEXT("Arrow_%d"), i));
 		ArrowMC->SetStaticMesh(CubeMesh);
 		ArrowMC->SetWorldLocation(ArrowLoc);
 		ArrowMC->SetWorldScale3D(FVector(3.0f, 0.4f, 0.15f));
-		ArrowMC->SetWorldRotation(FRotator(0.f, ArrowYaw, 0.f));
+		ArrowMC->SetWorldRotation(FRotator(0.f, RampYaw, 0.f));
 		ArrowMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		ArrowMC->RegisterComponent();
 		ApplyColor(ArrowMC, ArrowColor);
 		RampActor->AddInstanceComponent(ArrowMC);
+
+		// Angled ramp surface — CubeMesh tilted 25° pointing outward from city center
+		// Ramp: 800 long, 700 wide, 30 thick, pitched up 25° in the launch direction
+		const float RampPitch = 25.f;
+		const float RampLen = 800.f;
+		const float RampH = RampLen * FMath::Sin(FMath::DegreesToRadians(RampPitch)); // ~338 UU
+		FVector RampCenter = Loc - Dir2DRamp * 100.f; // slightly behind pad center
+		RampCenter.Z = Loc.Z + RampH * 0.5f;
+
+		UStaticMeshComponent* RampMC = NewObject<UStaticMeshComponent>(RampActor, *FString::Printf(TEXT("Ramp_%d"), i));
+		RampMC->SetStaticMesh(CubeMesh);
+		RampMC->SetWorldLocation(RampCenter);
+		RampMC->SetWorldScale3D(FVector(8.0f, 7.0f, 0.30f));
+		// Pitch up in the launch direction: rotate around the perpendicular axis
+		RampMC->SetWorldRotation(FRotator(RampPitch, RampYaw, 0.f));
+		RampMC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		RampMC->SetCollisionResponseToAllChannels(ECR_Block);
+		RampMC->RegisterComponent();
+		ApplyColor(RampMC, PadColor * 1.15f);
+		RampActor->AddInstanceComponent(RampMC);
+
+		// Side rails on the ramp
+		for (int32 Rail = 0; Rail < 2; ++Rail)
+		{
+			const float RailSide = (Rail == 0) ? 350.f : -350.f;
+			FVector RailOfs = FVector::CrossProduct(Dir2DRamp, FVector::UpVector) * RailSide;
+			FVector RailLoc = RampCenter + RailOfs;
+
+			UStaticMeshComponent* RailMC = NewObject<UStaticMeshComponent>(RampActor, *FString::Printf(TEXT("Rail_%d_%d"), i, Rail));
+			RailMC->SetStaticMesh(CubeMesh);
+			RailMC->SetWorldLocation(RailLoc);
+			RailMC->SetWorldScale3D(FVector(8.0f, 0.2f, 0.6f));
+			RailMC->SetWorldRotation(FRotator(RampPitch, RampYaw, 0.f));
+			RailMC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			RailMC->SetCollisionResponseToAllChannels(ECR_Block);
+			RailMC->RegisterComponent();
+			ApplyColor(RailMC, StripeColor);
+			RampActor->AddInstanceComponent(RailMC);
+		}
 	}
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCityGameMode: Spawned 12 launch pads at city edges."));
@@ -3808,7 +3936,7 @@ void UPHCCitySubsystem::SpawnHills()
 	if (!World || !SphereMesh || !CubeMesh) return;
 
 	auto SpawnHill = [&](const FVector& Loc, float RadiusX, float RadiusY, float Height,
-		const FLinearColor& Color, const TCHAR* Label)
+		const FLinearColor& Color, const TCHAR* Label, bool bCollision = true)
 	{
 		AActor* Hill = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
 		if (!Hill) return;
@@ -3828,18 +3956,21 @@ void UPHCCitySubsystem::SpawnHills()
 		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); MC->SetMaterial(0, Mat); }
 		Hill->AddInstanceComponent(MC);
 
-		// Collision box — sized to cover the drivable surface of the hill
-		// Use a box that covers the top half of the hill (where vehicles drive)
-		UBoxComponent* HillBox = NewObject<UBoxComponent>(Hill, TEXT("HillCollision"));
-		HillBox->SetupAttachment(MC);
-		HillBox->SetBoxExtent(FVector(RadiusX * 0.85f, RadiusY * 0.85f, Height * 0.5f));
-		HillBox->SetWorldLocation(FVector(Loc.X, Loc.Y, Loc.Z));
-		HillBox->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		HillBox->SetCollisionObjectType(ECC_WorldStatic);
-		HillBox->SetCollisionResponseToAllChannels(ECR_Block);
-		HillBox->SetHiddenInGame(true);
-		HillBox->RegisterComponent();
-		Hill->AddInstanceComponent(HillBox);
+		if (bCollision)
+		{
+			// Collision box — sized to cover the drivable surface of the hill
+			// Use a box that covers the top half of the hill (where vehicles drive)
+			UBoxComponent* HillBox = NewObject<UBoxComponent>(Hill, TEXT("HillCollision"));
+			HillBox->SetupAttachment(MC);
+			HillBox->SetBoxExtent(FVector(RadiusX * 0.85f, RadiusY * 0.85f, Height * 0.5f));
+			HillBox->SetWorldLocation(FVector(Loc.X, Loc.Y, Loc.Z));
+			HillBox->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			HillBox->SetCollisionObjectType(ECC_WorldStatic);
+			HillBox->SetCollisionResponseToAllChannels(ECR_Block);
+			HillBox->SetHiddenInGame(true);
+			HillBox->RegisterComponent();
+			Hill->AddInstanceComponent(HillBox);
+		}
 	};
 
 	// Color palette for hills
@@ -3883,9 +4014,229 @@ void UPHCCitySubsystem::SpawnHills()
 	// ---- Large mountain backdrop behind the highway ----
 	SpawnHill(FVector(-260000.f, 0.f, 0.f), 12000.f, 8000.f, 3000.f, MountainGray, TEXT("Mtn_Backdrop1"));
 	SpawnHill(FVector(-250000.f, 25000.f, 0.f), 10000.f, 7000.f, 2500.f, RockyBrown, TEXT("Mtn_Backdrop2"));
-	SpawnHill(FVector(-255000.f, -22000.f, 0.f), 11000.f, 9000.f, 2800.f, EarthBrown, TEXT("Mtn_Backdrop3"));
+	SpawnHill(FVector(-255000.f, -22000.f, 0.f), 11000.f, 9000.f, 2800.f, EarthBrown, TEXT("Mtn_Backdrop3"), false);
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Spawned rolling hills and highway corridor mountains."));
+}
+
+// ---------------------------------------------------------------------------
+// Underground Cavern — tunnel into mountain with large underground driving area
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::SpawnUndergroundCavern()
+{
+	UWorld* World = GetWorld();
+	if (!World || !PlaneMesh || !CubeMesh || !CylinderMesh) return;
+
+	const float EntranceX = -250500.f;
+	const float EntranceY = -13000.f;  // aligned with ground hole boundary
+
+	const float TunnelW = 1200.f;
+	const float TunnelH = 600.f;
+	const float TunnelLen = 300.f; // Short flat entry, ramp starts almost immediately
+
+	// Ramp: 20 steps descending to Z=-500
+	const int32 NumSteps = 20;
+	const float StepLen = 300.f;
+	const float CavernZ = -500.f;
+	const float StepDrop = FMath::Abs(CavernZ) / NumSteps; // 25 UU per step
+
+	const float CavernW = 25000.f;
+	const float CavernD = 20000.f;
+	const float CavernH = 600.f;
+
+	const float RampTotalLen = NumSteps * StepLen; // 6000 UU
+	const float RampEndY = EntranceY - TunnelLen - RampTotalLen;
+	const float CavernCenterX = EntranceX;
+	const float CavernCenterY = RampEndY - CavernD * 0.5f;
+
+	const FLinearColor RockGray(0.22f, 0.20f, 0.18f);
+	const FLinearColor FloorColor(0.15f, 0.14f, 0.12f);
+	const FLinearColor CeilingColor(0.12f, 0.11f, 0.10f);
+	const FLinearColor PillarColor(0.28f, 0.25f, 0.20f);
+
+	// Helper: spawn a PlaneMesh floor with collision (identical to ground planes)
+	auto SpawnFloor = [&](const FVector& Loc, const FVector& Scale, const FLinearColor& Color, const TCHAR* Label)
+	{
+		AActor* A = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
+		if (!A) return;
+#if WITH_EDITOR
+		A->SetActorLabel(Label);
+#endif
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(A, TEXT("FloorMesh"));
+		MC->SetStaticMesh(PlaneMesh);
+		MC->SetWorldScale3D(Scale);
+		MC->SetWorldLocation(Loc);
+		MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		MC->SetCollisionResponseToAllChannels(ECR_Block);
+		MC->RegisterComponent();
+		A->SetRootComponent(MC);
+		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
+		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); Mat->SetScalarParameterValue(TEXT("Roughness"), 0.95f); MC->SetMaterial(0, Mat); }
+		A->AddInstanceComponent(MC);
+	};
+
+	// Helper: spawn a CubeMesh wall (visual + collision)
+	auto SpawnWall = [&](const FVector& Loc, const FVector& Scale, const FLinearColor& Color, const TCHAR* Label)
+	{
+		AActor* A = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
+		if (!A) return;
+#if WITH_EDITOR
+		A->SetActorLabel(Label);
+#endif
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(A, TEXT("WallMesh"));
+		MC->SetStaticMesh(CubeMesh);
+		MC->SetWorldScale3D(Scale);
+		MC->SetWorldLocation(Loc);
+		MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		MC->SetCollisionResponseToAllChannels(ECR_Block);
+		MC->RegisterComponent();
+		A->SetRootComponent(MC);
+		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
+		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); Mat->SetScalarParameterValue(TEXT("Roughness"), 0.95f); MC->SetMaterial(0, Mat); }
+		A->AddInstanceComponent(MC);
+	};
+
+	// ================================================================
+	// 1. Tunnel entrance floor — PlaneMesh at Z=0 (same as ground)
+	// ================================================================
+	// PlaneMesh at scale S covers S*50 UU in each direction from center
+	const float TunnelCenterY = EntranceY - TunnelLen * 0.5f;
+	SpawnFloor(
+		FVector(EntranceX, TunnelCenterY, 0.f),
+		FVector(TunnelW / 100.f, TunnelLen / 100.f, 1.f),  // PlaneMesh: scale*50 = half-extent, so total = scale*100
+		FloorColor, TEXT("TunnelFloor"));
+
+	// Tunnel walls
+	SpawnWall(FVector(EntranceX + TunnelW * 0.5f, TunnelCenterY, TunnelH * 0.5f),
+		FVector(0.5f, TunnelLen / 100.f, TunnelH / 100.f), RockGray, TEXT("TunnelWallE"));
+	SpawnWall(FVector(EntranceX - TunnelW * 0.5f, TunnelCenterY, TunnelH * 0.5f),
+		FVector(0.5f, TunnelLen / 100.f, TunnelH / 100.f), RockGray, TEXT("TunnelWallW"));
+
+	// ================================================================
+	// 2. Ramp — 20 PlaneMesh steps, each dropping 25 UU
+	// ================================================================
+	const float RampStartY = EntranceY - TunnelLen;
+
+	for (int32 i = 0; i < NumSteps; ++i)
+	{
+		const float StepZ = -StepDrop * (i + 1); // -25, -50, -75 ... -500
+		const float StepCenterY = RampStartY - StepLen * i - StepLen * 0.5f;
+		SpawnFloor(
+			FVector(EntranceX, StepCenterY, StepZ),
+			FVector(TunnelW / 100.f, StepLen / 100.f, 1.f),
+			FloorColor, *FString::Printf(TEXT("RampStep_%d"), i));
+	}
+
+	// Ramp walls
+	const float RampCenterY = RampStartY - RampTotalLen * 0.5f;
+	const float RampWallH = TunnelH + FMath::Abs(CavernZ);
+	SpawnWall(FVector(EntranceX + TunnelW * 0.5f, RampCenterY, -FMath::Abs(CavernZ) * 0.5f + TunnelH * 0.5f),
+		FVector(0.5f, RampTotalLen / 100.f, RampWallH / 100.f), RockGray, TEXT("RampWallE"));
+	SpawnWall(FVector(EntranceX - TunnelW * 0.5f, RampCenterY, -FMath::Abs(CavernZ) * 0.5f + TunnelH * 0.5f),
+		FVector(0.5f, RampTotalLen / 100.f, RampWallH / 100.f), RockGray, TEXT("RampWallW"));
+
+	// ================================================================
+	// 3. Main cavern — PlaneMesh floor at Z=-500
+	// ================================================================
+	SpawnFloor(
+		FVector(CavernCenterX, CavernCenterY, CavernZ),
+		FVector(CavernW / 100.f, CavernD / 100.f, 1.f),
+		FloorColor, TEXT("CavernFloor"));
+
+	// Cavern walls (CubeMesh)
+	const float NorthWallY = CavernCenterY + CavernD * 0.5f;
+	const float OpeningHalfW = TunnelW * 0.5f;
+	const float SideW = (CavernW * 0.5f - OpeningHalfW);
+
+	SpawnWall(FVector(CavernCenterX + OpeningHalfW + SideW * 0.5f, NorthWallY, CavernZ + CavernH * 0.5f),
+		FVector(SideW / 100.f, 0.5f, CavernH / 100.f), RockGray, TEXT("CavernNorthWallE"));
+	SpawnWall(FVector(CavernCenterX - OpeningHalfW - SideW * 0.5f, NorthWallY, CavernZ + CavernH * 0.5f),
+		FVector(SideW / 100.f, 0.5f, CavernH / 100.f), RockGray, TEXT("CavernNorthWallW"));
+	SpawnWall(FVector(CavernCenterX, CavernCenterY - CavernD * 0.5f, CavernZ + CavernH * 0.5f),
+		FVector(CavernW / 100.f, 0.5f, CavernH / 100.f), RockGray, TEXT("CavernSouthWall"));
+	SpawnWall(FVector(CavernCenterX + CavernW * 0.5f, CavernCenterY, CavernZ + CavernH * 0.5f),
+		FVector(0.5f, CavernD / 100.f, CavernH / 100.f), RockGray, TEXT("CavernEastWall"));
+	SpawnWall(FVector(CavernCenterX - CavernW * 0.5f, CavernCenterY, CavernZ + CavernH * 0.5f),
+		FVector(0.5f, CavernD / 100.f, CavernH / 100.f), RockGray, TEXT("CavernWestWall"));
+
+	// ================================================================
+	// 4. Support pillars
+	// ================================================================
+	int32 PillarIdx = 0;
+	for (float PX = CavernCenterX - CavernW * 0.35f; PX <= CavernCenterX + CavernW * 0.35f; PX += 5000.f)
+	{
+		for (float PY = CavernCenterY - CavernD * 0.35f; PY <= CavernCenterY + CavernD * 0.35f; PY += 5000.f)
+		{
+			AActor* PA = World->SpawnActor<AActor>(AActor::StaticClass(), FVector(PX, PY, CavernZ + CavernH * 0.5f), FRotator::ZeroRotator);
+			if (!PA) continue;
+			UStaticMeshComponent* PMC = NewObject<UStaticMeshComponent>(PA, TEXT("PillarMesh"));
+			PMC->SetStaticMesh(CylinderMesh);
+			PMC->SetWorldScale3D(FVector(4.f, 4.f, CavernH / 100.f));
+			PMC->SetWorldLocation(FVector(PX, PY, CavernZ + CavernH * 0.5f));
+			PMC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			PMC->SetCollisionResponseToAllChannels(ECR_Block);
+			PMC->RegisterComponent();
+			PA->SetRootComponent(PMC);
+			UMaterialInstanceDynamic* PM = UMaterialInstanceDynamic::Create(PMC->GetMaterial(0), PMC);
+			if (PM) { PM->SetVectorParameterValue(TEXT("BaseColor"), PillarColor); PMC->SetMaterial(0, PM); }
+			PA->AddInstanceComponent(PMC);
+			PillarIdx++;
+		}
+	}
+
+	// ================================================================
+	// 5. Ceiling lights
+	// ================================================================
+	for (float LX = CavernCenterX - CavernW * 0.4f; LX <= CavernCenterX + CavernW * 0.4f; LX += 4000.f)
+	{
+		for (float LY = CavernCenterY - CavernD * 0.4f; LY <= CavernCenterY + CavernD * 0.4f; LY += 4000.f)
+		{
+			AActor* LA = World->SpawnActor<AActor>(AActor::StaticClass(), FVector(LX, LY, CavernZ + CavernH - 30.f), FRotator::ZeroRotator);
+			if (!LA) continue;
+			UStaticMeshComponent* LMC = NewObject<UStaticMeshComponent>(LA, TEXT("LightMesh"));
+			LMC->SetStaticMesh(CubeMesh);
+			LMC->SetWorldScale3D(FVector(1.5f, 1.5f, 0.15f));
+			LMC->SetWorldLocation(FVector(LX, LY, CavernZ + CavernH - 30.f));
+			LMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			LMC->RegisterComponent();
+			LA->SetRootComponent(LMC);
+			UMaterialInstanceDynamic* LMat = UMaterialInstanceDynamic::Create(LMC->GetMaterial(0), LMC);
+			if (LMat)
+			{
+				LMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.9f, 0.85f, 0.7f));
+				LMat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(2.f, 1.8f, 1.4f));
+				LMC->SetMaterial(0, LMat);
+			}
+			LA->AddInstanceComponent(LMC);
+		}
+	}
+
+	// Tunnel entrance lights
+	for (float TLY = EntranceY; TLY > EntranceY - TunnelLen; TLY -= 1500.f)
+	{
+		AActor* TLA = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(EntranceX, TLY, TunnelH - 20.f), FRotator::ZeroRotator);
+		if (!TLA) continue;
+		UStaticMeshComponent* TLM = NewObject<UStaticMeshComponent>(TLA, TEXT("TLightMesh"));
+		TLM->SetStaticMesh(CubeMesh);
+		TLM->SetWorldScale3D(FVector(0.8f, 0.8f, 0.1f));
+		TLM->SetWorldLocation(FVector(EntranceX, TLY, TunnelH - 20.f));
+		TLM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		TLM->RegisterComponent();
+		TLA->SetRootComponent(TLM);
+		UMaterialInstanceDynamic* TLMat = UMaterialInstanceDynamic::Create(TLM->GetMaterial(0), TLM);
+		if (TLMat)
+		{
+			TLMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.9f, 0.85f, 0.7f));
+			TLMat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(1.5f, 1.3f, 1.0f));
+			TLM->SetMaterial(0, TLMat);
+		}
+		TLA->AddInstanceComponent(TLM);
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Underground cavern spawned at (%.0f, %.0f). Cavern floor at Z=%.0f."),
+		EntranceX, EntranceY, CavernZ);
 }
 
 // ---------------------------------------------------------------------------

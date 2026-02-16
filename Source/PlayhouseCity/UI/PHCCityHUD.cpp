@@ -99,6 +99,32 @@ bool UPHCCityHUD::Initialize()
 		GemSlot->SetVerticalAlignment(VAlign_Center);
 
 		// ============================================================
+		//  TOP-CENTER: Live location monitor (X, Y, Z coordinates)
+		// ============================================================
+		{
+			const FSlateFontInfo LocFont = FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 12);
+
+			UBorder* LocBar = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("LocationBar"));
+			LocBar->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.55f));
+			LocBar->SetPadding(FMargin(10.f, 4.f, 10.f, 4.f));
+
+			UCanvasPanelSlot* LocSlot = RootCanvas->AddChildToCanvas(LocBar);
+			LocSlot->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f)); // top-center
+			LocSlot->SetAlignment(FVector2D(0.5f, 0.f));
+			LocSlot->SetOffsets(FMargin(0.f, 10.f, 0.f, 0.f));
+			LocSlot->SetAutoSize(true);
+
+			LocationText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("LocationText"));
+			LocationText->SetText(FText::FromString(TEXT("X: 0  Y: 0  Z: 0")));
+			LocationText->SetFont(LocFont);
+			LocationText->SetColorAndOpacity(FSlateColor(FLinearColor(0.8f, 1.f, 0.8f)));
+			LocBar->SetContent(LocationText);
+		}
+
+		// ============================================================
 		//  TOP-RIGHT (below currency): "Fire" button -- missile launcher
 		// ============================================================
 		FireButton = WidgetTree->ConstructWidget<UButton>(
@@ -705,6 +731,20 @@ void UPHCCityHUD::NativeDestruct()
 void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	// Update live location monitor
+	if (LocationText)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			if (APawn* P = PC->GetPawn())
+			{
+				const FVector Loc = P->GetActorLocation();
+				LocationText->SetText(FText::FromString(
+					FString::Printf(TEXT("X: %.0f  Y: %.0f  Z: %.0f"), Loc.X, Loc.Y, Loc.Z)));
+			}
+		}
+	}
 
 	// Update player count display
 	if (PlayerCountText)
