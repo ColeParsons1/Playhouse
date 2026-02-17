@@ -227,7 +227,7 @@ private:
 	float WheelSpinAngle = 0.f;
 
 	float FireCooldownRemaining = 0.f;
-	static constexpr float FireCooldown = 0.5f;
+	static constexpr float FireCooldown = 0.05f;
 
 	/** ClearCoat material for automotive paint. */
 	UPROPERTY(Transient) TObjectPtr<UMaterial> ClearCoatMaterial;

@@ -8,101 +8,62 @@
 #include "Engine/World.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
-#include "Components/PointLightComponent.h"
 #include "UObject/ConstructorHelpers.h"
 
 APHCMissileProjectile::APHCMissileProjectile()
 {
 	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.bStartWithTickEnabled = false;
+	PrimaryActorTick.bStartWithTickEnabled = true;
 
-	// ---- Multiplayer replication ----
-	bReplicates = true;
-	SetReplicateMovement(true);
-	bAlwaysRelevant = true;
+	// No replication — missiles are visual tracers, spawned locally.
+	bReplicates = false;
 
 	CollisionSphere = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionSphere"));
-	CollisionSphere->InitSphereRadius(12.f);
-	CollisionSphere->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	CollisionSphere->SetCollisionObjectType(ECC_WorldDynamic);
-	CollisionSphere->SetCollisionResponseToAllChannels(ECR_Ignore);
-	CollisionSphere->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-	CollisionSphere->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-	CollisionSphere->SetCollisionResponseToChannel(ECC_Destructible, ECR_Block);
+	CollisionSphere->InitSphereRadius(10.f);
+	CollisionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	CollisionSphere->SetSimulatePhysics(false);
-	CollisionSphere->BodyInstance.bNotifyRigidBodyCollision = true;
 	SetRootComponent(CollisionSphere);
 
+	// Single elongated cube — lightweight bullet/tracer round
 	ProjectileMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ProjectileMesh"));
 	ProjectileMesh->SetupAttachment(CollisionSphere);
 	ProjectileMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	// Elongated shape to look like a missile (visible at speed)
-	ProjectileMesh->SetRelativeScale3D(FVector(0.8f, 0.35f, 0.35f));
+	ProjectileMesh->SetRelativeScale3D(FVector(2.0f, 0.20f, 0.20f));
+	ProjectileMesh->SetBoundsScale(5.f);
 
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(
-		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-	if (SphereMesh.Succeeded())
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(
+		TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (CubeMesh.Succeeded())
 	{
-		ProjectileMesh->SetStaticMesh(SphereMesh.Object);
+		ProjectileMesh->SetStaticMesh(CubeMesh.Object);
 	}
 
-	ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovement"));
-	ProjectileMovement->UpdatedComponent = CollisionSphere;
-	ProjectileMovement->InitialSpeed = Speed;
-	ProjectileMovement->MaxSpeed = Speed;
-	ProjectileMovement->bRotationFollowsVelocity = true;
-	ProjectileMovement->bShouldBounce = false;
-	ProjectileMovement->ProjectileGravityScale = 0.f;
-
-	CollisionSphere->OnComponentHit.AddDynamic(this, &APHCMissileProjectile::OnHit);
+	// No ProjectileMovementComponent — manual velocity in Tick is far cheaper
+	// than 50+ PMC sweep tests per frame at machine-gun fire rates.
+	// (ProjectileMovement UPROPERTY stays null; callers null-check it.)
 }
 
 void APHCMissileProjectile::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (ProjectileMovement)
-	{
-		ProjectileMovement->InitialSpeed = Speed;
-		ProjectileMovement->MaxSpeed = Speed;
-	}
+	// Store flight velocity from spawn rotation
+	ManualVelocity = GetActorForwardVector() * Speed;
 
-	// Color the missile bright red with emissive glow
-	if (ProjectileMesh)
+	// Bright emissive material — visible without point lights (performance-friendly)
+	if (ProjectileMesh && ProjectileMesh->GetStaticMesh())
 	{
 		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(
 			ProjectileMesh->GetMaterial(0), this);
 		if (Mat)
 		{
-			// Bright red base color (values > 1 drive bloom/emissive)
 			Mat->SetVectorParameterValue(TEXT("BaseColor"),
-				FLinearColor(3.0f, 0.15f, 0.05f));
+				FLinearColor(0.5f, 0.2f, 1.0f));
+			Mat->SetVectorParameterValue(TEXT("EmissiveColor"),
+				FLinearColor(4.0f, 1.5f, 8.0f));
+			Mat->SetScalarParameterValue(TEXT("Metallic"), 0.8f);
+			Mat->SetScalarParameterValue(TEXT("Roughness"), 0.05f);
 			ProjectileMesh->SetMaterial(0, Mat);
-		}
-	}
-
-	// Red point light for visible glow trail
-	UPointLightComponent* Glow = NewObject<UPointLightComponent>(this, TEXT("MissileGlow"));
-	if (Glow)
-	{
-		Glow->SetupAttachment(CollisionSphere);
-		Glow->SetRelativeLocation(FVector::ZeroVector);
-		Glow->SetIntensity(5000.f);
-		Glow->SetAttenuationRadius(400.f);
-		Glow->SetLightColor(FLinearColor(1.0f, 0.1f, 0.02f));
-		Glow->SetCastShadows(false);
-		Glow->RegisterComponent();
-	}
-
-	// Ignore collision with the vehicle that fired us
-	if (OwnerVehicle)
-	{
-		TArray<UPrimitiveComponent*> OwnerComps;
-		OwnerVehicle->GetComponents<UPrimitiveComponent>(OwnerComps);
-		for (UPrimitiveComponent* Comp : OwnerComps)
-		{
-			CollisionSphere->IgnoreComponentWhenMoving(Comp, true);
-			Comp->IgnoreComponentWhenMoving(CollisionSphere, true);
 		}
 	}
 
@@ -121,7 +82,6 @@ void APHCMissileProjectile::OnHit(
 		return;
 	}
 
-	// Only process damage on the server
 	if (HasAuthority())
 	{
 		if (OnHitSpawnClass)
@@ -152,20 +112,20 @@ void APHCMissileProjectile::StartTrail(const FLinearColor& Color)
 
 	TrailSphereMesh = LoadObject<UStaticMesh>(
 		nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-
-	SetActorTickEnabled(true);
 }
 
 void APHCMissileProjectile::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Manual gravity movement (bypasses ProjectileMovementComponent)
+	// Manual gravity (for bombs)
 	if (bUseManualGravity)
 	{
 		ManualVelocity.Z -= 980.f * ManualGravityScale * DeltaTime;
-		SetActorLocation(GetActorLocation() + ManualVelocity * DeltaTime);
 	}
+
+	// Move forward — simple SetActorLocation, no sweep, no PMC overhead
+	SetActorLocation(GetActorLocation() + ManualVelocity * DeltaTime);
 
 	// Altitude detonation (for gravity bombs hitting ground)
 	if (DetonateAtAltitude >= 0.f && GetActorLocation().Z <= DetonateAtAltitude)
@@ -198,7 +158,6 @@ void APHCMissileProjectile::SpawnTrailDot()
 	UWorld* World = GetWorld();
 	if (!World || !TrailSphereMesh) return;
 
-	// Spawn a lightweight non-replicated actor for the trail dot.
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
@@ -209,7 +168,6 @@ void APHCMissileProjectile::SpawnTrailDot()
 	Dot->SetReplicates(false);
 	Dot->SetLifeSpan(0.4f);
 
-	// Small glowing sphere
 	UStaticMeshComponent* Mesh = NewObject<UStaticMeshComponent>(
 		Dot, UStaticMeshComponent::StaticClass(), TEXT("TrailMesh"));
 	Mesh->SetStaticMesh(TrailSphereMesh);
@@ -218,7 +176,6 @@ void APHCMissileProjectile::SpawnTrailDot()
 	Dot->SetRootComponent(Mesh);
 	Mesh->RegisterComponent();
 
-	// Emissive cyan material (bloom in post-process creates the glow)
 	UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(
 		Mesh->GetMaterial(0), Dot);
 	if (Mat)

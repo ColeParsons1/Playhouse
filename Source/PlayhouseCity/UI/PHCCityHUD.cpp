@@ -166,8 +166,8 @@ bool UPHCCityHUD::Initialize()
 		FireButton->AddChild(FireLabel);
 
 		UCanvasPanelSlot* FireBtnSlot = RootCanvas->AddChildToCanvas(FireButton);
-		// Positioned just above the gas pedal (gas pedal anchors at Y 0.5-0.75, right side)
-		FireBtnSlot->SetAnchors(FAnchors(0.77f, 0.48f, 0.77f, 0.48f));
+		// Positioned on the left side, just above the steering panel (steering anchors at Y 0.5)
+		FireBtnSlot->SetAnchors(FAnchors(0.15f, 0.48f, 0.15f, 0.48f));
 		FireBtnSlot->SetAlignment(FVector2D(0.5f, 1.f)); // bottom-center of button at anchor
 		FireBtnSlot->SetOffsets(FMargin(0.f, 0.f, FireBtnSize, FireBtnSize));
 

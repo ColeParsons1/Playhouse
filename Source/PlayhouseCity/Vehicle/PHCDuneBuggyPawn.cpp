@@ -245,10 +245,14 @@ APHCDuneBuggyPawn::APHCDuneBuggyPawn()
 	VehicleCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	VehicleCamera->bUsePawnControlRotation = false;
 
-	// Inflate bounds to prevent frustum-culling the car body on mobile
+	// Inflate bounds on ALL components to prevent frustum-culling on mobile
 	VehicleCollision->SetBoundsScale(10.f);
-	if (ChassisMesh) ChassisMesh->SetBoundsScale(5.f);
-	if (FloorPanMesh) FloorPanMesh->SetBoundsScale(5.f);
+	TArray<UStaticMeshComponent*> AllMeshes;
+	GetComponents<UStaticMeshComponent>(AllMeshes);
+	for (UStaticMeshComponent* MC : AllMeshes)
+	{
+		MC->SetBoundsScale(10.f);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -520,11 +524,10 @@ void APHCDuneBuggyPawn::Tick(float DeltaTime)
 	// ---- Ground following (downward trace to ride slopes, ramps, ocean floor) ----
 	{
 		const FVector Pos = GetActorLocation();
-		const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 100.f);
+		const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 5000.f);
 		const FVector TraceEnd(Pos.X, Pos.Y, Pos.Z - 2000.f);
 		FCollisionQueryParams Params;
 		Params.AddIgnoredActor(this);
-		Params.bTraceComplex = true;
 
 		TArray<FHitResult> Hits;
 		bool bFoundSurface = false;
@@ -536,8 +539,9 @@ void APHCDuneBuggyPawn::Tick(float DeltaTime)
 
 				const float TargetZ = Hit.ImpactPoint.Z;
 
-				// Follow surfaces at or below the vehicle (+200 tolerance for ramp ascent at speed)
-				if (TargetZ <= Pos.Z + 200.f)
+				// Follow any surface above us (hills) or within 100 UU below (small dips).
+				// Surfaces >100 UU below = airborne (ramp launches, cliff edges).
+				if (TargetZ >= Pos.Z - 100.f)
 				{
 					bFoundSurface = true;
 					bHasBeenGrounded = true;
@@ -706,17 +710,9 @@ void APHCDuneBuggyPawn::FireMissile()
 
 	FireCooldownRemaining = FireCooldown;
 
-	// Route through server RPC in multiplayer
-	ServerFireMissile();
-}
-
-void APHCDuneBuggyPawn::ServerFireMissile_Implementation()
-{
+	// Spawn locally — missiles are non-replicated visual tracers, no RPC needed.
 	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
+	if (!World) return;
 
 	const FVector MuzzleLoc = GetActorLocation()
 		+ GetActorForwardVector() * 250.f
@@ -724,8 +720,6 @@ void APHCDuneBuggyPawn::ServerFireMissile_Implementation()
 	const FRotator MuzzleRot = GetActorForwardVector().Rotation();
 
 	FActorSpawnParameters SP;
-	SP.Owner = this;
-	SP.Instigator = GetInstigator();
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	APHCMissileProjectile* Proj = World->SpawnActor<APHCMissileProjectile>(
@@ -733,15 +727,12 @@ void APHCDuneBuggyPawn::ServerFireMissile_Implementation()
 	if (Proj)
 	{
 		Proj->OwnerVehicle = this;
-		// Ignore collision with the firing vehicle (BeginPlay already ran, so set up here too).
-		TArray<UPrimitiveComponent*> MyComps;
-		GetComponents<UPrimitiveComponent>(MyComps);
-		for (UPrimitiveComponent* Comp : MyComps)
-		{
-			Proj->CollisionSphere->IgnoreComponentWhenMoving(Comp, true);
-			Comp->IgnoreComponentWhenMoving(Proj->CollisionSphere, true);
-		}
 	}
+}
+
+void APHCDuneBuggyPawn::ServerFireMissile_Implementation()
+{
+	// Kept for RPC signature — firing now handled locally in FireMissile().
 }
 
 void APHCDuneBuggyPawn::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

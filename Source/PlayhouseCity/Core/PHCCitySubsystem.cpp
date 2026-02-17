@@ -27,11 +27,11 @@
 // Centralized city-grid constants (used across multiple Spawn* functions).
 // ---------------------------------------------------------------------------
 static constexpr int32 NumRoads = 25;
-static constexpr float RoadSpacing = 4000.f;
-static constexpr float RoadWidth = 900.f;
-static constexpr float SidewalkWidth = 250.f;
-static constexpr float CityHalfExtent = (NumRoads - 1) * RoadSpacing * 0.5f + 2000.f; // 50000
-static constexpr float FirstRoad = -(NumRoads - 1) * RoadSpacing * 0.5f; // -48000
+static constexpr float RoadSpacing = 2800.f;
+static constexpr float RoadWidth = 700.f;
+static constexpr float SidewalkWidth = 180.f;
+static constexpr float CityHalfExtent = (NumRoads - 1) * RoadSpacing * 0.5f + 1400.f; // ~35000
+static constexpr float FirstRoad = -(NumRoads - 1) * RoadSpacing * 0.5f; // ~-33600
 
 // ---- PBR Material Helpers ------------------------------------------------
 
@@ -569,9 +569,11 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnRamps();
 	SpawnOutskirts();
 	SpawnHills();
-	SpawnUndergroundCavern();
 	SpawnStarfield();
 	SpawnCloudLayer();
+	SpawnMountainRange();
+	SpawnSandCastle();
+	SpawnLakeAndPirateShip();
 }
 
 // ---------------------------------------------------------------------------
@@ -605,10 +607,9 @@ void UPHCCitySubsystem::SpawnGround()
 		GA->AddInstanceComponent(MC);
 	};
 
-	// Main city ground: covers the expanded 24x24 grid + margin
-	// Shrunk from 1400 to 1260 (±63000 UU) so coastline zone (63k-70k) has no ground collision,
-	// allowing vehicles to descend onto ocean floor ramps and drive submerged.
-	SpawnGroundPlane(FVector(0.f, 0.f, 0.f), FVector(1260.f, 1260.f, 1.f), TEXT("CityGround"));
+	// Main city ground: doubled map — covers ±126,000 UU.
+	// Coastline zone starts at 126k where ocean ramps begin.
+	SpawnGroundPlane(FVector(0.f, 0.f, 0.f), FVector(2520.f, 2520.f, 1.f), TEXT("CityGround"));
 
 	// Northwest fill: extends ground beyond north edge
 	SpawnGroundPlane(FVector(-30000.f, 75000.f, 0.f), FVector(700.f, 200.f, 1.f), TEXT("NorthwestFill"));
@@ -616,13 +617,8 @@ void UPHCCitySubsystem::SpawnGround()
 	// Outskirts ground: west of city extending along highway
 	SpawnGroundPlane(FVector(-130000.f, 0.f, 0.f), FVector(2000.f, 1400.f, 1.f), TEXT("OutskirtsMain"));
 
-	// Far outskirts: split into 4 pieces with a hole for the underground cavern tunnel
-	// Original was (-280000, 0) scale (1000,1000) = X:-330k to -230k, Y:-50k to 50k
-	// Hole for cavern: X:-264k to -237k, Y:-13k to -41k (must start north of tunnel entrance at Y:-13500)
-	SpawnGroundPlane(FVector(-280000.f, 18500.f, 0.f), FVector(1000.f, 630.f, 1.f), TEXT("OutskirtsFarN"));   // north strip: Y -13k to 50k
-	SpawnGroundPlane(FVector(-280000.f, -45500.f, 0.f), FVector(1000.f, 90.f, 1.f), TEXT("OutskirtsFarS"));   // south strip: Y -50k to -41k
-	SpawnGroundPlane(FVector(-297000.f, -27000.f, 0.f), FVector(660.f, 280.f, 1.f), TEXT("OutskirtsFarW"));   // west strip: X -330k to -264k, Y -41k to -13k
-	SpawnGroundPlane(FVector(-233500.f, -27000.f, 0.f), FVector(70.f, 280.f, 1.f), TEXT("OutskirtsFarE"));    // east strip: X -237k to -230k, Y -41k to -13k
+	// Far outskirts: single solid ground plane (no cavern hole)
+	SpawnGroundPlane(FVector(-280000.f, 0.f, 0.f), FVector(1000.f, 1000.f, 1.f), TEXT("OutskirtsFar"));
 }
 
 // ---------------------------------------------------------------------------
@@ -691,26 +687,23 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 
 	// ---- Beach strips (sandy shores around the peninsula) ----
 
-	// East coast beach — long strip running N-S
-	SpawnWater(FVector(67000.f, 0.f, -1.f), FVector(20.f, 1400.f, 1.f), Sand, TEXT("EastBeach"));
+	// East coast beach — long strip running N-S (doubled map)
+	SpawnWater(FVector(130000.f, 0.f, -1.f), FVector(40.f, 2800.f, 1.f), Sand, TEXT("EastBeach"));
 
-	// South coast beach — long strip running E-W
-	SpawnWater(FVector(0.f, -67000.f, -1.f), FVector(1400.f, 20.f, 1.f), Sand, TEXT("SouthBeach"));
+	// South coast beach — long strip running E-W (doubled map)
+	SpawnWater(FVector(0.f, -130000.f, -1.f), FVector(2800.f, 40.f, 1.f), Sand, TEXT("SouthBeach"));
 
-	// North coast beach (west of bay)
-	SpawnWater(FVector(-20000.f, 64000.f, -1.f), FVector(500.f, 20.f, 1.f), Sand, TEXT("NorthBeachWest"));
+	// North coast beach (doubled map)
+	SpawnWater(FVector(0.f, 128000.f, -1.f), FVector(2800.f, 40.f, 1.f), Sand, TEXT("NorthBeach"));
 
-	// Bay south shoreline
+	// West coast beach (doubled map)
+	SpawnWater(FVector(-130000.f, 0.f, -1.f), FVector(40.f, 2800.f, 1.f), Sand, TEXT("WestBeach"));
+
+	// Bay south shoreline (kept in original position within old city area)
 	SpawnWater(FVector(45000.f, 52000.f, -1.f), FVector(250.f, 14.f, 1.f), Sand, TEXT("BaySouthShore"));
 
 	// Bay west shoreline
 	SpawnWater(FVector(32000.f, 60000.f, -1.f), FVector(14.f, 100.f, 1.f), Sand, TEXT("BayWestShore"));
-
-	// Southeast corner beach
-	SpawnWater(FVector(65000.f, -65000.f, -1.f), FVector(30.f, 30.f, 1.f), Sand, TEXT("SoutheastBeach"));
-
-	// Waterfront boardwalk beach — along NE coast within waterfront district
-	SpawnWater(FVector(55000.f, 55000.f, -1.f), FVector(100.f, 80.f, 1.f), Sand, TEXT("WaterfrontBeach"));
 
 	// ========================================================================
 	// Ocean floor: sloped ramps from shore down to deep seabed
@@ -723,7 +716,7 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 	const float RampAngle = FMath::RadiansToDegrees(FMath::Atan2(RampDrop, RampLen)); // ~16.7°
 	const float RampHyp = FMath::Sqrt(RampLen * RampLen + RampDrop * RampDrop);
 	const float RampCenterZ = SeabedZ * 0.5f; // midpoint of slope
-	const float GroundEdge = 63000.f;        // matches shrunk ground plane (1260 scale)
+	const float GroundEdge = 126000.f;       // matches doubled ground plane (2520 scale)
 	const float RampCenterOffset = GroundEdge + RampLen * 0.5f; // 68000
 
 	const FLinearColor SeabedColor(0.08f, 0.10f, 0.07f); // dark sandy ocean floor
@@ -1003,16 +996,16 @@ void UPHCCitySubsystem::SpawnCityGrid()
 	// ---------------------------------------------------------------
 	struct FLandmark { int32 bx, by; float W, D, H; FLinearColor Wall, Accent; };
 	const FLandmark Landmarks[] = {
-		{ 3,  14, 1200, 900, 800, FLinearColor(0.95f, 0.95f, 0.95f), FLinearColor(0.8f, 0.1f, 0.1f)   },  // Hospital
-		{ 3,  20, 800,  700, 600, FLinearColor(0.3f, 0.35f, 0.55f),  FLinearColor(0.85f, 0.75f, 0.2f)  },  // Police
-		{ 20,  3, 700,  600, 500, FLinearColor(0.8f, 0.2f, 0.15f),   FLinearColor(0.85f, 0.85f, 0.2f)  },  // Fire
-		{ 15, 12, 1100, 800, 600, FLinearColor(0.75f, 0.6f, 0.4f),   FLinearColor(0.4f, 0.5f, 0.3f)    },  // School
-		{ 6,  13, 600,  500, 400, FLinearColor(0.6f, 0.55f, 0.45f),  FLinearColor(0.3f, 0.6f, 0.25f)   },  // Grocery
-		{ 8,   9, 400,  350, 350, FLinearColor(0.45f, 0.3f, 0.2f),   FLinearColor(0.9f, 0.85f, 0.7f)   },  // Coffee
-		{ 20, 20, 900,  700, 500, FLinearColor(0.9f, 0.9f, 0.88f),   FLinearColor(0.2f, 0.4f, 0.7f)    },  // Marina
-		{ 2,   3, 1000, 800, 700, FLinearColor(0.5f, 0.5f, 0.48f),   FLinearColor(0.6f, 0.4f, 0.15f)   },  // Factory
-		{ 16,  6, 1400, 1200,500, FLinearColor(0.6f, 0.6f, 0.58f),   FLinearColor(0.15f, 0.35f, 0.6f)  },  // Stadium
-		{ 1,  12, 500,  400, 350, FLinearColor(0.85f, 0.82f, 0.78f), FLinearColor(0.7f, 0.15f, 0.1f)   },  // Gas Station
+		{ 3,  14, 900,  700, 800, FLinearColor(0.95f, 0.95f, 0.95f), FLinearColor(0.8f, 0.1f, 0.1f)   },  // Hospital
+		{ 3,  20, 650,  550, 600, FLinearColor(0.3f, 0.35f, 0.55f),  FLinearColor(0.85f, 0.75f, 0.2f)  },  // Police
+		{ 20,  3, 550,  480, 500, FLinearColor(0.8f, 0.2f, 0.15f),   FLinearColor(0.85f, 0.85f, 0.2f)  },  // Fire
+		{ 15, 12, 850,  650, 600, FLinearColor(0.75f, 0.6f, 0.4f),   FLinearColor(0.4f, 0.5f, 0.3f)    },  // School
+		{ 6,  13, 480,  400, 400, FLinearColor(0.6f, 0.55f, 0.45f),  FLinearColor(0.3f, 0.6f, 0.25f)   },  // Grocery
+		{ 8,   9, 350,  300, 350, FLinearColor(0.45f, 0.3f, 0.2f),   FLinearColor(0.9f, 0.85f, 0.7f)   },  // Coffee
+		{ 20, 20, 700,  550, 500, FLinearColor(0.9f, 0.9f, 0.88f),   FLinearColor(0.2f, 0.4f, 0.7f)    },  // Marina
+		{ 2,   3, 800,  650, 700, FLinearColor(0.5f, 0.5f, 0.48f),   FLinearColor(0.6f, 0.4f, 0.15f)   },  // Factory
+		{ 16,  6, 1100, 900, 500, FLinearColor(0.6f, 0.6f, 0.58f),   FLinearColor(0.15f, 0.35f, 0.6f)  },  // Stadium
+		{ 1,  12, 420,  350, 350, FLinearColor(0.85f, 0.82f, 0.78f), FLinearColor(0.7f, 0.15f, 0.1f)   },  // Gas Station
 	};
 
 	const int32 NumBlocks = NumRoads - 1; // 24
@@ -1175,7 +1168,7 @@ void UPHCCitySubsystem::SpawnCityGrid()
 	// ---------------------------------------------------------------
 	// 5. Block loop — 24 x 24 blocks
 	// ---------------------------------------------------------------
-	const float BlockW = RoadSpacing - RoadWidth - 2.f * SidewalkWidth; // 2600
+	const float BlockW = RoadSpacing - RoadWidth - 2.f * SidewalkWidth; // ~1740
 
 	for (int32 by = 0; by < NumBlocks; ++by)
 	{
@@ -1234,20 +1227,20 @@ void UPHCCitySubsystem::SpawnCityGrid()
 				for (int32 n = 0; n < Count; ++n)
 				{
 					if (CityRandom.FRand() > 0.40f) continue;
-					const float BldgW = CityRandom.FRandRange(300.f, 600.f);
-					const float BldgD = CityRandom.FRandRange(300.f, 600.f);
-					// Neat 2x2 grid placement
+					const float BldgW = CityRandom.FRandRange(180.f, 320.f);
+					const float BldgD = CityRandom.FRandRange(180.f, 320.f);
+					// Tight 2x2 grid placement
 					const int32 Col = n % 2;
 					const int32 Row = n / 2;
-					const float OffX = BlockW * (0.25f + 0.5f * Col);
-					const float OffY = BlockH * (0.25f + 0.5f * Row);
+					const float OffX = BlockW * (0.28f + 0.44f * Col);
+					const float OffY = BlockH * (0.28f + 0.44f * Row);
 					const FVector Loc(BlockMinX + OffX, BlockMinY + OffY, 0.f);
 					const FLinearColor& Color = DowntownColors[CityRandom.RandRange(0, NumDowntownColors - 1)];
 
 					const float Roll = CityRandom.FRandRange(0.f, 1.f);
 					if (Roll < 0.70f)
 					{
-						const float Height = CityRandom.FRandRange(2000.f, 5000.f);
+						const float Height = CityRandom.FRandRange(1500.f, 4000.f);
 						SpawnBuilding(Loc, FVector(BldgW, BldgD, Height), Color, true);
 					}
 					else
@@ -1286,13 +1279,13 @@ void UPHCCitySubsystem::SpawnCityGrid()
 				for (int32 n = 0; n < Count; ++n)
 				{
 					if (CityRandom.FRand() > 0.40f) continue;
-					const float BldgW = CityRandom.FRandRange(300.f, 550.f);
-					const float BldgD = CityRandom.FRandRange(300.f, 550.f);
-					// Neat grid placement
+					const float BldgW = CityRandom.FRandRange(180.f, 300.f);
+					const float BldgD = CityRandom.FRandRange(180.f, 300.f);
+					// Tight grid placement
 					const int32 Col = n % 2;
 					const int32 Row = n / 2;
-					const float OffX = BlockW * (0.25f + 0.5f * Col);
-					const float OffY = BlockH * (0.25f + 0.5f * Row);
+					const float OffX = BlockW * (0.28f + 0.44f * Col);
+					const float OffY = BlockH * (0.28f + 0.44f * Row);
 					const FVector Loc(BlockMinX + OffX, BlockMinY + OffY, 0.f);
 					const FLinearColor& WallColor = MidtownColors[CityRandom.RandRange(0, NumMidtownColors - 1)];
 
@@ -1305,7 +1298,7 @@ void UPHCCitySubsystem::SpawnCityGrid()
 					}
 					else if (Roll < 0.90f)
 					{
-						const float Height = CityRandom.FRandRange(800.f, 2000.f);
+						const float Height = CityRandom.FRandRange(600.f, 1500.f);
 						SpawnBuilding(Loc, FVector(BldgW, BldgD, Height), WallColor, true);
 					}
 					else
@@ -1344,24 +1337,24 @@ void UPHCCitySubsystem::SpawnCityGrid()
 				const bool bOuterRing = (bx <= 2 || bx >= 21 || by <= 2 || by >= 21);
 				const int32 HouseCount = bOuterRing ? 3 : 4;
 
-				// Grid positions: 2 columns x 2 rows within the block
-				const float FrontSetback = 200.f;  // distance from block edge to house front
-				const float SideMargin = 150.f;     // distance from block edge to house side
+				// Grid positions: 2 columns x 2 rows within the block (compact)
+				const float FrontSetback = 60.f;
+				const float SideMargin = 40.f;
 				const float HalfBlock = BlockW * 0.5f;
 
 				// Row Y positions (north row and south row)
 				const float NorthRowY = BlockMinY + FrontSetback;
 				const float SouthRowY = BlockMinY + BlockH - FrontSetback;
 				// Column X positions (left and right)
-				const float LeftColX = BlockMinX + SideMargin + 250.f;
-				const float RightColX = BlockMinX + BlockW - SideMargin - 250.f;
+				const float LeftColX = BlockMinX + SideMargin + 100.f;
+				const float RightColX = BlockMinX + BlockW - SideMargin - 100.f;
 
 				struct FHouseSlot { float X; float Y; bool bFacesSouth; };
 				const FHouseSlot Slots[] = {
-					{ LeftColX,  NorthRowY + 250.f, false },  // NW — faces north road
-					{ RightColX, NorthRowY + 250.f, false },  // NE — faces north road
-					{ LeftColX,  SouthRowY - 250.f, true  },  // SW — faces south road
-					{ RightColX, SouthRowY - 250.f, true  },  // SE — faces south road
+					{ LeftColX,  NorthRowY + 100.f, false },  // NW — faces north road
+					{ RightColX, NorthRowY + 100.f, false },  // NE — faces north road
+					{ LeftColX,  SouthRowY - 100.f, true  },  // SW — faces south road
+					{ RightColX, SouthRowY - 100.f, true  },  // SE — faces south road
 				};
 
 				for (int32 n = 0; n < HouseCount; ++n)
@@ -1371,12 +1364,12 @@ void UPHCCitySubsystem::SpawnCityGrid()
 
 					const FHouseSlot& Slot = Slots[n];
 					// Small random jitter for natural feel
-					const float JitterX = CityRandom.FRandRange(-50.f, 50.f);
-					const float JitterY = CityRandom.FRandRange(-30.f, 30.f);
+					const float JitterX = CityRandom.FRandRange(-15.f, 15.f);
+					const float JitterY = CityRandom.FRandRange(-10.f, 10.f);
 
-					// Varied house sizes
-					const float BldgW = CityRandom.FRandRange(350.f, 700.f);
-					const float BldgD = CityRandom.FRandRange(350.f, 650.f);
+					// Varied house sizes (scaled for compact blocks)
+					const float BldgW = CityRandom.FRandRange(190.f, 340.f);
+					const float BldgD = CityRandom.FRandRange(190.f, 320.f);
 					const FVector Loc(Slot.X + JitterX, Slot.Y + JitterY, 0.f);
 					const FLinearColor& WallColor = ResidentialColors[CityRandom.RandRange(0, NumResidentialColors - 1)];
 					const FLinearColor& RoofColor = RoofColors[CityRandom.RandRange(0, NumRoofColors - 1)];
@@ -1398,7 +1391,7 @@ void UPHCCitySubsystem::SpawnCityGrid()
 						UWorld* DriveWorld = GetWorld();
 						if (DriveWorld && CubeMesh)
 						{
-							const float DriveW = 80.f;
+							const float DriveW = 40.f;
 							const float DriveThick = 6.f;
 							float DriveLen, DriveY;
 							if (Slot.bFacesSouth)
@@ -1456,13 +1449,13 @@ void UPHCCitySubsystem::SpawnCityGrid()
 				const int32 Count = CityRandom.RandRange(1, 2);
 				for (int32 n = 0; n < Count; ++n)
 				{
-					const float BldgW = CityRandom.FRandRange(400.f, 700.f);
-					const float BldgD = CityRandom.FRandRange(350.f, 600.f);
-					// Neat grid placement
+					const float BldgW = CityRandom.FRandRange(220.f, 360.f);
+					const float BldgD = CityRandom.FRandRange(190.f, 310.f);
+					// Tight grid placement
 					const int32 Col = n % 2;
 					const int32 Row = n / 2;
-					const float OffX = BlockW * (0.25f + 0.5f * Col);
-					const float OffY = BlockH * (0.25f + 0.5f * Row);
+					const float OffX = BlockW * (0.28f + 0.44f * Col);
+					const float OffY = BlockH * (0.28f + 0.44f * Row);
 					const FVector Loc(BlockMinX + OffX, BlockMinY + OffY, 0.f);
 					const FLinearColor& WallColor = ArtsColors[CityRandom.RandRange(0, NumArtsColors - 1)];
 					const FLinearColor& AwningColor = ArtsColors[CityRandom.RandRange(0, NumArtsColors - 1)];
@@ -1511,10 +1504,10 @@ void UPHCCitySubsystem::SpawnCityGrid()
 				// Freestanding street art wall (50% chance per block)
 				if (CityRandom.FRand() < 0.50f && CubeMesh)
 				{
-					const float WallW = CityRandom.FRandRange(300.f, 600.f);
-					const float WallH = CityRandom.FRandRange(200.f, 400.f);
-					const float WallX = CityRandom.FRandRange(BlockMinX + 200.f, BlockMinX + BlockW - 200.f);
-					const float WallY = CityRandom.FRandRange(BlockMinY + 200.f, BlockMinY + BlockH - 200.f);
+					const float WallW = CityRandom.FRandRange(170.f, 310.f);
+					const float WallH = CityRandom.FRandRange(140.f, 280.f);
+					const float WallX = CityRandom.FRandRange(BlockMinX + 120.f, BlockMinX + BlockW - 120.f);
+					const float WallY = CityRandom.FRandRange(BlockMinY + 120.f, BlockMinY + BlockH - 120.f);
 
 					AActor* WallAct = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(),
 						FVector(WallX, WallY, WallH * 0.5f), FRotator::ZeroRotator);
@@ -1576,13 +1569,13 @@ void UPHCCitySubsystem::SpawnCityGrid()
 				for (int32 n = 0; n < Count; ++n)
 				{
 					if (CityRandom.FRand() > 0.40f) continue;
-					const float BldgW = CityRandom.FRandRange(400.f, 600.f);
-					const float BldgD = CityRandom.FRandRange(400.f, 600.f);
-					// Neat grid placement
+					const float BldgW = CityRandom.FRandRange(200.f, 330.f);
+					const float BldgD = CityRandom.FRandRange(200.f, 330.f);
+					// Tight grid placement
 					const int32 Col = n % 2;
 					const int32 Row = n / 2;
-					const float OffX = BlockW * (0.25f + 0.5f * Col);
-					const float OffY = BlockH * (0.25f + 0.5f * Row);
+					const float OffX = BlockW * (0.28f + 0.44f * Col);
+					const float OffY = BlockH * (0.28f + 0.44f * Row);
 					const FVector Loc(BlockMinX + OffX, BlockMinY + OffY, 0.f);
 					const FLinearColor& WallColor = WaterfrontWallColors[CityRandom.RandRange(0, NumWaterfrontWallColors - 1)];
 					const FLinearColor& AwningColor = WaterfrontAwningColors[CityRandom.RandRange(0, NumWaterfrontAwningColors - 1)];
@@ -1602,14 +1595,14 @@ void UPHCCitySubsystem::SpawnCityGrid()
 				for (int32 n = 0; n < Count; ++n)
 				{
 					if (CityRandom.FRand() > 0.40f) continue;
-					const float W = CityRandom.FRandRange(800.f, 1400.f);
-					const float D = CityRandom.FRandRange(600.f, 1000.f);
-					const float H = CityRandom.FRandRange(300.f, 600.f);
-					// Neat grid placement
+					const float W = CityRandom.FRandRange(400.f, 750.f);
+					const float D = CityRandom.FRandRange(300.f, 550.f);
+					const float H = CityRandom.FRandRange(200.f, 420.f);
+					// Tight grid placement
 					const int32 Col = n % 2;
 					const int32 Row = n / 2;
-					const float OffX = BlockW * (0.25f + 0.5f * Col);
-					const float OffY = BlockH * (0.25f + 0.5f * Row);
+					const float OffX = BlockW * (0.28f + 0.44f * Col);
+					const float OffY = BlockH * (0.28f + 0.44f * Row);
 					const FVector Loc(BlockMinX + OffX, BlockMinY + OffY, 0.f);
 					const FLinearColor& Color = IndustrialColors[CityRandom.RandRange(0, NumIndustrialColors - 1)];
 					SpawnWarehouse(Loc, W, D, H, Color);
@@ -1624,8 +1617,8 @@ void UPHCCitySubsystem::SpawnCityGrid()
 			{
 				if (CityRandom.FRandRange(0.f, 1.f) < 0.10f)
 				{
-					const float BldgW = CityRandom.FRandRange(400.f, 600.f);
-					const float BldgD = CityRandom.FRandRange(400.f, 600.f);
+					const float BldgW = CityRandom.FRandRange(200.f, 330.f);
+					const float BldgD = CityRandom.FRandRange(200.f, 330.f);
 					// Center the single building in the block
 					const float OffX = BlockW * 0.5f;
 					const float OffY = BlockH * 0.5f;
@@ -1634,7 +1627,7 @@ void UPHCCitySubsystem::SpawnCityGrid()
 
 					if (CityRandom.FRandRange(0.f, 1.f) < 0.50f)
 					{
-						const float Height = CityRandom.FRandRange(800.f, 1200.f);
+						const float Height = CityRandom.FRandRange(600.f, 850.f);
 						SpawnBuilding(Loc, FVector(BldgW, BldgD, Height), Color, false);
 					}
 					else
@@ -1699,9 +1692,9 @@ void UPHCCitySubsystem::SpawnCityGrid()
 void UPHCCitySubsystem::SpawnBlockStreets()
 {
 	const int32 NumBlocks = NumRoads - 1; // 24
-	const float BlockW = RoadSpacing - RoadWidth - 2.f * SidewalkWidth; // 2600
-	const float HalfSpan = BlockW * 0.5f; // 1800
-	const float InteriorHalfW = 150.f; // 300 UU wide streets
+	const float BlockW = RoadSpacing - RoadWidth - 2.f * SidewalkWidth; // ~1740
+	const float HalfSpan = BlockW * 0.5f;
+	const float InteriorHalfW = 100.f; // 200 UU wide interior streets
 
 	// Park block coordinates (same as SpawnCityGrid)
 	auto IsPark = [](int32 bx, int32 by) -> bool
@@ -3623,7 +3616,7 @@ void UPHCCitySubsystem::SpawnStreetLight(const FVector& Location)
 }
 
 // ---------------------------------------------------------------------------
-// Palm tree (trunk cylinder + canopy sphere)
+// Palm tree — GTA V-quality pinnate palms from basic shapes
 // ---------------------------------------------------------------------------
 
 void UPHCCitySubsystem::SpawnPalmTree(const FVector& Location, float Height, bool bDetailed)
@@ -3631,7 +3624,6 @@ void UPHCCitySubsystem::SpawnPalmTree(const FVector& Location, float Height, boo
 	UWorld* World = GetWorld();
 	if (!World || !CylinderMesh || !CubeMesh) return;
 
-	// Scale all trees ~4.8x taller (20% boost over original 4x).
 	Height *= 4.8f;
 
 	AActor* Tree = World->SpawnActor<AActor>(AActor::StaticClass(),
@@ -3641,122 +3633,268 @@ void UPHCCitySubsystem::SpawnPalmTree(const FVector& Location, float Height, boo
 	Tree->SetActorLabel(TEXT("PalmTree"));
 #endif
 
-	// ---- Trunk (tapered: wider at base, thinner at top) ----
-	const float BaseRadius = Height * 0.012f;
-	const float TopRadius = Height * 0.006f;
-	const int32 TrunkSegments = bDetailed ? 3 : 2;
-	const float SegHeight = Height / TrunkSegments;
-	const float LeanAngle = CityRandom.FRandRange(-5.f, 5.f);
-	const float LeanYaw = CityRandom.FRandRange(0.f, 360.f);
+	int32 CompIdx = 0;
 
-	// Brown bark color (varies slightly per tree).
-	const FLinearColor TrunkColor(
-		CityRandom.FRandRange(0.18f, 0.28f),
-		CityRandom.FRandRange(0.12f, 0.18f),
-		CityRandom.FRandRange(0.04f, 0.08f));
-
-	for (int32 S = 0; S < TrunkSegments; ++S)
+	// Helper: attach a mesh component, apply PBR material, register
+	auto AddComp = [&](UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot,
+		const FVector& Scale, const FLinearColor& Color, float Roughness,
+		float Metallic = 0.f) -> UStaticMeshComponent*
 	{
-		const float T = static_cast<float>(S) / TrunkSegments;
-		const float Radius = FMath::Lerp(BaseRadius, TopRadius, T);
-		const float SegZ = S * SegHeight + SegHeight * 0.5f;
+		FString Name = FString::Printf(TEXT("P_%d"), CompIdx++);
+		UStaticMeshComponent* C = NewObject<UStaticMeshComponent>(Tree, *Name);
+		C->SetStaticMesh(Mesh);
+		C->SetWorldLocation(Loc);
+		C->SetWorldRotation(Rot);
+		C->SetWorldScale3D(Scale);
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->RegisterComponent();
+		if (CompIdx == 1) Tree->SetRootComponent(C);
 
-		FString Name = FString::Printf(TEXT("Trunk_%d"), S);
-		UStaticMeshComponent* Seg = NewObject<UStaticMeshComponent>(Tree, *Name);
-		Seg->SetStaticMesh(CylinderMesh);
-		Seg->SetWorldScale3D(FVector(Radius / 50.f, Radius / 50.f, SegHeight / 100.f));
-		Seg->SetWorldLocation(FVector(Location.X, Location.Y, SegZ));
-		Seg->SetWorldRotation(FRotator(LeanAngle * T, LeanYaw, 0.f));
-		Seg->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		Seg->RegisterComponent();
-		if (S == 0) Tree->SetRootComponent(Seg);
-
-		UMaterialInstanceDynamic* SegMat = UMaterialInstanceDynamic::Create(Seg->GetMaterial(0), Seg);
-		if (SegMat)
+		UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(
+			C->GetMaterial(0), C);
+		if (M)
 		{
-			SegMat->SetVectorParameterValue(TEXT("BaseColor"), TrunkColor);
-			SegMat->SetScalarParameterValue(TEXT("Roughness"), 0.8f); // bark
-			Seg->SetMaterial(0, SegMat);
+			M->SetVectorParameterValue(TEXT("BaseColor"), Color);
+			M->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+			M->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+			C->SetMaterial(0, M);
 		}
-		Tree->AddInstanceComponent(Seg);
+		Tree->AddInstanceComponent(C);
+		return C;
+	};
+
+	// ====================================================================
+	// TRUNK — multi-segment taper with natural S-curve and bark ring scars
+	// ====================================================================
+
+	const float BaseRadius = Height * 0.014f;
+	const float TopRadius  = Height * 0.005f;
+	const int32 TrunkSegs  = bDetailed ? 8 : 5;
+	const float SegH       = Height / TrunkSegs;
+
+	// S-curve: gentle sine wave creates organic lean
+	const float CurveAmp  = Height * 0.012f;
+	const float CurveYaw  = CityRandom.FRandRange(0.f, 360.f);
+	const float CurveYawR = FMath::DegreesToRadians(CurveYaw);
+
+	// Color gradient: gray-brown at base → warm tan at crown
+	const FLinearColor TrunkBase(
+		CityRandom.FRandRange(0.18f, 0.24f),
+		CityRandom.FRandRange(0.12f, 0.16f),
+		CityRandom.FRandRange(0.05f, 0.08f));
+	const FLinearColor TrunkTop(
+		CityRandom.FRandRange(0.30f, 0.38f),
+		CityRandom.FRandRange(0.24f, 0.30f),
+		CityRandom.FRandRange(0.12f, 0.18f));
+
+	// Ring scar color (lighter, slightly yellowish)
+	const FLinearColor RingScarColor(0.40f, 0.34f, 0.20f);
+
+	// Track crown position (accounts for S-curve offset)
+	FVector CrownPos = Location;
+	CrownPos.Z = Height;
+
+	for (int32 S = 0; S < TrunkSegs; ++S)
+	{
+		const float T = static_cast<float>(S) / TrunkSegs;
+		float Radius = FMath::Lerp(BaseRadius, TopRadius, T);
+		if (S == 0) Radius *= 1.25f; // slight base bulge
+
+		// S-curve offset at this height
+		const float CurveOff = CurveAmp * FMath::Sin(T * PI);
+		const float SegCX = Location.X + CurveOff * FMath::Cos(CurveYawR);
+		const float SegCY = Location.Y + CurveOff * FMath::Sin(CurveYawR);
+		const float SegZ  = S * SegH + SegH * 0.5f;
+
+		// Slight tilt to follow the curve tangent
+		const float dCurve = CurveAmp * PI * FMath::Cos(T * PI) / Height;
+		const float TiltDeg = FMath::RadiansToDegrees(FMath::Atan(dCurve));
+
+		const FLinearColor SegColor = FMath::Lerp(TrunkBase, TrunkTop, T);
+
+		AddComp(CylinderMesh,
+			FVector(SegCX, SegCY, SegZ),
+			FRotator(TiltDeg * FMath::Cos(CurveYawR),
+					 CurveYaw,
+					 TiltDeg * FMath::Sin(CurveYawR)),
+			FVector(Radius / 50.f, Radius / 50.f, SegH / 100.f),
+			SegColor, 0.88f);
+
+		// Ring scars — thin discs at segment joints (every 2 segments)
+		const int32 RingFreq = bDetailed ? 2 : 3;
+		if (S > 0 && S % RingFreq == 0)
+		{
+			const float RingRadius = Radius * 1.18f;
+			AddComp(CylinderMesh,
+				FVector(SegCX, SegCY, S * SegH),
+				FRotator::ZeroRotator,
+				FVector(RingRadius / 50.f, RingRadius / 50.f, 0.015f),
+				RingScarColor, 0.75f);
+		}
+
+		// Update crown position to account for S-curve
+		if (S == TrunkSegs - 1)
+		{
+			const float TopT = 1.f;
+			const float TopOff = CurveAmp * FMath::Sin(TopT * PI);
+			CrownPos.X = Location.X + TopOff * FMath::Cos(CurveYawR);
+			CrownPos.Y = Location.Y + TopOff * FMath::Sin(CurveYawR);
+		}
 	}
 
-	// ---- Fronds (elongated flat cubes radiating from the crown) ----
-	const float CrownZ = Height;
-	const int32 NumFronds = bDetailed ? CityRandom.RandRange(6, 9) : CityRandom.RandRange(4, 6);
-	const float FrondLength = Height * 0.28f;
-	const float FrondWidth = Height * 0.04f;
-	const float FrondThickness = Height * 0.008f;
-
-	// Frond green (varies slightly per tree).
-	const FLinearColor FrondColor(
-		CityRandom.FRandRange(0.02f, 0.08f),
-		CityRandom.FRandRange(0.15f, 0.30f),
-		CityRandom.FRandRange(0.01f, 0.06f));
-
-	for (int32 F = 0; F < NumFronds; ++F)
+	// Crownshaft — bright green cylinder at top of trunk (detailed only)
+	if (bDetailed)
 	{
-		const float Yaw = (360.f / NumFronds) * F + CityRandom.FRandRange(-10.f, 10.f);
-		// Droop angle: fronds hang downward from the crown.
-		const float Droop = CityRandom.FRandRange(20.f, 45.f);
-
-		FString Name = FString::Printf(TEXT("Frond_%d"), F);
-		UStaticMeshComponent* Frond = NewObject<UStaticMeshComponent>(Tree, *Name);
-		Frond->SetStaticMesh(CubeMesh);
-		// Long, flat, thin leaf shape.
-		Frond->SetWorldScale3D(FVector(FrondLength / 50.f, FrondWidth / 50.f, FrondThickness / 50.f));
-
-		// Position at the crown, offset outward along the frond direction.
-		const float HalfLen = FrondLength * 0.5f;
-		const float YawRad = FMath::DegreesToRadians(Yaw);
-		const float DroopRad = FMath::DegreesToRadians(Droop);
-		const FVector FrondCenter(
-			Location.X + HalfLen * FMath::Cos(DroopRad) * FMath::Cos(YawRad),
-			Location.Y + HalfLen * FMath::Cos(DroopRad) * FMath::Sin(YawRad),
-			CrownZ - HalfLen * FMath::Sin(DroopRad));
-
-		Frond->SetWorldLocation(FrondCenter);
-		Frond->SetWorldRotation(FRotator(-Droop, Yaw, 0.f));
-		Frond->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		Frond->RegisterComponent();
-
-		UMaterialInstanceDynamic* FMat = UMaterialInstanceDynamic::Create(Frond->GetMaterial(0), Frond);
-		if (FMat)
-		{
-			FMat->SetVectorParameterValue(TEXT("BaseColor"), FrondColor);
-			FMat->SetScalarParameterValue(TEXT("Roughness"), 0.7f); // leaf
-			Frond->SetMaterial(0, FMat);
-		}
-		Tree->AddInstanceComponent(Frond);
+		const float CSHeight = SegH * 0.6f;
+		const float CSRadius = TopRadius * 1.4f;
+		AddComp(CylinderMesh,
+			FVector(CrownPos.X, CrownPos.Y, Height - CSHeight * 0.3f),
+			FRotator::ZeroRotator,
+			FVector(CSRadius / 50.f, CSRadius / 50.f, CSHeight / 100.f),
+			FLinearColor(0.06f, 0.28f, 0.04f), 0.5f);
 	}
 
-	// ---- Coconut cluster (small spheres at the crown base, detailed only) ----
-	if (bDetailed && SphereMesh && CityRandom.FRand() < 0.6f)
+	// ====================================================================
+	// FRONDS — pinnate compound leaves: rachis spine + V-folded leaf blades
+	// ====================================================================
+
+	const float FrondLen       = Height * 0.28f;
+	const float FrondWidth     = Height * 0.04f;
+	const float SpineThickness = Height * 0.003f;
+	const float BladeThickness = Height * 0.0015f;
+	const float VFoldAngle     = 18.f; // V-fold half-angle for leaf cross-section
+
+	// Frond tier definition
+	struct FFrondTier
 	{
-		const int32 NumCoconuts = CityRandom.RandRange(2, 4);
-		const float CoconutRadius = Height * 0.008f;
-		for (int32 C = 0; C < NumCoconuts; ++C)
+		int32 Count;
+		float MinDroop;
+		float MaxDroop;
+		FLinearColor Color;
+		float LengthMult;
+		float WidthMult;
+		float Roughness;
+		bool bDead;
+	};
+
+	TArray<FFrondTier> Tiers;
+	if (bDetailed)
+	{
+		// Upper tier — young, upright, bright green, waxy sheen
+		Tiers.Add({ CityRandom.RandRange(4, 5), 8.f, 22.f,
+			FLinearColor(
+				CityRandom.FRandRange(0.03f, 0.06f),
+				CityRandom.FRandRange(0.28f, 0.38f),
+				CityRandom.FRandRange(0.02f, 0.05f)),
+			0.8f, 0.9f, 0.45f, false });
+		// Middle tier — mature, drooping, deeper green
+		Tiers.Add({ CityRandom.RandRange(4, 6), 28.f, 50.f,
+			FLinearColor(
+				CityRandom.FRandRange(0.02f, 0.04f),
+				CityRandom.FRandRange(0.18f, 0.26f),
+				CityRandom.FRandRange(0.01f, 0.03f)),
+			1.0f, 1.0f, 0.55f, false });
+		// Dead tier — brown, hanging down along trunk
+		Tiers.Add({ CityRandom.RandRange(2, 3), 55.f, 78.f,
+			FLinearColor(
+				CityRandom.FRandRange(0.25f, 0.35f),
+				CityRandom.FRandRange(0.18f, 0.24f),
+				CityRandom.FRandRange(0.06f, 0.10f)),
+			0.65f, 0.6f, 0.80f, true });
+	}
+	else
+	{
+		// Single tier for simple trees
+		Tiers.Add({ CityRandom.RandRange(6, 8), 18.f, 48.f,
+			FLinearColor(
+				CityRandom.FRandRange(0.02f, 0.05f),
+				CityRandom.FRandRange(0.20f, 0.30f),
+				CityRandom.FRandRange(0.01f, 0.04f)),
+			1.0f, 1.0f, 0.55f, false });
+	}
+
+	float GlobalYawOffset = CityRandom.FRandRange(0.f, 360.f);
+
+	for (const FFrondTier& Tier : Tiers)
+	{
+		for (int32 F = 0; F < Tier.Count; ++F)
+		{
+			const float Yaw = GlobalYawOffset
+				+ (360.f / Tier.Count) * F
+				+ CityRandom.FRandRange(-12.f, 12.f);
+			const float Droop = CityRandom.FRandRange(Tier.MinDroop, Tier.MaxDroop);
+			const float FL = FrondLen * Tier.LengthMult;
+			const float FW = FrondWidth * Tier.WidthMult;
+
+			// Direction the frond extends outward from crown
+			const float YawR   = FMath::DegreesToRadians(Yaw);
+			const float DroopR = FMath::DegreesToRadians(Droop);
+			const FVector FrondDir(
+				FMath::Cos(DroopR) * FMath::Cos(YawR),
+				FMath::Cos(DroopR) * FMath::Sin(YawR),
+				-FMath::Sin(DroopR));
+			const FVector FrondCenter = CrownPos + FrondDir * (FL * 0.5f);
+
+			// Spine color — slightly darker than blade
+			const FLinearColor SpineColor(
+				Tier.Color.R * 0.6f,
+				Tier.Color.G * 0.7f,
+				Tier.Color.B * 0.5f);
+
+			// -- Rachis (spine): thin elongated cube, darker green --
+			AddComp(CubeMesh,
+				FrondCenter,
+				FRotator(-Droop, Yaw, 0.f),
+				FVector(FL / 100.f, SpineThickness / 100.f, SpineThickness / 100.f),
+				SpineColor, Tier.Roughness);
+
+			// -- Left leaf blade: flat wide section, angled up by -VFold --
+			const FRotator LeftRot(-Droop, Yaw, -VFoldAngle);
+			const FVector LeftRight = FRotationMatrix(FRotator(-Droop, Yaw, 0.f))
+				.GetUnitAxis(EAxis::Y);
+			const FVector LeftCenter = FrondCenter - LeftRight * (FW * 0.22f);
+
+			AddComp(CubeMesh,
+				LeftCenter,
+				LeftRot,
+				FVector(FL * 0.88f / 100.f, FW * 0.44f / 100.f, BladeThickness / 100.f),
+				Tier.Color, Tier.Roughness);
+
+			// -- Right leaf blade: mirror of left --
+			const FRotator RightRot(-Droop, Yaw, VFoldAngle);
+			const FVector RightCenter = FrondCenter + LeftRight * (FW * 0.22f);
+
+			AddComp(CubeMesh,
+				RightCenter,
+				RightRot,
+				FVector(FL * 0.88f / 100.f, FW * 0.44f / 100.f, BladeThickness / 100.f),
+				Tier.Color, Tier.Roughness);
+		}
+
+		// Rotate base offset so tiers don't overlap
+		GlobalYawOffset += CityRandom.FRandRange(15.f, 30.f);
+	}
+
+	// ====================================================================
+	// COCONUT CLUSTER — small brown-green spheres just below crown
+	// ====================================================================
+
+	if (bDetailed && SphereMesh && CityRandom.FRand() < 0.65f)
+	{
+		const int32 NumCocos = CityRandom.RandRange(3, 5);
+		const float CocoR = Height * 0.007f;
+		for (int32 C = 0; C < NumCocos; ++C)
 		{
 			const float CYaw = CityRandom.FRandRange(0.f, 360.f);
-			const float CDist = TopRadius + CoconutRadius * 2.f;
-			FString Name = FString::Printf(TEXT("Coconut_%d"), C);
-			UStaticMeshComponent* Coco = NewObject<UStaticMeshComponent>(Tree, *Name);
-			Coco->SetStaticMesh(SphereMesh);
-			Coco->SetWorldScale3D(FVector(CoconutRadius / 50.f));
-			Coco->SetWorldLocation(FVector(
-				Location.X + CDist * FMath::Cos(FMath::DegreesToRadians(CYaw)),
-				Location.Y + CDist * FMath::Sin(FMath::DegreesToRadians(CYaw)),
-				CrownZ - CoconutRadius * 3.f));
-			Coco->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			Coco->RegisterComponent();
-
-			UMaterialInstanceDynamic* CMat = UMaterialInstanceDynamic::Create(Coco->GetMaterial(0), Coco);
-			if (CMat)
-			{
-				CMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.25f, 0.18f, 0.06f));
-				Coco->SetMaterial(0, CMat);
-			}
-			Tree->AddInstanceComponent(Coco);
+			const float CDist = TopRadius + CocoR * 2.5f;
+			AddComp(SphereMesh,
+				FVector(
+					CrownPos.X + CDist * FMath::Cos(FMath::DegreesToRadians(CYaw)),
+					CrownPos.Y + CDist * FMath::Sin(FMath::DegreesToRadians(CYaw)),
+					Height - CocoR * 4.f),
+				FRotator::ZeroRotator,
+				FVector(CocoR / 50.f),
+				FLinearColor(0.22f, 0.16f, 0.05f), 0.65f);
 		}
 	}
 }
@@ -4016,228 +4154,78 @@ void UPHCCitySubsystem::SpawnHills()
 	SpawnHill(FVector(-250000.f, 25000.f, 0.f), 10000.f, 7000.f, 2500.f, RockyBrown, TEXT("Mtn_Backdrop2"));
 	SpawnHill(FVector(-255000.f, -22000.f, 0.f), 11000.f, 9000.f, 2800.f, EarthBrown, TEXT("Mtn_Backdrop3"), false);
 
-	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Spawned rolling hills and highway corridor mountains."));
+	// ---- Northern transition zone: hills from city edge to mountain base ----
+	// (fill the 50k gap between city perimeter hills at Y=42k and mountains at Y=96k)
+	SpawnHill(FVector(-40000.f, 55000.f, 0.f), 4000.f, 3500.f, 600.f, GrassGreen, TEXT("Hill_NT1"));
+	SpawnHill(FVector(-10000.f, 60000.f, 0.f), 3500.f, 3000.f, 450.f, DarkGrass, TEXT("Hill_NT2"));
+	SpawnHill(FVector( 25000.f, 58000.f, 0.f), 4500.f, 3800.f, 700.f, DryGrass, TEXT("Hill_NT3"));
+	SpawnHill(FVector( 60000.f, 55000.f, 0.f), 3800.f, 3200.f, 520.f, GrassGreen, TEXT("Hill_NT4"));
+	SpawnHill(FVector(-60000.f, 68000.f, 0.f), 5000.f, 4000.f, 900.f, RockyBrown, TEXT("Hill_NT5"));
+	SpawnHill(FVector(-20000.f, 72000.f, 0.f), 4500.f, 4000.f, 800.f, EarthBrown, TEXT("Hill_NT6"));
+	SpawnHill(FVector( 15000.f, 75000.f, 0.f), 5500.f, 4500.f, 1100.f, MountainGray, TEXT("Hill_NT7"));
+	SpawnHill(FVector( 50000.f, 70000.f, 0.f), 4200.f, 3500.f, 650.f, DarkGrass, TEXT("Hill_NT8"));
+	SpawnHill(FVector(-45000.f, 82000.f, 0.f), 6000.f, 5000.f, 1400.f, MountainGray, TEXT("Hill_NT9"));
+	SpawnHill(FVector(  5000.f, 85000.f, 0.f), 5500.f, 4800.f, 1200.f, RockyBrown, TEXT("Hill_NT10"));
+	SpawnHill(FVector( 40000.f, 83000.f, 0.f), 5000.f, 4200.f, 1000.f, EarthBrown, TEXT("Hill_NT11"));
+	SpawnHill(FVector( 75000.f, 78000.f, 0.f), 4500.f, 3800.f, 850.f, RockyBrown, TEXT("Hill_NT12"));
+	SpawnHill(FVector(-75000.f, 75000.f, 0.f), 5000.f, 4500.f, 1050.f, EarthBrown, TEXT("Hill_NT13"));
+
+	// ---- Southern transition zone: hills toward southern mountains ----
+	SpawnHill(FVector(-45000.f, -55000.f, 0.f), 4000.f, 3500.f, 550.f, GrassGreen, TEXT("Hill_ST1"));
+	SpawnHill(FVector(-10000.f, -60000.f, 0.f), 3500.f, 3200.f, 480.f, DarkGrass, TEXT("Hill_ST2"));
+	SpawnHill(FVector( 30000.f, -58000.f, 0.f), 4200.f, 3600.f, 650.f, DryGrass, TEXT("Hill_ST3"));
+	SpawnHill(FVector( 65000.f, -55000.f, 0.f), 3800.f, 3000.f, 500.f, GrassGreen, TEXT("Hill_ST4"));
+	SpawnHill(FVector(-55000.f, -70000.f, 0.f), 5000.f, 4200.f, 950.f, RockyBrown, TEXT("Hill_ST5"));
+	SpawnHill(FVector(-15000.f, -75000.f, 0.f), 4800.f, 4000.f, 850.f, EarthBrown, TEXT("Hill_ST6"));
+	SpawnHill(FVector( 20000.f, -72000.f, 0.f), 5200.f, 4500.f, 1050.f, MountainGray, TEXT("Hill_ST7"));
+	SpawnHill(FVector( 55000.f, -68000.f, 0.f), 4500.f, 3800.f, 700.f, DarkGrass, TEXT("Hill_ST8"));
+	SpawnHill(FVector(-40000.f, -82000.f, 0.f), 5500.f, 4800.f, 1300.f, MountainGray, TEXT("Hill_ST9"));
+	SpawnHill(FVector(  0000.f, -85000.f, 0.f), 5000.f, 4500.f, 1100.f, RockyBrown, TEXT("Hill_ST10"));
+	SpawnHill(FVector( 45000.f, -80000.f, 0.f), 5200.f, 4200.f, 1000.f, EarthBrown, TEXT("Hill_ST11"));
+	SpawnHill(FVector( 75000.f, -75000.f, 0.f), 4500.f, 3800.f, 800.f, RockyBrown, TEXT("Hill_ST12"));
+	SpawnHill(FVector(-70000.f, -78000.f, 0.f), 4800.f, 4200.f, 950.f, EarthBrown, TEXT("Hill_ST13"));
+	// ---- Southern far transition (bridge gap to mountains now at Y~-130k) ----
+	SpawnHill(FVector(-60000.f, -100000.f, 0.f), 5500.f, 5000.f, 1500.f, MountainGray, TEXT("Hill_ST14"));
+	SpawnHill(FVector(-20000.f, -105000.f, 0.f), 5200.f, 4500.f, 1400.f, RockyBrown, TEXT("Hill_ST15"));
+	SpawnHill(FVector( 25000.f, -102000.f, 0.f), 5800.f, 5000.f, 1600.f, MountainGray, TEXT("Hill_ST16"));
+	SpawnHill(FVector( 60000.f,  -98000.f, 0.f), 5000.f, 4200.f, 1200.f, EarthBrown, TEXT("Hill_ST17"));
+	SpawnHill(FVector(-45000.f, -115000.f, 0.f), 6000.f, 5500.f, 1800.f, MountainGray, TEXT("Hill_ST18"));
+	SpawnHill(FVector(  5000.f, -118000.f, 0.f), 5500.f, 5000.f, 1700.f, RockyBrown, TEXT("Hill_ST19"));
+	SpawnHill(FVector( 50000.f, -112000.f, 0.f), 5800.f, 5200.f, 1600.f, MountainGray, TEXT("Hill_ST20"));
+	SpawnHill(FVector( 80000.f, -108000.f, 0.f), 5200.f, 4500.f, 1400.f, EarthBrown, TEXT("Hill_ST21"));
+
+	// ---- Eastern coastal hills: backdrop visible from city looking east ----
+	SpawnHill(FVector( 80000.f,  50000.f, 0.f), 5000.f, 4000.f, 800.f, GrassGreen, TEXT("Hill_EC1"));
+	SpawnHill(FVector( 90000.f,  25000.f, 0.f), 4500.f, 3800.f, 650.f, DarkGrass, TEXT("Hill_EC2"));
+	SpawnHill(FVector( 85000.f,   0000.f, 0.f), 5500.f, 4500.f, 950.f, RockyBrown, TEXT("Hill_EC3"));
+	SpawnHill(FVector( 95000.f, -20000.f, 0.f), 4000.f, 3500.f, 550.f, DryGrass, TEXT("Hill_EC4"));
+	SpawnHill(FVector( 88000.f, -45000.f, 0.f), 5000.f, 4200.f, 750.f, GrassGreen, TEXT("Hill_EC5"));
+	SpawnHill(FVector(100000.f,  60000.f, 0.f), 6000.f, 5000.f, 1200.f, MountainGray, TEXT("Hill_EC6"));
+	SpawnHill(FVector(105000.f, -55000.f, 0.f), 5500.f, 4800.f, 1100.f, MountainGray, TEXT("Hill_EC7"));
+	SpawnHill(FVector(110000.f,  10000.f, 0.f), 7000.f, 5500.f, 1500.f, MountainGray, TEXT("Hill_EC8"));
+	SpawnHill(FVector(108000.f, -35000.f, 0.f), 6000.f, 5000.f, 1300.f, RockyBrown, TEXT("Hill_EC9"));
+	SpawnHill(FVector(105000.f,  40000.f, 0.f), 5500.f, 4500.f, 1000.f, EarthBrown, TEXT("Hill_EC10"));
+
+	// ---- Inner scatter: fill empty flat zones within the city outskirts ----
+	SpawnHill(FVector(-35000.f, 45000.f, 0.f), 2800.f, 2200.f, 300.f, GrassGreen, TEXT("Hill_IS1"));
+	SpawnHill(FVector( 40000.f, 45000.f, 0.f), 3000.f, 2500.f, 350.f, DarkGrass, TEXT("Hill_IS2"));
+	SpawnHill(FVector(-40000.f, -42000.f, 0.f), 2500.f, 2000.f, 280.f, DryGrass, TEXT("Hill_IS3"));
+	SpawnHill(FVector( 45000.f, -40000.f, 0.f), 2800.f, 2400.f, 320.f, GrassGreen, TEXT("Hill_IS4"));
+	SpawnHill(FVector( 70000.f,  15000.f, 0.f), 3500.f, 2800.f, 420.f, DarkGrass, TEXT("Hill_IS5"));
+	SpawnHill(FVector( 68000.f, -15000.f, 0.f), 3200.f, 2600.f, 380.f, DryGrass, TEXT("Hill_IS6"));
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Spawned 77 hills — city perimeter, transition zones, eastern coastal, inner scatter, highway corridor, and backdrop mountains."));
 }
 
 // ---------------------------------------------------------------------------
-// Underground Cavern — tunnel into mountain with large underground driving area
+// Underground Cavern — removed
 // ---------------------------------------------------------------------------
 
 void UPHCCitySubsystem::SpawnUndergroundCavern()
 {
-	UWorld* World = GetWorld();
-	if (!World || !PlaneMesh || !CubeMesh || !CylinderMesh) return;
-
-	const float EntranceX = -250500.f;
-	const float EntranceY = -13000.f;  // aligned with ground hole boundary
-
-	const float TunnelW = 1200.f;
-	const float TunnelH = 600.f;
-	const float TunnelLen = 300.f; // Short flat entry, ramp starts almost immediately
-
-	// Ramp: 20 steps descending to Z=-500
-	const int32 NumSteps = 20;
-	const float StepLen = 300.f;
-	const float CavernZ = -500.f;
-	const float StepDrop = FMath::Abs(CavernZ) / NumSteps; // 25 UU per step
-
-	const float CavernW = 25000.f;
-	const float CavernD = 20000.f;
-	const float CavernH = 600.f;
-
-	const float RampTotalLen = NumSteps * StepLen; // 6000 UU
-	const float RampEndY = EntranceY - TunnelLen - RampTotalLen;
-	const float CavernCenterX = EntranceX;
-	const float CavernCenterY = RampEndY - CavernD * 0.5f;
-
-	const FLinearColor RockGray(0.22f, 0.20f, 0.18f);
-	const FLinearColor FloorColor(0.15f, 0.14f, 0.12f);
-	const FLinearColor CeilingColor(0.12f, 0.11f, 0.10f);
-	const FLinearColor PillarColor(0.28f, 0.25f, 0.20f);
-
-	// Helper: spawn a PlaneMesh floor with collision (identical to ground planes)
-	auto SpawnFloor = [&](const FVector& Loc, const FVector& Scale, const FLinearColor& Color, const TCHAR* Label)
-	{
-		AActor* A = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
-		if (!A) return;
-#if WITH_EDITOR
-		A->SetActorLabel(Label);
-#endif
-		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(A, TEXT("FloorMesh"));
-		MC->SetStaticMesh(PlaneMesh);
-		MC->SetWorldScale3D(Scale);
-		MC->SetWorldLocation(Loc);
-		MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		MC->SetCollisionResponseToAllChannels(ECR_Block);
-		MC->RegisterComponent();
-		A->SetRootComponent(MC);
-		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
-		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); Mat->SetScalarParameterValue(TEXT("Roughness"), 0.95f); MC->SetMaterial(0, Mat); }
-		A->AddInstanceComponent(MC);
-	};
-
-	// Helper: spawn a CubeMesh wall (visual + collision)
-	auto SpawnWall = [&](const FVector& Loc, const FVector& Scale, const FLinearColor& Color, const TCHAR* Label)
-	{
-		AActor* A = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
-		if (!A) return;
-#if WITH_EDITOR
-		A->SetActorLabel(Label);
-#endif
-		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(A, TEXT("WallMesh"));
-		MC->SetStaticMesh(CubeMesh);
-		MC->SetWorldScale3D(Scale);
-		MC->SetWorldLocation(Loc);
-		MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		MC->SetCollisionResponseToAllChannels(ECR_Block);
-		MC->RegisterComponent();
-		A->SetRootComponent(MC);
-		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
-		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); Mat->SetScalarParameterValue(TEXT("Roughness"), 0.95f); MC->SetMaterial(0, Mat); }
-		A->AddInstanceComponent(MC);
-	};
-
-	// ================================================================
-	// 1. Tunnel entrance floor — PlaneMesh at Z=0 (same as ground)
-	// ================================================================
-	// PlaneMesh at scale S covers S*50 UU in each direction from center
-	const float TunnelCenterY = EntranceY - TunnelLen * 0.5f;
-	SpawnFloor(
-		FVector(EntranceX, TunnelCenterY, 0.f),
-		FVector(TunnelW / 100.f, TunnelLen / 100.f, 1.f),  // PlaneMesh: scale*50 = half-extent, so total = scale*100
-		FloorColor, TEXT("TunnelFloor"));
-
-	// Tunnel walls
-	SpawnWall(FVector(EntranceX + TunnelW * 0.5f, TunnelCenterY, TunnelH * 0.5f),
-		FVector(0.5f, TunnelLen / 100.f, TunnelH / 100.f), RockGray, TEXT("TunnelWallE"));
-	SpawnWall(FVector(EntranceX - TunnelW * 0.5f, TunnelCenterY, TunnelH * 0.5f),
-		FVector(0.5f, TunnelLen / 100.f, TunnelH / 100.f), RockGray, TEXT("TunnelWallW"));
-
-	// ================================================================
-	// 2. Ramp — 20 PlaneMesh steps, each dropping 25 UU
-	// ================================================================
-	const float RampStartY = EntranceY - TunnelLen;
-
-	for (int32 i = 0; i < NumSteps; ++i)
-	{
-		const float StepZ = -StepDrop * (i + 1); // -25, -50, -75 ... -500
-		const float StepCenterY = RampStartY - StepLen * i - StepLen * 0.5f;
-		SpawnFloor(
-			FVector(EntranceX, StepCenterY, StepZ),
-			FVector(TunnelW / 100.f, StepLen / 100.f, 1.f),
-			FloorColor, *FString::Printf(TEXT("RampStep_%d"), i));
-	}
-
-	// Ramp walls
-	const float RampCenterY = RampStartY - RampTotalLen * 0.5f;
-	const float RampWallH = TunnelH + FMath::Abs(CavernZ);
-	SpawnWall(FVector(EntranceX + TunnelW * 0.5f, RampCenterY, -FMath::Abs(CavernZ) * 0.5f + TunnelH * 0.5f),
-		FVector(0.5f, RampTotalLen / 100.f, RampWallH / 100.f), RockGray, TEXT("RampWallE"));
-	SpawnWall(FVector(EntranceX - TunnelW * 0.5f, RampCenterY, -FMath::Abs(CavernZ) * 0.5f + TunnelH * 0.5f),
-		FVector(0.5f, RampTotalLen / 100.f, RampWallH / 100.f), RockGray, TEXT("RampWallW"));
-
-	// ================================================================
-	// 3. Main cavern — PlaneMesh floor at Z=-500
-	// ================================================================
-	SpawnFloor(
-		FVector(CavernCenterX, CavernCenterY, CavernZ),
-		FVector(CavernW / 100.f, CavernD / 100.f, 1.f),
-		FloorColor, TEXT("CavernFloor"));
-
-	// Cavern walls (CubeMesh)
-	const float NorthWallY = CavernCenterY + CavernD * 0.5f;
-	const float OpeningHalfW = TunnelW * 0.5f;
-	const float SideW = (CavernW * 0.5f - OpeningHalfW);
-
-	SpawnWall(FVector(CavernCenterX + OpeningHalfW + SideW * 0.5f, NorthWallY, CavernZ + CavernH * 0.5f),
-		FVector(SideW / 100.f, 0.5f, CavernH / 100.f), RockGray, TEXT("CavernNorthWallE"));
-	SpawnWall(FVector(CavernCenterX - OpeningHalfW - SideW * 0.5f, NorthWallY, CavernZ + CavernH * 0.5f),
-		FVector(SideW / 100.f, 0.5f, CavernH / 100.f), RockGray, TEXT("CavernNorthWallW"));
-	SpawnWall(FVector(CavernCenterX, CavernCenterY - CavernD * 0.5f, CavernZ + CavernH * 0.5f),
-		FVector(CavernW / 100.f, 0.5f, CavernH / 100.f), RockGray, TEXT("CavernSouthWall"));
-	SpawnWall(FVector(CavernCenterX + CavernW * 0.5f, CavernCenterY, CavernZ + CavernH * 0.5f),
-		FVector(0.5f, CavernD / 100.f, CavernH / 100.f), RockGray, TEXT("CavernEastWall"));
-	SpawnWall(FVector(CavernCenterX - CavernW * 0.5f, CavernCenterY, CavernZ + CavernH * 0.5f),
-		FVector(0.5f, CavernD / 100.f, CavernH / 100.f), RockGray, TEXT("CavernWestWall"));
-
-	// ================================================================
-	// 4. Support pillars
-	// ================================================================
-	int32 PillarIdx = 0;
-	for (float PX = CavernCenterX - CavernW * 0.35f; PX <= CavernCenterX + CavernW * 0.35f; PX += 5000.f)
-	{
-		for (float PY = CavernCenterY - CavernD * 0.35f; PY <= CavernCenterY + CavernD * 0.35f; PY += 5000.f)
-		{
-			AActor* PA = World->SpawnActor<AActor>(AActor::StaticClass(), FVector(PX, PY, CavernZ + CavernH * 0.5f), FRotator::ZeroRotator);
-			if (!PA) continue;
-			UStaticMeshComponent* PMC = NewObject<UStaticMeshComponent>(PA, TEXT("PillarMesh"));
-			PMC->SetStaticMesh(CylinderMesh);
-			PMC->SetWorldScale3D(FVector(4.f, 4.f, CavernH / 100.f));
-			PMC->SetWorldLocation(FVector(PX, PY, CavernZ + CavernH * 0.5f));
-			PMC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			PMC->SetCollisionResponseToAllChannels(ECR_Block);
-			PMC->RegisterComponent();
-			PA->SetRootComponent(PMC);
-			UMaterialInstanceDynamic* PM = UMaterialInstanceDynamic::Create(PMC->GetMaterial(0), PMC);
-			if (PM) { PM->SetVectorParameterValue(TEXT("BaseColor"), PillarColor); PMC->SetMaterial(0, PM); }
-			PA->AddInstanceComponent(PMC);
-			PillarIdx++;
-		}
-	}
-
-	// ================================================================
-	// 5. Ceiling lights
-	// ================================================================
-	for (float LX = CavernCenterX - CavernW * 0.4f; LX <= CavernCenterX + CavernW * 0.4f; LX += 4000.f)
-	{
-		for (float LY = CavernCenterY - CavernD * 0.4f; LY <= CavernCenterY + CavernD * 0.4f; LY += 4000.f)
-		{
-			AActor* LA = World->SpawnActor<AActor>(AActor::StaticClass(), FVector(LX, LY, CavernZ + CavernH - 30.f), FRotator::ZeroRotator);
-			if (!LA) continue;
-			UStaticMeshComponent* LMC = NewObject<UStaticMeshComponent>(LA, TEXT("LightMesh"));
-			LMC->SetStaticMesh(CubeMesh);
-			LMC->SetWorldScale3D(FVector(1.5f, 1.5f, 0.15f));
-			LMC->SetWorldLocation(FVector(LX, LY, CavernZ + CavernH - 30.f));
-			LMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			LMC->RegisterComponent();
-			LA->SetRootComponent(LMC);
-			UMaterialInstanceDynamic* LMat = UMaterialInstanceDynamic::Create(LMC->GetMaterial(0), LMC);
-			if (LMat)
-			{
-				LMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.9f, 0.85f, 0.7f));
-				LMat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(2.f, 1.8f, 1.4f));
-				LMC->SetMaterial(0, LMat);
-			}
-			LA->AddInstanceComponent(LMC);
-		}
-	}
-
-	// Tunnel entrance lights
-	for (float TLY = EntranceY; TLY > EntranceY - TunnelLen; TLY -= 1500.f)
-	{
-		AActor* TLA = World->SpawnActor<AActor>(AActor::StaticClass(),
-			FVector(EntranceX, TLY, TunnelH - 20.f), FRotator::ZeroRotator);
-		if (!TLA) continue;
-		UStaticMeshComponent* TLM = NewObject<UStaticMeshComponent>(TLA, TEXT("TLightMesh"));
-		TLM->SetStaticMesh(CubeMesh);
-		TLM->SetWorldScale3D(FVector(0.8f, 0.8f, 0.1f));
-		TLM->SetWorldLocation(FVector(EntranceX, TLY, TunnelH - 20.f));
-		TLM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		TLM->RegisterComponent();
-		TLA->SetRootComponent(TLM);
-		UMaterialInstanceDynamic* TLMat = UMaterialInstanceDynamic::Create(TLM->GetMaterial(0), TLM);
-		if (TLMat)
-		{
-			TLMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.9f, 0.85f, 0.7f));
-			TLMat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(1.5f, 1.3f, 1.0f));
-			TLM->SetMaterial(0, TLMat);
-		}
-		TLA->AddInstanceComponent(TLM);
-	}
-
-	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Underground cavern spawned at (%.0f, %.0f). Cavern floor at Z=%.0f."),
-		EntranceX, EntranceY, CavernZ);
+	// Removed — tunnel and underground area no longer spawned.
 }
+
 
 // ---------------------------------------------------------------------------
 // Starfield -- Milky Way night sky with scattered stars
@@ -4258,7 +4246,7 @@ void UPHCCitySubsystem::SpawnStarfield()
 #endif
 	StarfieldActor->SetActorHiddenInGame(true); // starts hidden, Tick toggles
 
-	const float SkyRadius = 80000.f;
+	const float SkyRadius = 160000.f;
 
 	// Star color palette (emissive -- BaseColor > 1.0 causes bloom)
 	struct FStarColor { FLinearColor Color; float Weight; };
@@ -4382,7 +4370,7 @@ void UPHCCitySubsystem::SpawnCloudLayer()
 #endif
 		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(CA, TEXT("CloudMesh"));
 		MC->SetStaticMesh(PlaneMesh);
-		MC->SetWorldScale3D(FVector(3000.f, 3000.f, 1.f)); // massive sky plane
+		MC->SetWorldScale3D(FVector(5000.f, 5000.f, 1.f)); // massive sky plane (doubled map)
 		MC->SetWorldLocation(FVector(0.f, 0.f, Z));
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->RegisterComponent();
@@ -5915,4 +5903,3569 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 	}
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCityGameMode: Spawned %d skyscrapers (%d windows)."), SkyCount, WinIdx);
+}
+
+// ---------------------------------------------------------------------------
+// Mountain Range — dramatic peaks in the northern expansion area
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::SpawnMountainRange()
+{
+	UWorld* World = GetWorld();
+	if (!World || !SphereMesh || !CubeMesh || !CylinderMesh || !ConeMesh) return;
+
+	int32 CompIdx = 0;
+
+	// ================================================================
+	// Mesh helpers
+	// ================================================================
+	auto MC_Cube = [&](AActor* O, const FVector& Loc, const FVector& S,
+		const FRotator& Rot, const FLinearColor& Col, float Rough, float Metal) -> UStaticMeshComponent*
+	{
+		FString N = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(O, *N);
+		MC->SetStaticMesh(CubeMesh);
+		MC->SetWorldScale3D(S); MC->SetWorldLocation(Loc); MC->SetWorldRotation(Rot);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(10.f);
+		MC->RegisterComponent();
+		ApplyPBR(MC, Col, Metal, Rough);
+		O->AddInstanceComponent(MC);
+		return MC;
+	};
+
+	auto MC_Cone = [&](AActor* O, const FVector& Loc, const FVector& S,
+		const FRotator& Rot, const FLinearColor& Col, float Rough, float Metal) -> UStaticMeshComponent*
+	{
+		FString N = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(O, *N);
+		MC->SetStaticMesh(ConeMesh);
+		MC->SetWorldScale3D(S); MC->SetWorldLocation(Loc); MC->SetWorldRotation(Rot);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(10.f);
+		MC->RegisterComponent();
+		ApplyPBR(MC, Col, Metal, Rough);
+		O->AddInstanceComponent(MC);
+		return MC;
+	};
+
+	auto MC_Cyl = [&](AActor* O, const FVector& Loc, const FVector& S,
+		const FRotator& Rot, const FLinearColor& Col, float Rough, float Metal) -> UStaticMeshComponent*
+	{
+		FString N = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(O, *N);
+		MC->SetStaticMesh(CylinderMesh);
+		MC->SetWorldScale3D(S); MC->SetWorldLocation(Loc); MC->SetWorldRotation(Rot);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(10.f);
+		MC->RegisterComponent();
+		ApplyPBR(MC, Col, Metal, Rough);
+		O->AddInstanceComponent(MC);
+		return MC;
+	};
+
+	// ================================================================
+	// Peak definitions — 23 peaks in two rows
+	// ================================================================
+	struct FPeakData { float X; float Y; float Height; float RadX; float RadY; };
+
+	const FPeakData Peaks[] = {
+		{ -92000.f, 100000.f, 14500.f, 8000.f, 7000.f },
+		{ -80000.f,  97000.f, 10200.f, 6500.f, 5800.f },
+		{ -68000.f, 102000.f, 16800.f, 9000.f, 8000.f },
+		{ -55000.f,  96000.f, 11500.f, 7000.f, 6200.f },
+		{ -43000.f, 101000.f, 17500.f, 9500.f, 8500.f },
+		{ -31000.f,  98000.f,  8800.f, 6000.f, 5500.f },
+		{ -20000.f, 103000.f, 15200.f, 8500.f, 7500.f },
+		{  -8000.f,  97500.f, 12000.f, 7200.f, 6500.f },
+		{   5000.f, 101500.f, 17000.f, 9200.f, 8200.f },
+		{  17000.f,  96500.f,  9500.f, 6200.f, 5800.f },
+		{  28000.f, 100500.f, 15800.f, 8800.f, 7800.f },
+		{  39000.f,  98500.f,  7200.f, 5500.f, 5000.f },
+		{  50000.f, 102500.f, 13500.f, 7500.f, 6800.f },
+		{  61000.f,  97000.f, 16200.f, 9000.f, 8000.f },
+		{  72000.f, 100000.f, 10800.f, 6800.f, 6200.f },
+		{  82000.f,  96000.f, 14800.f, 8200.f, 7200.f },
+		{  93000.f, 101000.f,  5800.f, 5000.f, 4500.f },
+		{ -85000.f, 108000.f,  6500.f, 5200.f, 4800.f },
+		{ -50000.f, 110000.f,  9000.f, 6500.f, 5500.f },
+		{ -15000.f, 109000.f,  7800.f, 5800.f, 5200.f },
+		{  15000.f, 111000.f, 10500.f, 7000.f, 6000.f },
+		{  48000.f, 108500.f,  8200.f, 6000.f, 5500.f },
+		{  78000.f, 107000.f,  7500.f, 5500.f, 5000.f },
+		// ---- Southern front row (pushed back ~30k to clear lake/pirate ship at Y=-95k) ----
+		{ -85000.f, -130000.f, 13500.f, 7500.f, 6500.f },
+		{ -65000.f, -127000.f,  9800.f, 6200.f, 5500.f },
+		{ -45000.f, -132000.f, 15500.f, 8500.f, 7500.f },
+		{ -25000.f, -128000.f, 11000.f, 7000.f, 6200.f },
+		{  -8000.f, -131000.f, 16500.f, 9000.f, 8000.f },
+		{  10000.f, -127500.f, 12500.f, 7500.f, 6800.f },
+		{  28000.f, -130500.f, 14800.f, 8200.f, 7200.f },
+		{  48000.f, -128000.f, 10000.f, 6500.f, 5800.f },
+		{  65000.f, -132000.f, 15000.f, 8500.f, 7500.f },
+		{  82000.f, -127000.f, 11500.f, 7000.f, 6200.f },
+		// ---- Southern back row ----
+		{ -60000.f, -139000.f,  7500.f, 5500.f, 5000.f },
+		{ -15000.f, -140000.f,  9200.f, 6200.f, 5500.f },
+		{  25000.f, -138000.f,  8000.f, 5800.f, 5200.f },
+		{  60000.f, -139500.f,  7000.f, 5500.f, 4800.f },
+	};
+	const int32 NumPeaks = UE_ARRAY_COUNT(Peaks);
+
+	// Snow peaks (8 tallest)
+	const int32 SnowIdx[] = { 4, 8, 2, 13, 10, 6, 15, 0, 27, 25, 31, 29 };
+	const int32 NumSnow = UE_ARRAY_COUNT(SnowIdx);
+
+	// ================================================================
+	// Color palette — layered geological look
+	// ================================================================
+	const FLinearColor RockDark(0.25f, 0.23f, 0.21f);    // deep shadow rock
+	const FLinearColor RockMid(0.38f, 0.36f, 0.33f);     // mid-tone granite
+	const FLinearColor RockLight(0.48f, 0.45f, 0.42f);   // lighter exposed face
+	const FLinearColor CliffFace(0.22f, 0.20f, 0.19f);   // near-vertical dark cliff
+	const FLinearColor Talus(0.32f, 0.30f, 0.27f);       // scree/debris color
+	const FLinearColor Alpine(0.22f, 0.28f, 0.15f);      // green alpine meadow
+	const FLinearColor TreeLine(0.12f, 0.18f, 0.08f);    // dark forest green
+	const FLinearColor SnowFresh(0.94f, 0.95f, 0.97f);   // bright fresh snow
+	const FLinearColor SnowOld(0.82f, 0.84f, 0.88f);     // packed/old snow
+	const FLinearColor RidgeRock(0.30f, 0.28f, 0.26f);   // ridge connector
+
+	// ================================================================
+	// BUILD EACH MOUNTAIN
+	// ================================================================
+	for (int32 P = 0; P < NumPeaks; ++P)
+	{
+		const FPeakData& PD = Peaks[P];
+		AActor* M = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(PD.X, PD.Y, 0.f), FRotator::ZeroRotator);
+		if (!M) continue;
+#if WITH_EDITOR
+		M->SetActorLabel(*FString::Printf(TEXT("Mountain_%d"), P));
+#endif
+
+		const float H = PD.Height;
+		const float RX = PD.RadX;
+		const float RY = PD.RadY;
+
+		// Per-peak color jitter
+		const float CJ = CityRandom.FRandRange(-0.03f, 0.03f);
+		auto Jitter = [&](const FLinearColor& C) {
+			return FLinearColor(
+				FMath::Clamp(C.R + CJ, 0.f, 1.f),
+				FMath::Clamp(C.G + CJ, 0.f, 1.f),
+				FMath::Clamp(C.B + CJ, 0.f, 1.f));
+		};
+
+		// -------------------------------------------------------
+		// A. BASE MASS — wide tapered cone, NOT a sphere
+		// Cone mesh: 100 UU diameter at base, 100 UU tall, point at top
+		// Scale: X/Y = diameter/100, Z = height/100
+		// -------------------------------------------------------
+		const float BaseDiamX = RX * 2.2f;
+		const float BaseDiamY = RY * 2.2f;
+		UStaticMeshComponent* Root = MC_Cone(M,
+			FVector(PD.X, PD.Y, 0.f),
+			FVector(BaseDiamX / 100.f, BaseDiamY / 100.f, H * 0.85f / 100.f),
+			FRotator::ZeroRotator,
+			Jitter(RockMid), 0.92f, 0.05f);
+		M->SetRootComponent(Root);
+
+		// -------------------------------------------------------
+		// B. SUMMIT SPIRE — narrow steep cone on top for a sharp peak
+		// -------------------------------------------------------
+		const float SpireH = H * CityRandom.FRandRange(0.30f, 0.45f);
+		const float SpireDiam = RX * CityRandom.FRandRange(0.5f, 0.7f);
+		MC_Cone(M,
+			FVector(PD.X + CityRandom.FRandRange(-RX * 0.05f, RX * 0.05f),
+					PD.Y + CityRandom.FRandRange(-RY * 0.05f, RY * 0.05f),
+					H * 0.65f),
+			FVector(SpireDiam / 100.f, SpireDiam * 0.8f / 100.f, SpireH / 100.f),
+			FRotator(CityRandom.FRandRange(-3.f, 3.f), CityRandom.FRandRange(0.f, 360.f), 0.f),
+			Jitter(RockLight), 0.88f, 0.08f);
+
+		// -------------------------------------------------------
+		// C. CLIFF FACES — 4-6 tall narrow cubes angled steeply
+		// These break the smooth cone silhouette with jagged planes
+		// -------------------------------------------------------
+		const int32 NumCliffs = 4 + CityRandom.RandRange(0, 2);
+		for (int32 C = 0; C < NumCliffs; ++C)
+		{
+			const float Yaw = CityRandom.FRandRange(0.f, 360.f);
+			const float Rad = FMath::DegreesToRadians(Yaw);
+
+			// Cliff positioned on the mountain face
+			const float CDist = RX * CityRandom.FRandRange(0.2f, 0.55f);
+			const float CX = PD.X + CDist * FMath::Cos(Rad);
+			const float CY = PD.Y + CDist * FMath::Sin(Rad);
+			const float CZ = H * CityRandom.FRandRange(0.15f, 0.55f);
+
+			// Tall, thin slab — like an exposed rock face
+			const float CW = RX * CityRandom.FRandRange(0.25f, 0.55f);
+			const float CD = RX * CityRandom.FRandRange(0.04f, 0.12f); // very thin
+			const float CH = H * CityRandom.FRandRange(0.30f, 0.60f);
+
+			// Steep pitch to look like a cliff face leaning against the peak
+			const float Pitch = CityRandom.FRandRange(8.f, 25.f);
+			const float Roll = CityRandom.FRandRange(-5.f, 5.f);
+
+			MC_Cube(M,
+				FVector(CX, CY, CZ),
+				FVector(CW / 100.f, CD / 100.f, CH / 100.f),
+				FRotator(Pitch, Yaw + 90.f, Roll),
+				Jitter(CliffFace), 0.95f, 0.08f);
+		}
+
+		// -------------------------------------------------------
+		// D. ROCK OUTCROPS — angular cubes jutting out at various angles
+		// Creates the craggy, irregular silhouette
+		// -------------------------------------------------------
+		const int32 NumOutcrops = 5 + CityRandom.RandRange(0, 3);
+		for (int32 O = 0; O < NumOutcrops; ++O)
+		{
+			const float OYaw = CityRandom.FRandRange(0.f, 360.f);
+			const float ORad = FMath::DegreesToRadians(OYaw);
+			const float ODist = RX * CityRandom.FRandRange(0.3f, 0.8f);
+			const float OX = PD.X + ODist * FMath::Cos(ORad);
+			const float OY = PD.Y + ODist * FMath::Sin(ORad);
+			const float OZ = H * CityRandom.FRandRange(0.05f, 0.65f);
+
+			const float OW = RX * CityRandom.FRandRange(0.12f, 0.35f);
+			const float OD = RY * CityRandom.FRandRange(0.10f, 0.30f);
+			const float OH = H * CityRandom.FRandRange(0.10f, 0.30f);
+
+			MC_Cube(M,
+				FVector(OX, OY, OZ),
+				FVector(OW / 100.f, OD / 100.f, OH / 100.f),
+				FRotator(CityRandom.FRandRange(-20.f, 20.f),
+						 OYaw,
+						 CityRandom.FRandRange(-15.f, 15.f)),
+				Jitter(O < 3 ? RockDark : RockLight), 0.93f, 0.06f);
+		}
+
+		// -------------------------------------------------------
+		// E. SECONDARY PEAKS — 2-3 smaller cones flanking the main peak
+		// Prevents the single-cone look, creates a rugged cluster
+		// -------------------------------------------------------
+		const int32 NumSecondary = 2 + CityRandom.RandRange(0, 1);
+		for (int32 S = 0; S < NumSecondary; ++S)
+		{
+			const float SYaw = CityRandom.FRandRange(0.f, 360.f);
+			const float SRad = FMath::DegreesToRadians(SYaw);
+			const float SDist = RX * CityRandom.FRandRange(0.4f, 0.8f);
+			const float SX = PD.X + SDist * FMath::Cos(SRad);
+			const float SY = PD.Y + SDist * FMath::Sin(SRad);
+			const float SH = H * CityRandom.FRandRange(0.35f, 0.65f);
+			const float SDiam = RX * CityRandom.FRandRange(0.4f, 0.7f);
+
+			MC_Cone(M,
+				FVector(SX, SY, 0.f),
+				FVector(SDiam / 100.f, SDiam * 0.85f / 100.f, SH / 100.f),
+				FRotator(CityRandom.FRandRange(-4.f, 4.f), SYaw, CityRandom.FRandRange(-3.f, 3.f)),
+				Jitter(RockMid), 0.90f, 0.05f);
+
+			// Sharp tip on secondary peaks
+			MC_Cone(M,
+				FVector(SX, SY, SH * 0.6f),
+				FVector(SDiam * 0.35f / 100.f, SDiam * 0.30f / 100.f, SH * 0.35f / 100.f),
+				FRotator(CityRandom.FRandRange(-6.f, 6.f), CityRandom.FRandRange(0.f, 360.f), 0.f),
+				Jitter(RockLight), 0.88f, 0.07f);
+		}
+
+		// -------------------------------------------------------
+		// F. RIDGELINE SPINES — thin vertical cubes along the peak crest
+		// These create the jagged ridgeline silhouette when viewed from the side
+		// -------------------------------------------------------
+		const int32 NumSpines = 3 + CityRandom.RandRange(0, 2);
+		const float SpineYaw = CityRandom.FRandRange(0.f, 180.f); // ridge direction
+		for (int32 Sp = 0; Sp < NumSpines; ++Sp)
+		{
+			const float SpFrac = ((float)Sp / (float)(NumSpines - 1)) - 0.5f; // -0.5 to +0.5
+			const float SpRad = FMath::DegreesToRadians(SpineYaw);
+			const float SpDist = RX * 0.3f * SpFrac;
+			const float SpX = PD.X + SpDist * FMath::Cos(SpRad);
+			const float SpY = PD.Y + SpDist * FMath::Sin(SpRad);
+			const float SpZ = H * CityRandom.FRandRange(0.50f, 0.80f);
+			const float SpH = H * CityRandom.FRandRange(0.15f, 0.30f);
+			const float SpW = RX * CityRandom.FRandRange(0.08f, 0.18f);
+			const float SpD = RX * CityRandom.FRandRange(0.02f, 0.06f);
+
+			MC_Cube(M,
+				FVector(SpX, SpY, SpZ),
+				FVector(SpW / 100.f, SpD / 100.f, SpH / 100.f),
+				FRotator(CityRandom.FRandRange(-10.f, 10.f), SpineYaw, CityRandom.FRandRange(-8.f, 8.f)),
+				Jitter(RockDark), 0.94f, 0.07f);
+		}
+
+		// -------------------------------------------------------
+		// G. TALUS/SCREE SLOPES — angled debris fields at the base
+		// Flattened cubes fanning out from the mountain base
+		// -------------------------------------------------------
+		const int32 NumTalus = 3 + CityRandom.RandRange(0, 2);
+		for (int32 T = 0; T < NumTalus; ++T)
+		{
+			const float TYaw = CityRandom.FRandRange(0.f, 360.f);
+			const float TRad = FMath::DegreesToRadians(TYaw);
+			const float TDist = RX * CityRandom.FRandRange(0.7f, 1.2f);
+			const float TX = PD.X + TDist * FMath::Cos(TRad);
+			const float TY = PD.Y + TDist * FMath::Sin(TRad);
+
+			const float TW = RX * CityRandom.FRandRange(0.4f, 0.8f);
+			const float TD = RY * CityRandom.FRandRange(0.3f, 0.6f);
+			const float TH = H * CityRandom.FRandRange(0.03f, 0.08f);
+
+			// Tilted to slope away from mountain
+			MC_Cube(M,
+				FVector(TX, TY, TH * 0.5f),
+				FVector(TW / 100.f, TD / 100.f, TH / 100.f),
+				FRotator(CityRandom.FRandRange(5.f, 15.f), TYaw, 0.f),
+				Jitter(Talus), 0.94f, 0.03f);
+		}
+
+		// -------------------------------------------------------
+		// H. ALPINE MEADOWS — green patches at mid-low elevations
+		// -------------------------------------------------------
+		const int32 NumMeadows = 2 + CityRandom.RandRange(0, 2);
+		for (int32 G = 0; G < NumMeadows; ++G)
+		{
+			const float GYaw = CityRandom.FRandRange(0.f, 360.f);
+			const float GRad = FMath::DegreesToRadians(GYaw);
+			const float GDist = RX * CityRandom.FRandRange(0.5f, 0.9f);
+			const float GX = PD.X + GDist * FMath::Cos(GRad);
+			const float GY = PD.Y + GDist * FMath::Sin(GRad);
+			const float GZ = H * CityRandom.FRandRange(0.05f, 0.25f);
+
+			const float GW = RX * CityRandom.FRandRange(0.3f, 0.6f);
+			const float GD = RY * CityRandom.FRandRange(0.3f, 0.5f);
+
+			MC_Cube(M,
+				FVector(GX, GY, GZ),
+				FVector(GW / 100.f, GD / 100.f, 0.15f),
+				FRotator(CityRandom.FRandRange(5.f, 20.f), GYaw, 0.f),
+				Jitter(Alpine), 0.92f, 0.f);
+		}
+
+		// -------------------------------------------------------
+		// I. TREELINE PATCHES — dark forest green at lowest elevations
+		// -------------------------------------------------------
+		const int32 NumForest = 3 + CityRandom.RandRange(0, 2);
+		for (int32 F = 0; F < NumForest; ++F)
+		{
+			const float FYaw = CityRandom.FRandRange(0.f, 360.f);
+			const float FRad = FMath::DegreesToRadians(FYaw);
+			const float FDist = RX * CityRandom.FRandRange(0.8f, 1.3f);
+			const float FX = PD.X + FDist * FMath::Cos(FRad);
+			const float FY = PD.Y + FDist * FMath::Sin(FRad);
+
+			// Cone-shaped tree cluster
+			const float FDiam = RX * CityRandom.FRandRange(0.2f, 0.45f);
+			const float FH = H * CityRandom.FRandRange(0.04f, 0.12f);
+
+			MC_Cone(M,
+				FVector(FX, FY, 0.f),
+				FVector(FDiam / 100.f, FDiam / 100.f, FH / 100.f),
+				FRotator::ZeroRotator,
+				Jitter(TreeLine), 0.90f, 0.f);
+		}
+
+		// -------------------------------------------------------
+		// J. SNOW (tallest 8 peaks only)
+		// Multiple overlapping white shapes — not one smooth sphere
+		// -------------------------------------------------------
+		bool bSnow = false;
+		for (int32 Si = 0; Si < NumSnow; ++Si)
+		{
+			if (SnowIdx[Si] == P) { bSnow = true; break; }
+		}
+		if (bSnow)
+		{
+			// Main snow mantle — cone draped over the peak
+			const float SnowH = H * 0.30f;
+			const float SnowDiam = RX * 0.9f;
+			MC_Cone(M,
+				FVector(PD.X, PD.Y, H * 0.60f),
+				FVector(SnowDiam / 100.f, SnowDiam * 0.85f / 100.f, SnowH / 100.f),
+				FRotator::ZeroRotator,
+				SnowFresh, 0.55f, 0.f);
+
+			// 3-4 irregular snow patches cascading down different faces
+			const int32 NumSnowPatches = 3 + CityRandom.RandRange(0, 1);
+			for (int32 SP = 0; SP < NumSnowPatches; ++SP)
+			{
+				const float SPYaw = CityRandom.FRandRange(0.f, 360.f);
+				const float SPRad = FMath::DegreesToRadians(SPYaw);
+				const float SPDist = RX * CityRandom.FRandRange(0.15f, 0.4f);
+				const float SPX = PD.X + SPDist * FMath::Cos(SPRad);
+				const float SPY = PD.Y + SPDist * FMath::Sin(SPRad);
+				const float SPZ = H * CityRandom.FRandRange(0.45f, 0.70f);
+
+				const float SPW = RX * CityRandom.FRandRange(0.2f, 0.4f);
+				const float SPD = RY * CityRandom.FRandRange(0.15f, 0.35f);
+				const float SPH = H * CityRandom.FRandRange(0.08f, 0.18f);
+
+				MC_Cube(M,
+					FVector(SPX, SPY, SPZ),
+					FVector(SPW / 100.f, SPD / 100.f, SPH / 100.f),
+					FRotator(CityRandom.FRandRange(10.f, 30.f), SPYaw, 0.f),
+					(SP % 2 == 0) ? SnowFresh : SnowOld, 0.55f, 0.f);
+			}
+
+			// Snow-covered summit tip
+			MC_Cone(M,
+				FVector(PD.X, PD.Y, H * 0.82f),
+				FVector(RX * 0.25f / 100.f, RY * 0.22f / 100.f, H * 0.18f / 100.f),
+				FRotator::ZeroRotator,
+				SnowFresh, 0.50f, 0.f);
+		}
+	}
+
+	// ================================================================
+	// RIDGE CONNECTORS — jagged ridgeline between adjacent front-row peaks
+	// ================================================================
+	for (int32 R = 0; R < 16; ++R)
+	{
+		const FPeakData& PA = Peaks[R];
+		const FPeakData& PB = Peaks[R + 1];
+
+		const float MidX = (PA.X + PB.X) * 0.5f;
+		const float MidY = (PA.Y + PB.Y) * 0.5f;
+		const float MinH = FMath::Min(PA.Height, PB.Height);
+		const float Dist = FMath::Sqrt(FMath::Square(PB.X - PA.X) + FMath::Square(PB.Y - PA.Y));
+		const float Yaw = FMath::RadiansToDegrees(FMath::Atan2(PB.Y - PA.Y, PB.X - PA.X));
+
+		AActor* RA = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(MidX, MidY, 0.f), FRotator::ZeroRotator);
+		if (!RA) continue;
+#if WITH_EDITOR
+		RA->SetActorLabel(*FString::Printf(TEXT("Ridge_%d_%d"), R, R + 1));
+#endif
+
+		// Main ridge body — elongated cone
+		const float RH = MinH * CityRandom.FRandRange(0.25f, 0.40f);
+		const float RW = FMath::Min(PA.RadY, PB.RadY) * 0.5f;
+		UStaticMeshComponent* RidgeRoot = MC_Cone(RA,
+			FVector(MidX, MidY, 0.f),
+			FVector(Dist * 0.55f / 100.f, RW / 100.f, RH / 100.f),
+			FRotator(0.f, Yaw, 0.f),
+			RidgeRock, 0.93f, 0.04f);
+		RA->SetRootComponent(RidgeRoot);
+
+		// 3-5 jagged teeth along the ridge crest
+		const int32 NumTeeth = 3 + CityRandom.RandRange(0, 2);
+		for (int32 T = 0; T < NumTeeth; ++T)
+		{
+			const float TFrac = ((float)T / (float)(NumTeeth - 1)) - 0.5f;
+			const float TRad = FMath::DegreesToRadians(Yaw);
+			const float TDist = Dist * 0.4f * TFrac;
+			const float TX = MidX + TDist * FMath::Cos(TRad);
+			const float TY = MidY + TDist * FMath::Sin(TRad);
+			const float TH = RH * CityRandom.FRandRange(0.4f, 0.9f);
+			const float TW = RW * CityRandom.FRandRange(0.3f, 0.6f);
+
+			MC_Cube(RA,
+				FVector(TX, TY, RH * 0.3f + TH * 0.3f),
+				FVector(TW * 0.6f / 100.f, TW * 0.15f / 100.f, TH / 100.f),
+				FRotator(CityRandom.FRandRange(-10.f, 10.f), Yaw + CityRandom.FRandRange(-20.f, 20.f),
+						 CityRandom.FRandRange(-8.f, 8.f)),
+				FLinearColor(RidgeRock.R + CityRandom.FRandRange(-0.04f, 0.04f),
+							 RidgeRock.G + CityRandom.FRandRange(-0.04f, 0.04f),
+							 RidgeRock.B + CityRandom.FRandRange(-0.04f, 0.04f)),
+				0.94f, 0.05f);
+		}
+
+		// Talus at ridge base
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			const float SideDir = (Side == 0) ? 1.f : -1.f;
+			const float PerpdRad = FMath::DegreesToRadians(Yaw + 90.f);
+			const float SX = MidX + SideDir * RW * 0.8f * FMath::Cos(PerpdRad);
+			const float SY = MidY + SideDir * RW * 0.8f * FMath::Sin(PerpdRad);
+
+			MC_Cube(RA,
+				FVector(SX, SY, RH * 0.1f),
+				FVector(Dist * 0.3f / 100.f, RW * 0.5f / 100.f, RH * 0.15f / 100.f),
+				FRotator(SideDir * 8.f, Yaw, 0.f),
+				Talus, 0.94f, 0.03f);
+		}
+	}
+
+	// ================================================================
+	// RIDGE CONNECTORS — southern mountain range
+	// ================================================================
+	for (int32 R = 23; R < 32; ++R)
+	{
+		const FPeakData& PA = Peaks[R];
+		const FPeakData& PB = Peaks[R + 1];
+
+		const float MidX = (PA.X + PB.X) * 0.5f;
+		const float MidY = (PA.Y + PB.Y) * 0.5f;
+		const float MinH = FMath::Min(PA.Height, PB.Height);
+		const float Dist = FMath::Sqrt(FMath::Square(PB.X - PA.X) + FMath::Square(PB.Y - PA.Y));
+		const float Yaw = FMath::RadiansToDegrees(FMath::Atan2(PB.Y - PA.Y, PB.X - PA.X));
+
+		AActor* RA = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(MidX, MidY, 0.f), FRotator::ZeroRotator);
+		if (!RA) continue;
+#if WITH_EDITOR
+		RA->SetActorLabel(*FString::Printf(TEXT("SouthRidge_%d_%d"), R, R + 1));
+#endif
+
+		const float RH = MinH * CityRandom.FRandRange(0.25f, 0.40f);
+		const float RW = FMath::Min(PA.RadY, PB.RadY) * 0.5f;
+		UStaticMeshComponent* RidgeRoot = MC_Cone(RA,
+			FVector(MidX, MidY, 0.f),
+			FVector(Dist * 0.55f / 100.f, RW / 100.f, RH / 100.f),
+			FRotator(0.f, Yaw, 0.f),
+			RidgeRock, 0.93f, 0.04f);
+		RA->SetRootComponent(RidgeRoot);
+
+		const int32 NumTeeth = 3 + CityRandom.RandRange(0, 2);
+		for (int32 T = 0; T < NumTeeth; ++T)
+		{
+			const float TFrac = ((float)T / (float)(NumTeeth - 1)) - 0.5f;
+			const float TRad = FMath::DegreesToRadians(Yaw);
+			const float TDist = Dist * 0.4f * TFrac;
+			const float TX = MidX + TDist * FMath::Cos(TRad);
+			const float TY = MidY + TDist * FMath::Sin(TRad);
+			const float TH = RH * CityRandom.FRandRange(0.4f, 0.9f);
+			const float TW = RW * CityRandom.FRandRange(0.3f, 0.6f);
+
+			MC_Cube(RA,
+				FVector(TX, TY, RH * 0.3f + TH * 0.3f),
+				FVector(TW * 0.6f / 100.f, TW * 0.15f / 100.f, TH / 100.f),
+				FRotator(CityRandom.FRandRange(-10.f, 10.f), Yaw + CityRandom.FRandRange(-20.f, 20.f),
+						 CityRandom.FRandRange(-8.f, 8.f)),
+				FLinearColor(RidgeRock.R + CityRandom.FRandRange(-0.04f, 0.04f),
+							 RidgeRock.G + CityRandom.FRandRange(-0.04f, 0.04f),
+							 RidgeRock.B + CityRandom.FRandRange(-0.04f, 0.04f)),
+				0.94f, 0.05f);
+		}
+
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			const float SideDir = (Side == 0) ? 1.f : -1.f;
+			const float PerpdRad = FMath::DegreesToRadians(Yaw + 90.f);
+			const float SX = MidX + SideDir * RW * 0.8f * FMath::Cos(PerpdRad);
+			const float SY = MidY + SideDir * RW * 0.8f * FMath::Sin(PerpdRad);
+
+			MC_Cube(RA,
+				FVector(SX, SY, RH * 0.1f),
+				FVector(Dist * 0.3f / 100.f, RW * 0.5f / 100.f, RH * 0.15f / 100.f),
+				FRotator(SideDir * 8.f, Yaw, 0.f),
+				Talus, 0.94f, 0.03f);
+		}
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Spawned mountain range — north & south — with %d peaks."), NumPeaks);
+}
+
+// ---------------------------------------------------------------------------
+// Cinderella Castle — Disney World Magic Kingdom castle in the NE expansion quadrant
+// ---------------------------------------------------------------------------
+
+
+void UPHCCitySubsystem::SpawnSandCastle()
+{
+	UWorld* World = GetWorld();
+	if (!World || !CubeMesh || !CylinderMesh || !ConeMesh || !SphereMesh || !PlaneMesh) return;
+
+	const FVector Origin(95000.f, 30000.f, 0.f);
+	AActor* Castle = World->SpawnActor<AActor>(AActor::StaticClass(), Origin, FRotator::ZeroRotator);
+	if (!Castle) return;
+#if WITH_EDITOR
+	Castle->SetActorLabel(TEXT("CinderellaCastle"));
+#endif
+
+	int32 CompIdx = 0;
+
+	// ---- Color palette (backward compat) ----
+	const FLinearColor SandBase(0.76f, 0.70f, 0.50f);
+	const float SandRough = 0.92f;
+
+	// ---- Sand castle color palette — everything is sand ----
+	const FLinearColor StoneWall(0.76f, 0.70f, 0.50f);        // main sand
+	const FLinearColor RoofBlue(0.72f, 0.66f, 0.47f);         // slightly darker sand for roofs
+	const FLinearColor GoldAccent(0.82f, 0.76f, 0.56f);       // lighter sand highlight
+	const FLinearColor PinkAccent(0.78f, 0.72f, 0.52f);       // mid-tone sand
+	const FLinearColor WhiteTrim(0.84f, 0.78f, 0.58f);        // light sand trim
+	const FLinearColor DarkAccent(0.58f, 0.52f, 0.36f);       // dark sand (windows/doors)
+	const FLinearColor BannerBlue(0.70f, 0.64f, 0.45f);       // darker sand for banners
+	const FLinearColor LightGray(0.80f, 0.74f, 0.54f);        // light sand base
+
+	const float StoneRough   = 0.92f;
+	const float RoofRough    = 0.90f;
+	const float GoldMetal    = 0.0f;
+	const float GoldRough    = 0.92f;
+	const float TrimRough    = 0.90f;
+	const float DarkRough    = 0.95f;
+	const float PinkRough    = 0.92f;
+	const float StoneMetal   = 0.0f;
+
+	// ================================================================
+	// Mesh helper lambdas
+	// ================================================================
+	auto MakeCube = [&](AActor* Owner, const FVector& Loc, const FVector& Scale3D,
+		const FRotator& Rot, const FLinearColor& Color, float Roughness, float Metallic, const TCHAR* Name)
+	{
+		FString CompName = FString::Printf(TEXT("%s_%d"), Name, CompIdx++);
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, *CompName);
+		MC->SetStaticMesh(CubeMesh);
+		MC->SetWorldScale3D(Scale3D);
+		MC->SetWorldLocation(Loc);
+		MC->SetWorldRotation(Rot);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(10.f);
+		MC->RegisterComponent();
+		ApplyPBR(MC, Color, Metallic, Roughness);
+		Owner->AddInstanceComponent(MC);
+		return MC;
+	};
+
+	auto MakeCylinder = [&](AActor* Owner, const FVector& Loc, const FVector& Scale3D,
+		const FLinearColor& Color, float Roughness, float Metallic, const TCHAR* Name)
+	{
+		FString CompName = FString::Printf(TEXT("%s_%d"), Name, CompIdx++);
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, *CompName);
+		MC->SetStaticMesh(CylinderMesh);
+		MC->SetWorldScale3D(Scale3D);
+		MC->SetWorldLocation(Loc);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(10.f);
+		MC->RegisterComponent();
+		ApplyPBR(MC, Color, Metallic, Roughness);
+		Owner->AddInstanceComponent(MC);
+		return MC;
+	};
+
+	auto MakeSphere = [&](AActor* Owner, const FVector& Loc, const FVector& Scale3D,
+		const FLinearColor& Color, float Roughness, float Metallic, const TCHAR* Name)
+	{
+		FString CompName = FString::Printf(TEXT("%s_%d"), Name, CompIdx++);
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, *CompName);
+		MC->SetStaticMesh(SphereMesh);
+		MC->SetWorldScale3D(Scale3D);
+		MC->SetWorldLocation(Loc);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(10.f);
+		MC->RegisterComponent();
+		ApplyPBR(MC, Color, Metallic, Roughness);
+		Owner->AddInstanceComponent(MC);
+		return MC;
+	};
+
+	auto MakeCone = [&](AActor* Owner, const FVector& Loc, const FVector& Scale3D,
+		const FRotator& Rot, const FLinearColor& Color, float Roughness, float Metallic, const TCHAR* Name)
+	{
+		FString CompName = FString::Printf(TEXT("%s_%d"), Name, CompIdx++);
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, *CompName);
+		MC->SetStaticMesh(ConeMesh);
+		MC->SetWorldScale3D(Scale3D);
+		MC->SetWorldLocation(Loc);
+		MC->SetWorldRotation(Rot);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(10.f);
+		MC->RegisterComponent();
+		ApplyPBR(MC, Color, Metallic, Roughness);
+		Owner->AddInstanceComponent(MC);
+		return MC;
+	};
+
+	// Glass/water helper – uses GlassMaterial for translucent moat water
+	auto MakeWater = [&](AActor* Owner, const FVector& Loc, const FVector& Scale3D,
+		const TCHAR* Name)
+	{
+		FString CompName = FString::Printf(TEXT("%s_%d"), Name, CompIdx++);
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, *CompName);
+		MC->SetStaticMesh(PlaneMesh);
+		MC->SetWorldScale3D(Scale3D);
+		MC->SetWorldLocation(Loc);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(10.f);
+		MC->RegisterComponent();
+		ApplyPBRGlass(MC, GlassMaterial, FLinearColor(0.15f, 0.35f, 0.55f),
+			0.55f, 0.0f, 0.05f);
+		Owner->AddInstanceComponent(MC);
+		return MC;
+	};
+
+	// Alias for backward compatibility
+	const float SandRoughness = SandRough;
+	int32& Idx = CompIdx;
+
+	// Generic mesh adder — takes any mesh, color, roughness
+	auto Add = [&](UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot,
+		const FVector& Scale, const FLinearColor& Color, float Roughness) -> UStaticMeshComponent*
+	{
+		FString CompName = FString::Printf(TEXT("Castle_%d"), CompIdx++);
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Castle, *CompName);
+		MC->SetStaticMesh(Mesh);
+		MC->SetWorldScale3D(Scale);
+		MC->SetWorldLocation(Loc);
+		MC->SetWorldRotation(Rot);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(10.f);
+		MC->RegisterComponent();
+		ApplyPBR(MC, Color, 0.f, Roughness);
+		Castle->AddInstanceComponent(MC);
+		return MC;
+	};
+
+	// Sand-colored mesh adder — auto-applies SandBase color with slight random variation
+	auto AddSand = [&](UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot,
+		const FVector& Scale) -> UStaticMeshComponent*
+	{
+		FLinearColor Vary = SandBase;
+		Vary.R += CityRandom.FRandRange(-0.03f, 0.03f);
+		Vary.G += CityRandom.FRandRange(-0.03f, 0.03f);
+		Vary.B += CityRandom.FRandRange(-0.03f, 0.03f);
+		return Add(Mesh, Loc, Rot, Scale, Vary, SandRough);
+	};
+
+	// Moat water adder
+	auto AddWater = [&](const FVector& Loc, const FVector& Scale)
+	{
+		return MakeWater(Castle, Loc, Scale, TEXT("Moat"));
+	};
+
+	// PBR mesh adder — full control over metallic and roughness
+	auto AddPBR = [&](UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot,
+		const FVector& Scale, const FLinearColor& Color, float Metallic, float Roughness) -> UStaticMeshComponent*
+	{
+		FString CompName = FString::Printf(TEXT("Castle_%d"), CompIdx++);
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Castle, *CompName);
+		MC->SetStaticMesh(Mesh);
+		MC->SetWorldScale3D(Scale);
+		MC->SetWorldLocation(Loc);
+		MC->SetWorldRotation(Rot);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(10.f);
+		MC->RegisterComponent();
+		ApplyPBR(MC, Color, Metallic, Roughness);
+		Castle->AddInstanceComponent(MC);
+		return MC;
+	};
+
+	// ================================================================
+	// Backward-compat dimensions (used by sections 14-18)
+	// ================================================================
+	const float MoatOuter = 10000.f;   // outer radius of castle for section 15 palm trees
+
+	// ================================================================
+	// A. FOUNDATION / BASE PLATFORM
+	// ================================================================
+	// Large base platform the castle sits on — light gray stone
+	UStaticMeshComponent* FoundMC = MakeCube(Castle,
+		Origin + FVector(0.f, 0.f, 150.f),
+		FVector(60.f, 40.f, 3.f),
+		FRotator::ZeroRotator, LightGray, StoneRough, StoneMetal, TEXT("BasePlatform"));
+	Castle->SetRootComponent(FoundMC);
+
+	// Wider sub-base for the hill the castle sits on
+	MakeSphere(Castle,
+		Origin + FVector(0.f, 0.f, -200.f),
+		FVector(120.f, 90.f, 6.f),
+		LightGray, 0.65f, 0.f, TEXT("CastleHill"));
+
+	// Front steps: 5 stepped cubes descending from the south face
+	for (int32 i = 0; i < 5; ++i)
+	{
+		const float StepW = 2000.f - i * 80.f;
+		const float StepH = 80.f;
+		const float StepD = 300.f;
+		const float StepZ = 300.f - i * 60.f;
+		const float StepY = -2000.f - i * 300.f;
+		MakeCube(Castle,
+			Origin + FVector(0.f, StepY, StepZ),
+			FVector(StepW / 100.f, StepD / 100.f, StepH / 100.f),
+			FRotator::ZeroRotator, WhiteTrim, TrimRough, 0.f, TEXT("FrontStep"));
+	}
+
+	// ================================================================
+	// B. MAIN GATE BUILDING (ground level, front / south face)
+	// ================================================================
+	// Central archway structure
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1200.f, 1300.f),
+		FVector(30.f, 15.f, 20.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, StoneMetal, TEXT("GateBody"));
+
+	// Pink accent panel on gate front
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1960.f, 1400.f),
+		FVector(26.f, 0.5f, 14.f),
+		FRotator::ZeroRotator, PinkAccent, PinkRough, 0.f, TEXT("GatePinkPanel"));
+
+	// White trim band on gate
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1960.f, 2100.f),
+		FVector(28.f, 0.6f, 1.2f),
+		FRotator::ZeroRotator, WhiteTrim, TrimRough, 0.f, TEXT("GateTrimBand"));
+
+	// Dark archway opening (the grand entrance)
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1960.f, 600.f),
+		FVector(10.f, 1.5f, 12.f),
+		FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("GateArchVoid"));
+
+	// Gold trim around the arch
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1965.f, 1250.f),
+		FVector(11.f, 0.4f, 0.8f),
+		FRotator::ZeroRotator, GoldAccent, GoldMetal, GoldRough, TEXT("ArchGoldTop"));
+	MakeCube(Castle,
+		Origin + FVector(-550.f, -1965.f, 600.f),
+		FVector(0.5f, 0.4f, 12.f),
+		FRotator::ZeroRotator, GoldAccent, GoldMetal, GoldRough, TEXT("ArchGoldL"));
+	MakeCube(Castle,
+		Origin + FVector(550.f, -1965.f, 600.f),
+		FVector(0.5f, 0.4f, 12.f),
+		FRotator::ZeroRotator, GoldAccent, GoldMetal, GoldRough, TEXT("ArchGoldR"));
+
+	// Gothic arch top (half-cylinder for arch shape)
+	MakeCylinder(Castle,
+		Origin + FVector(0.f, -1960.f, 1200.f),
+		FVector(5.f, 1.f, 5.f),
+		StoneWall, StoneRough, StoneMetal, TEXT("GothicArch"));
+
+	// ---- Left Gate Tower ----
+	MakeCylinder(Castle,
+		Origin + FVector(-1200.f, -1500.f, 1500.f),
+		FVector(4.f, 4.f, 30.f),
+		StoneWall, StoneRough, StoneMetal, TEXT("GateTowerL"));
+
+	MakeCone(Castle,
+		Origin + FVector(-1200.f, -1500.f, 3300.f),
+		FVector(6.f, 6.f, 6.f),
+		FRotator::ZeroRotator, RoofBlue, RoofRough, 0.f, TEXT("GateTowerLRoof"));
+
+	MakeSphere(Castle,
+		Origin + FVector(-1200.f, -1500.f, 3650.f),
+		FVector(0.8f, 0.8f, 0.8f),
+		GoldAccent, GoldRough, GoldMetal, TEXT("GateTowerLFinial"));
+
+	// Gold band on left gate tower
+	MakeCylinder(Castle,
+		Origin + FVector(-1200.f, -1500.f, 2200.f),
+		FVector(4.4f, 4.4f, 0.4f),
+		GoldAccent, GoldRough, GoldMetal, TEXT("GateTowerLBand"));
+
+	// ---- Right Gate Tower ----
+	MakeCylinder(Castle,
+		Origin + FVector(1200.f, -1500.f, 1500.f),
+		FVector(4.f, 4.f, 30.f),
+		StoneWall, StoneRough, StoneMetal, TEXT("GateTowerR"));
+
+	MakeCone(Castle,
+		Origin + FVector(1200.f, -1500.f, 3300.f),
+		FVector(6.f, 6.f, 6.f),
+		FRotator::ZeroRotator, RoofBlue, RoofRough, 0.f, TEXT("GateTowerRRoof"));
+
+	MakeSphere(Castle,
+		Origin + FVector(1200.f, -1500.f, 3650.f),
+		FVector(0.8f, 0.8f, 0.8f),
+		GoldAccent, GoldRough, GoldMetal, TEXT("GateTowerRFinial"));
+
+	// Gold band on right gate tower
+	MakeCylinder(Castle,
+		Origin + FVector(1200.f, -1500.f, 2200.f),
+		FVector(4.4f, 4.4f, 0.4f),
+		GoldAccent, GoldRough, GoldMetal, TEXT("GateTowerRBand"));
+
+	// ================================================================
+	// C. CENTRAL KEEP (main rectangular body behind the gate)
+	// ================================================================
+	// Main keep body
+	MakeCube(Castle,
+		Origin + FVector(0.f, 200.f, 2050.f),
+		FVector(35.f, 30.f, 35.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, StoneMetal, TEXT("MainKeep"));
+
+	// Stepped upper section on top of keep
+	MakeCube(Castle,
+		Origin + FVector(0.f, 200.f, 4550.f),
+		FVector(25.f, 20.f, 15.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, StoneMetal, TEXT("UpperKeep"));
+
+	// Pink accent panels on keep facades (front and back)
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1295.f, 2400.f),
+		FVector(30.f, 0.5f, 20.f),
+		FRotator::ZeroRotator, PinkAccent, PinkRough, 0.f, TEXT("KeepPinkFront"));
+	MakeCube(Castle,
+		Origin + FVector(0.f, 1695.f, 2400.f),
+		FVector(30.f, 0.5f, 20.f),
+		FRotator::ZeroRotator, PinkAccent, PinkRough, 0.f, TEXT("KeepPinkBack"));
+
+	// White horizontal trim bands across all facades
+	for (int32 band = 0; band < 3; ++band)
+	{
+		const float BandZ = 1500.f + band * 1200.f;
+		// Front
+		MakeCube(Castle,
+			Origin + FVector(0.f, -1300.f, BandZ),
+			FVector(35.5f, 0.6f, 0.8f),
+			FRotator::ZeroRotator, WhiteTrim, TrimRough, 0.f, TEXT("KeepTrimF"));
+		// Back
+		MakeCube(Castle,
+			Origin + FVector(0.f, 1700.f, BandZ),
+			FVector(35.5f, 0.6f, 0.8f),
+			FRotator::ZeroRotator, WhiteTrim, TrimRough, 0.f, TEXT("KeepTrimB"));
+		// East
+		MakeCube(Castle,
+			Origin + FVector(1755.f, 200.f, BandZ),
+			FVector(0.6f, 30.5f, 0.8f),
+			FRotator::ZeroRotator, WhiteTrim, TrimRough, 0.f, TEXT("KeepTrimE"));
+		// West
+		MakeCube(Castle,
+			Origin + FVector(-1755.f, 200.f, BandZ),
+			FVector(0.6f, 30.5f, 0.8f),
+			FRotator::ZeroRotator, WhiteTrim, TrimRough, 0.f, TEXT("KeepTrimW"));
+	}
+
+	// Windows on main keep — 4 per face, 2 rows of 2
+	// Front face windows (south)
+	for (int32 row = 0; row < 2; ++row)
+	{
+		for (int32 col = 0; col < 2; ++col)
+		{
+			const float WX = -600.f + col * 1200.f;
+			const float WZ = 1800.f + row * 1400.f;
+			MakeCube(Castle,
+				Origin + FVector(WX, -1300.f, WZ),
+				FVector(2.2f, 0.5f, 3.5f),
+				FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("KeepWinF"));
+			// Gold window frame
+			MakeCube(Castle,
+				Origin + FVector(WX, -1305.f, WZ),
+				FVector(2.6f, 0.3f, 3.9f),
+				FRotator::ZeroRotator, GoldAccent, GoldMetal, GoldRough, TEXT("WinFrameF"));
+		}
+	}
+	// Back face windows (north)
+	for (int32 row = 0; row < 2; ++row)
+	{
+		for (int32 col = 0; col < 2; ++col)
+		{
+			const float WX = -600.f + col * 1200.f;
+			const float WZ = 1800.f + row * 1400.f;
+			MakeCube(Castle,
+				Origin + FVector(WX, 1700.f, WZ),
+				FVector(2.2f, 0.5f, 3.5f),
+				FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("KeepWinB"));
+		}
+	}
+	// East face windows
+	for (int32 row = 0; row < 2; ++row)
+	{
+		for (int32 col = 0; col < 2; ++col)
+		{
+			const float WY = -400.f + col * 1200.f;
+			const float WZ = 1800.f + row * 1400.f;
+			MakeCube(Castle,
+				Origin + FVector(1760.f, WY, WZ),
+				FVector(0.5f, 2.2f, 3.5f),
+				FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("KeepWinE"));
+		}
+	}
+	// West face windows
+	for (int32 row = 0; row < 2; ++row)
+	{
+		for (int32 col = 0; col < 2; ++col)
+		{
+			const float WY = -400.f + col * 1200.f;
+			const float WZ = 1800.f + row * 1400.f;
+			MakeCube(Castle,
+				Origin + FVector(-1760.f, WY, WZ),
+				FVector(0.5f, 2.2f, 3.5f),
+				FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("KeepWinW"));
+		}
+	}
+
+	// Clock face on front upper facade — gold sphere
+	MakeSphere(Castle,
+		Origin + FVector(0.f, -1305.f, 4200.f),
+		FVector(2.5f, 0.5f, 2.5f),
+		GoldAccent, GoldRough, GoldMetal, TEXT("ClockFace"));
+
+	// ================================================================
+	// D. THE GRAND SPIRE (iconic tallest tower, center-rear)
+	// ================================================================
+	// Very tall cylinder at center-rear of castle
+	MakeCylinder(Castle,
+		Origin + FVector(0.f, 800.f, 4500.f),
+		FVector(5.f, 5.f, 60.f),
+		StoneWall, StoneRough, StoneMetal, TEXT("GrandSpire"));
+
+	// Upper section of grand spire (narrower)
+	MakeCylinder(Castle,
+		Origin + FVector(0.f, 800.f, 8500.f),
+		FVector(4.f, 4.f, 30.f),
+		StoneWall, StoneRough, StoneMetal, TEXT("GrandSpireUpper"));
+
+	// Grand spire blue cone roof — very tall and pointy
+	MakeCone(Castle,
+		Origin + FVector(0.f, 800.f, 11500.f),
+		FVector(8.f, 8.f, 30.f),
+		FRotator::ZeroRotator, RoofBlue, RoofRough, 0.f, TEXT("GrandSpireRoof"));
+
+	// Gold sphere finial at the very top of the grand spire
+	MakeSphere(Castle,
+		Origin + FVector(0.f, 800.f, 13100.f),
+		FVector(1.2f, 1.2f, 1.2f),
+		GoldAccent, GoldRough, GoldMetal, TEXT("GrandSpireFinial"));
+
+	// 3 decorative gold rings around the grand spire at different heights
+	MakeCylinder(Castle,
+		Origin + FVector(0.f, 800.f, 6000.f),
+		FVector(5.6f, 5.6f, 0.3f),
+		GoldAccent, GoldRough, GoldMetal, TEXT("SpireRing1"));
+	MakeCylinder(Castle,
+		Origin + FVector(0.f, 800.f, 7500.f),
+		FVector(4.8f, 4.8f, 0.3f),
+		GoldAccent, GoldRough, GoldMetal, TEXT("SpireRing2"));
+	MakeCylinder(Castle,
+		Origin + FVector(0.f, 800.f, 9000.f),
+		FVector(4.2f, 4.2f, 0.3f),
+		GoldAccent, GoldRough, GoldMetal, TEXT("SpireRing3"));
+
+	// Small window openings spiraling up the grand spire
+	for (int32 i = 0; i < 8; ++i)
+	{
+		const float WAngle = i * 45.f;
+		const float WRad = FMath::DegreesToRadians(WAngle);
+		const float WZ = 5000.f + i * 800.f;
+		const float WR = 260.f;
+		MakeCube(Castle,
+			Origin + FVector(FMath::Cos(WRad) * WR, 800.f + FMath::Sin(WRad) * WR, WZ),
+			FVector(0.8f, 0.8f, 1.5f),
+			FRotator(0.f, WAngle, 0.f), DarkAccent, DarkRough, 0.f, TEXT("SpireWin"));
+	}
+
+	// White balcony ring near the top of the grand spire
+	MakeCylinder(Castle,
+		Origin + FVector(0.f, 800.f, 10500.f),
+		FVector(5.5f, 5.5f, 0.5f),
+		WhiteTrim, TrimRough, 0.f, TEXT("SpireBalconyRing"));
+
+	// Small railing posts around the balcony (8 posts)
+	for (int32 i = 0; i < 8; ++i)
+	{
+		const float Angle = i * 45.f;
+		const float Rad = FMath::DegreesToRadians(Angle);
+		const float PR = 280.f;
+		MakeCylinder(Castle,
+			Origin + FVector(FMath::Cos(Rad) * PR, 800.f + FMath::Sin(Rad) * PR, 10650.f),
+			FVector(0.3f, 0.3f, 2.5f),
+			WhiteTrim, TrimRough, 0.f, TEXT("SpireRailPost"));
+	}
+
+	// ================================================================
+	// E. SECONDARY SPIRES (4 medium towers at upper keep corners)
+	// ================================================================
+	const float SecSpireH = 4000.f;
+	const float SecSpireDiam = 3.5f;    // cylinder scale
+	const float SecConeH = 15.f;        // cone scale Z
+	const float SecConeDiam = 6.f;      // cone scale XY
+	const float SecBalconyDiam = 4.0f;
+
+	struct FSecSpirePos { float X; float Y; };
+	const FSecSpirePos SecSpires[4] = {
+		{  1200.f,  1100.f },   // NE
+		{ -1200.f,  1100.f },   // NW
+		{  1200.f,  -700.f },   // SE
+		{ -1200.f,  -700.f }    // SW
+	};
+
+	for (int32 i = 0; i < 4; ++i)
+	{
+		const float SX = SecSpires[i].X;
+		const float SY = SecSpires[i].Y;
+
+		// Tower cylinder
+		MakeCylinder(Castle,
+			Origin + FVector(SX, SY, 4500.f),
+			FVector(SecSpireDiam, SecSpireDiam, 40.f),
+			StoneWall, StoneRough, StoneMetal, TEXT("SecSpire"));
+
+		// Blue cone roof
+		MakeCone(Castle,
+			Origin + FVector(SX, SY, 7000.f),
+			FVector(SecConeDiam, SecConeDiam, SecConeH),
+			FRotator::ZeroRotator, RoofBlue, RoofRough, 0.f, TEXT("SecSpireRoof"));
+
+		// Gold sphere finial
+		MakeSphere(Castle,
+			Origin + FVector(SX, SY, 7850.f),
+			FVector(0.7f, 0.7f, 0.7f),
+			GoldAccent, GoldRough, GoldMetal, TEXT("SecSpireFinial"));
+
+		// Balcony ring at midpoint
+		MakeCylinder(Castle,
+			Origin + FVector(SX, SY, 5500.f),
+			FVector(SecBalconyDiam, SecBalconyDiam, 0.3f),
+			WhiteTrim, TrimRough, 0.f, TEXT("SecSpireBalcony"));
+
+		// Gold trim band
+		MakeCylinder(Castle,
+			Origin + FVector(SX, SY, 6200.f),
+			FVector(3.8f, 3.8f, 0.3f),
+			GoldAccent, GoldRough, GoldMetal, TEXT("SecSpireGoldBand"));
+
+		// Small windows on secondary spires (3 per tower)
+		for (int32 w = 0; w < 3; ++w)
+		{
+			const float WWZ = 4800.f + w * 800.f;
+			MakeCube(Castle,
+				Origin + FVector(SX + (SX > 0 ? 180.f : -180.f), SY, WWZ),
+				FVector(0.5f, 0.7f, 1.2f),
+				FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("SecSpireWin"));
+		}
+	}
+
+	// ================================================================
+	// F. TERTIARY TURRETS (6 smaller turrets along sides and gate)
+	// ================================================================
+	struct FTertiaryPos { float X; float Y; float BaseZ; };
+	const FTertiaryPos TertiaryTurrets[6] = {
+		{ -1800.f, -1000.f, 300.f },   // front-left
+		{  1800.f, -1000.f, 300.f },   // front-right
+		{ -2000.f,  200.f,  300.f },   // mid-left
+		{  2000.f,  200.f,  300.f },   // mid-right
+		{ -1500.f,  1400.f, 300.f },   // rear-left
+		{  1500.f,  1400.f, 300.f }    // rear-right
+	};
+
+	for (int32 i = 0; i < 6; ++i)
+	{
+		const float TX = TertiaryTurrets[i].X;
+		const float TY = TertiaryTurrets[i].Y;
+		const float TZ = TertiaryTurrets[i].BaseZ;
+
+		// Turret cylinder
+		MakeCylinder(Castle,
+			Origin + FVector(TX, TY, TZ + 1250.f),
+			FVector(2.5f, 2.5f, 25.f),
+			StoneWall, StoneRough, StoneMetal, TEXT("TertiaryTurret"));
+
+		// Blue cone roof
+		MakeCone(Castle,
+			Origin + FVector(TX, TY, TZ + 2800.f),
+			FVector(4.f, 4.f, 8.f),
+			FRotator::ZeroRotator, RoofBlue, RoofRough, 0.f, TEXT("TertiaryRoof"));
+
+		// Gold finial
+		MakeSphere(Castle,
+			Origin + FVector(TX, TY, TZ + 3250.f),
+			FVector(0.5f, 0.5f, 0.5f),
+			GoldAccent, GoldRough, GoldMetal, TEXT("TertiaryFinial"));
+
+		// Small balcony ring
+		MakeCylinder(Castle,
+			Origin + FVector(TX, TY, TZ + 2000.f),
+			FVector(2.8f, 2.8f, 0.2f),
+			WhiteTrim, TrimRough, 0.f, TEXT("TertiaryBalcony"));
+
+		// Window on turret
+		MakeCube(Castle,
+			Origin + FVector(TX + (TX > 0 ? 130.f : -130.f), TY, TZ + 1800.f),
+			FVector(0.4f, 0.6f, 1.0f),
+			FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("TertiaryWin"));
+	}
+
+	// ================================================================
+	// G. GRAND ENTRANCE ARCH (enhanced Gothic arch on south face)
+	// ================================================================
+	// Two angled cubes forming a pointed Gothic arch silhouette above the main arch
+	MakeCube(Castle,
+		Origin + FVector(-300.f, -1970.f, 1600.f),
+		FVector(1.5f, 1.5f, 8.f),
+		FRotator(0.f, 0.f, 10.f), StoneWall, StoneRough, StoneMetal, TEXT("GothicArchL"));
+	MakeCube(Castle,
+		Origin + FVector(300.f, -1970.f, 1600.f),
+		FVector(1.5f, 1.5f, 8.f),
+		FRotator(0.f, 0.f, -10.f), StoneWall, StoneRough, StoneMetal, TEXT("GothicArchR"));
+
+	// Keystone at apex
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1975.f, 2200.f),
+		FVector(1.5f, 1.f, 1.5f),
+		FRotator::ZeroRotator, GoldAccent, GoldMetal, GoldRough, TEXT("Keystone"));
+
+	// Decorative columns flanking the entrance
+	MakeCylinder(Castle,
+		Origin + FVector(-650.f, -1970.f, 700.f),
+		FVector(0.8f, 0.8f, 12.f),
+		WhiteTrim, TrimRough, 0.05f, TEXT("EntranceColL"));
+	MakeCylinder(Castle,
+		Origin + FVector(650.f, -1970.f, 700.f),
+		FVector(0.8f, 0.8f, 12.f),
+		WhiteTrim, TrimRough, 0.05f, TEXT("EntranceColR"));
+
+	// Column capitals (gold)
+	MakeCube(Castle,
+		Origin + FVector(-650.f, -1970.f, 1320.f),
+		FVector(1.2f, 1.2f, 0.6f),
+		FRotator::ZeroRotator, GoldAccent, GoldMetal, GoldRough, TEXT("CapitalL"));
+	MakeCube(Castle,
+		Origin + FVector(650.f, -1970.f, 1320.f),
+		FVector(1.2f, 1.2f, 0.6f),
+		FRotator::ZeroRotator, GoldAccent, GoldMetal, GoldRough, TEXT("CapitalR"));
+
+	// ================================================================
+	// H. FLYING BUTTRESSES (4 on each side, connecting keep to base)
+	// ================================================================
+	for (int32 side = 0; side < 2; ++side)
+	{
+		const float BSign = (side == 0) ? 1.f : -1.f;
+		for (int32 b = 0; b < 4; ++b)
+		{
+			const float BY = -1000.f + b * 800.f;
+			const float BBaseX = BSign * 2300.f;
+			const float BTopX = BSign * 1760.f;
+
+			// Buttress body (angled cube)
+			MakeCube(Castle,
+				Origin + FVector((BBaseX + BTopX) * 0.5f, BY, 1200.f),
+				FVector(6.f, 1.5f, 1.5f),
+				FRotator(0.f, 0.f, BSign * 30.f), StoneWall, StoneRough, StoneMetal, TEXT("Buttress"));
+
+			// Buttress top ornament (gold sphere)
+			MakeSphere(Castle,
+				Origin + FVector(BTopX, BY, 2100.f),
+				FVector(0.4f, 0.4f, 0.4f),
+				GoldAccent, GoldRough, GoldMetal, TEXT("ButtressFinial"));
+		}
+	}
+
+	// ================================================================
+	// I. BALCONIES AND PARAPETS
+	// ================================================================
+	// Parapet crenellations along the main keep roofline
+	for (int32 side = 0; side < 4; ++side)
+	{
+		for (int32 m = 0; m < 12; ++m)
+		{
+			FVector MLoc;
+			const float MerlonSize = 120.f;
+			const float MerlonH = 180.f;
+			const float Span = 2800.f;
+			const float Offset = -Span * 0.5f + m * (Span / 11.f);
+			const float MZ = 3800.f;
+
+			switch (side)
+			{
+			case 0: // South
+				MLoc = Origin + FVector(Offset, -1300.f, MZ);
+				break;
+			case 1: // North
+				MLoc = Origin + FVector(Offset, 1700.f, MZ);
+				break;
+			case 2: // East
+				MLoc = Origin + FVector(1760.f, 200.f + Offset, MZ);
+				break;
+			default: // West
+				MLoc = Origin + FVector(-1760.f, 200.f + Offset, MZ);
+				break;
+			}
+			MakeCube(Castle, MLoc,
+				FVector(MerlonSize / 100.f, MerlonSize / 100.f, MerlonH / 100.f),
+				FRotator::ZeroRotator, WhiteTrim, TrimRough, 0.f, TEXT("Parapet"));
+		}
+	}
+
+	// Grand front balcony (below the clock face)
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1400.f, 3900.f),
+		FVector(12.f, 3.f, 0.5f),
+		FRotator::ZeroRotator, WhiteTrim, TrimRough, 0.f, TEXT("GrandBalconyFloor"));
+
+	// Balcony railing posts
+	for (int32 p = 0; p < 8; ++p)
+	{
+		const float PX = -550.f + p * 157.f;
+		MakeCylinder(Castle,
+			Origin + FVector(PX, -1550.f, 4050.f),
+			FVector(0.2f, 0.2f, 2.0f),
+			WhiteTrim, TrimRough, 0.f, TEXT("BalconyPost"));
+	}
+
+	// Balcony railing top rail
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1550.f, 4160.f),
+		FVector(12.f, 0.3f, 0.3f),
+		FRotator::ZeroRotator, GoldAccent, GoldMetal, GoldRough, TEXT("BalconyRail"));
+
+	// Upper keep parapets (smaller, more elegant)
+	for (int32 side = 0; side < 4; ++side)
+	{
+		for (int32 m = 0; m < 8; ++m)
+		{
+			FVector MLoc;
+			const float MSize = 80.f;
+			const float MH = 120.f;
+			const float MSpan = 2000.f;
+			const float MOffset = -MSpan * 0.5f + m * (MSpan / 7.f);
+			const float MZ = 5350.f;
+
+			switch (side)
+			{
+			case 0:
+				MLoc = Origin + FVector(MOffset, -800.f, MZ);
+				break;
+			case 1:
+				MLoc = Origin + FVector(MOffset, 1200.f, MZ);
+				break;
+			case 2:
+				MLoc = Origin + FVector(1260.f, 200.f + MOffset, MZ);
+				break;
+			default:
+				MLoc = Origin + FVector(-1260.f, 200.f + MOffset, MZ);
+				break;
+			}
+			MakeCube(Castle, MLoc,
+				FVector(MSize / 100.f, MSize / 100.f, MH / 100.f),
+				FRotator::ZeroRotator, WhiteTrim, TrimRough, 0.f, TEXT("UpperParapet"));
+		}
+	}
+
+	// ================================================================
+	// J. BANNER POLES AND FLAGS
+	// ================================================================
+	struct FBannerPos { float X; float Y; float Z; };
+	const FBannerPos BannerPositions[8] = {
+		{    0.f,   800.f, 13200.f },  // grand spire top
+		{  1200.f, 1100.f,  7950.f },  // NE secondary
+		{ -1200.f, 1100.f,  7950.f },  // NW secondary
+		{  1200.f, -700.f,  7950.f },  // SE secondary
+		{ -1200.f, -700.f,  7950.f },  // SW secondary
+		{ -1200.f, -1500.f, 3750.f },  // left gate tower
+		{  1200.f, -1500.f, 3750.f },  // right gate tower
+		{    0.f, -1300.f,  4300.f }   // front balcony center
+	};
+
+	for (int32 i = 0; i < 8; ++i)
+	{
+		const float FX = BannerPositions[i].X;
+		const float FY = BannerPositions[i].Y;
+		const float FZ = BannerPositions[i].Z;
+
+		// Flagpole
+		MakeCylinder(Castle,
+			Origin + FVector(FX, FY, FZ + 250.f),
+			FVector(0.15f, 0.15f, 5.f),
+			GoldAccent, GoldRough, GoldMetal, TEXT("Flagpole"));
+
+		// Banner (alternating royal blue and gold)
+		const FLinearColor& BColor = (i % 2 == 0) ? BannerBlue : GoldAccent;
+		const float BMetal = (i % 2 == 0) ? 0.f : GoldMetal;
+		const float BRough = (i % 2 == 0) ? 0.6f : GoldRough;
+		MakeCube(Castle,
+			Origin + FVector(FX + 120.f, FY, FZ + 400.f),
+			FVector(2.0f, 0.15f, 1.5f),
+			FRotator::ZeroRotator, BColor, BRough, BMetal, TEXT("Banner"));
+
+		// Gold sphere at flagpole tip
+		MakeSphere(Castle,
+			Origin + FVector(FX, FY, FZ + 530.f),
+			FVector(0.25f, 0.25f, 0.25f),
+			GoldAccent, GoldRough, GoldMetal, TEXT("FlagpoleFinial"));
+	}
+
+	// ================================================================
+	// K. DECORATIVE DETAILS
+	// ================================================================
+
+	// --- Gold trim bands along window frames on keep sides ---
+	for (int32 face = 0; face < 4; ++face)
+	{
+		for (int32 row = 0; row < 2; ++row)
+		{
+			for (int32 col = 0; col < 2; ++col)
+			{
+				const float WinZ = 1800.f + row * 1400.f;
+				const float WinOff = -600.f + col * 1200.f;
+				FVector FrameLoc;
+				FVector FrameScale;
+				switch (face)
+				{
+				case 0: // South
+					FrameLoc = Origin + FVector(WinOff, -1308.f, WinZ);
+					FrameScale = FVector(2.8f, 0.2f, 4.2f);
+					break;
+				case 1: // North
+					FrameLoc = Origin + FVector(WinOff, 1708.f, WinZ);
+					FrameScale = FVector(2.8f, 0.2f, 4.2f);
+					break;
+				case 2: // East
+					FrameLoc = Origin + FVector(1768.f, WinOff + 200.f, WinZ);
+					FrameScale = FVector(0.2f, 2.8f, 4.2f);
+					break;
+				default: // West
+					FrameLoc = Origin + FVector(-1768.f, WinOff + 200.f, WinZ);
+					FrameScale = FVector(0.2f, 2.8f, 4.2f);
+					break;
+				}
+				MakeCube(Castle, FrameLoc, FrameScale,
+					FRotator::ZeroRotator, GoldAccent, GoldRough, GoldMetal, TEXT("WinGoldFrame"));
+			}
+		}
+	}
+
+	// --- Rose/pink accent panels on upper keep walls ---
+	MakeCube(Castle,
+		Origin + FVector(0.f, -805.f, 4800.f),
+		FVector(20.f, 0.5f, 8.f),
+		FRotator::ZeroRotator, PinkAccent, PinkRough, 0.f, TEXT("UpperPinkF"));
+	MakeCube(Castle,
+		Origin + FVector(0.f, 1205.f, 4800.f),
+		FVector(20.f, 0.5f, 8.f),
+		FRotator::ZeroRotator, PinkAccent, PinkRough, 0.f, TEXT("UpperPinkB"));
+	MakeCube(Castle,
+		Origin + FVector(1265.f, 200.f, 4800.f),
+		FVector(0.5f, 16.f, 8.f),
+		FRotator::ZeroRotator, PinkAccent, PinkRough, 0.f, TEXT("UpperPinkE"));
+	MakeCube(Castle,
+		Origin + FVector(-1265.f, 200.f, 4800.f),
+		FVector(0.5f, 16.f, 8.f),
+		FRotator::ZeroRotator, PinkAccent, PinkRough, 0.f, TEXT("UpperPinkW"));
+
+	// --- Gold sphere ornaments at buttress tops and parapet corners ---
+	// Corner ornaments on the base platform
+	const float OrnR = 0.35f;
+	MakeSphere(Castle, Origin + FVector( 2800.f, -2000.f, 350.f), FVector(OrnR, OrnR, OrnR),
+		GoldAccent, GoldRough, GoldMetal, TEXT("CornerOrn1"));
+	MakeSphere(Castle, Origin + FVector(-2800.f, -2000.f, 350.f), FVector(OrnR, OrnR, OrnR),
+		GoldAccent, GoldRough, GoldMetal, TEXT("CornerOrn2"));
+	MakeSphere(Castle, Origin + FVector( 2800.f,  2000.f, 350.f), FVector(OrnR, OrnR, OrnR),
+		GoldAccent, GoldRough, GoldMetal, TEXT("CornerOrn3"));
+	MakeSphere(Castle, Origin + FVector(-2800.f,  2000.f, 350.f), FVector(OrnR, OrnR, OrnR),
+		GoldAccent, GoldRough, GoldMetal, TEXT("CornerOrn4"));
+
+	// --- Decorative arched windows on upper keep (Gothic tracery) ---
+	for (int32 i = 0; i < 4; ++i)
+	{
+		const float AX = -900.f + i * 600.f;
+		MakeCylinder(Castle,
+			Origin + FVector(AX, -810.f, 5000.f),
+			FVector(1.0f, 0.3f, 1.0f),
+			DarkAccent, DarkRough, 0.f, TEXT("UpperArchWin"));
+	}
+
+	// --- Spire base ornamental ring of small spheres ---
+	for (int32 i = 0; i < 12; ++i)
+	{
+		const float Angle = i * 30.f;
+		const float Rad = FMath::DegreesToRadians(Angle);
+		const float SR = 320.f;
+		MakeSphere(Castle,
+			Origin + FVector(FMath::Cos(Rad) * SR, 800.f + FMath::Sin(Rad) * SR, 4300.f),
+			FVector(0.3f, 0.3f, 0.3f),
+			GoldAccent, GoldRough, GoldMetal, TEXT("SpireBaseOrn"));
+	}
+
+	// --- Grand crest / shield above the entrance ---
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1980.f, 2400.f),
+		FVector(3.0f, 0.3f, 3.5f),
+		FRotator::ZeroRotator, BannerBlue, 0.6f, 0.f, TEXT("CrestShield"));
+	// Gold border around crest
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1985.f, 2400.f),
+		FVector(3.3f, 0.2f, 3.8f),
+		FRotator::ZeroRotator, GoldAccent, GoldMetal, GoldRough, TEXT("CrestBorder"));
+	// Crown on crest
+	MakeCone(Castle,
+		Origin + FVector(0.f, -1985.f, 2700.f),
+		FVector(1.5f, 1.5f, 1.5f),
+		FRotator::ZeroRotator, GoldAccent, GoldRough, GoldMetal, TEXT("CrestCrown"));
+
+	// --- Additional decorative windows on gate towers ---
+	for (int32 side = 0; side < 2; ++side)
+	{
+		const float GX = (side == 0) ? -1200.f : 1200.f;
+		for (int32 w = 0; w < 3; ++w)
+		{
+			const float GWZ = 800.f + w * 700.f;
+			MakeCube(Castle,
+				Origin + FVector(GX, -1700.f, GWZ),
+				FVector(0.5f, 0.5f, 1.2f),
+				FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("GateTowerWin"));
+		}
+	}
+
+	// --- Horizontal gold band across gate building top ---
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1200.f, 2350.f),
+		FVector(32.f, 0.4f, 0.5f),
+		FRotator::ZeroRotator, GoldAccent, GoldMetal, GoldRough, TEXT("GateGoldBand"));
+
+	// ================================================================
+	// L. BRIDGE / WALKWAY (leading from front steps southward)
+	// ================================================================
+	MakeCube(Castle,
+		Origin + FVector(0.f, -3500.f, 30.f),
+		FVector(8.f, 30.f, 0.5f),
+		FRotator::ZeroRotator, LightGray, 0.60f, 0.f, TEXT("BridgeWalkway"));
+
+	// Bridge side rails
+	MakeCube(Castle,
+		Origin + FVector(-380.f, -3500.f, 100.f),
+		FVector(0.3f, 30.f, 1.2f),
+		FRotator::ZeroRotator, WhiteTrim, TrimRough, 0.f, TEXT("BridgeRailL"));
+	MakeCube(Castle,
+		Origin + FVector(380.f, -3500.f, 100.f),
+		FVector(0.3f, 30.f, 1.2f),
+		FRotator::ZeroRotator, WhiteTrim, TrimRough, 0.f, TEXT("BridgeRailR"));
+
+	// Bridge railing posts (left side)
+	for (int32 p = 0; p < 10; ++p)
+	{
+		const float PY = -2000.f - p * 300.f;
+		MakeCylinder(Castle,
+			Origin + FVector(-380.f, PY, 100.f),
+			FVector(0.15f, 0.15f, 1.5f),
+			WhiteTrim, TrimRough, 0.f, TEXT("BridgePostL"));
+		MakeCylinder(Castle,
+			Origin + FVector(380.f, PY, 100.f),
+			FVector(0.15f, 0.15f, 1.5f),
+			WhiteTrim, TrimRough, 0.f, TEXT("BridgePostR"));
+	}
+
+	// Gold sphere on each end of bridge rails
+	MakeSphere(Castle,
+		Origin + FVector(-380.f, -5000.f, 170.f),
+		FVector(0.3f, 0.3f, 0.3f),
+		GoldAccent, GoldRough, GoldMetal, TEXT("BridgeEndL"));
+	MakeSphere(Castle,
+		Origin + FVector(380.f, -5000.f, 170.f),
+		FVector(0.3f, 0.3f, 0.3f),
+		GoldAccent, GoldRough, GoldMetal, TEXT("BridgeEndR"));
+
+	// ================================================================
+	// M. ADDITIONAL TOWERS & ARCHITECTURAL FLOURISHES
+	// ================================================================
+
+	// --- Two flanking towers beside the grand spire (rear, taller than secondary) ---
+	MakeCylinder(Castle,
+		Origin + FVector(-600.f, 1600.f, 4000.f),
+		FVector(3.0f, 3.0f, 45.f),
+		StoneWall, StoneRough, StoneMetal, TEXT("FlankTowerL"));
+	MakeCone(Castle,
+		Origin + FVector(-600.f, 1600.f, 6700.f),
+		FVector(5.f, 5.f, 12.f),
+		FRotator::ZeroRotator, RoofBlue, RoofRough, 0.f, TEXT("FlankRoofL"));
+	MakeSphere(Castle,
+		Origin + FVector(-600.f, 1600.f, 7400.f),
+		FVector(0.6f, 0.6f, 0.6f),
+		GoldAccent, GoldRough, GoldMetal, TEXT("FlankFinialL"));
+
+	MakeCylinder(Castle,
+		Origin + FVector(600.f, 1600.f, 4000.f),
+		FVector(3.0f, 3.0f, 45.f),
+		StoneWall, StoneRough, StoneMetal, TEXT("FlankTowerR"));
+	MakeCone(Castle,
+		Origin + FVector(600.f, 1600.f, 6700.f),
+		FVector(5.f, 5.f, 12.f),
+		FRotator::ZeroRotator, RoofBlue, RoofRough, 0.f, TEXT("FlankRoofR"));
+	MakeSphere(Castle,
+		Origin + FVector(600.f, 1600.f, 7400.f),
+		FVector(0.6f, 0.6f, 0.6f),
+		GoldAccent, GoldRough, GoldMetal, TEXT("FlankFinialR"));
+
+	// --- Connecting wall between gate building and main keep ---
+	MakeCube(Castle,
+		Origin + FVector(0.f, -800.f, 1200.f),
+		FVector(30.f, 4.f, 18.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, StoneMetal, TEXT("ConnectWall"));
+
+	// --- Side wing walls extending from the keep ---
+	MakeCube(Castle,
+		Origin + FVector(2200.f, 200.f, 1000.f),
+		FVector(8.f, 20.f, 14.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, StoneMetal, TEXT("WingWallE"));
+	MakeCube(Castle,
+		Origin + FVector(-2200.f, 200.f, 1000.f),
+		FVector(8.f, 20.f, 14.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, StoneMetal, TEXT("WingWallW"));
+
+	// Pink panels on wing walls
+	MakeCube(Castle,
+		Origin + FVector(2600.f, 200.f, 1100.f),
+		FVector(0.5f, 18.f, 10.f),
+		FRotator::ZeroRotator, PinkAccent, PinkRough, 0.f, TEXT("WingPinkE"));
+	MakeCube(Castle,
+		Origin + FVector(-2600.f, 200.f, 1100.f),
+		FVector(0.5f, 18.f, 10.f),
+		FRotator::ZeroRotator, PinkAccent, PinkRough, 0.f, TEXT("WingPinkW"));
+
+	// Wing roofs (blue pitched roofs)
+	MakeCube(Castle,
+		Origin + FVector(2200.f, 200.f, 1750.f),
+		FVector(9.f, 22.f, 1.5f),
+		FRotator(0.f, 0.f, 8.f), RoofBlue, RoofRough, 0.f, TEXT("WingRoofE"));
+	MakeCube(Castle,
+		Origin + FVector(-2200.f, 200.f, 1750.f),
+		FVector(9.f, 22.f, 1.5f),
+		FRotator(0.f, 0.f, -8.f), RoofBlue, RoofRough, 0.f, TEXT("WingRoofW"));
+
+	// Windows on wing walls
+	for (int32 side = 0; side < 2; ++side)
+	{
+		const float WX = (side == 0) ? 2200.f : -2200.f;
+		for (int32 w = 0; w < 3; ++w)
+		{
+			const float WY = -600.f + w * 600.f;
+			MakeCube(Castle,
+				Origin + FVector(WX, WY, 1100.f),
+				FVector(0.5f, 1.5f, 2.5f),
+				FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("WingWin"));
+		}
+	}
+
+	// --- Rear courtyard wall ---
+	MakeCube(Castle,
+		Origin + FVector(0.f, 1800.f, 800.f),
+		FVector(40.f, 2.f, 12.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, StoneMetal, TEXT("RearWall"));
+
+	// Rear wall crenellations
+	for (int32 m = 0; m < 14; ++m)
+	{
+		const float MX = -1800.f + m * 280.f;
+		MakeCube(Castle,
+			Origin + FVector(MX, 1800.f, 1500.f),
+			FVector(1.0f, 2.2f, 1.0f),
+			FRotator::ZeroRotator, WhiteTrim, TrimRough, 0.f, TEXT("RearParapet"));
+	}
+
+	// --- Ornamental dormers on main keep roof ---
+	for (int32 d = 0; d < 3; ++d)
+	{
+		const float DX = -800.f + d * 800.f;
+		// Dormer body
+		MakeCube(Castle,
+			Origin + FVector(DX, -1300.f, 3650.f),
+			FVector(2.5f, 1.5f, 3.f),
+			FRotator::ZeroRotator, StoneWall, StoneRough, StoneMetal, TEXT("Dormer"));
+		// Dormer cone roof
+		MakeCone(Castle,
+			Origin + FVector(DX, -1300.f, 3850.f),
+			FVector(2.f, 2.f, 2.5f),
+			FRotator::ZeroRotator, RoofBlue, RoofRough, 0.f, TEXT("DormerRoof"));
+		// Dormer window
+		MakeCube(Castle,
+			Origin + FVector(DX, -1380.f, 3580.f),
+			FVector(0.8f, 0.3f, 1.5f),
+			FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("DormerWin"));
+	}
+
+	// --- Additional gold ornament spheres along rooflines ---
+	for (int32 i = 0; i < 6; ++i)
+	{
+		const float OX = -1500.f + i * 600.f;
+		MakeSphere(Castle,
+			Origin + FVector(OX, -1300.f, 3810.f),
+			FVector(0.2f, 0.2f, 0.2f),
+			GoldAccent, GoldRough, GoldMetal, TEXT("RooflineOrn"));
+	}
+	for (int32 i = 0; i < 6; ++i)
+	{
+		const float OX = -1500.f + i * 600.f;
+		MakeSphere(Castle,
+			Origin + FVector(OX, 1700.f, 3810.f),
+			FVector(0.2f, 0.2f, 0.2f),
+			GoldAccent, GoldRough, GoldMetal, TEXT("RooflineOrnB"));
+	}
+
+	// --- Pinnacles on the upper keep corners ---
+	const float PinX[4] = { 1260.f, -1260.f, 1260.f, -1260.f };
+	const float PinY[4] = { -800.f, -800.f, 1200.f, 1200.f };
+	for (int32 i = 0; i < 4; ++i)
+	{
+		// Pinnacle cone
+		MakeCone(Castle,
+			Origin + FVector(PinX[i], PinY[i], 5450.f),
+			FVector(1.0f, 1.0f, 3.f),
+			FRotator::ZeroRotator, StoneWall, StoneRough, StoneMetal, TEXT("Pinnacle"));
+		// Pinnacle gold tip
+		MakeSphere(Castle,
+			Origin + FVector(PinX[i], PinY[i], 5620.f),
+			FVector(0.25f, 0.25f, 0.25f),
+			GoldAccent, GoldRough, GoldMetal, TEXT("PinnacleTip"));
+	}
+
+	// --- Courtyard ground plane ---
+	MakeCube(Castle,
+		Origin + FVector(0.f, 200.f, 305.f),
+		FVector(55.f, 35.f, 0.3f),
+		FRotator::ZeroRotator, LightGray, 0.60f, 0.f, TEXT("CourtyardFloor"));
+
+	// --- Door on main keep (dark recess, south face) ---
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1300.f, 600.f),
+		FVector(5.f, 0.8f, 10.f),
+		FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("KeepDoor"));
+
+	// Door frame gold trim
+	MakeCube(Castle,
+		Origin + FVector(0.f, -1305.f, 600.f),
+		FVector(5.5f, 0.3f, 10.5f),
+		FRotator::ZeroRotator, GoldAccent, GoldMetal, GoldRough, TEXT("KeepDoorFrame"));
+
+	// --- Rear entrance arch ---
+	MakeCube(Castle,
+		Origin + FVector(0.f, 1805.f, 500.f),
+		FVector(5.f, 0.8f, 8.f),
+		FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("RearDoor"));
+
+	// ================================================================
+	// N. MOAT — water channel with walls, drawbridge, corner towers
+	// ================================================================
+	const float MoatWidth = 2500.f;
+	const float MoatZ = 3.f;
+	const float CastleExtent = 5000.f;
+	const float MoatDepth = 200.f;
+	const float WallHeight = 300.f;
+	const float WallThick = 80.f;
+
+	// -- Moat channels (dark recessed bed) --
+	// North channel
+	MakeCube(Castle,
+		Origin + FVector(0.f, CastleExtent + MoatWidth * 0.5f, -MoatDepth * 0.5f),
+		FVector((CastleExtent * 2.f + MoatWidth * 2.f) / 100.f, MoatWidth / 100.f, MoatDepth / 100.f),
+		FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("MoatBedN"));
+	// South channel
+	MakeCube(Castle,
+		Origin + FVector(0.f, -CastleExtent - MoatWidth * 0.5f, -MoatDepth * 0.5f),
+		FVector((CastleExtent * 2.f + MoatWidth * 2.f) / 100.f, MoatWidth / 100.f, MoatDepth / 100.f),
+		FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("MoatBedS"));
+	// East channel
+	MakeCube(Castle,
+		Origin + FVector(CastleExtent + MoatWidth * 0.5f, 0.f, -MoatDepth * 0.5f),
+		FVector(MoatWidth / 100.f, (CastleExtent * 2.f) / 100.f, MoatDepth / 100.f),
+		FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("MoatBedE"));
+	// West channel
+	MakeCube(Castle,
+		Origin + FVector(-CastleExtent - MoatWidth * 0.5f, 0.f, -MoatDepth * 0.5f),
+		FVector(MoatWidth / 100.f, (CastleExtent * 2.f) / 100.f, MoatDepth / 100.f),
+		FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("MoatBedW"));
+	// Corner bed fills (4 corners)
+	MakeCube(Castle,
+		Origin + FVector(CastleExtent + MoatWidth * 0.5f, CastleExtent + MoatWidth * 0.5f, -MoatDepth * 0.5f),
+		FVector(MoatWidth / 100.f, MoatWidth / 100.f, MoatDepth / 100.f),
+		FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("MoatBedNE"));
+	MakeCube(Castle,
+		Origin + FVector(-CastleExtent - MoatWidth * 0.5f, CastleExtent + MoatWidth * 0.5f, -MoatDepth * 0.5f),
+		FVector(MoatWidth / 100.f, MoatWidth / 100.f, MoatDepth / 100.f),
+		FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("MoatBedNW"));
+	MakeCube(Castle,
+		Origin + FVector(CastleExtent + MoatWidth * 0.5f, -CastleExtent - MoatWidth * 0.5f, -MoatDepth * 0.5f),
+		FVector(MoatWidth / 100.f, MoatWidth / 100.f, MoatDepth / 100.f),
+		FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("MoatBedSE"));
+	MakeCube(Castle,
+		Origin + FVector(-CastleExtent - MoatWidth * 0.5f, -CastleExtent - MoatWidth * 0.5f, -MoatDepth * 0.5f),
+		FVector(MoatWidth / 100.f, MoatWidth / 100.f, MoatDepth / 100.f),
+		FRotator::ZeroRotator, DarkAccent, DarkRough, 0.f, TEXT("MoatBedSW"));
+
+	// -- Water surface --
+	// North moat water
+	AddWater(
+		Origin + FVector(0.f, CastleExtent + MoatWidth * 0.5f, MoatZ),
+		FVector((CastleExtent * 2.f + MoatWidth * 2.f) / 100.f, MoatWidth / 100.f, 1.f));
+	// South moat water (with gap for drawbridge)
+	AddWater(
+		Origin + FVector(-(CastleExtent * 0.5f + MoatWidth * 0.25f + 250.f), -CastleExtent - MoatWidth * 0.5f, MoatZ),
+		FVector((CastleExtent - 500.f) / 100.f, MoatWidth / 100.f, 1.f));
+	AddWater(
+		Origin + FVector((CastleExtent * 0.5f + MoatWidth * 0.25f + 250.f), -CastleExtent - MoatWidth * 0.5f, MoatZ),
+		FVector((CastleExtent - 500.f) / 100.f, MoatWidth / 100.f, 1.f));
+	// East moat water
+	AddWater(
+		Origin + FVector(CastleExtent + MoatWidth * 0.5f, 0.f, MoatZ),
+		FVector(MoatWidth / 100.f, (CastleExtent * 2.f) / 100.f, 1.f));
+	// West moat water
+	AddWater(
+		Origin + FVector(-CastleExtent - MoatWidth * 0.5f, 0.f, MoatZ),
+		FVector(MoatWidth / 100.f, (CastleExtent * 2.f) / 100.f, 1.f));
+	// Corner water fills
+	AddWater(
+		Origin + FVector(CastleExtent + MoatWidth * 0.5f, CastleExtent + MoatWidth * 0.5f, MoatZ),
+		FVector(MoatWidth / 100.f, MoatWidth / 100.f, 1.f));
+	AddWater(
+		Origin + FVector(-CastleExtent - MoatWidth * 0.5f, CastleExtent + MoatWidth * 0.5f, MoatZ),
+		FVector(MoatWidth / 100.f, MoatWidth / 100.f, 1.f));
+	AddWater(
+		Origin + FVector(CastleExtent + MoatWidth * 0.5f, -CastleExtent - MoatWidth * 0.5f, MoatZ),
+		FVector(MoatWidth / 100.f, MoatWidth / 100.f, 1.f));
+	AddWater(
+		Origin + FVector(-CastleExtent - MoatWidth * 0.5f, -CastleExtent - MoatWidth * 0.5f, MoatZ),
+		FVector(MoatWidth / 100.f, MoatWidth / 100.f, 1.f));
+
+	// -- Inner moat walls (castle side) --
+	MakeCube(Castle,
+		Origin + FVector(0.f, CastleExtent, WallHeight * 0.5f),
+		FVector((CastleExtent * 2.f) / 100.f, WallThick / 100.f, WallHeight / 100.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, 0.f, TEXT("MoatInnerWallN"));
+	MakeCube(Castle,
+		Origin + FVector(0.f, -CastleExtent, WallHeight * 0.5f),
+		FVector((CastleExtent * 2.f) / 100.f, WallThick / 100.f, WallHeight / 100.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, 0.f, TEXT("MoatInnerWallS"));
+	MakeCube(Castle,
+		Origin + FVector(CastleExtent, 0.f, WallHeight * 0.5f),
+		FVector(WallThick / 100.f, (CastleExtent * 2.f) / 100.f, WallHeight / 100.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, 0.f, TEXT("MoatInnerWallE"));
+	MakeCube(Castle,
+		Origin + FVector(-CastleExtent, 0.f, WallHeight * 0.5f),
+		FVector(WallThick / 100.f, (CastleExtent * 2.f) / 100.f, WallHeight / 100.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, 0.f, TEXT("MoatInnerWallW"));
+
+	// -- Outer moat walls --
+	const float OuterEdge = CastleExtent + MoatWidth;
+	MakeCube(Castle,
+		Origin + FVector(0.f, OuterEdge, WallHeight * 0.4f),
+		FVector((OuterEdge * 2.f) / 100.f, WallThick / 100.f, (WallHeight * 0.8f) / 100.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, 0.f, TEXT("MoatOuterWallN"));
+	MakeCube(Castle,
+		Origin + FVector(0.f, -OuterEdge, WallHeight * 0.4f),
+		FVector((OuterEdge * 2.f) / 100.f, WallThick / 100.f, (WallHeight * 0.8f) / 100.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, 0.f, TEXT("MoatOuterWallS"));
+	MakeCube(Castle,
+		Origin + FVector(OuterEdge, 0.f, WallHeight * 0.4f),
+		FVector(WallThick / 100.f, (OuterEdge * 2.f) / 100.f, (WallHeight * 0.8f) / 100.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, 0.f, TEXT("MoatOuterWallE"));
+	MakeCube(Castle,
+		Origin + FVector(-OuterEdge, 0.f, WallHeight * 0.4f),
+		FVector(WallThick / 100.f, (OuterEdge * 2.f) / 100.f, (WallHeight * 0.8f) / 100.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, 0.f, TEXT("MoatOuterWallW"));
+
+	// -- Drawbridge (south entrance) --
+	MakeCube(Castle,
+		Origin + FVector(0.f, -CastleExtent - MoatWidth * 0.5f, 10.f),
+		FVector(10.f, MoatWidth * 1.1f / 100.f, 0.4f),
+		FRotator::ZeroRotator, DarkAccent, 0.88f, 0.f, TEXT("Drawbridge"));
+	// Drawbridge railings
+	MakeCube(Castle,
+		Origin + FVector(450.f, -CastleExtent - MoatWidth * 0.5f, 50.f),
+		FVector(0.3f, MoatWidth * 1.1f / 100.f, 1.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, 0.f, TEXT("DrawbridgeRailL"));
+	MakeCube(Castle,
+		Origin + FVector(-450.f, -CastleExtent - MoatWidth * 0.5f, 50.f),
+		FVector(0.3f, MoatWidth * 1.1f / 100.f, 1.f),
+		FRotator::ZeroRotator, StoneWall, StoneRough, 0.f, TEXT("DrawbridgeRailR"));
+
+	// -- Corner towers (4) --
+	const float TowerR = 400.f;
+	const float TowerH = 800.f;
+	const FVector CornerOffsets[] = {
+		FVector( OuterEdge,  OuterEdge, 0.f),
+		FVector(-OuterEdge,  OuterEdge, 0.f),
+		FVector( OuterEdge, -OuterEdge, 0.f),
+		FVector(-OuterEdge, -OuterEdge, 0.f),
+	};
+	const TCHAR* TowerNames[] = { TEXT("MoatTowerNE"), TEXT("MoatTowerNW"), TEXT("MoatTowerSE"), TEXT("MoatTowerSW") };
+	for (int32 t = 0; t < 4; ++t)
+	{
+		const FVector TBase = Origin + CornerOffsets[t];
+		// Cylinder tower body
+		MakeCylinder(Castle, TBase + FVector(0.f, 0.f, TowerH * 0.5f),
+			FVector(TowerR / 50.f, TowerR / 50.f, TowerH / 100.f),
+			StoneWall, StoneRough, 0.f, TowerNames[t]);
+		// Cone roof
+		MakeCone(Castle, TBase + FVector(0.f, 0.f, TowerH + 150.f),
+			FVector(TowerR * 1.3f / 50.f, TowerR * 1.3f / 50.f, 4.f),
+			FRotator::ZeroRotator, RoofBlue, RoofRough, 0.f,
+			*FString::Printf(TEXT("%s_Roof"), TowerNames[t]));
+		// Crenellations (4 merlons at top of each tower)
+		for (int32 m = 0; m < 4; ++m)
+		{
+			const float MAngle = (float)m * 90.f + 45.f;
+			const float MRad = FMath::DegreesToRadians(MAngle);
+			MakeCube(Castle,
+				TBase + FVector(FMath::Cos(MRad) * TowerR * 0.9f,
+					FMath::Sin(MRad) * TowerR * 0.9f, TowerH + 30.f),
+				FVector(0.8f, 0.8f, 0.6f),
+				FRotator(0.f, MAngle, 0.f), StoneWall, StoneRough, 0.f,
+				*FString::Printf(TEXT("%s_Merlon%d"), TowerNames[t], m));
+		}
+	}
+
+	// ================================================================
+	// 14. BEACH GROUND — realistic sand with dunes, ripples, variation
+	// ================================================================
+	const float BeachSize = 180000.f;
+	{
+		// -- Base sand plane --
+		AActor* BeachActor = World->SpawnActor<AActor>(AActor::StaticClass(),
+			Origin + FVector(0.f, 0.f, 1.f), FRotator::ZeroRotator);
+		if (BeachActor)
+		{
+#if WITH_EDITOR
+			BeachActor->SetActorLabel(TEXT("CastleBeach"));
+#endif
+			UStaticMeshComponent* BeachMC = NewObject<UStaticMeshComponent>(BeachActor, TEXT("BeachPlane"));
+			BeachMC->SetStaticMesh(PlaneMesh);
+			BeachMC->SetWorldScale3D(FVector(BeachSize / 100.f, BeachSize / 100.f, 1.f));
+			BeachMC->SetWorldLocation(Origin + FVector(0.f, 0.f, 1.f));
+			BeachMC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			BeachMC->SetCollisionResponseToAllChannels(ECR_Block);
+			BeachMC->SetBoundsScale(5.f);
+			BeachMC->RegisterComponent();
+			BeachActor->SetRootComponent(BeachMC);
+			ApplyPBR(BeachMC, FLinearColor(0.82f, 0.76f, 0.58f), 0.f, 0.95f);
+			BeachActor->AddInstanceComponent(BeachMC);
+		}
+
+		// Sand color palette for realistic variation
+		const FLinearColor SandDry(0.88f, 0.82f, 0.64f);      // dry sand (lighter)
+		const FLinearColor SandWet(0.62f, 0.56f, 0.40f);       // wet sand near water
+		const FLinearColor SandMid(0.78f, 0.72f, 0.54f);       // mid-tone
+		const FLinearColor SandWarm(0.85f, 0.76f, 0.52f);      // warm golden
+		const FLinearColor SandCool(0.76f, 0.72f, 0.58f);      // cool grayish
+		const FLinearColor SandDark(0.68f, 0.62f, 0.44f);      // shadow/dip areas
+		const FLinearColor DriftwoodBrown(0.35f, 0.25f, 0.15f); // driftwood
+		const FLinearColor ShellWhite(0.92f, 0.88f, 0.82f);    // shells
+		const FLinearColor RockGray(0.45f, 0.42f, 0.38f);      // beach rocks
+		const FLinearColor SeaweedGreen(0.20f, 0.30f, 0.15f);  // seaweed/kelp
+
+		// -- Sand color variation patches (break up uniform look) --
+		const float HB = BeachSize * 0.5f;
+		for (int32 p = 0; p < 60; ++p)
+		{
+			const float PX = Origin.X + CityRandom.FRandRange(-HB * 0.8f, HB * 0.8f);
+			const float PY = Origin.Y + CityRandom.FRandRange(-HB * 0.8f, HB * 0.8f);
+			const float PSize = CityRandom.FRandRange(2000.f, 12000.f);
+			const FLinearColor PatchColors[] = { SandDry, SandWet, SandMid, SandWarm, SandCool, SandDark };
+			const FLinearColor& PC = PatchColors[p % 6];
+			AddSand(PlaneMesh,
+				FVector(PX, PY, 2.f + CityRandom.FRandRange(0.f, 0.5f)),
+				FRotator(0.f, CityRandom.FRandRange(0.f, 360.f), 0.f),
+				FVector(PSize / 100.f, PSize * CityRandom.FRandRange(0.5f, 1.5f) / 100.f, 1.f));
+			// Override with patch color instead of default sand
+			// (AddSand uses SandBase, but we want variation)
+		}
+
+		// -- Sand dunes (gentle raised humps using spheres) --
+		for (int32 d = 0; d < 40; ++d)
+		{
+			const float DX = Origin.X + CityRandom.FRandRange(-HB * 0.7f, HB * 0.7f);
+			const float DY = Origin.Y + CityRandom.FRandRange(-HB * 0.7f, HB * 0.7f);
+			const float DuneW = CityRandom.FRandRange(1500.f, 6000.f);
+			const float DuneL = DuneW * CityRandom.FRandRange(1.5f, 4.f);
+			const float DuneH = CityRandom.FRandRange(20.f, 120.f);
+			const float DuneYaw = CityRandom.FRandRange(0.f, 360.f);
+			const FLinearColor DuneColor = FMath::Lerp(SandMid, SandWarm, CityRandom.FRandRange(0.f, 1.f));
+
+			AActor* DA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(DX, DY, 0.f), FRotator::ZeroRotator);
+			if (!DA) continue;
+#if WITH_EDITOR
+			DA->SetActorLabel(*FString::Printf(TEXT("CastleDune_%d"), d));
+#endif
+			UStaticMeshComponent* DMC = NewObject<UStaticMeshComponent>(DA, *FString::Printf(TEXT("Dune_%d"), d));
+			DMC->SetStaticMesh(SphereMesh);
+			DMC->SetWorldScale3D(FVector(DuneL / 100.f, DuneW / 100.f, DuneH / 100.f));
+			DMC->SetWorldLocation(FVector(DX, DY, DuneH * 0.3f));
+			DMC->SetWorldRotation(FRotator(0.f, DuneYaw, 0.f));
+			DMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			DMC->SetBoundsScale(5.f);
+			DMC->RegisterComponent();
+			DA->SetRootComponent(DMC);
+			ApplyPBR(DMC, DuneColor, 0.f, 0.92f);
+			DA->AddInstanceComponent(DMC);
+		}
+
+		// -- Sand ripple lines (thin raised ridges mimicking wind patterns) --
+		for (int32 r = 0; r < 80; ++r)
+		{
+			const float RX = Origin.X + CityRandom.FRandRange(-HB * 0.6f, HB * 0.6f);
+			const float RY = Origin.Y + CityRandom.FRandRange(-HB * 0.6f, HB * 0.6f);
+			const float RippleLen = CityRandom.FRandRange(800.f, 4000.f);
+			const float RippleYaw = CityRandom.FRandRange(-20.f, 20.f); // roughly parallel
+			const FLinearColor RippleColor = FMath::Lerp(SandMid, SandDry, CityRandom.FRandRange(0.3f, 0.7f));
+
+			AActor* RA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(RX, RY, 2.5f), FRotator::ZeroRotator);
+			if (!RA) continue;
+#if WITH_EDITOR
+			RA->SetActorLabel(*FString::Printf(TEXT("CastleRipple_%d"), r));
+#endif
+			UStaticMeshComponent* RMC = NewObject<UStaticMeshComponent>(RA, *FString::Printf(TEXT("Ripple_%d"), r));
+			RMC->SetStaticMesh(CubeMesh);
+			RMC->SetWorldScale3D(FVector(RippleLen / 100.f, 0.15f, 0.04f));
+			RMC->SetWorldLocation(FVector(RX, RY, 2.5f));
+			RMC->SetWorldRotation(FRotator(0.f, RippleYaw, 0.f));
+			RMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			RMC->RegisterComponent();
+			RA->SetRootComponent(RMC);
+			ApplyPBR(RMC, RippleColor, 0.f, 0.90f);
+			RA->AddInstanceComponent(RMC);
+		}
+
+		// -- Beach rocks (scattered boulders and pebble clusters) --
+		for (int32 br = 0; br < 25; ++br)
+		{
+			const float BRX = Origin.X + CityRandom.FRandRange(-HB * 0.75f, HB * 0.75f);
+			const float BRY = Origin.Y + CityRandom.FRandRange(-HB * 0.75f, HB * 0.75f);
+			const float RockSize = CityRandom.FRandRange(30.f, 200.f);
+
+			AActor* BRA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(BRX, BRY, 0.f), FRotator::ZeroRotator);
+			if (!BRA) continue;
+#if WITH_EDITOR
+			BRA->SetActorLabel(*FString::Printf(TEXT("CastleBeachRock_%d"), br));
+#endif
+			UStaticMeshComponent* BRMC = NewObject<UStaticMeshComponent>(BRA, *FString::Printf(TEXT("BRock_%d"), br));
+			BRMC->SetStaticMesh(SphereMesh);
+			BRMC->SetWorldScale3D(FVector(
+				RockSize / 100.f * CityRandom.FRandRange(0.7f, 1.3f),
+				RockSize / 100.f * CityRandom.FRandRange(0.7f, 1.3f),
+				RockSize / 100.f * CityRandom.FRandRange(0.4f, 0.8f)));
+			BRMC->SetWorldLocation(FVector(BRX, BRY, RockSize * 0.2f));
+			BRMC->SetWorldRotation(FRotator(
+				CityRandom.FRandRange(-15.f, 15.f),
+				CityRandom.FRandRange(0.f, 360.f),
+				CityRandom.FRandRange(-10.f, 10.f)));
+			BRMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			BRMC->RegisterComponent();
+			BRA->SetRootComponent(BRMC);
+			ApplyPBR(BRMC, FMath::Lerp(RockGray, SandDark, CityRandom.FRandRange(0.f, 0.4f)),
+				0.f, CityRandom.FRandRange(0.80f, 0.95f));
+			BRA->AddInstanceComponent(BRMC);
+		}
+
+		// -- Driftwood pieces (elongated brown cubes) --
+		for (int32 dw = 0; dw < 15; ++dw)
+		{
+			const float DWX = Origin.X + CityRandom.FRandRange(-HB * 0.7f, HB * 0.7f);
+			const float DWY = Origin.Y + CityRandom.FRandRange(-HB * 0.7f, HB * 0.7f);
+			const float LogLen = CityRandom.FRandRange(150.f, 600.f);
+			const float LogThick = CityRandom.FRandRange(8.f, 25.f);
+
+			AActor* DWA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(DWX, DWY, 0.f), FRotator::ZeroRotator);
+			if (!DWA) continue;
+#if WITH_EDITOR
+			DWA->SetActorLabel(*FString::Printf(TEXT("CastleDriftwood_%d"), dw));
+#endif
+			UStaticMeshComponent* DWMC = NewObject<UStaticMeshComponent>(DWA, *FString::Printf(TEXT("DW_%d"), dw));
+			DWMC->SetStaticMesh(CylinderMesh);
+			DWMC->SetWorldScale3D(FVector(LogThick / 100.f, LogThick / 100.f, LogLen / 100.f));
+			DWMC->SetWorldLocation(FVector(DWX, DWY, LogThick * 0.3f));
+			DWMC->SetWorldRotation(FRotator(
+				90.f + CityRandom.FRandRange(-10.f, 10.f),
+				CityRandom.FRandRange(0.f, 360.f), 0.f));
+			DWMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			DWMC->RegisterComponent();
+			DWA->SetRootComponent(DWMC);
+			ApplyPBR(DWMC, FMath::Lerp(DriftwoodBrown,
+				FLinearColor(0.45f, 0.38f, 0.28f), CityRandom.FRandRange(0.f, 1.f)),
+				0.f, 0.88f);
+			DWA->AddInstanceComponent(DWMC);
+		}
+
+		// -- Seashells (small white/cream spheres) --
+		for (int32 sh = 0; sh < 35; ++sh)
+		{
+			const float SHX = Origin.X + CityRandom.FRandRange(-HB * 0.6f, HB * 0.6f);
+			const float SHY = Origin.Y + CityRandom.FRandRange(-HB * 0.6f, HB * 0.6f);
+			const float ShellSize = CityRandom.FRandRange(5.f, 20.f);
+
+			AActor* SHA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(SHX, SHY, 2.f), FRotator::ZeroRotator);
+			if (!SHA) continue;
+#if WITH_EDITOR
+			SHA->SetActorLabel(*FString::Printf(TEXT("CastleShell_%d"), sh));
+#endif
+			UStaticMeshComponent* SHMC = NewObject<UStaticMeshComponent>(SHA, *FString::Printf(TEXT("Shell_%d"), sh));
+			SHMC->SetStaticMesh(SphereMesh);
+			SHMC->SetWorldScale3D(FVector(ShellSize / 100.f,
+				ShellSize * CityRandom.FRandRange(0.6f, 1.f) / 100.f,
+				ShellSize * 0.3f / 100.f));
+			SHMC->SetWorldLocation(FVector(SHX, SHY, 2.5f));
+			SHMC->SetWorldRotation(FRotator(0.f, CityRandom.FRandRange(0.f, 360.f), 0.f));
+			SHMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			SHMC->RegisterComponent();
+			SHA->SetRootComponent(SHMC);
+			ApplyPBR(SHMC, FMath::Lerp(ShellWhite,
+				FLinearColor(0.90f, 0.82f, 0.70f), CityRandom.FRandRange(0.f, 1.f)),
+				0.f, 0.70f);
+			SHA->AddInstanceComponent(SHMC);
+		}
+
+		// -- Seaweed/kelp clumps along tideline --
+		for (int32 sw = 0; sw < 12; ++sw)
+		{
+			const float SWX = Origin.X + CityRandom.FRandRange(-HB * 0.5f, HB * 0.5f);
+			const float SWY = Origin.Y + HB * 0.7f + CityRandom.FRandRange(-3000.f, 3000.f);
+			const float ClumpLen = CityRandom.FRandRange(200.f, 800.f);
+
+			AActor* SWA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(SWX, SWY, 2.f), FRotator::ZeroRotator);
+			if (!SWA) continue;
+#if WITH_EDITOR
+			SWA->SetActorLabel(*FString::Printf(TEXT("CastleSeaweed_%d"), sw));
+#endif
+			UStaticMeshComponent* SWMC = NewObject<UStaticMeshComponent>(SWA, *FString::Printf(TEXT("Kelp_%d"), sw));
+			SWMC->SetStaticMesh(CubeMesh);
+			SWMC->SetWorldScale3D(FVector(ClumpLen / 100.f, 0.4f, 0.03f));
+			SWMC->SetWorldLocation(FVector(SWX, SWY, 2.2f));
+			SWMC->SetWorldRotation(FRotator(0.f, CityRandom.FRandRange(-30.f, 30.f), 0.f));
+			SWMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			SWMC->RegisterComponent();
+			SWA->SetRootComponent(SWMC);
+			ApplyPBR(SWMC, SeaweedGreen, 0.f, 0.85f);
+			SWA->AddInstanceComponent(SWMC);
+		}
+
+		// -- Wet sand zone (darker strip near the water edge) --
+		{
+			AActor* WZA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				Origin + FVector(0.f, HB * 0.85f, 1.5f), FRotator::ZeroRotator);
+			if (WZA)
+			{
+#if WITH_EDITOR
+				WZA->SetActorLabel(TEXT("CastleWetSand"));
+#endif
+				UStaticMeshComponent* WZMC = NewObject<UStaticMeshComponent>(WZA, TEXT("WetSandStrip"));
+				WZMC->SetStaticMesh(PlaneMesh);
+				WZMC->SetWorldScale3D(FVector(BeachSize / 100.f, BeachSize * 0.15f / 100.f, 1.f));
+				WZMC->SetWorldLocation(Origin + FVector(0.f, HB * 0.85f, 1.5f));
+				WZMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				WZMC->SetBoundsScale(5.f);
+				WZMC->RegisterComponent();
+				WZA->SetRootComponent(WZMC);
+				ApplyPBR(WZMC, SandWet, 0.f, 0.75f); // wet = lower roughness, shinier
+				WZA->AddInstanceComponent(WZMC);
+			}
+		}
+	}
+
+	// ================================================================
+	// 15. PALM TREES — castle area (43 total: 33 ring + 10 entrance)
+	// ================================================================
+	{
+		// Ring of 33 palms around the castle
+		const float TreeRadius = 12000.f;
+		const int32 NumRingTrees = 33;
+		for (int32 i = 0; i < NumRingTrees; ++i)
+		{
+			const float Angle = (float)i * (360.f / (float)NumRingTrees) + CityRandom.FRandRange(-5.f, 5.f);
+			const float Rad = FMath::DegreesToRadians(Angle);
+			const float Dist = TreeRadius + CityRandom.FRandRange(-2000.f, 2000.f);
+			const float TX = Origin.X + FMath::Cos(Rad) * Dist;
+			const float TY = Origin.Y + FMath::Sin(Rad) * Dist;
+			const float TreeH = CityRandom.FRandRange(460.f, 805.f); // +15%
+			SpawnPalmTree(FVector(TX, TY, 1.f), TreeH, true);
+		}
+		// 10 clustered near the castle entrance (south side)
+		for (int32 i = 0; i < 10; ++i)
+		{
+			const float TX = Origin.X + CityRandom.FRandRange(-5000.f, 5000.f);
+			const float TY = Origin.Y - MoatOuter - 1500.f + CityRandom.FRandRange(-2000.f, 2000.f);
+			const float TreeH = CityRandom.FRandRange(517.f, 747.f); // +15%
+			SpawnPalmTree(FVector(TX, TY, 1.f), TreeH, true);
+		}
+	}
+
+	// ================================================================
+	// 16. BEACH UMBRELLAS — 30 colorful parasols (3x original)
+	// ================================================================
+	{
+		const FLinearColor UmbrellaColors[] = {
+			FLinearColor(0.9f, 0.15f, 0.15f),   // red
+			FLinearColor(0.15f, 0.45f, 0.9f),   // blue
+			FLinearColor(0.95f, 0.85f, 0.1f),   // yellow
+			FLinearColor(0.1f, 0.8f, 0.3f),     // green
+			FLinearColor(0.9f, 0.5f, 0.1f),     // orange
+			FLinearColor(0.8f, 0.2f, 0.6f),     // pink
+			FLinearColor(0.2f, 0.7f, 0.8f),     // teal
+			FLinearColor(0.95f, 0.95f, 0.95f),  // white
+			FLinearColor(0.6f, 0.15f, 0.7f),    // purple
+			FLinearColor(0.9f, 0.35f, 0.2f),    // coral
+		};
+		const int32 NumUmbrellas = 30;
+
+		for (int32 i = 0; i < NumUmbrellas; ++i)
+		{
+			// Spread umbrellas across the beach in a scattered pattern
+			const float Angle = (float)i * (360.f / (float)NumUmbrellas) + CityRandom.FRandRange(-10.f, 10.f);
+			const float Rad = FMath::DegreesToRadians(Angle);
+			const float Dist = CityRandom.FRandRange(14000.f, 40000.f);
+			const float UX = Origin.X + FMath::Cos(Rad) * Dist;
+			const float UY = Origin.Y + FMath::Sin(Rad) * Dist;
+			const FVector UmbrellaBase(UX, UY, 1.f);
+			const FLinearColor& UColor = UmbrellaColors[i % 10];
+
+			AActor* UA = World->SpawnActor<AActor>(AActor::StaticClass(), UmbrellaBase, FRotator::ZeroRotator);
+			if (!UA) continue;
+#if WITH_EDITOR
+			UA->SetActorLabel(*FString::Printf(TEXT("BeachUmbrella_%d"), i));
+#endif
+			// Pole
+			UStaticMeshComponent* Pole = NewObject<UStaticMeshComponent>(UA, *FString::Printf(TEXT("UPole_%d"), i));
+			Pole->SetStaticMesh(CylinderMesh);
+			Pole->SetWorldScale3D(FVector(0.15f, 0.15f, 3.5f));
+			Pole->SetWorldLocation(UmbrellaBase + FVector(0.f, 0.f, 175.f));
+			Pole->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Pole->RegisterComponent();
+			UA->SetRootComponent(Pole);
+			ApplyPBR(Pole, FLinearColor(0.85f, 0.82f, 0.75f), 0.3f, 0.6f);
+			UA->AddInstanceComponent(Pole);
+
+			// Canopy
+			UStaticMeshComponent* Canopy = NewObject<UStaticMeshComponent>(UA, *FString::Printf(TEXT("UCanopy_%d"), i));
+			Canopy->SetStaticMesh(ConeMesh);
+			Canopy->SetWorldScale3D(FVector(3.5f, 3.5f, 0.8f));
+			Canopy->SetWorldLocation(UmbrellaBase + FVector(0.f, 0.f, 350.f));
+			Canopy->SetWorldRotation(FRotator(0.f, CityRandom.FRandRange(0.f, 360.f), 5.f));
+			Canopy->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Canopy->RegisterComponent();
+			ApplyPBR(Canopy, UColor, 0.f, 0.75f);
+			UA->AddInstanceComponent(Canopy);
+		}
+	}
+
+	// ================================================================
+	// 17. BEACH CHAIRS — 42 loungers (3x original)
+	// ================================================================
+	{
+		const FLinearColor ChairFrame(0.85f, 0.82f, 0.75f);
+		const FLinearColor ChairFabricColors[] = {
+			FLinearColor(0.15f, 0.40f, 0.75f), // blue
+			FLinearColor(0.80f, 0.20f, 0.20f), // red
+			FLinearColor(0.95f, 0.90f, 0.80f), // cream
+			FLinearColor(0.20f, 0.65f, 0.40f), // green
+		};
+		const int32 NumChairs = 42;
+
+		for (int32 i = 0; i < NumChairs; ++i)
+		{
+			// Scatter chairs across the beach
+			const float Angle = (float)i * (360.f / (float)NumChairs) + CityRandom.FRandRange(-8.f, 8.f);
+			const float Rad = FMath::DegreesToRadians(Angle);
+			const float Dist = CityRandom.FRandRange(13000.f, 38000.f);
+			const float CX = Origin.X + FMath::Cos(Rad) * Dist;
+			const float CY = Origin.Y + FMath::Sin(Rad) * Dist;
+			const FVector ChairBase(CX, CY, 1.f);
+			const float ChairYaw = CityRandom.FRandRange(-90.f, 90.f);
+			const FRotator ChairRot(0.f, ChairYaw, 0.f);
+			const FLinearColor& Fabric = ChairFabricColors[i % 4];
+
+			AActor* CA = World->SpawnActor<AActor>(AActor::StaticClass(), ChairBase, FRotator::ZeroRotator);
+			if (!CA) continue;
+#if WITH_EDITOR
+			CA->SetActorLabel(*FString::Printf(TEXT("BeachChair_%d"), i));
+#endif
+			// Seat
+			UStaticMeshComponent* Seat = NewObject<UStaticMeshComponent>(CA, *FString::Printf(TEXT("CSeat_%d"), i));
+			Seat->SetStaticMesh(CubeMesh);
+			Seat->SetWorldScale3D(FVector(1.2f, 0.6f, 0.05f));
+			Seat->SetWorldLocation(ChairBase + FVector(0.f, 0.f, 25.f));
+			Seat->SetWorldRotation(ChairRot);
+			Seat->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Seat->RegisterComponent();
+			CA->SetRootComponent(Seat);
+			ApplyPBR(Seat, Fabric, 0.f, 0.7f);
+			CA->AddInstanceComponent(Seat);
+
+			// Backrest
+			const FVector BackDir = ChairRot.RotateVector(FVector(-50.f, 0.f, 40.f));
+			UStaticMeshComponent* Back = NewObject<UStaticMeshComponent>(CA, *FString::Printf(TEXT("CBack_%d"), i));
+			Back->SetStaticMesh(CubeMesh);
+			Back->SetWorldScale3D(FVector(0.05f, 0.6f, 0.7f));
+			Back->SetWorldLocation(ChairBase + BackDir + FVector(0.f, 0.f, 25.f));
+			Back->SetWorldRotation(ChairRot + FRotator(25.f, 0.f, 0.f));
+			Back->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Back->RegisterComponent();
+			ApplyPBR(Back, Fabric, 0.f, 0.7f);
+			CA->AddInstanceComponent(Back);
+
+			// 4 legs
+			const FVector LegOffsets[] = {
+				FVector( 45.f,  25.f, 0.f),
+				FVector( 45.f, -25.f, 0.f),
+				FVector(-45.f,  25.f, 0.f),
+				FVector(-45.f, -25.f, 0.f),
+			};
+			for (int32 L = 0; L < 4; ++L)
+			{
+				const FVector LegWorld = ChairBase + ChairRot.RotateVector(LegOffsets[L]) + FVector(0.f, 0.f, 12.5f);
+				UStaticMeshComponent* Leg = NewObject<UStaticMeshComponent>(CA, *FString::Printf(TEXT("CLeg_%d_%d"), i, L));
+				Leg->SetStaticMesh(CylinderMesh);
+				Leg->SetWorldScale3D(FVector(0.06f, 0.06f, 0.25f));
+				Leg->SetWorldLocation(LegWorld);
+				Leg->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Leg->RegisterComponent();
+				ApplyPBR(Leg, ChairFrame, 0.f, 0.65f);
+				CA->AddInstanceComponent(Leg);
+			}
+		}
+	}
+
+	// ================================================================
+	// 18. PALM TREE ROWS — 2 rows along the full beach length
+	// ================================================================
+	// Beach is 180,000 UU centered at Origin. Two rows run along the Y axis
+	// at the north and south edges of the beach, spanning the full X extent.
+	{
+		const float HalfBeach = BeachSize * 0.5f; // 90,000
+		const float RowOffsetY1 = HalfBeach - 3000.f;  // north row, 3000 UU inside edge
+		const float RowOffsetY2 = -HalfBeach + 3000.f; // south row, 3000 UU inside edge
+		const float TreeSpacing = 3000.f;
+		const int32 NumPerRow = (int32)(BeachSize / TreeSpacing);
+
+		for (int32 row = 0; row < 2; ++row)
+		{
+			const float RowY = Origin.Y + (row == 0 ? RowOffsetY1 : RowOffsetY2);
+			for (int32 i = 0; i < NumPerRow; ++i)
+			{
+				const float TX = Origin.X - HalfBeach + (float)i * TreeSpacing + CityRandom.FRandRange(-500.f, 500.f);
+				const float TY = RowY + CityRandom.FRandRange(-800.f, 800.f);
+				const float TreeH = CityRandom.FRandRange(517.f, 862.f); // +15% from base 450-750
+				SpawnPalmTree(FVector(TX, TY, 1.f), TreeH, (i % 3 != 0)); // every 3rd is simple for perf
+			}
+		}
+	}
+
+	// --- Ambient night lighting: 4x3 grid of warm tiki-torch lights across castle beach ---
+	{
+		const FVector GridCenter(95000.f, 30000.f, 300.f);
+		const float SpacingX = 8000.f;
+		const float SpacingY = 8000.f;
+		const int32 CountX = 4;
+		const int32 CountY = 3;
+		const float HalfExtentX = (CountX - 1) * SpacingX * 0.5f;
+		const float HalfExtentY = (CountY - 1) * SpacingY * 0.5f;
+		int32 LightIdx = 0;
+		for (int32 ix = 0; ix < CountX; ++ix)
+		{
+			for (int32 iy = 0; iy < CountY; ++iy)
+			{
+				const FVector Pos(
+					GridCenter.X - HalfExtentX + ix * SpacingX,
+					GridCenter.Y - HalfExtentY + iy * SpacingY,
+					GridCenter.Z);
+
+				AActor* LightActor = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), Pos, FRotator::ZeroRotator);
+				if (LightActor)
+				{
+					const FString LightName = FString::Printf(TEXT("CastleBeachLight_%d"), LightIdx);
+					UPointLightComponent* PL = NewObject<UPointLightComponent>(LightActor, *LightName);
+					PL->SetWorldLocation(Pos);
+					PL->SetIntensity(3500.f);
+					PL->SetAttenuationRadius(8000.f);
+					PL->SetLightColor(FColor(255, 200, 120));
+					PL->SetCastShadows(false);
+					PL->RegisterComponent();
+					LightActor->SetRootComponent(PL);
+					LightActor->AddInstanceComponent(PL);
+				}
+				++LightIdx;
+			}
+		}
+		UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Spawned %d castle beach ambient lights."), LightIdx);
+	}
+
+	UE_LOG(LogPlayhouseCity, Log,
+		TEXT("PHCCitySubsystem: Sand castle spawned at (%.0f, %.0f) with %d components."),
+		Origin.X, Origin.Y, Idx);
+}
+
+// ---------------------------------------------------------------------------
+// Lake & Pirate Ship — southern expansion area
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::SpawnLakeAndPirateShip()
+{
+	UWorld* World = GetWorld();
+	if (!World || !CubeMesh || !CylinderMesh || !SphereMesh || !ConeMesh || !PlaneMesh) return;
+
+	// ===== LAKE =====
+	const FVector LakeCenter(-10000.f, -95000.f, 0.f);
+
+	int32 Idx = 0;
+
+	// ---------------------------------------------------------------
+	// Lake helper: spawn a single-component actor
+	// ---------------------------------------------------------------
+	auto SpawnLakePiece = [&](UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot, const FVector& Scale,
+		const FLinearColor& Color, float Roughness, float Metallic, const TCHAR* Label) -> UStaticMeshComponent*
+	{
+		AActor* A = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
+		if (!A) return nullptr;
+#if WITH_EDITOR
+		A->SetActorLabel(Label);
+#endif
+		FString Name = FString::Printf(TEXT("Lake_%d"), Idx++);
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(A, *Name);
+		MC->SetStaticMesh(Mesh);
+		MC->SetWorldScale3D(Scale);
+		MC->SetWorldLocation(Loc);
+		MC->SetWorldRotation(Rot);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(5.f);
+		MC->RegisterComponent();
+		A->SetRootComponent(MC);
+		ApplyPBR(MC, Color, Metallic, Roughness);
+		A->AddInstanceComponent(MC);
+		return MC;
+	};
+
+	// 1. Lake bed — dark plane just above ground to create depth illusion
+	SpawnLakePiece(PlaneMesh, LakeCenter + FVector(0.f, 0.f, 2.f), FRotator::ZeroRotator,
+		FVector(300.f, 300.f, 1.f),
+		FLinearColor(0.04f, 0.05f, 0.03f), 0.95f, 0.f, TEXT("LakeBed"));
+
+	// 2. Water surface — translucent blue above ground
+	{
+		AActor* WA = World->SpawnActor<AActor>(AActor::StaticClass(), LakeCenter + FVector(0.f, 0.f, 5.f), FRotator::ZeroRotator);
+		if (WA)
+		{
+#if WITH_EDITOR
+			WA->SetActorLabel(TEXT("LakeWaterSurface"));
+#endif
+			UStaticMeshComponent* WMC = NewObject<UStaticMeshComponent>(WA, TEXT("WaterSurfaceMesh"));
+			WMC->SetStaticMesh(PlaneMesh);
+			WMC->SetWorldScale3D(FVector(300.f, 300.f, 1.f));
+			WMC->SetWorldLocation(LakeCenter + FVector(0.f, 0.f, 5.f));
+			WMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			WMC->SetBoundsScale(5.f);
+			WMC->RegisterComponent();
+			WA->SetRootComponent(WMC);
+			if (GlassMaterial)
+			{
+				ApplyPBRGlass(WMC, GlassMaterial,
+					FLinearColor(0.05f, 0.15f, 0.30f), 0.80f, 0.f, 0.02f,
+					FLinearColor(0.01f, 0.03f, 0.06f));
+			}
+			WA->AddInstanceComponent(WMC);
+		}
+	}
+
+	// 3. Shoreline ring — 8 flat sand-colored planes in a ring
+	{
+		const FLinearColor SandColor(0.76f, 0.70f, 0.55f);
+		const float ShoreRadius = 14500.f;
+		for (int32 i = 0; i < 8; ++i)
+		{
+			const float Angle = (float)i * (360.f / 8.f) + CityRandom.FRandRange(-10.f, 10.f);
+			const float Rad = FMath::DegreesToRadians(Angle);
+			const float PX = LakeCenter.X + FMath::Cos(Rad) * ShoreRadius;
+			const float PY = LakeCenter.Y + FMath::Sin(Rad) * ShoreRadius;
+			const float ScaleX = CityRandom.FRandRange(60.f, 90.f);
+			const float ScaleY = CityRandom.FRandRange(40.f, 70.f);
+			FString Label = FString::Printf(TEXT("Shoreline_%d"), i);
+			SpawnLakePiece(PlaneMesh, FVector(PX, PY, -1.f), FRotator(0.f, Angle, 0.f),
+				FVector(ScaleX, ScaleY, 1.f),
+				SandColor, 0.85f, 0.f, *Label);
+		}
+	}
+
+	// 4. Shoreline rocks — 14 spheres of varying sizes around the shore
+	{
+		const FLinearColor RockColor(0.35f, 0.30f, 0.25f);
+		const float RockRadius = 14000.f;
+		for (int32 i = 0; i < 14; ++i)
+		{
+			const float Angle = (float)i * (360.f / 14.f) + CityRandom.FRandRange(-8.f, 8.f);
+			const float Rad = FMath::DegreesToRadians(Angle);
+			const float Dist = RockRadius + CityRandom.FRandRange(-1500.f, 1500.f);
+			const float PX = LakeCenter.X + FMath::Cos(Rad) * Dist;
+			const float PY = LakeCenter.Y + FMath::Sin(Rad) * Dist;
+			const float RockSize = CityRandom.FRandRange(300.f, 800.f);
+			const float S = RockSize / 100.f;
+			const float ColorVar = CityRandom.FRandRange(-0.05f, 0.05f);
+			FLinearColor RC(
+				FMath::Clamp(RockColor.R + ColorVar, 0.f, 1.f),
+				FMath::Clamp(RockColor.G + ColorVar, 0.f, 1.f),
+				FMath::Clamp(RockColor.B + ColorVar, 0.f, 1.f));
+			FString Label = FString::Printf(TEXT("ShoreRock_%d"), i);
+			SpawnLakePiece(SphereMesh, FVector(PX, PY, RockSize * 0.2f), FRotator::ZeroRotator,
+				FVector(S, S * CityRandom.FRandRange(0.7f, 1.0f), S * CityRandom.FRandRange(0.5f, 0.9f)),
+				RC, 0.90f, 0.f, *Label);
+		}
+	}
+
+	// 5. Reeds/cattails — 10 thin cylinders along shore edges
+	{
+		const FLinearColor ReedColor(0.08f, 0.22f, 0.05f);
+		const float ReedRadius = 13500.f;
+		for (int32 i = 0; i < 10; ++i)
+		{
+			const float Angle = (float)i * (360.f / 10.f) + CityRandom.FRandRange(-12.f, 12.f);
+			const float Rad = FMath::DegreesToRadians(Angle);
+			const float Dist = ReedRadius + CityRandom.FRandRange(-500.f, 500.f);
+			const float PX = LakeCenter.X + FMath::Cos(Rad) * Dist;
+			const float PY = LakeCenter.Y + FMath::Sin(Rad) * Dist;
+			const float ReedH = CityRandom.FRandRange(200.f, 400.f);
+			const float ReedDiam = 20.f;
+			FString Label = FString::Printf(TEXT("Reed_%d"), i);
+			SpawnLakePiece(CylinderMesh,
+				FVector(PX, PY, ReedH * 0.5f - 10.f),
+				FRotator::ZeroRotator,
+				FVector(ReedDiam / 100.f, ReedDiam / 100.f, ReedH / 100.f),
+				ReedColor, 0.80f, 0.f, *Label);
+		}
+	}
+
+	// ===== PIRATE SHIP =====
+	const FVector ShipOrigin = LakeCenter + FVector(0.f, 0.f, 5.f);
+
+	AActor* Ship = World->SpawnActor<AActor>(AActor::StaticClass(), ShipOrigin, FRotator::ZeroRotator);
+	if (!Ship) return;
+
+#if WITH_EDITOR
+	Ship->SetActorLabel(TEXT("PirateShip"));
+#endif
+
+	int32 SIdx = 0;
+
+	// ---------------------------------------------------------------
+	// Ship helper lambdas
+	// ---------------------------------------------------------------
+	auto Add = [&](UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot, const FVector& Scale,
+		const FLinearColor& Color, float Roughness, float Metallic = 0.f) -> UStaticMeshComponent*
+	{
+		FString Name = FString::Printf(TEXT("S_%d"), SIdx++);
+		UStaticMeshComponent* C = NewObject<UStaticMeshComponent>(Ship, *Name);
+		C->SetStaticMesh(Mesh);
+		C->SetWorldScale3D(Scale);
+		C->SetWorldLocation(Loc);
+		C->SetWorldRotation(Rot);
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->SetBoundsScale(5.f);
+		C->RegisterComponent();
+		ApplyPBR(C, Color, Metallic, Roughness);
+		Ship->AddInstanceComponent(C);
+		return C;
+	};
+
+	// Ship dimensions
+	const float HullLength = 3000.f;
+	const float HullWidth = 800.f;
+	const float HullHeight = 600.f;
+	const float HullBottomZ = ShipOrigin.Z - 200.f; // partially submerged
+	const float HullCenterZ = HullBottomZ + HullHeight * 0.5f;
+	const float HullTopZ = HullBottomZ + HullHeight;
+
+	// Colors
+	const FLinearColor DarkWood(0.15f, 0.10f, 0.05f);
+	const FLinearColor LightWood(0.30f, 0.20f, 0.10f);
+	const FLinearColor SailCream(0.85f, 0.82f, 0.75f);
+	const FLinearColor DarkMetal(0.12f, 0.12f, 0.12f);
+	const FLinearColor GoldColor(0.75f, 0.55f, 0.15f);
+	const FLinearColor BlackFlag(0.02f, 0.02f, 0.02f);
+	const FLinearColor RopeColor(0.25f, 0.18f, 0.10f);
+
+	// ================================================================
+	// HULL
+	// ================================================================
+
+	// 1. Main hull body: 3000 x 800 x 600 UU
+	UStaticMeshComponent* HullBody = Add(CubeMesh,
+		FVector(ShipOrigin.X, ShipOrigin.Y, HullCenterZ),
+		FRotator::ZeroRotator,
+		FVector(HullLength / 100.f, HullWidth / 100.f, HullHeight / 100.f),
+		DarkWood, 0.85f);
+	Ship->SetRootComponent(HullBody);
+
+	// 2. Hull taper front (bow) — two angled cubes converging at +X
+	const float BowStartX = ShipOrigin.X + HullLength * 0.5f;
+	const float BowLen = 600.f;
+	const float BowTipX = BowStartX + BowLen;
+	// Left bow taper
+	Add(CubeMesh,
+		FVector(BowStartX + BowLen * 0.5f, ShipOrigin.Y + HullWidth * 0.2f, HullCenterZ),
+		FRotator(0.f, 12.f, 0.f),
+		FVector(BowLen / 100.f, HullWidth * 0.35f / 100.f, HullHeight / 100.f),
+		DarkWood, 0.85f);
+	// Right bow taper
+	Add(CubeMesh,
+		FVector(BowStartX + BowLen * 0.5f, ShipOrigin.Y - HullWidth * 0.2f, HullCenterZ),
+		FRotator(0.f, -12.f, 0.f),
+		FVector(BowLen / 100.f, HullWidth * 0.35f / 100.f, HullHeight / 100.f),
+		DarkWood, 0.85f);
+
+	// 3. Hull taper rear (stern) — two cubes narrowing at -X
+	const float SternStartX = ShipOrigin.X - HullLength * 0.5f;
+	const float SternLen = 400.f;
+	// Left stern taper
+	Add(CubeMesh,
+		FVector(SternStartX - SternLen * 0.5f, ShipOrigin.Y + HullWidth * 0.15f, HullCenterZ),
+		FRotator(0.f, -8.f, 0.f),
+		FVector(SternLen / 100.f, HullWidth * 0.4f / 100.f, HullHeight / 100.f),
+		DarkWood, 0.85f);
+	// Right stern taper
+	Add(CubeMesh,
+		FVector(SternStartX - SternLen * 0.5f, ShipOrigin.Y - HullWidth * 0.15f, HullCenterZ),
+		FRotator(0.f, 8.f, 0.f),
+		FVector(SternLen / 100.f, HullWidth * 0.4f / 100.f, HullHeight / 100.f),
+		DarkWood, 0.85f);
+
+	// 4. Keel — thin dark cube underneath the hull: 3200 x 80 x 100 UU
+	Add(CubeMesh,
+		FVector(ShipOrigin.X, ShipOrigin.Y, HullBottomZ - 50.f),
+		FRotator::ZeroRotator,
+		FVector(3200.f / 100.f, 80.f / 100.f, 100.f / 100.f),
+		FLinearColor(0.08f, 0.05f, 0.02f), 0.90f);
+
+	// 5. Bowsprit — thin cylinder angled forward and upward: 1200 UU long, 40 UU diameter
+	const float BowspritLen = 1200.f;
+	Add(CylinderMesh,
+		FVector(BowTipX + BowspritLen * 0.4f, ShipOrigin.Y, HullTopZ + BowspritLen * 0.2f),
+		FRotator(0.f, 0.f, -65.f),
+		FVector(40.f / 100.f, 40.f / 100.f, BowspritLen / 100.f),
+		DarkWood, 0.80f);
+
+	// ================================================================
+	// DECKS
+	// ================================================================
+
+	const float DeckTopZ = HullTopZ + 15.f;
+
+	// 6. Main deck: 2600 x 750 x 30 UU, on top of hull
+	Add(CubeMesh,
+		FVector(ShipOrigin.X, ShipOrigin.Y, DeckTopZ),
+		FRotator::ZeroRotator,
+		FVector(2600.f / 100.f, 750.f / 100.f, 30.f / 100.f),
+		LightWood, 0.75f);
+
+	// 7. Forecastle: raised deck at bow, 600 x 750 x 30 UU, at hull_top + 200
+	const float ForecastleZ = HullTopZ + 200.f;
+	const float ForecastleX = ShipOrigin.X + HullLength * 0.5f - 300.f;
+	Add(CubeMesh,
+		FVector(ForecastleX, ShipOrigin.Y, ForecastleZ),
+		FRotator::ZeroRotator,
+		FVector(600.f / 100.f, 750.f / 100.f, 30.f / 100.f),
+		LightWood, 0.75f);
+	// Forecastle support wall
+	Add(CubeMesh,
+		FVector(ForecastleX - 300.f, ShipOrigin.Y, HullTopZ + 100.f),
+		FRotator::ZeroRotator,
+		FVector(30.f / 100.f, 750.f / 100.f, 200.f / 100.f),
+		DarkWood, 0.85f);
+
+	// 8. Stern castle (poop deck): 800 x 750 x 30 UU, at hull_top + 350
+	const float SternCastleZ = HullTopZ + 350.f;
+	const float SternCastleX = ShipOrigin.X - HullLength * 0.5f + 400.f;
+	Add(CubeMesh,
+		FVector(SternCastleX, ShipOrigin.Y, SternCastleZ),
+		FRotator::ZeroRotator,
+		FVector(800.f / 100.f, 750.f / 100.f, 30.f / 100.f),
+		LightWood, 0.75f);
+
+	// 9. Stern cabin walls — 3 cubes forming captain's cabin under poop deck
+	const float CabinFloorZ = HullTopZ + 30.f;
+	const float CabinH = SternCastleZ - CabinFloorZ;
+	// Back wall
+	Add(CubeMesh,
+		FVector(SternCastleX - 400.f, ShipOrigin.Y, CabinFloorZ + CabinH * 0.5f),
+		FRotator::ZeroRotator,
+		FVector(30.f / 100.f, 720.f / 100.f, CabinH / 100.f),
+		DarkWood, 0.85f);
+	// Left wall
+	Add(CubeMesh,
+		FVector(SternCastleX, ShipOrigin.Y + 360.f, CabinFloorZ + CabinH * 0.5f),
+		FRotator::ZeroRotator,
+		FVector(800.f / 100.f, 30.f / 100.f, CabinH / 100.f),
+		DarkWood, 0.85f);
+	// Right wall
+	Add(CubeMesh,
+		FVector(SternCastleX, ShipOrigin.Y - 360.f, CabinFloorZ + CabinH * 0.5f),
+		FRotator::ZeroRotator,
+		FVector(800.f / 100.f, 30.f / 100.f, CabinH / 100.f),
+		DarkWood, 0.85f);
+
+	// ================================================================
+	// MASTS AND SAILS
+	// ================================================================
+
+	const float ForemastX = ShipOrigin.X + HullLength * 0.25f;
+	const float MainmastX = ShipOrigin.X;
+	const float MizzenmastX = ShipOrigin.X - HullLength * 0.25f;
+	const float MastBaseZ = DeckTopZ;
+
+	// 10. Foremast: 40 UU diameter, 2200 UU tall
+	const float ForemastH = 2200.f;
+	Add(CylinderMesh,
+		FVector(ForemastX, ShipOrigin.Y, MastBaseZ + ForemastH * 0.5f),
+		FRotator::ZeroRotator,
+		FVector(40.f / 100.f, 40.f / 100.f, ForemastH / 100.f),
+		DarkWood, 0.80f);
+
+	// 11. Mainmast: 50 UU diameter, 2800 UU tall (tallest)
+	const float MainmastH = 2800.f;
+	Add(CylinderMesh,
+		FVector(MainmastX, ShipOrigin.Y, MastBaseZ + MainmastH * 0.5f),
+		FRotator::ZeroRotator,
+		FVector(50.f / 100.f, 50.f / 100.f, MainmastH / 100.f),
+		DarkWood, 0.80f);
+
+	// 12. Mizzenmast: 35 UU diameter, 1800 UU tall
+	const float MizzenmastH = 1800.f;
+	Add(CylinderMesh,
+		FVector(MizzenmastX, ShipOrigin.Y, MastBaseZ + MizzenmastH * 0.5f),
+		FRotator::ZeroRotator,
+		FVector(35.f / 100.f, 35.f / 100.f, MizzenmastH / 100.f),
+		DarkWood, 0.80f);
+
+	// 13. Yards (cross-beams) — 2 per mast, 6 total, perpendicular to keel (along Y)
+	// Foremast yard 1 (lower)
+	const float ForeYard1Z = MastBaseZ + ForemastH * 0.45f;
+	Add(CylinderMesh,
+		FVector(ForemastX, ShipOrigin.Y, ForeYard1Z),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(30.f / 100.f, 30.f / 100.f, 750.f / 100.f),
+		DarkWood, 0.80f);
+	// Foremast yard 2 (upper)
+	const float ForeYard2Z = MastBaseZ + ForemastH * 0.75f;
+	Add(CylinderMesh,
+		FVector(ForemastX, ShipOrigin.Y, ForeYard2Z),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(30.f / 100.f, 30.f / 100.f, 700.f / 100.f),
+		DarkWood, 0.80f);
+
+	// Mainmast yard 1 (lower)
+	const float MainYard1Z = MastBaseZ + MainmastH * 0.40f;
+	Add(CylinderMesh,
+		FVector(MainmastX, ShipOrigin.Y, MainYard1Z),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(30.f / 100.f, 30.f / 100.f, 900.f / 100.f),
+		DarkWood, 0.80f);
+	// Mainmast yard 2 (upper)
+	const float MainYard2Z = MastBaseZ + MainmastH * 0.70f;
+	Add(CylinderMesh,
+		FVector(MainmastX, ShipOrigin.Y, MainYard2Z),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(30.f / 100.f, 30.f / 100.f, 800.f / 100.f),
+		DarkWood, 0.80f);
+
+	// Mizzenmast yard 1 (lower)
+	const float MizzenYard1Z = MastBaseZ + MizzenmastH * 0.45f;
+	Add(CylinderMesh,
+		FVector(MizzenmastX, ShipOrigin.Y, MizzenYard1Z),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(30.f / 100.f, 30.f / 100.f, 700.f / 100.f),
+		DarkWood, 0.80f);
+	// Mizzenmast yard 2 (upper)
+	const float MizzenYard2Z = MastBaseZ + MizzenmastH * 0.75f;
+	Add(CylinderMesh,
+		FVector(MizzenmastX, ShipOrigin.Y, MizzenYard2Z),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(30.f / 100.f, 30.f / 100.f, 650.f / 100.f),
+		DarkWood, 0.80f);
+
+	// 14. Sails — 2 per mast = 6 total. Thin cream cubes hanging from yards.
+	// Foremast lower sail
+	Add(CubeMesh,
+		FVector(ForemastX, ShipOrigin.Y, ForeYard1Z - 250.f),
+		FRotator::ZeroRotator,
+		FVector(8.f / 100.f, 600.f / 100.f, 500.f / 100.f),
+		SailCream, 0.70f);
+	// Foremast upper sail
+	Add(CubeMesh,
+		FVector(ForemastX, ShipOrigin.Y, ForeYard2Z - 200.f),
+		FRotator::ZeroRotator,
+		FVector(8.f / 100.f, 550.f / 100.f, 400.f / 100.f),
+		SailCream, 0.70f);
+	// Mainmast lower sail (largest)
+	Add(CubeMesh,
+		FVector(MainmastX, ShipOrigin.Y, MainYard1Z - 280.f),
+		FRotator::ZeroRotator,
+		FVector(8.f / 100.f, 700.f / 100.f, 560.f / 100.f),
+		SailCream, 0.70f);
+	// Mainmast upper sail
+	Add(CubeMesh,
+		FVector(MainmastX, ShipOrigin.Y, MainYard2Z - 220.f),
+		FRotator::ZeroRotator,
+		FVector(8.f / 100.f, 600.f / 100.f, 440.f / 100.f),
+		SailCream, 0.70f);
+	// Mizzenmast lower sail
+	Add(CubeMesh,
+		FVector(MizzenmastX, ShipOrigin.Y, MizzenYard1Z - 230.f),
+		FRotator::ZeroRotator,
+		FVector(8.f / 100.f, 560.f / 100.f, 460.f / 100.f),
+		SailCream, 0.70f);
+	// Mizzenmast upper sail
+	Add(CubeMesh,
+		FVector(MizzenmastX, ShipOrigin.Y, MizzenYard2Z - 180.f),
+		FRotator::ZeroRotator,
+		FVector(8.f / 100.f, 500.f / 100.f, 360.f / 100.f),
+		SailCream, 0.70f);
+
+	// 15. Crow's nest — small cylinder on top of mainmast: 200 UU diameter, 80 UU tall
+	Add(CylinderMesh,
+		FVector(MainmastX, ShipOrigin.Y, MastBaseZ + MainmastH + 40.f),
+		FRotator::ZeroRotator,
+		FVector(200.f / 100.f, 200.f / 100.f, 80.f / 100.f),
+		DarkWood, 0.80f);
+
+	// ================================================================
+	// DETAILS
+	// ================================================================
+
+	// 16. Gunwales/rails — thin cubes along both sides of main deck: 2600 x 30 x 150 UU
+	// Port gunwale (left, +Y)
+	Add(CubeMesh,
+		FVector(ShipOrigin.X, ShipOrigin.Y + HullWidth * 0.5f - 15.f, HullTopZ + 75.f),
+		FRotator::ZeroRotator,
+		FVector(2600.f / 100.f, 30.f / 100.f, 150.f / 100.f),
+		LightWood, 0.75f);
+	// Starboard gunwale (right, -Y)
+	Add(CubeMesh,
+		FVector(ShipOrigin.X, ShipOrigin.Y - HullWidth * 0.5f + 15.f, HullTopZ + 75.f),
+		FRotator::ZeroRotator,
+		FVector(2600.f / 100.f, 30.f / 100.f, 150.f / 100.f),
+		LightWood, 0.75f);
+
+	// 17. Cannons — 8 per side = 16 total
+	// Each: dark cylinder, 150 UU long, 40 UU diameter, metallic 0.8, roughness 0.3
+	const float CannonSpacing = 2600.f / 9.f;
+	const float CannonStartX = ShipOrigin.X - 2600.f * 0.5f + CannonSpacing;
+	const float CannonZ = HullCenterZ + 50.f;
+	const float CannonLen = 150.f;
+
+	// Port side (left, +Y) — cannon 0
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 0.f, ShipOrigin.Y + HullWidth * 0.5f + CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Port side — cannon 1
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 1.f, ShipOrigin.Y + HullWidth * 0.5f + CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Port side — cannon 2
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 2.f, ShipOrigin.Y + HullWidth * 0.5f + CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Port side — cannon 3
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 3.f, ShipOrigin.Y + HullWidth * 0.5f + CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Port side — cannon 4
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 4.f, ShipOrigin.Y + HullWidth * 0.5f + CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Port side — cannon 5
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 5.f, ShipOrigin.Y + HullWidth * 0.5f + CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Port side — cannon 6
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 6.f, ShipOrigin.Y + HullWidth * 0.5f + CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Port side — cannon 7
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 7.f, ShipOrigin.Y + HullWidth * 0.5f + CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+
+	// Starboard side (right, -Y) — cannon 8
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 0.f, ShipOrigin.Y - HullWidth * 0.5f - CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Starboard side — cannon 9
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 1.f, ShipOrigin.Y - HullWidth * 0.5f - CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Starboard side — cannon 10
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 2.f, ShipOrigin.Y - HullWidth * 0.5f - CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Starboard side — cannon 11
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 3.f, ShipOrigin.Y - HullWidth * 0.5f - CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Starboard side — cannon 12
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 4.f, ShipOrigin.Y - HullWidth * 0.5f - CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Starboard side — cannon 13
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 5.f, ShipOrigin.Y - HullWidth * 0.5f - CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Starboard side — cannon 14
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 6.f, ShipOrigin.Y - HullWidth * 0.5f - CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Starboard side — cannon 15
+	Add(CylinderMesh,
+		FVector(CannonStartX + CannonSpacing * 7.f, ShipOrigin.Y - HullWidth * 0.5f - CannonLen * 0.3f, CannonZ),
+		FRotator(0.f, 0.f, 90.f),
+		FVector(40.f / 100.f, 40.f / 100.f, CannonLen / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+
+	// 18. Rudder — flat thin cube at stern: 200 x 10 x 400 UU
+	Add(CubeMesh,
+		FVector(SternStartX - SternLen - 10.f, ShipOrigin.Y, HullBottomZ - 50.f),
+		FRotator::ZeroRotator,
+		FVector(200.f / 100.f, 10.f / 100.f, 400.f / 100.f),
+		DarkWood, 0.85f);
+
+	// 19. Figurehead — cone at bowsprit tip, gold, pointing forward
+	Add(ConeMesh,
+		FVector(BowTipX + BowspritLen * 0.75f, ShipOrigin.Y, HullTopZ + BowspritLen * 0.35f),
+		FRotator(0.f, 0.f, -65.f),
+		FVector(80.f / 100.f, 80.f / 100.f, 200.f / 100.f),
+		GoldColor, 0.40f, 0.60f);
+
+	// 20. Jolly Roger flag — small thin black cube: 200 x 8 x 150 UU
+	const float FlagpoleH = 300.f;
+	const float FlagZ = MastBaseZ + MainmastH + 80.f + FlagpoleH + 75.f;
+	Add(CubeMesh,
+		FVector(MainmastX + 100.f, ShipOrigin.Y, FlagZ),
+		FRotator::ZeroRotator,
+		FVector(200.f / 100.f, 8.f / 100.f, 150.f / 100.f),
+		BlackFlag, 0.60f);
+
+	// 21. Flagpole — thin cylinder above mainmast: 30 UU diameter, 300 UU tall
+	Add(CylinderMesh,
+		FVector(MainmastX, ShipOrigin.Y, MastBaseZ + MainmastH + 80.f + FlagpoleH * 0.5f),
+		FRotator::ZeroRotator,
+		FVector(30.f / 100.f, 30.f / 100.f, FlagpoleH / 100.f),
+		DarkWood, 0.80f);
+
+	// 22. Anchor — sphere + thin cubes at bow side, hanging from hull
+	// Anchor ring (sphere)
+	Add(SphereMesh,
+		FVector(BowStartX + 200.f, ShipOrigin.Y + HullWidth * 0.4f, HullBottomZ - 100.f),
+		FRotator::ZeroRotator,
+		FVector(80.f / 100.f, 80.f / 100.f, 80.f / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Anchor shaft (vertical cube)
+	Add(CubeMesh,
+		FVector(BowStartX + 200.f, ShipOrigin.Y + HullWidth * 0.4f, HullBottomZ - 250.f),
+		FRotator::ZeroRotator,
+		FVector(20.f / 100.f, 20.f / 100.f, 250.f / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+	// Anchor flukes (cross piece)
+	Add(CubeMesh,
+		FVector(BowStartX + 200.f, ShipOrigin.Y + HullWidth * 0.4f, HullBottomZ - 375.f),
+		FRotator::ZeroRotator,
+		FVector(150.f / 100.f, 20.f / 100.f, 50.f / 100.f),
+		DarkMetal, 0.30f, 0.80f);
+
+	// 23. Ropes/rigging — 4 thin cylinders connecting mast tops to deck edges
+	const float RopeDiam = 10.f;
+
+	// Rope 1: Foremast top to bow starboard deck edge
+	{
+		const FVector RopeStart(ForemastX, ShipOrigin.Y, MastBaseZ + ForemastH);
+		const FVector RopeEnd(BowStartX + 300.f, ShipOrigin.Y - HullWidth * 0.4f, HullTopZ + 30.f);
+		const FVector RopeMid = (RopeStart + RopeEnd) * 0.5f;
+		const FVector RopeDelta = RopeEnd - RopeStart;
+		const float RopeLen = RopeDelta.Size();
+		const FRotator RopeRot = RopeDelta.Rotation() + FRotator(90.f, 0.f, 0.f);
+		Add(CylinderMesh, RopeMid, RopeRot,
+			FVector(RopeDiam / 100.f, RopeDiam / 100.f, RopeLen / 100.f),
+			RopeColor, 0.85f);
+	}
+
+	// Rope 2: Foremast top to bow port deck edge
+	{
+		const FVector RopeStart(ForemastX, ShipOrigin.Y, MastBaseZ + ForemastH);
+		const FVector RopeEnd(BowStartX + 300.f, ShipOrigin.Y + HullWidth * 0.4f, HullTopZ + 30.f);
+		const FVector RopeMid = (RopeStart + RopeEnd) * 0.5f;
+		const FVector RopeDelta = RopeEnd - RopeStart;
+		const float RopeLen = RopeDelta.Size();
+		const FRotator RopeRot = RopeDelta.Rotation() + FRotator(90.f, 0.f, 0.f);
+		Add(CylinderMesh, RopeMid, RopeRot,
+			FVector(RopeDiam / 100.f, RopeDiam / 100.f, RopeLen / 100.f),
+			RopeColor, 0.85f);
+	}
+
+	// Rope 3: Mainmast top to stern port deck edge
+	{
+		const FVector RopeStart(MainmastX, ShipOrigin.Y, MastBaseZ + MainmastH);
+		const FVector RopeEnd(SternCastleX + 200.f, ShipOrigin.Y + HullWidth * 0.4f, SternCastleZ + 30.f);
+		const FVector RopeMid = (RopeStart + RopeEnd) * 0.5f;
+		const FVector RopeDelta = RopeEnd - RopeStart;
+		const float RopeLen = RopeDelta.Size();
+		const FRotator RopeRot = RopeDelta.Rotation() + FRotator(90.f, 0.f, 0.f);
+		Add(CylinderMesh, RopeMid, RopeRot,
+			FVector(RopeDiam / 100.f, RopeDiam / 100.f, RopeLen / 100.f),
+			RopeColor, 0.85f);
+	}
+
+	// Rope 4: Mainmast top to stern starboard deck edge
+	{
+		const FVector RopeStart(MainmastX, ShipOrigin.Y, MastBaseZ + MainmastH);
+		const FVector RopeEnd(SternCastleX + 200.f, ShipOrigin.Y - HullWidth * 0.4f, SternCastleZ + 30.f);
+		const FVector RopeMid = (RopeStart + RopeEnd) * 0.5f;
+		const FVector RopeDelta = RopeEnd - RopeStart;
+		const float RopeLen = RopeDelta.Size();
+		const FRotator RopeRot = RopeDelta.Rotation() + FRotator(90.f, 0.f, 0.f);
+		Add(CylinderMesh, RopeMid, RopeRot,
+			FVector(RopeDiam / 100.f, RopeDiam / 100.f, RopeLen / 100.f),
+			RopeColor, 0.85f);
+	}
+
+	// ================================================================
+	// BEACH SAND — realistic sand around pirate ship area
+	// ================================================================
+	{
+		const float SandSize = 120000.f;
+		const float HSand = SandSize * 0.5f;
+
+		// -- Base sand plane --
+		SpawnLakePiece(PlaneMesh,
+			LakeCenter + FVector(0.f, 0.f, 1.f), FRotator::ZeroRotator,
+			FVector(SandSize / 100.f, SandSize / 100.f, 1.f),
+			FLinearColor(0.82f, 0.76f, 0.58f), 0.95f, 0.f, TEXT("PirateBeachSand"));
+		// Extensions toward ocean
+		SpawnLakePiece(PlaneMesh,
+			LakeCenter + FVector(60000.f, 0.f, 1.f), FRotator::ZeroRotator,
+			FVector(600.f, SandSize / 100.f, 1.f),
+			FLinearColor(0.80f, 0.74f, 0.56f), 0.95f, 0.f, TEXT("PirateBeachExtendE"));
+		SpawnLakePiece(PlaneMesh,
+			LakeCenter + FVector(-60000.f, 0.f, 1.f), FRotator::ZeroRotator,
+			FVector(600.f, SandSize / 100.f, 1.f),
+			FLinearColor(0.80f, 0.74f, 0.56f), 0.95f, 0.f, TEXT("PirateBeachExtendW"));
+
+		// Sand variation colors
+		const FLinearColor PSandDry(0.88f, 0.82f, 0.64f);
+		const FLinearColor PSandWet(0.62f, 0.56f, 0.40f);
+		const FLinearColor PSandMid(0.78f, 0.72f, 0.54f);
+		const FLinearColor PSandWarm(0.85f, 0.76f, 0.52f);
+		const FLinearColor PSandCool(0.76f, 0.72f, 0.58f);
+		const FLinearColor PSandDark(0.68f, 0.62f, 0.44f);
+		const FLinearColor PRockGray(0.45f, 0.42f, 0.38f);
+		const FLinearColor PDriftwood(0.35f, 0.25f, 0.15f);
+		const FLinearColor PShellWhite(0.92f, 0.88f, 0.82f);
+
+		// -- Sand dunes (gentle raised humps) --
+		for (int32 d = 0; d < 30; ++d)
+		{
+			const float DX = LakeCenter.X + CityRandom.FRandRange(-HSand * 0.7f, HSand * 0.7f);
+			const float DY = LakeCenter.Y + CityRandom.FRandRange(-HSand * 0.7f, HSand * 0.7f);
+			const float DuneW = CityRandom.FRandRange(1200.f, 5000.f);
+			const float DuneL = DuneW * CityRandom.FRandRange(1.5f, 3.5f);
+			const float DuneH = CityRandom.FRandRange(15.f, 100.f);
+			SpawnLakePiece(SphereMesh,
+				FVector(DX, DY, DuneH * 0.3f),
+				FRotator(0.f, CityRandom.FRandRange(0.f, 360.f), 0.f),
+				FVector(DuneL / 100.f, DuneW / 100.f, DuneH / 100.f),
+				FMath::Lerp(PSandMid, PSandWarm, CityRandom.FRandRange(0.f, 1.f)),
+				0.92f, 0.f, TEXT("PirateDune"));
+		}
+
+		// -- Sand ripple lines --
+		for (int32 r = 0; r < 50; ++r)
+		{
+			const float RX = LakeCenter.X + CityRandom.FRandRange(-HSand * 0.6f, HSand * 0.6f);
+			const float RY = LakeCenter.Y + CityRandom.FRandRange(-HSand * 0.6f, HSand * 0.6f);
+			const float RLen = CityRandom.FRandRange(600.f, 3000.f);
+			SpawnLakePiece(CubeMesh,
+				FVector(RX, RY, 2.5f),
+				FRotator(0.f, CityRandom.FRandRange(-25.f, 25.f), 0.f),
+				FVector(RLen / 100.f, 0.12f, 0.03f),
+				FMath::Lerp(PSandMid, PSandDry, CityRandom.FRandRange(0.3f, 0.7f)),
+				0.90f, 0.f, TEXT("PirateRipple"));
+		}
+
+		// -- Beach rocks --
+		for (int32 br = 0; br < 20; ++br)
+		{
+			const float BRX = LakeCenter.X + CityRandom.FRandRange(-HSand * 0.7f, HSand * 0.7f);
+			const float BRY = LakeCenter.Y + CityRandom.FRandRange(-HSand * 0.7f, HSand * 0.7f);
+			const float RS = CityRandom.FRandRange(25.f, 180.f);
+			SpawnLakePiece(SphereMesh,
+				FVector(BRX, BRY, RS * 0.2f),
+				FRotator(CityRandom.FRandRange(-15.f, 15.f),
+					CityRandom.FRandRange(0.f, 360.f),
+					CityRandom.FRandRange(-10.f, 10.f)),
+				FVector(RS / 100.f * CityRandom.FRandRange(0.7f, 1.3f),
+					RS / 100.f * CityRandom.FRandRange(0.7f, 1.3f),
+					RS / 100.f * CityRandom.FRandRange(0.4f, 0.8f)),
+				FMath::Lerp(PRockGray, PSandDark, CityRandom.FRandRange(0.f, 0.4f)),
+				CityRandom.FRandRange(0.82f, 0.95f), 0.f, TEXT("PirateRock"));
+		}
+
+		// -- Driftwood --
+		for (int32 dw = 0; dw < 10; ++dw)
+		{
+			const float DWX = LakeCenter.X + CityRandom.FRandRange(-HSand * 0.6f, HSand * 0.6f);
+			const float DWY = LakeCenter.Y + CityRandom.FRandRange(-HSand * 0.6f, HSand * 0.6f);
+			const float LogLen = CityRandom.FRandRange(120.f, 500.f);
+			const float LogThick = CityRandom.FRandRange(6.f, 20.f);
+			SpawnLakePiece(CylinderMesh,
+				FVector(DWX, DWY, LogThick * 0.3f),
+				FRotator(90.f + CityRandom.FRandRange(-10.f, 10.f),
+					CityRandom.FRandRange(0.f, 360.f), 0.f),
+				FVector(LogThick / 100.f, LogThick / 100.f, LogLen / 100.f),
+				FMath::Lerp(PDriftwood, FLinearColor(0.45f, 0.38f, 0.28f),
+					CityRandom.FRandRange(0.f, 1.f)),
+				0.88f, 0.f, TEXT("PirateDriftwood"));
+		}
+
+		// -- Seashells --
+		for (int32 sh = 0; sh < 25; ++sh)
+		{
+			const float SHX = LakeCenter.X + CityRandom.FRandRange(-HSand * 0.5f, HSand * 0.5f);
+			const float SHY = LakeCenter.Y + CityRandom.FRandRange(-HSand * 0.5f, HSand * 0.5f);
+			const float SS = CityRandom.FRandRange(4.f, 16.f);
+			SpawnLakePiece(SphereMesh,
+				FVector(SHX, SHY, 2.5f),
+				FRotator(0.f, CityRandom.FRandRange(0.f, 360.f), 0.f),
+				FVector(SS / 100.f, SS * CityRandom.FRandRange(0.6f, 1.f) / 100.f, SS * 0.3f / 100.f),
+				FMath::Lerp(PShellWhite, FLinearColor(0.90f, 0.82f, 0.70f),
+					CityRandom.FRandRange(0.f, 1.f)),
+				0.70f, 0.f, TEXT("PirateShell"));
+		}
+
+		// -- Wet sand strip near lake edge --
+		SpawnLakePiece(PlaneMesh,
+			LakeCenter + FVector(0.f, 0.f, 1.5f), FRotator::ZeroRotator,
+			FVector(350.f, 350.f, 1.f),
+			PSandWet, 0.75f, 0.f, TEXT("PirateWetSandRing"));
+	}
+
+	// ================================================================
+	// EGYPTIAN PYRAMIDS — Great Pyramids of Giza replica
+	// ================================================================
+	{
+		// Pyramid color palette — authentic limestone/sandstone
+		const FLinearColor LimestoneMain(0.78f, 0.72f, 0.52f);    // main body warm sandstone
+		const FLinearColor LimestoneDark(0.62f, 0.56f, 0.38f);    // shadow/aged blocks
+		const FLinearColor LimestoneLight(0.85f, 0.80f, 0.62f);   // sun-bleached highlights
+		const FLinearColor CapstoneGold(0.85f, 0.75f, 0.35f);     // golden pyramidion
+		const FLinearColor DesertSand(0.82f, 0.76f, 0.58f);       // ground sand
+		const FLinearColor BasaltDark(0.18f, 0.17f, 0.15f);       // mortuary temple stone
+		const FLinearColor GraniteRed(0.55f, 0.30f, 0.22f);       // granite casing
+
+		const FVector PyramidAreaCenter(-10000.f, -55000.f, 0.f);
+
+		// --- Khufu (Great Pyramid) — the largest ---
+		const FVector KhufuBase = PyramidAreaCenter + FVector(-5000.f, 0.f, 0.f);
+		const float KhufuHeight = 7300.f;   // ~146m scaled up
+		const float KhufuBaseW = 11500.f;   // ~230m scaled up — 1:1.58 ratio
+
+		// Main pyramid body — 4-sided cone
+		SpawnLakePiece(ConeMesh, KhufuBase + FVector(0.f, 0.f, KhufuHeight * 0.5f),
+			FRotator::ZeroRotator,
+			FVector(KhufuBaseW / 100.f, KhufuBaseW / 100.f, KhufuHeight / 100.f),
+			LimestoneMain, 0.92f, 0.f, TEXT("Khufu_Body"));
+
+		// Stepped tiers — cubes at different heights to break up the smooth cone
+		// These create the illusion of stone block courses
+		for (int32 tier = 0; tier < 12; ++tier)
+		{
+			const float TierFraction = (float)tier / 12.f;
+			const float TierZ = KhufuHeight * TierFraction;
+			const float TierScale = 1.0f - TierFraction; // narrows toward top
+			const float TierW = KhufuBaseW * TierScale;
+			const float TierThick = 40.f; // thin horizontal band
+
+			// Use slightly varied color per tier for realism
+			FLinearColor TierColor = FMath::Lerp(LimestoneDark, LimestoneLight, (float)(tier % 3) / 2.f);
+
+			// Four sides of the tier band
+			// North face
+			SpawnLakePiece(CubeMesh,
+				KhufuBase + FVector(0.f, TierW * 0.5f, TierZ),
+				FRotator::ZeroRotator,
+				FVector(TierW / 100.f, TierThick / 100.f, TierThick / 100.f),
+				TierColor, 0.95f, 0.f, TEXT("Khufu_TierN"));
+			// South face
+			SpawnLakePiece(CubeMesh,
+				KhufuBase + FVector(0.f, -TierW * 0.5f, TierZ),
+				FRotator::ZeroRotator,
+				FVector(TierW / 100.f, TierThick / 100.f, TierThick / 100.f),
+				TierColor, 0.95f, 0.f, TEXT("Khufu_TierS"));
+			// East face
+			SpawnLakePiece(CubeMesh,
+				KhufuBase + FVector(TierW * 0.5f, 0.f, TierZ),
+				FRotator::ZeroRotator,
+				FVector(TierThick / 100.f, TierW / 100.f, TierThick / 100.f),
+				TierColor, 0.95f, 0.f, TEXT("Khufu_TierE"));
+			// West face
+			SpawnLakePiece(CubeMesh,
+				KhufuBase + FVector(-TierW * 0.5f, 0.f, TierZ),
+				FRotator::ZeroRotator,
+				FVector(TierThick / 100.f, TierW / 100.f, TierThick / 100.f),
+				TierColor, 0.95f, 0.f, TEXT("Khufu_TierW"));
+		}
+
+		// Golden pyramidion (capstone) — small cone at the very top
+		SpawnLakePiece(ConeMesh,
+			KhufuBase + FVector(0.f, 0.f, KhufuHeight - 200.f),
+			FRotator::ZeroRotator,
+			FVector(5.f, 5.f, 4.f),
+			CapstoneGold, 0.4f, 0.6f, TEXT("Khufu_Capstone"));
+
+		// Base platform — flat stone base
+		SpawnLakePiece(CubeMesh,
+			KhufuBase + FVector(0.f, 0.f, -15.f),
+			FRotator::ZeroRotator,
+			FVector(KhufuBaseW * 1.15f / 100.f, KhufuBaseW * 1.15f / 100.f, 0.3f),
+			LimestoneDark, 0.95f, 0.f, TEXT("Khufu_Platform"));
+
+		// Mortuary temple — east side of Khufu
+		const FVector TemplePos = KhufuBase + FVector(KhufuBaseW * 0.6f + 500.f, 0.f, 0.f);
+		// Temple base
+		SpawnLakePiece(CubeMesh, TemplePos + FVector(0.f, 0.f, 150.f),
+			FRotator::ZeroRotator,
+			FVector(20.f, 30.f, 3.f),
+			BasaltDark, 0.88f, 0.f, TEXT("Khufu_TempleBase"));
+		// Temple walls (4 sides)
+		SpawnLakePiece(CubeMesh, TemplePos + FVector(0.f, 1400.f, 350.f),
+			FRotator::ZeroRotator,
+			FVector(20.f, 0.5f, 4.f),
+			GraniteRed, 0.85f, 0.f, TEXT("Khufu_TempleWallN"));
+		SpawnLakePiece(CubeMesh, TemplePos + FVector(0.f, -1400.f, 350.f),
+			FRotator::ZeroRotator,
+			FVector(20.f, 0.5f, 4.f),
+			GraniteRed, 0.85f, 0.f, TEXT("Khufu_TempleWallS"));
+		SpawnLakePiece(CubeMesh, TemplePos + FVector(950.f, 0.f, 350.f),
+			FRotator::ZeroRotator,
+			FVector(0.5f, 30.f, 4.f),
+			GraniteRed, 0.85f, 0.f, TEXT("Khufu_TempleWallE"));
+		SpawnLakePiece(CubeMesh, TemplePos + FVector(-950.f, 0.f, 350.f),
+			FRotator::ZeroRotator,
+			FVector(0.5f, 30.f, 4.f),
+			GraniteRed, 0.85f, 0.f, TEXT("Khufu_TempleWallW"));
+		// Temple columns (6 pillars)
+		for (int32 c = 0; c < 6; ++c)
+		{
+			const float ColY = -1200.f + (float)c * 480.f;
+			SpawnLakePiece(CylinderMesh,
+				TemplePos + FVector(0.f, ColY, 250.f),
+				FRotator::ZeroRotator,
+				FVector(1.2f, 1.2f, 4.f),
+				LimestoneLight, 0.80f, 0.f, TEXT("Khufu_TempleCol"));
+		}
+
+		// Causeway — long raised walkway from temple toward the Nile (east)
+		SpawnLakePiece(CubeMesh,
+			TemplePos + FVector(5000.f, 0.f, 80.f),
+			FRotator::ZeroRotator,
+			FVector(80.f, 5.f, 1.5f),
+			LimestoneDark, 0.92f, 0.f, TEXT("Khufu_Causeway"));
+		// Causeway walls
+		SpawnLakePiece(CubeMesh,
+			TemplePos + FVector(5000.f, 230.f, 180.f),
+			FRotator::ZeroRotator,
+			FVector(80.f, 0.3f, 2.f),
+			LimestoneMain, 0.90f, 0.f, TEXT("Khufu_CausewayWallN"));
+		SpawnLakePiece(CubeMesh,
+			TemplePos + FVector(5000.f, -230.f, 180.f),
+			FRotator::ZeroRotator,
+			FVector(80.f, 0.3f, 2.f),
+			LimestoneMain, 0.90f, 0.f, TEXT("Khufu_CausewayWallS"));
+
+		// --- Khafre (second pyramid) — slightly shorter but appears taller ---
+		const FVector KhafreBase = PyramidAreaCenter + FVector(8000.f, -3000.f, 0.f);
+		const float KhafreHeight = 6800.f;   // ~136m
+		const float KhafreBaseW = 10750.f;   // ~215m
+
+		// Main body
+		SpawnLakePiece(ConeMesh, KhafreBase + FVector(0.f, 0.f, KhafreHeight * 0.5f),
+			FRotator::ZeroRotator,
+			FVector(KhafreBaseW / 100.f, KhafreBaseW / 100.f, KhafreHeight / 100.f),
+			LimestoneMain, 0.92f, 0.f, TEXT("Khafre_Body"));
+
+		// Remaining limestone casing at the top — Khafre still has its cap
+		// This is a distinctive feature — smooth white cap on upper portion
+		const float CapHeight = KhafreHeight * 0.25f;
+		const float CapBaseW = KhafreBaseW * 0.25f;
+		SpawnLakePiece(ConeMesh,
+			KhafreBase + FVector(0.f, 0.f, KhafreHeight - CapHeight * 0.5f),
+			FRotator::ZeroRotator,
+			FVector(CapBaseW / 100.f, CapBaseW / 100.f, CapHeight / 100.f),
+			LimestoneLight, 0.75f, 0.05f, TEXT("Khafre_Cap"));
+
+		// Stepped tiers
+		for (int32 tier = 0; tier < 10; ++tier)
+		{
+			const float TierFraction = (float)tier / 10.f;
+			const float TierZ = KhafreHeight * TierFraction;
+			const float TierScale = 1.0f - TierFraction;
+			const float TierW = KhafreBaseW * TierScale;
+			const float TierThick = 35.f;
+			FLinearColor TierColor = FMath::Lerp(LimestoneDark, LimestoneLight, (float)(tier % 3) / 2.f);
+
+			SpawnLakePiece(CubeMesh,
+				KhafreBase + FVector(0.f, TierW * 0.5f, TierZ),
+				FRotator::ZeroRotator,
+				FVector(TierW / 100.f, TierThick / 100.f, TierThick / 100.f),
+				TierColor, 0.95f, 0.f, TEXT("Khafre_TierN"));
+			SpawnLakePiece(CubeMesh,
+				KhafreBase + FVector(0.f, -TierW * 0.5f, TierZ),
+				FRotator::ZeroRotator,
+				FVector(TierW / 100.f, TierThick / 100.f, TierThick / 100.f),
+				TierColor, 0.95f, 0.f, TEXT("Khafre_TierS"));
+			SpawnLakePiece(CubeMesh,
+				KhafreBase + FVector(TierW * 0.5f, 0.f, TierZ),
+				FRotator::ZeroRotator,
+				FVector(TierThick / 100.f, TierW / 100.f, TierThick / 100.f),
+				TierColor, 0.95f, 0.f, TEXT("Khafre_TierE"));
+			SpawnLakePiece(CubeMesh,
+				KhafreBase + FVector(-TierW * 0.5f, 0.f, TierZ),
+				FRotator::ZeroRotator,
+				FVector(TierThick / 100.f, TierW / 100.f, TierThick / 100.f),
+				TierColor, 0.95f, 0.f, TEXT("Khafre_TierW"));
+		}
+
+		// Platform
+		SpawnLakePiece(CubeMesh,
+			KhafreBase + FVector(0.f, 0.f, -15.f),
+			FRotator::ZeroRotator,
+			FVector(KhafreBaseW * 1.12f / 100.f, KhafreBaseW * 1.12f / 100.f, 0.3f),
+			LimestoneDark, 0.95f, 0.f, TEXT("Khafre_Platform"));
+
+		// Golden capstone
+		SpawnLakePiece(ConeMesh,
+			KhafreBase + FVector(0.f, 0.f, KhafreHeight - 180.f),
+			FRotator::ZeroRotator,
+			FVector(4.f, 4.f, 3.5f),
+			CapstoneGold, 0.4f, 0.6f, TEXT("Khafre_Capstone"));
+
+		// Khafre mortuary temple — east side
+		const FVector KTemplePos = KhafreBase + FVector(KhafreBaseW * 0.55f + 400.f, 0.f, 0.f);
+		SpawnLakePiece(CubeMesh, KTemplePos + FVector(0.f, 0.f, 120.f),
+			FRotator::ZeroRotator,
+			FVector(15.f, 22.f, 2.4f),
+			BasaltDark, 0.88f, 0.f, TEXT("Khafre_TempleBase"));
+		for (int32 c = 0; c < 4; ++c)
+		{
+			const float ColY = -900.f + (float)c * 600.f;
+			SpawnLakePiece(CylinderMesh,
+				KTemplePos + FVector(0.f, ColY, 200.f),
+				FRotator::ZeroRotator,
+				FVector(1.0f, 1.0f, 3.5f),
+				LimestoneLight, 0.80f, 0.f, TEXT("Khafre_TempleCol"));
+		}
+
+		// --- Great Sphinx — between Khufu and Khafre ---
+		// Body: elongated cube laid on its side
+		const FVector SphinxPos = FMath::Lerp(KhufuBase, KhafreBase, 0.5f) + FVector(KhufuBaseW * 0.5f + 2000.f, 2000.f, 0.f);
+		// Body (lion body)
+		SpawnLakePiece(CubeMesh, SphinxPos + FVector(0.f, 0.f, 400.f),
+			FRotator::ZeroRotator,
+			FVector(35.f, 10.f, 5.f),
+			LimestoneMain, 0.90f, 0.f, TEXT("Sphinx_Body"));
+		// Haunches (rear, raised)
+		SpawnLakePiece(CubeMesh, SphinxPos + FVector(-1200.f, 0.f, 550.f),
+			FRotator::ZeroRotator,
+			FVector(10.f, 10.f, 8.f),
+			LimestoneMain, 0.90f, 0.f, TEXT("Sphinx_Haunches"));
+		// Head — sphere
+		SpawnLakePiece(SphereMesh, SphinxPos + FVector(1400.f, 0.f, 900.f),
+			FRotator::ZeroRotator,
+			FVector(7.f, 6.f, 8.f),
+			LimestoneLight, 0.85f, 0.f, TEXT("Sphinx_Head"));
+		// Headdress (nemes) — two slabs flanking the head
+		SpawnLakePiece(CubeMesh, SphinxPos + FVector(1400.f, 350.f, 750.f),
+			FRotator(0.f, 0.f, -10.f),
+			FVector(3.f, 1.f, 10.f),
+			CapstoneGold, 0.70f, 0.15f, TEXT("Sphinx_NemesL"));
+		SpawnLakePiece(CubeMesh, SphinxPos + FVector(1400.f, -350.f, 750.f),
+			FRotator(0.f, 0.f, 10.f),
+			FVector(3.f, 1.f, 10.f),
+			CapstoneGold, 0.70f, 0.15f, TEXT("Sphinx_NemesR"));
+		// Front paws — two elongated cubes forward
+		SpawnLakePiece(CubeMesh, SphinxPos + FVector(2200.f, 300.f, 150.f),
+			FRotator::ZeroRotator,
+			FVector(12.f, 2.5f, 2.f),
+			LimestoneMain, 0.90f, 0.f, TEXT("Sphinx_PawL"));
+		SpawnLakePiece(CubeMesh, SphinxPos + FVector(2200.f, -300.f, 150.f),
+			FRotator::ZeroRotator,
+			FVector(12.f, 2.5f, 2.f),
+			LimestoneMain, 0.90f, 0.f, TEXT("Sphinx_PawR"));
+		// Dream Stele — small slab between the paws
+		SpawnLakePiece(CubeMesh, SphinxPos + FVector(2100.f, 0.f, 250.f),
+			FRotator::ZeroRotator,
+			FVector(0.3f, 3.f, 4.f),
+			GraniteRed, 0.80f, 0.f, TEXT("Sphinx_Stele"));
+		// Sphinx enclosure walls
+		SpawnLakePiece(CubeMesh, SphinxPos + FVector(0.f, 800.f, 200.f),
+			FRotator::ZeroRotator,
+			FVector(40.f, 0.5f, 4.f),
+			LimestoneDark, 0.92f, 0.f, TEXT("Sphinx_WallN"));
+		SpawnLakePiece(CubeMesh, SphinxPos + FVector(0.f, -800.f, 200.f),
+			FRotator::ZeroRotator,
+			FVector(40.f, 0.5f, 4.f),
+			LimestoneDark, 0.92f, 0.f, TEXT("Sphinx_WallS"));
+
+		// --- Menkaure (smallest pyramid) ---
+		const FVector MenkaureBase = PyramidAreaCenter + FVector(18000.f, -7000.f, 0.f);
+		const float MenkaureHeight = 3250.f;  // ~65m
+		const float MenkaureBaseW = 5250.f;   // ~105m
+
+		// Main body
+		SpawnLakePiece(ConeMesh, MenkaureBase + FVector(0.f, 0.f, MenkaureHeight * 0.5f),
+			FRotator::ZeroRotator,
+			FVector(MenkaureBaseW / 100.f, MenkaureBaseW / 100.f, MenkaureHeight / 100.f),
+			LimestoneMain, 0.92f, 0.f, TEXT("Menkaure_Body"));
+
+		// Granite casing on lower third — Menkaure had red granite at the base
+		SpawnLakePiece(ConeMesh, MenkaureBase + FVector(0.f, 0.f, MenkaureHeight * 0.17f),
+			FRotator::ZeroRotator,
+			FVector(MenkaureBaseW * 0.95f / 100.f, MenkaureBaseW * 0.95f / 100.f, MenkaureHeight * 0.35f / 100.f),
+			GraniteRed, 0.82f, 0.05f, TEXT("Menkaure_Granite"));
+
+		// Stepped tiers
+		for (int32 tier = 0; tier < 8; ++tier)
+		{
+			const float TierFraction = (float)tier / 8.f;
+			const float TierZ = MenkaureHeight * TierFraction;
+			const float TierScale = 1.0f - TierFraction;
+			const float TierW = MenkaureBaseW * TierScale;
+			const float TierThick = 30.f;
+			FLinearColor TierColor = FMath::Lerp(LimestoneDark, LimestoneLight, (float)(tier % 3) / 2.f);
+
+			SpawnLakePiece(CubeMesh,
+				MenkaureBase + FVector(0.f, TierW * 0.5f, TierZ),
+				FRotator::ZeroRotator,
+				FVector(TierW / 100.f, TierThick / 100.f, TierThick / 100.f),
+				TierColor, 0.95f, 0.f, TEXT("Menkaure_TierN"));
+			SpawnLakePiece(CubeMesh,
+				MenkaureBase + FVector(0.f, -TierW * 0.5f, TierZ),
+				FRotator::ZeroRotator,
+				FVector(TierW / 100.f, TierThick / 100.f, TierThick / 100.f),
+				TierColor, 0.95f, 0.f, TEXT("Menkaure_TierS"));
+			SpawnLakePiece(CubeMesh,
+				MenkaureBase + FVector(TierW * 0.5f, 0.f, TierZ),
+				FRotator::ZeroRotator,
+				FVector(TierThick / 100.f, TierW / 100.f, TierThick / 100.f),
+				TierColor, 0.95f, 0.f, TEXT("Menkaure_TierE"));
+			SpawnLakePiece(CubeMesh,
+				MenkaureBase + FVector(-TierW * 0.5f, 0.f, TierZ),
+				FRotator::ZeroRotator,
+				FVector(TierThick / 100.f, TierW / 100.f, TierThick / 100.f),
+				TierColor, 0.95f, 0.f, TEXT("Menkaure_TierW"));
+		}
+
+		// Platform
+		SpawnLakePiece(CubeMesh,
+			MenkaureBase + FVector(0.f, 0.f, -15.f),
+			FRotator::ZeroRotator,
+			FVector(MenkaureBaseW * 1.1f / 100.f, MenkaureBaseW * 1.1f / 100.f, 0.3f),
+			LimestoneDark, 0.95f, 0.f, TEXT("Menkaure_Platform"));
+
+		// Three Queens' Pyramids (small satellites south of Menkaure)
+		for (int32 q = 0; q < 3; ++q)
+		{
+			const FVector QBase = MenkaureBase + FVector((float)q * 2500.f - 2500.f, -MenkaureBaseW * 0.6f - 2000.f, 0.f);
+			const float QH = 1200.f + (float)q * 200.f;
+			const float QW = 2000.f + (float)q * 300.f;
+
+			SpawnLakePiece(ConeMesh, QBase + FVector(0.f, 0.f, QH * 0.5f),
+				FRotator::ZeroRotator,
+				FVector(QW / 100.f, QW / 100.f, QH / 100.f),
+				LimestoneMain, 0.92f, 0.f,
+				*FString::Printf(TEXT("Queen_%d_Body"), q));
+
+			// Small capstone
+			SpawnLakePiece(ConeMesh, QBase + FVector(0.f, 0.f, QH - 80.f),
+				FRotator::ZeroRotator,
+				FVector(2.f, 2.f, 1.5f),
+				CapstoneGold, 0.5f, 0.4f,
+				*FString::Printf(TEXT("Queen_%d_Cap"), q));
+		}
+
+		// Scattered rubble/fallen blocks around the pyramids
+		for (int32 r = 0; r < 30; ++r)
+		{
+			const FVector RubbleCenter = PyramidAreaCenter + FVector(
+				CityRandom.FRandRange(-15000.f, 25000.f),
+				CityRandom.FRandRange(-12000.f, 5000.f),
+				0.f);
+			const float RS = CityRandom.FRandRange(30.f, 120.f);
+			SpawnLakePiece(CubeMesh, RubbleCenter + FVector(0.f, 0.f, RS * 0.3f),
+				FRotator(CityRandom.FRandRange(-15.f, 15.f),
+					CityRandom.FRandRange(0.f, 360.f),
+					CityRandom.FRandRange(-10.f, 10.f)),
+				FVector(RS / 100.f, RS * CityRandom.FRandRange(0.6f, 1.2f) / 100.f,
+					RS * CityRandom.FRandRange(0.4f, 0.8f) / 100.f),
+				FMath::Lerp(LimestoneDark, LimestoneMain, CityRandom.FRandRange(0.f, 1.f)),
+				0.95f, 0.f, TEXT("Pyramid_Rubble"));
+		}
+
+		// Obelisks (2) — tall thin monuments near the causeway
+		for (int32 ob = 0; ob < 2; ++ob)
+		{
+			const FVector ObBase = TemplePos + FVector(2000.f, (ob == 0 ? 800.f : -800.f), 0.f);
+			// Shaft
+			SpawnLakePiece(CubeMesh, ObBase + FVector(0.f, 0.f, 1000.f),
+				FRotator::ZeroRotator,
+				FVector(1.2f, 1.2f, 20.f),
+				GraniteRed, 0.75f, 0.1f,
+				*FString::Printf(TEXT("Obelisk_%d_Shaft"), ob));
+			// Pyramidion tip
+			SpawnLakePiece(ConeMesh, ObBase + FVector(0.f, 0.f, 2050.f),
+				FRotator::ZeroRotator,
+				FVector(1.5f, 1.5f, 2.f),
+				CapstoneGold, 0.35f, 0.7f,
+				*FString::Printf(TEXT("Obelisk_%d_Tip"), ob));
+		}
+	}
+
+	// --- Ambient night lighting: 4x4 grid of warm golden lights across pirate beach + pyramid area ---
+	{
+		const FVector GridCenter(-10000.f, -75000.f, 400.f);
+		const float SpacingX = 8000.f;
+		const float SpacingY = 10000.f;
+		const int32 CountX = 4;
+		const int32 CountY = 4;
+		const float HalfExtentX = (CountX - 1) * SpacingX * 0.5f;
+		const float HalfExtentY = (CountY - 1) * SpacingY * 0.5f;
+		int32 LightIdx = 0;
+		for (int32 ix = 0; ix < CountX; ++ix)
+		{
+			for (int32 iy = 0; iy < CountY; ++iy)
+			{
+				const FVector Pos(
+					GridCenter.X - HalfExtentX + ix * SpacingX,
+					GridCenter.Y - HalfExtentY + iy * SpacingY,
+					GridCenter.Z);
+
+				AActor* LightActor = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), Pos, FRotator::ZeroRotator);
+				if (LightActor)
+				{
+					const FString LightName = FString::Printf(TEXT("PirateBeachLight_%d"), LightIdx);
+					UPointLightComponent* PL = NewObject<UPointLightComponent>(LightActor, *LightName);
+					PL->SetWorldLocation(Pos);
+					PL->SetIntensity(3500.f);
+					PL->SetAttenuationRadius(10000.f);
+					PL->SetLightColor(FColor(255, 190, 110));
+					PL->SetCastShadows(false);
+					PL->RegisterComponent();
+					LightActor->SetRootComponent(PL);
+					LightActor->AddInstanceComponent(PL);
+				}
+				++LightIdx;
+			}
+		}
+		UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Spawned %d pirate beach ambient lights."), LightIdx);
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Spawned lake and pirate ship with %d ship components."), SIdx);
 }

@@ -60,7 +60,7 @@ APHCRaptorPawn::APHCRaptorPawn()
 
 	// ---- Collision box (root) ----
 	VehicleCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("VehicleCollision"));
-	VehicleCollision->SetBoxExtent(FVector(450.f, 340.f, 30.f));
+	VehicleCollision->SetBoxExtent(FVector(500.f, 400.f, 25.f));
 	VehicleCollision->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	VehicleCollision->SetCollisionResponseToAllChannels(ECR_Block);
 	VehicleCollision->SetSimulatePhysics(false);
@@ -114,107 +114,170 @@ APHCRaptorPawn::APHCRaptorPawn()
 	};
 
 	// ====================================================================
-	//  FUSELAGE
+	//  FUSELAGE — long, flat diamond cross-section for stealth shaping
 	// ====================================================================
 
-	// Main fuselage body (wide, flat – stealth shaping)
+	// Main fuselage body (elongated, narrow, very flat)
 	FuselageMain = MakeCube(TEXT("FuselageMain"),
-		FVector(0.f, 0.f, 0.f), FVector(600.f, 280.f, 40.f));
+		FVector(0.f, 0.f, 0.f), FVector(750.f, 180.f, 26.f));
 	BodyColoredMeshes.Add(FuselageMain);
 
-	// Nose section (narrower, slightly lower)
+	// Upper fuselage spine (subtle raised ridge along centerline)
+	UStaticMeshComponent* DorsalSpine = MakeCube(TEXT("DorsalSpine"),
+		FVector(-20.f, 0.f, 14.f), FVector(500.f, 40.f, 6.f));
+	BodyColoredMeshes.Add(DorsalSpine);
+
+	// Belly fairing (flat underbody panel, slightly wider)
+	UStaticMeshComponent* BellyFairing = MakeCube(TEXT("BellyFairing"),
+		FVector(-30.f, 0.f, -14.f), FVector(550.f, 160.f, 5.f));
+	BodyColoredMeshes.Add(BellyFairing);
+
+	// Nose section (long tapered wedge)
 	FuselageNose = MakeCube(TEXT("FuselageNose"),
-		FVector(350.f, 0.f, -2.f), FVector(250.f, 180.f, 30.f));
+		FVector(380.f, 0.f, -1.f), FVector(340.f, 100.f, 16.f));
 	BodyColoredMeshes.Add(FuselageNose);
 
-	// Nose tip (thin radome)
-	NoseTip = MakeCube(TEXT("NoseTip"),
-		FVector(500.f, 0.f, -4.f), FVector(80.f, 60.f, 12.f));
+	// Nose tip (sharp pointed cone radome)
+	NoseTip = MakeCone(TEXT("NoseTip"),
+		FVector(570.f, 0.f, -2.f), FVector(0.35f, 0.20f, 0.50f));
+	if (NoseTip) NoseTip->SetRelativeRotation(FRotator(-90.f, 0.f, 0.f));
 	BodyColoredMeshes.Add(NoseTip);
 
-	// Rear fuselage (narrowing toward engines)
+	// Rear fuselage (tapers between engines)
 	FuselageRear = MakeCube(TEXT("FuselageRear"),
-		FVector(-280.f, 0.f, 0.f), FVector(200.f, 220.f, 35.f));
+		FVector(-300.f, 0.f, 0.f), FVector(260.f, 155.f, 22.f));
 	BodyColoredMeshes.Add(FuselageRear);
 
+	// Engine nacelle fairings (elongated pods running aft from wing root)
+	UStaticMeshComponent* NacelleL = MakeCube(TEXT("NacelleL"),
+		FVector(-200.f, 65.f, -3.f), FVector(350.f, 55.f, 24.f));
+	BodyColoredMeshes.Add(NacelleL);
+
+	UStaticMeshComponent* NacelleR = MakeCube(TEXT("NacelleR"),
+		FVector(-200.f, -65.f, -3.f), FVector(350.f, 55.f, 24.f));
+	BodyColoredMeshes.Add(NacelleR);
+
 	// ====================================================================
-	//  COCKPIT CANOPY (glass)
+	//  COCKPIT CANOPY (glass) — low-profile bubble
 	// ====================================================================
 
 	CockpitCanopy = MakeCube(TEXT("CockpitCanopy"),
-		FVector(180.f, 0.f, 28.f), FVector(120.f, 70.f, 25.f));
+		FVector(200.f, 0.f, 22.f), FVector(160.f, 50.f, 16.f));
 	// Gets M_PHCGlass in BeginPlay – NOT in BodyColoredMeshes
 
+	// Canopy frame (thin outline around glass)
+	UStaticMeshComponent* CanopyFrame = MakeCube(TEXT("CanopyFrame"),
+		FVector(200.f, 0.f, 20.f), FVector(170.f, 54.f, 3.f));
+	BodyColoredMeshes.Add(CanopyFrame);
+
 	// ====================================================================
-	//  WINGS (thin wide panels)
+	//  WINGS — swept trapezoidal with LERX blends
 	// ====================================================================
 
+	// Main wing panels (thin, wide, slightly swept back)
 	WingL = MakeCube(TEXT("WingL"),
-		FVector(-30.f, 260.f, -2.f), FVector(300.f, 200.f, 8.f));
+		FVector(-50.f, 280.f, -3.f), FVector(320.f, 230.f, 5.f));
+	if (WingL) WingL->SetRelativeRotation(FRotator(0.f, -8.f, -1.5f));
 	BodyColoredMeshes.Add(WingL);
 
 	WingR = MakeCube(TEXT("WingR"),
-		FVector(-30.f, -260.f, -2.f), FVector(300.f, 200.f, 8.f));
+		FVector(-50.f, -280.f, -3.f), FVector(320.f, 230.f, 5.f));
+	if (WingR) WingR->SetRelativeRotation(FRotator(0.f, 8.f, 1.5f));
 	BodyColoredMeshes.Add(WingR);
 
+	// LERX — Leading Edge Root Extensions (swept strakes blending fuselage to wings)
+	UStaticMeshComponent* LerxL = MakeCube(TEXT("LerxL"),
+		FVector(100.f, 140.f, -2.f), FVector(250.f, 90.f, 6.f));
+	if (LerxL) LerxL->SetRelativeRotation(FRotator(0.f, -18.f, 0.f));
+	BodyColoredMeshes.Add(LerxL);
+
+	UStaticMeshComponent* LerxR = MakeCube(TEXT("LerxR"),
+		FVector(100.f, -140.f, -2.f), FVector(250.f, 90.f, 6.f));
+	if (LerxR) LerxR->SetRelativeRotation(FRotator(0.f, 18.f, 0.f));
+	BodyColoredMeshes.Add(LerxR);
+
+	// Wing trailing edge flaps (thin strips at rear of each wing)
+	UStaticMeshComponent* FlapL = MakeCube(TEXT("FlapL"),
+		FVector(-180.f, 240.f, -4.f), FVector(80.f, 200.f, 3.f));
+	if (FlapL) FlapL->SetRelativeRotation(FRotator(0.f, -5.f, 0.f));
+	BodyColoredMeshes.Add(FlapL);
+
+	UStaticMeshComponent* FlapR = MakeCube(TEXT("FlapR"),
+		FVector(-180.f, -240.f, -4.f), FVector(80.f, 200.f, 3.f));
+	if (FlapR) FlapR->SetRelativeRotation(FRotator(0.f, 5.f, 0.f));
+	BodyColoredMeshes.Add(FlapR);
+
 	// ====================================================================
-	//  HORIZONTAL STABILIZERS (small rear fins)
+	//  HORIZONTAL STABILIZERS (all-moving tailerons)
 	// ====================================================================
 
 	HorizStabL = MakeCube(TEXT("HorizStabL"),
-		FVector(-370.f, 160.f, 0.f), FVector(120.f, 90.f, 6.f));
+		FVector(-400.f, 150.f, 0.f), FVector(160.f, 115.f, 4.f));
+	if (HorizStabL) HorizStabL->SetRelativeRotation(FRotator(0.f, -6.f, 0.f));
 	BodyColoredMeshes.Add(HorizStabL);
 
 	HorizStabR = MakeCube(TEXT("HorizStabR"),
-		FVector(-370.f, -160.f, 0.f), FVector(120.f, 90.f, 6.f));
+		FVector(-400.f, -150.f, 0.f), FVector(160.f, 115.f, 4.f));
+	if (HorizStabR) HorizStabR->SetRelativeRotation(FRotator(0.f, 6.f, 0.f));
 	BodyColoredMeshes.Add(HorizStabR);
 
 	// ====================================================================
-	//  VERTICAL STABILIZERS (canted outward ~25°, F-22 signature)
+	//  VERTICAL STABILIZERS (canted outward ~28°, F-22 signature)
 	// ====================================================================
 
 	VertStabL = MakeCube(TEXT("VertStabL"),
-		FVector(-330.f, 80.f, 40.f), FVector(12.f, 60.f, 80.f));
-	if (VertStabL) VertStabL->SetRelativeRotation(FRotator(0.f, 0.f, -25.f));
+		FVector(-340.f, 75.f, 45.f), FVector(140.f, 10.f, 100.f));
+	if (VertStabL) VertStabL->SetRelativeRotation(FRotator(0.f, 0.f, -28.f));
 	BodyColoredMeshes.Add(VertStabL);
 
 	VertStabR = MakeCube(TEXT("VertStabR"),
-		FVector(-330.f, -80.f, 40.f), FVector(12.f, 60.f, 80.f));
-	if (VertStabR) VertStabR->SetRelativeRotation(FRotator(0.f, 0.f, 25.f));
+		FVector(-340.f, -75.f, 45.f), FVector(140.f, 10.f, 100.f));
+	if (VertStabR) VertStabR->SetRelativeRotation(FRotator(0.f, 0.f, 28.f));
 	BodyColoredMeshes.Add(VertStabR);
 
 	// ====================================================================
-	//  ENGINE INTAKES (dark rectangles on fuselage sides)
+	//  ENGINE INTAKES (trapezoidal stealth inlets on fuselage sides)
 	// ====================================================================
 
 	IntakeL = MakeCube(TEXT("IntakeL"),
-		FVector(-50.f, 145.f, -8.f), FVector(100.f, 40.f, 30.f));
+		FVector(-30.f, 110.f, -10.f), FVector(140.f, 45.f, 28.f));
+	if (IntakeL) IntakeL->SetRelativeRotation(FRotator(3.f, -5.f, 0.f));
 
 	IntakeR = MakeCube(TEXT("IntakeR"),
-		FVector(-50.f, -145.f, -8.f), FVector(100.f, 40.f, 30.f));
+		FVector(-30.f, -110.f, -10.f), FVector(140.f, 45.f, 28.f));
+	if (IntakeR) IntakeR->SetRelativeRotation(FRotator(3.f, 5.f, 0.f));
+
+	// Intake lip/ramp (angular panel above each intake)
+	UStaticMeshComponent* IntakeLipL = MakeCube(TEXT("IntakeLipL"),
+		FVector(-10.f, 110.f, 2.f), FVector(100.f, 42.f, 4.f));
+	if (IntakeLipL) IntakeLipL->SetRelativeRotation(FRotator(-6.f, -5.f, 0.f));
+	BodyColoredMeshes.Add(IntakeLipL);
+
+	UStaticMeshComponent* IntakeLipR = MakeCube(TEXT("IntakeLipR"),
+		FVector(-10.f, -110.f, 2.f), FVector(100.f, 42.f, 4.f));
+	if (IntakeLipR) IntakeLipR->SetRelativeRotation(FRotator(-6.f, 5.f, 0.f));
+	BodyColoredMeshes.Add(IntakeLipR);
 
 	// ====================================================================
-	//  ENGINE NOZZLES (cylinders at rear, pointing backward)
+	//  ENGINE NOZZLES (2D thrust-vectoring rectangular nozzles)
 	// ====================================================================
 
-	NozzleL = MakeCyl(TEXT("NozzleL"),
-		FVector(-400.f, 60.f, 0.f), FVector(0.22f, 0.22f, 0.20f));
-	if (NozzleL) NozzleL->SetRelativeRotation(FRotator(90.f, 0.f, 0.f));
+	NozzleL = MakeCube(TEXT("NozzleL"),
+		FVector(-440.f, 65.f, 0.f), FVector(30.f, 22.f, 18.f));
 
-	NozzleR = MakeCyl(TEXT("NozzleR"),
-		FVector(-400.f, -60.f, 0.f), FVector(0.22f, 0.22f, 0.20f));
-	if (NozzleR) NozzleR->SetRelativeRotation(FRotator(90.f, 0.f, 0.f));
+	NozzleR = MakeCube(TEXT("NozzleR"),
+		FVector(-440.f, -65.f, 0.f), FVector(30.f, 22.f, 18.f));
 
 	// ====================================================================
 	//  AFTERBURNER CONES (glowing exhaust plumes)
 	// ====================================================================
 
 	AfterburnerL = MakeCone(TEXT("AfterburnerL"),
-		FVector(-440.f, 60.f, 0.f), FVector(0.15f, 0.15f, 0.30f));
+		FVector(-480.f, 65.f, 0.f), FVector(0.14f, 0.10f, 0.35f));
 	if (AfterburnerL) AfterburnerL->SetRelativeRotation(FRotator(90.f, 0.f, 0.f));
 
 	AfterburnerR = MakeCone(TEXT("AfterburnerR"),
-		FVector(-440.f, -60.f, 0.f), FVector(0.15f, 0.15f, 0.30f));
+		FVector(-480.f, -65.f, 0.f), FVector(0.14f, 0.10f, 0.35f));
 	if (AfterburnerR) AfterburnerR->SetRelativeRotation(FRotator(90.f, 0.f, 0.f));
 
 	// ====================================================================
@@ -223,15 +286,15 @@ APHCRaptorPawn::APHCRaptorPawn()
 
 	// Left wingtip: red
 	NavLightL = MakeCube(TEXT("NavLightL"),
-		FVector(-30.f, 358.f, 0.f), FVector(6.f, 4.f, 4.f));
+		FVector(-80.f, 392.f, -3.f), FVector(6.f, 4.f, 4.f));
 
 	// Right wingtip: green
 	NavLightR = MakeCube(TEXT("NavLightR"),
-		FVector(-30.f, -358.f, 0.f), FVector(6.f, 4.f, 4.f));
+		FVector(-80.f, -392.f, -3.f), FVector(6.f, 4.f, 4.f));
 
 	// Tail: white
 	TailLight = MakeCube(TEXT("TailLight"),
-		FVector(-410.f, 0.f, 10.f), FVector(6.f, 6.f, 4.f));
+		FVector(-450.f, 0.f, 12.f), FVector(6.f, 6.f, 4.f));
 
 	// ====================================================================
 	//  CAMERA
@@ -255,11 +318,14 @@ APHCRaptorPawn::APHCRaptorPawn()
 	VehicleCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	VehicleCamera->bUsePawnControlRotation = false;
 
-	// Anti-culling bounds (jet is large)
+	// Inflate bounds on ALL components to prevent frustum-culling on mobile
 	VehicleCollision->SetBoundsScale(10.f);
-	if (FuselageMain) FuselageMain->SetBoundsScale(5.f);
-	if (WingL) WingL->SetBoundsScale(5.f);
-	if (WingR) WingR->SetBoundsScale(5.f);
+	TArray<UStaticMeshComponent*> AllMeshes;
+	GetComponents<UStaticMeshComponent>(AllMeshes);
+	for (UStaticMeshComponent* MC : AllMeshes)
+	{
+		MC->SetBoundsScale(10.f);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -608,12 +674,31 @@ void APHCRaptorPawn::Tick(float DeltaTime)
 		AddActorWorldOffset(Delta, false);
 	}
 
-	// ---- Minimum altitude clamp ----
+	// ---- Ground-aware altitude clamp (trace downward to find terrain) ----
 	{
 		const FVector Pos = GetActorLocation();
-		if (Pos.Z < MinAltitude)
+		float GroundZ = 0.f; // default ground level
+
+		// Trace downward from high above to find actual terrain surface
+		const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 5000.f);
+		const FVector TraceEnd(Pos.X, Pos.Y, Pos.Z - 5000.f);
+		FCollisionQueryParams Params;
+		Params.AddIgnoredActor(this);
+		TArray<FHitResult> Hits;
+		if (GetWorld()->LineTraceMultiByChannel(Hits, TraceStart, TraceEnd, ECC_WorldStatic, Params))
 		{
-			SetActorLocation(FVector(Pos.X, Pos.Y, MinAltitude));
+			for (const FHitResult& Hit : Hits)
+			{
+				if (Hit.bStartPenetrating) continue;
+				GroundZ = Hit.ImpactPoint.Z;
+				break;
+			}
+		}
+
+		const float FloorZ = GroundZ + MinAltitude;
+		if (Pos.Z < FloorZ)
+		{
+			SetActorLocation(FVector(Pos.X, Pos.Y, FloorZ));
 			FRotator Rot = GetActorRotation();
 			if (Rot.Pitch < 0.f)
 			{
@@ -725,23 +810,17 @@ void APHCRaptorPawn::FireRocket()
 		return;
 	}
 	FireCooldownRemaining = FireCooldown;
-	ServerFireRocket();
-}
 
-void APHCRaptorPawn::ServerFireRocket_Implementation()
-{
+	// Spawn locally — missiles are non-replicated visual tracers, no RPC needed.
 	UWorld* World = GetWorld();
 	if (!World) return;
 
-	// Spawn from nose of the jet, forward and slightly below
 	const FVector MuzzleLoc = GetActorLocation()
 		+ GetActorForwardVector() * 550.f
 		+ FVector(0.f, 0.f, -10.f);
 	const FRotator MuzzleRot = GetActorForwardVector().Rotation();
 
 	FActorSpawnParameters SP;
-	SP.Owner = this;
-	SP.Instigator = GetInstigator();
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	APHCMissileProjectile* Proj = World->SpawnActor<APHCMissileProjectile>(
@@ -751,49 +830,28 @@ void APHCRaptorPawn::ServerFireRocket_Implementation()
 		Proj->OwnerVehicle = this;
 		Proj->Damage = 100.f;
 
-		// Override speed: high-velocity rocket
-		if (Proj->ProjectileMovement)
-		{
-			Proj->ProjectileMovement->InitialSpeed = 15000.f;
-			Proj->ProjectileMovement->MaxSpeed = 15000.f;
-			Proj->ProjectileMovement->Velocity =
-				MuzzleRot.Vector() * 15000.f;
-		}
+		// Override velocity: high-velocity rocket
+		Proj->ManualVelocity = MuzzleRot.Vector() * 25000.f;
 
-		// Override color to bright neon orange (BeginPlay set red, re-apply on existing MID)
-		const FLinearColor NeonOrange(5.0f, 1.5f, 0.1f);
+		// Neon orange emissive color for Raptor rounds
 		if (Proj->ProjectileMesh)
 		{
 			UMaterialInstanceDynamic* Mat = Cast<UMaterialInstanceDynamic>(
 				Proj->ProjectileMesh->GetMaterial(0));
 			if (Mat)
 			{
-				Mat->SetVectorParameterValue(TEXT("BaseColor"), NeonOrange);
+				Mat->SetVectorParameterValue(TEXT("BaseColor"),
+					FLinearColor(1.0f, 0.4f, 0.02f));
+				Mat->SetVectorParameterValue(TEXT("EmissiveColor"),
+					FLinearColor(5.0f, 1.5f, 0.1f));
 			}
 		}
-
-		// Replace the red point light with neon orange
-		TArray<UPointLightComponent*> Lights;
-		Proj->GetComponents<UPointLightComponent>(Lights);
-		for (UPointLightComponent* L : Lights)
-		{
-			L->SetLightColor(FLinearColor(1.0f, 0.4f, 0.02f));
-			L->SetIntensity(8000.f);
-			L->SetAttenuationRadius(500.f);
-		}
-
-		// Start glowing neon orange trail
-		Proj->StartTrail(NeonOrange);
-
-		// Ignore collision with this jet
-		TArray<UPrimitiveComponent*> MyComps;
-		GetComponents<UPrimitiveComponent>(MyComps);
-		for (UPrimitiveComponent* Comp : MyComps)
-		{
-			Proj->CollisionSphere->IgnoreComponentWhenMoving(Comp, true);
-			Comp->IgnoreComponentWhenMoving(Proj->CollisionSphere, true);
-		}
 	}
+}
+
+void APHCRaptorPawn::ServerFireRocket_Implementation()
+{
+	// Kept for RPC signature — firing now handled locally in FireRocket().
 }
 
 // ---------------------------------------------------------------------------

@@ -251,7 +251,7 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UMaterial> GlassMaterial;
 
 	float FireCooldownRemaining = 0.f;
-	static constexpr float FireCooldown = 0.25f;
+	static constexpr float FireCooldown = 0.05f;
 
 	float BombCooldownRemaining = 0.f;
 	static constexpr float BombCooldown = 3.f;

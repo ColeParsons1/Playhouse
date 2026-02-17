@@ -41,7 +41,7 @@ public:
 	float Damage = 50.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "PHC|Missile")
-	float Speed = 8000.f;
+	float Speed = 15000.f;
 
 	UPROPERTY(BlueprintReadWrite, Category = "PHC|Missile")
 	TObjectPtr<AActor> OwnerVehicle;
@@ -64,7 +64,7 @@ private:
 			   UPrimitiveComponent* OtherComp, FVector NormalImpulse,
 			   const FHitResult& Hit);
 
-	static constexpr float LifeSpan = 5.f;
+	static constexpr float LifeSpan = 1.5f;
 
 	// -- Trail system --
 	bool bHasTrail = false;

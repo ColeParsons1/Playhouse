@@ -244,11 +244,15 @@ APHCVehiclePawn::APHCVehiclePawn()
 	VehicleCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	VehicleCamera->bUsePawnControlRotation = false;
 
-	// Inflate bounds to prevent frustum-culling the car body on mobile
+	// Inflate bounds on ALL components to prevent frustum-culling on mobile
+	// (missing bounds on some components caused parts to vanish near geometry)
 	VehicleCollision->SetBoundsScale(10.f);
-	if (BodyMesh)    BodyMesh->SetBoundsScale(5.f);
-	if (CabinMesh)   CabinMesh->SetBoundsScale(5.f);
-	if (RearEngineMesh) RearEngineMesh->SetBoundsScale(5.f);
+	TArray<UStaticMeshComponent*> AllMeshes;
+	GetComponents<UStaticMeshComponent>(AllMeshes);
+	for (UStaticMeshComponent* MC : AllMeshes)
+	{
+		MC->SetBoundsScale(10.f);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -544,11 +548,10 @@ void APHCVehiclePawn::Tick(float DeltaTime)
 	// ---- Ground following (downward trace to ride slopes, ramps, ocean floor) ----
 	{
 		const FVector Pos = GetActorLocation();
-		const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 100.f);
+		const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 5000.f);
 		const FVector TraceEnd(Pos.X, Pos.Y, Pos.Z - 2000.f);
 		FCollisionQueryParams Params;
 		Params.AddIgnoredActor(this);
-		Params.bTraceComplex = true;
 
 		TArray<FHitResult> Hits;
 		bool bFoundSurface = false;
@@ -560,8 +563,9 @@ void APHCVehiclePawn::Tick(float DeltaTime)
 
 				const float TargetZ = Hit.ImpactPoint.Z;
 
-				// Follow surfaces at or below the vehicle (+200 tolerance for ramp ascent at speed)
-				if (TargetZ <= Pos.Z + 200.f)
+				// Follow any surface above us (hills) or within 100 UU below (small dips).
+				// Surfaces >100 UU below = airborne (ramp launches, cliff edges).
+				if (TargetZ >= Pos.Z - 100.f)
 				{
 					bFoundSurface = true;
 					bHasBeenGrounded = true;

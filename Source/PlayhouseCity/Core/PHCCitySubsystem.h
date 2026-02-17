@@ -64,6 +64,9 @@ private:
 	void SpawnHills();
 	void SpawnCloudLayer();
 	void SpawnUndergroundCavern();
+	void SpawnMountainRange();
+	void SpawnSandCastle();
+	void SpawnLakeAndPirateShip();
 
 	/** Spawn a single building with optional window lights. */
 	void SpawnBuilding(const FVector& Location, const FVector& Size,
