@@ -15,6 +15,16 @@ Archived/
 *.DS_Store
 Thumbs.db
 
+## Packaged builds (too large for GitHub)
+PackagedBuilds/
+
+## Backend cache
+backend/**/__pycache__/
+
+## Frontend dependencies and cache
+frontend/node_modules/
+frontend/.vite/
+
 ## Compiled assets
 *.uasset.bak
 *.umap.bak

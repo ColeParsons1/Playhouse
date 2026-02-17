@@ -67,7 +67,7 @@ void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	if (!ColorMaterial)
 	{
 		// First editor run before the .uasset exists -- create inline.
-		ColorMaterial = NewObject<UMaterial>(GetTransientPackage(), TEXT("PHC_ColorMaterial"));
+		ColorMaterial = NewObject<UMaterial>(GetTransientPackageAsObject(), TEXT("PHC_ColorMaterial"));
 
 		UMaterialExpressionVectorParameter* ColorParam =
 			NewObject<UMaterialExpressionVectorParameter>(ColorMaterial);
@@ -2549,13 +2549,13 @@ void UPHCCitySubsystem::SpawnBuilding(const FVector& Location, const FVector& Si
 		// Pick the two wider faces for more visible windows.
 		if (Size.X >= Size.Y)
 		{
-			WFaces[NumFaces++] = {  0.f,  WExtY + 6.f, true,  Size.X };
-			WFaces[NumFaces++] = {  0.f, -WExtY - 6.f, true,  Size.X };
+			WFaces[NumFaces++] = {  0.f,  WExtY + 6.f, true,  static_cast<float>(Size.X) };
+			WFaces[NumFaces++] = {  0.f, -WExtY - 6.f, true,  static_cast<float>(Size.X) };
 		}
 		else
 		{
-			WFaces[NumFaces++] = {  WExtX + 6.f, 0.f, false, Size.Y };
-			WFaces[NumFaces++] = { -WExtX - 6.f, 0.f, false, Size.Y };
+			WFaces[NumFaces++] = {  WExtX + 6.f, 0.f, false, static_cast<float>(Size.Y) };
+			WFaces[NumFaces++] = { -WExtX - 6.f, 0.f, false, static_cast<float>(Size.Y) };
 		}
 
 		int32 WinIdx = 0;
