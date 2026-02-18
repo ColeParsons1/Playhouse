@@ -6491,6 +6491,125 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 	}
 
+	// ================================================================
+	// SNOWFALL & GROUND ACCUMULATION — northern mountain range
+	// Visible snowfall (suspended white spheres) and snow ground cover
+	// ================================================================
+	{
+		const float SnowMinX = -95000.f;
+		const float SnowMaxX =  96000.f;
+		const float SnowMinY =  85000.f;  // extends south of peaks for snow field
+		const float SnowMaxY = 115000.f;  // extends north behind peaks
+
+		AActor* SnowActor = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(0.f, 100000.f, 0.f), FRotator::ZeroRotator);
+		if (SnowActor)
+		{
+#if WITH_EDITOR
+			SnowActor->SetActorLabel(TEXT("NorthernSnowfall"));
+#endif
+			int32 SnowCompIdx = 0;
+
+			// --- Snowfall particles: small white spheres scattered in the air ---
+			// Dense snowfall with ~400 flakes across the region
+			for (int32 SF = 0; SF < 400; ++SF)
+			{
+				const float SX = CityRandom.FRandRange(SnowMinX, SnowMaxX);
+				const float SY = CityRandom.FRandRange(SnowMinY, SnowMaxY);
+				const float SZ = CityRandom.FRandRange(200.f, 18000.f); // from near ground to above peaks
+				const float SR = CityRandom.FRandRange(15.f, 45.f);     // snowflake size
+
+				FString SFN = FString::Printf(TEXT("Snowflake_%d"), SnowCompIdx++);
+				UStaticMeshComponent* Flake = NewObject<UStaticMeshComponent>(SnowActor, *SFN);
+				Flake->SetStaticMesh(SphereMesh);
+				Flake->SetWorldScale3D(FVector(SR / 50.f, SR / 50.f, SR * 0.6f / 50.f)); // slightly flattened
+				Flake->SetWorldLocation(FVector(SX, SY, SZ));
+				Flake->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Flake->SetBoundsScale(10.f);
+				Flake->RegisterComponent();
+				// Bright white with slight translucency feel via low roughness
+				const float WhiteVar = CityRandom.FRandRange(0.88f, 0.98f);
+				ApplyPBR(Flake, FLinearColor(WhiteVar, WhiteVar, WhiteVar + 0.02f), 0.f, 0.4f);
+				SnowActor->AddInstanceComponent(Flake);
+			}
+
+			// --- Ground snow accumulation: white patches covering terrain ---
+			// Large flat cubes to simulate snow cover on the ground between peaks
+			for (int32 GA = 0; GA < 60; ++GA)
+			{
+				const float GX = CityRandom.FRandRange(SnowMinX, SnowMaxX);
+				const float GY = CityRandom.FRandRange(SnowMinY, SnowMaxY);
+				const float GW = CityRandom.FRandRange(2000.f, 6000.f);
+				const float GD = CityRandom.FRandRange(1500.f, 5000.f);
+				const float GH = CityRandom.FRandRange(8.f, 25.f);   // thin snow layer
+				const float GYaw = CityRandom.FRandRange(0.f, 360.f);
+
+				FString GAN = FString::Printf(TEXT("GroundSnow_%d"), SnowCompIdx++);
+				UStaticMeshComponent* SnowPatch = NewObject<UStaticMeshComponent>(SnowActor, *GAN);
+				SnowPatch->SetStaticMesh(CubeMesh);
+				SnowPatch->SetWorldScale3D(FVector(GW / 100.f, GD / 100.f, GH / 100.f));
+				SnowPatch->SetWorldLocation(FVector(GX, GY, GH * 0.5f));
+				SnowPatch->SetWorldRotation(FRotator(CityRandom.FRandRange(-3.f, 3.f), GYaw, 0.f));
+				SnowPatch->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				SnowPatch->SetBoundsScale(10.f);
+				SnowPatch->RegisterComponent();
+				const bool bFreshSnow = (GA % 3 != 0);
+				ApplyPBR(SnowPatch, bFreshSnow ? SnowFresh : SnowOld, 0.f, 0.55f);
+				SnowActor->AddInstanceComponent(SnowPatch);
+			}
+
+			// --- Snow drifts along mountain bases: elongated mounds ---
+			for (int32 P = 0; P < 23; ++P) // northern peaks only
+			{
+				const FPeakData& PD = Peaks[P];
+				const int32 NumDrifts = 4 + CityRandom.RandRange(0, 3);
+				for (int32 D = 0; D < NumDrifts; ++D)
+				{
+					const float DYaw = CityRandom.FRandRange(0.f, 360.f);
+					const float DRad = FMath::DegreesToRadians(DYaw);
+					const float DDist = PD.RadX * CityRandom.FRandRange(0.7f, 1.4f);
+					const float DX = PD.X + DDist * FMath::Cos(DRad);
+					const float DY = PD.Y + DDist * FMath::Sin(DRad);
+					const float DW = CityRandom.FRandRange(800.f, 2500.f);
+					const float DD = CityRandom.FRandRange(400.f, 1200.f);
+					const float DH = CityRandom.FRandRange(50.f, 200.f);
+
+					FString DDN = FString::Printf(TEXT("SnowDrift_%d_%d"), P, D);
+					UStaticMeshComponent* Drift = NewObject<UStaticMeshComponent>(SnowActor, *DDN);
+					Drift->SetStaticMesh(SphereMesh); // rounded snow drift
+					Drift->SetWorldScale3D(FVector(DW / 50.f, DD / 50.f, DH / 50.f));
+					Drift->SetWorldLocation(FVector(DX, DY, DH * 0.3f));
+					Drift->SetWorldRotation(FRotator(0.f, DYaw, 0.f));
+					Drift->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					Drift->SetBoundsScale(10.f);
+					Drift->RegisterComponent();
+					ApplyPBR(Drift, (D % 2 == 0) ? SnowFresh : SnowOld, 0.f, 0.50f);
+					SnowActor->AddInstanceComponent(Drift);
+				}
+			}
+
+			// --- Dense snowfall clusters at lower altitudes (thicker near ground) ---
+			for (int32 CF = 0; CF < 150; ++CF)
+			{
+				const float CX = CityRandom.FRandRange(SnowMinX, SnowMaxX);
+				const float CY = CityRandom.FRandRange(SnowMinY, SnowMaxY);
+				const float CZ = CityRandom.FRandRange(50.f, 3000.f); // near ground level
+				const float CR = CityRandom.FRandRange(20.f, 60.f);
+
+				FString CFN = FString::Printf(TEXT("LowSnow_%d"), SnowCompIdx++);
+				UStaticMeshComponent* LowFlake = NewObject<UStaticMeshComponent>(SnowActor, *CFN);
+				LowFlake->SetStaticMesh(SphereMesh);
+				LowFlake->SetWorldScale3D(FVector(CR / 50.f, CR / 50.f, CR * 0.4f / 50.f));
+				LowFlake->SetWorldLocation(FVector(CX, CY, CZ));
+				LowFlake->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				LowFlake->SetBoundsScale(10.f);
+				LowFlake->RegisterComponent();
+				ApplyPBR(LowFlake, FLinearColor(0.95f, 0.96f, 0.98f), 0.f, 0.35f);
+				SnowActor->AddInstanceComponent(LowFlake);
+			}
+		}
+	}
+
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Spawned mountain range — north & south — with %d peaks."), NumPeaks);
 }
 

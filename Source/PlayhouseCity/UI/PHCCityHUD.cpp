@@ -732,7 +732,9 @@ bool UPHCCityHUD::Initialize()
 		WeaponFireLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("WeaponFireLabel"));
 		WeaponFireLabel->SetText(FText::FromString(TEXT("SPRAY")));
-		WeaponFireLabel->SetFont(DriveFont);
+		const FSlateFontInfo WepFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 18);
+		WeaponFireLabel->SetFont(WepFont);
 		WeaponFireLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.15f)));
 		WeaponFireLabel->SetJustification(ETextJustify::Center);
 		WeaponFireButton->AddChild(WeaponFireLabel);
