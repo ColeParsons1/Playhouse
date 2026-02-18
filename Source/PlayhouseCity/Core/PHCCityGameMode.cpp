@@ -43,6 +43,34 @@ void APHCCityGameMode::PostLogin(APlayerController* NewPlayer)
 	}
 }
 
+APawn* APHCCityGameMode::SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer, const FTransform& SpawnTransform)
+{
+	// Spawn the character pawn via direct SpawnActor — EXACT same pattern
+	// as vehicle spawn in PHCPlayerController::SpawnAndEnterVehicle().
+	// This bypasses UE's default FindTeleportSpot which adjusts Z position.
+	UWorld* World = GetWorld();
+	if (!World) return nullptr;
+
+	UClass* PawnClass = GetDefaultPawnClassForController(NewPlayer);
+	if (!PawnClass) return nullptr;
+
+	FActorSpawnParameters SP;
+	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SP.ObjectFlags |= RF_Transient;
+
+	// Spawn at desired city location instead of world origin.
+	const FVector SpawnLoc(-28000.f, -28000.f, 85.f);
+	const FRotator SpawnRot = SpawnTransform.Rotator();
+
+	APawn* ResultPawn = World->SpawnActor<APawn>(PawnClass, SpawnLoc, SpawnRot, SP);
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("APHCCityGameMode::SpawnDefaultPawnAtTransform -- Spawned pawn at %s (class %s)"),
+		ResultPawn ? *ResultPawn->GetActorLocation().ToString() : TEXT("FAILED"),
+		*PawnClass->GetName());
+
+	return ResultPawn;
+}
+
 void APHCCityGameMode::Logout(AController* Exiting)
 {
 	if (Exiting)

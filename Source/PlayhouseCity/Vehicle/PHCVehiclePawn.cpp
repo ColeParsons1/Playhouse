@@ -263,6 +263,10 @@ void APHCVehiclePawn::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Ground plane has NoCollision so the downward trace won't find it.
+	// Vehicle is spawned at Z=0 (ground level).
+	bHasBeenGrounded = true;
+
 	CreateInputAssets();
 
 	// ---- Apply materials ----
@@ -594,7 +598,8 @@ void APHCVehiclePawn::Tick(float DeltaTime)
 			}
 			// Apply gravity
 			VerticalVelocity -= 980.f * DeltaTime;
-			const float NewZ = Pos.Z + VerticalVelocity * DeltaTime;
+			float NewZ = Pos.Z + VerticalVelocity * DeltaTime;
+			if (NewZ <= 85.f) { NewZ = 85.f; VerticalVelocity = 0.f; }
 			SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 
 			// Flatten pitch while airborne

@@ -3,30 +3,27 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Character.h"
+#include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
 #include "PHCCityCharacter.generated.h"
 
+class UBoxComponent;
 class USpringArmComponent;
 class UCameraComponent;
+class UStaticMeshComponent;
 class UInputMappingContext;
 class UInputAction;
-class UPHCTouchInputComponent;
 struct FInputActionValue;
 
 /**
- * First-person player character for the PlayhouseCity open world.
+ * Third-person player character for the PlayhouseCity open world.
  *
- * Provides a first-person camera at eye height, WASD + mouse look on desktop,
- * and virtual joystick input on mobile via UPHCTouchInputComponent.
- * Uses the built-in UCharacterMovementComponent for walk, sprint, and jump.
- * No visible character model -- purely first-person view.
- *
- * Enhanced Input assets (UInputAction, UInputMappingContext) are created
- * programmatically in BeginPlay -- no .uasset files required.
+ * Derives from APawn (NOT ACharacter) to avoid the capsule/CMC physics
+ * integration that launches the actor to Z≈90000 via depenetration.
+ * All movement is manual — same pattern as the vehicle pawns.
  */
 UCLASS(Blueprintable)
-class PLAYHOUSECITY_API APHCCityCharacter : public ACharacter
+class PLAYHOUSECITY_API APHCCityCharacter : public APawn
 {
 	GENERATED_BODY()
 
@@ -40,14 +37,34 @@ public:
 
 	// -- Components -----------------------------------------------------------
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Collision")
+	TObjectPtr<UBoxComponent> CharacterCollision;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Input")
-	TObjectPtr<UPHCTouchInputComponent> TouchInput;
+	// -- Blocky character mesh (Roblox Brookhaven style) ---------------------
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Mesh")
+	TObjectPtr<UStaticMeshComponent> HeadMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Mesh")
+	TObjectPtr<UStaticMeshComponent> TorsoMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Mesh")
+	TObjectPtr<UStaticMeshComponent> LeftArmMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Mesh")
+	TObjectPtr<UStaticMeshComponent> RightArmMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Mesh")
+	TObjectPtr<UStaticMeshComponent> LeftLegMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Mesh")
+	TObjectPtr<UStaticMeshComponent> RightLegMesh;
 
 	// -- Enhanced Input assets (created at runtime) ---------------------------
 
@@ -72,17 +89,46 @@ public:
 	// -- Movement parameters --------------------------------------------------
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Movement")
-	float WalkSpeed = 300.f;
+	float WalkSpeed = 2771.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Movement")
-	float SprintSpeed = 600.f;
+	float SprintSpeed = 2000.f;
 
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Movement")
 	bool bIsSprinting = false;
 
-	/** Set by HandleInteract to defer vehicle entry to next Tick (avoids
-	 *  crash from changing possession during Enhanced Input evaluation). */
 	bool bPendingVehicleInteract = false;
+
+	/** Accumulated movement direction from HandleMove (camera-relative). */
+	FVector PendingMoveInput = FVector::ZeroVector;
+
+	/** Manual vertical velocity for gravity + jump. */
+	float ManualVelocityZ = 0.f;
+
+	/** True after the character has touched ground at least once. */
+	bool bHasBeenGrounded = false;
+
+	/** True when grounded on previous frame. */
+	bool bWasGrounded = false;
+
+	// -- R6 walk animation state ----------------------------------------------
+
+	float WalkCyclePhase = 0.f;
+	float WalkAnimBlend = 0.f;
+
+	// -- Weapon state ---------------------------------------------------------
+
+	int32 CurrentWeaponType = -1; // -1=none, 0=Gun, 1=RPG, 2=Sword
+
+	void FireWeapon();
+
+	// -- Mobile touch input (written by HUD each frame, read by Tick) ------
+
+	float TouchMoveX = 0.f;
+	float TouchMoveY = 0.f;
+	float TouchLookX = 0.f;
+	float TouchLookY = 0.f;
+	bool bHUDTouchActive = false;
 
 protected:
 	void HandleMove(const FInputActionValue& Value);
@@ -94,6 +140,5 @@ protected:
 	void HandleInteract(const FInputActionValue& Value);
 
 private:
-	/** Creates all UInputAction and UInputMappingContext objects in code. */
 	void CreateInputAssets();
 };

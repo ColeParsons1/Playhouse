@@ -583,23 +583,33 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 void UPHCCitySubsystem::SpawnGround()
 {
 	UWorld* World = GetWorld();
-	if (!World || !PlaneMesh) return;
+	// Use CubeMesh instead of PlaneMesh — the Plane has zero-thickness
+	// collision that confuses the CharacterMovementComponent's overlap
+	// resolution, launching the capsule to Z≈90000.  A thin Cube (2 UU)
+	// gives proper box collision the CMC can resolve correctly.
+	if (!World || !CubeMesh) return;
 
 	const FLinearColor GrassColor(0.12f, 0.18f, 0.08f);
 
-	auto SpawnGroundPlane = [&](const FVector& Loc, const FVector& Scale, const TCHAR* Label)
+	// TopZ: desired Z of the top surface.
+	// Cube default is 100×100×100 centered at origin.
+	// ScaleZ=0.02 → 2 UU thick, half-height=1.  Center at TopZ-1.
+	auto SpawnGroundSlab = [&](float TopZ, const FVector& XYLoc,
+		const FVector& XYScale, const TCHAR* Label)
 	{
+		const FVector Loc(XYLoc.X, XYLoc.Y, TopZ - 1.f);
 		AActor* GA = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
 		if (!GA) return;
 #if WITH_EDITOR
 		GA->SetActorLabel(Label);
 #endif
 		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(GA, TEXT("GroundMesh"));
-		MC->SetStaticMesh(PlaneMesh);
-		MC->SetWorldScale3D(Scale);
+		MC->SetStaticMesh(CubeMesh);
+		MC->SetWorldScale3D(FVector(XYScale.X, XYScale.Y, 0.02f));
 		MC->SetWorldLocation(Loc);
-		MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		MC->SetCollisionResponseToAllChannels(ECR_Block);
+		// NoCollision — the ground is visual only.  Characters walk on
+		// road / sidewalk slabs which have proper box collision.
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->RegisterComponent();
 		GA->SetRootComponent(MC);
 		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
@@ -609,16 +619,16 @@ void UPHCCitySubsystem::SpawnGround()
 
 	// Main city ground: doubled map — covers ±126,000 UU.
 	// Coastline zone starts at 126k where ocean ramps begin.
-	SpawnGroundPlane(FVector(0.f, 0.f, 0.f), FVector(2520.f, 2520.f, 1.f), TEXT("CityGround"));
+	SpawnGroundSlab(0.f, FVector(0.f, 0.f, 0.f), FVector(2520.f, 2520.f, 1.f), TEXT("CityGround"));
 
 	// Northwest fill: extends ground beyond north edge
-	SpawnGroundPlane(FVector(-30000.f, 75000.f, 0.f), FVector(700.f, 200.f, 1.f), TEXT("NorthwestFill"));
+	SpawnGroundSlab(0.f, FVector(-30000.f, 75000.f, 0.f), FVector(700.f, 200.f, 1.f), TEXT("NorthwestFill"));
 
 	// Outskirts ground: west of city extending along highway
-	SpawnGroundPlane(FVector(-130000.f, 0.f, 0.f), FVector(2000.f, 1400.f, 1.f), TEXT("OutskirtsMain"));
+	SpawnGroundSlab(0.f, FVector(-130000.f, 0.f, 0.f), FVector(2000.f, 1400.f, 1.f), TEXT("OutskirtsMain"));
 
 	// Far outskirts: single solid ground plane (no cavern hole)
-	SpawnGroundPlane(FVector(-280000.f, 0.f, 0.f), FVector(1000.f, 1000.f, 1.f), TEXT("OutskirtsFar"));
+	SpawnGroundSlab(0.f, FVector(-280000.f, 0.f, 0.f), FVector(1000.f, 1000.f, 1.f), TEXT("OutskirtsFar"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1056,19 +1066,23 @@ void UPHCCitySubsystem::SpawnCityGrid()
 	// ---------------------------------------------------------------
 	// 3. Road network — 25 roads in each direction
 	// ---------------------------------------------------------------
+	// Full road length: 2 × CityHalfExtent so roads span the entire grid
+	// (from FirstRoad − margin to LastRoad + margin).
+	const float FullRoadLen = 2.f * CityHalfExtent;
+
 	for (int32 i = 0; i < NumRoads; ++i)
 	{
 		const float RoadPos = FirstRoad + i * RoadSpacing;
 
 		// X-direction road (runs east-west at Y = RoadPos)
-		SpawnRoadStrip(FVector(0.f, RoadPos, 2.f), CityHalfExtent, RoadWidth * 0.5f);
-		SpawnSidewalk(FVector(0.f, RoadPos + RoadWidth * 0.5f + SidewalkWidth * 0.5f, 1.5f), CityHalfExtent, SidewalkWidth * 0.5f);
-		SpawnSidewalk(FVector(0.f, RoadPos - RoadWidth * 0.5f - SidewalkWidth * 0.5f, 1.5f), CityHalfExtent, SidewalkWidth * 0.5f);
+		SpawnRoadStrip(FVector(0.f, RoadPos, 2.f), FullRoadLen, RoadWidth * 0.5f);
+		SpawnSidewalk(FVector(0.f, RoadPos + RoadWidth * 0.5f + SidewalkWidth * 0.5f, 1.5f), FullRoadLen, SidewalkWidth * 0.5f);
+		SpawnSidewalk(FVector(0.f, RoadPos - RoadWidth * 0.5f - SidewalkWidth * 0.5f, 1.5f), FullRoadLen, SidewalkWidth * 0.5f);
 
 		// Y-direction road (runs north-south at X = RoadPos)
-		SpawnRoadStrip(FVector(RoadPos, 0.f, 2.f), RoadWidth * 0.5f, CityHalfExtent);
-		SpawnSidewalk(FVector(RoadPos + RoadWidth * 0.5f + SidewalkWidth * 0.5f, 0.f, 1.5f), SidewalkWidth * 0.5f, CityHalfExtent);
-		SpawnSidewalk(FVector(RoadPos - RoadWidth * 0.5f - SidewalkWidth * 0.5f, 0.f, 1.5f), SidewalkWidth * 0.5f, CityHalfExtent);
+		SpawnRoadStrip(FVector(RoadPos, 0.f, 2.f), RoadWidth * 0.5f, FullRoadLen);
+		SpawnSidewalk(FVector(RoadPos + RoadWidth * 0.5f + SidewalkWidth * 0.5f, 0.f, 1.5f), SidewalkWidth * 0.5f, FullRoadLen);
+		SpawnSidewalk(FVector(RoadPos - RoadWidth * 0.5f - SidewalkWidth * 0.5f, 0.f, 1.5f), SidewalkWidth * 0.5f, FullRoadLen);
 	}
 
 	// ---------------------------------------------------------------
@@ -1186,21 +1200,10 @@ void UPHCCitySubsystem::SpawnCityGrid()
 			const float BlockMinY = BlockCenterY - BlockW * 0.5f;
 			const float BlockH = BlockW; // square blocks
 
-			// ------- Landmark check -------
+			// ------- Landmark check (institutions removed) -------
 			const int32 BlockKey = by * NumBlocks + bx;
 			if (LandmarkKeys.Contains(BlockKey))
 			{
-				for (const FLandmark& L : Landmarks)
-				{
-					if (L.bx == bx && L.by == by)
-					{
-						SpawnInstitution(
-							FVector(BlockCenterX, BlockCenterY, 0.f),
-							L.W, L.D, L.H,
-							L.Wall, L.Accent);
-						break;
-					}
-				}
 				continue;
 			}
 
@@ -1271,373 +1274,28 @@ void UPHCCitySubsystem::SpawnCityGrid()
 			}
 
 			// =======================================================
-			// MIDTOWN — 1-3 buildings per block
+			// MIDTOWN — removed (rendering performance)
 			// =======================================================
 			case ECityDistrict::Midtown:
-			{
-				const int32 Count = CityRandom.RandRange(1, 3);
-				for (int32 n = 0; n < Count; ++n)
-				{
-					if (CityRandom.FRand() > 0.40f) continue;
-					const float BldgW = CityRandom.FRandRange(180.f, 300.f);
-					const float BldgD = CityRandom.FRandRange(180.f, 300.f);
-					// Tight grid placement
-					const int32 Col = n % 2;
-					const int32 Row = n / 2;
-					const float OffX = BlockW * (0.28f + 0.44f * Col);
-					const float OffY = BlockH * (0.28f + 0.44f * Row);
-					const FVector Loc(BlockMinX + OffX, BlockMinY + OffY, 0.f);
-					const FLinearColor& WallColor = MidtownColors[CityRandom.RandRange(0, NumMidtownColors - 1)];
-
-					const float Roll = CityRandom.FRandRange(0.f, 1.f);
-					if (Roll < 0.60f)
-					{
-						const int32 Stories = CityRandom.RandRange(2, 3);
-						SpawnShop(Loc, BldgW, BldgD, Stories, WallColor,
-							MidtownColors[CityRandom.RandRange(0, NumMidtownColors - 1)]);
-					}
-					else if (Roll < 0.90f)
-					{
-						const float Height = CityRandom.FRandRange(600.f, 1500.f);
-						SpawnBuilding(Loc, FVector(BldgW, BldgD, Height), WallColor, true);
-					}
-					else
-					{
-						const int32 Stories = CityRandom.RandRange(1, 2);
-						SpawnHouse(Loc, BldgW, BldgD, Stories, WallColor,
-							MidtownColors[CityRandom.RandRange(0, NumMidtownColors - 1)]);
-					}
-				}
-				// Warm midtown ground light
-				{
-					AActor* MtActor = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(),
-						FVector(BlockCenterX, BlockCenterY, 200.f), FRotator::ZeroRotator);
-					if (MtActor)
-					{
-						UPointLightComponent* MtLight = NewObject<UPointLightComponent>(MtActor, TEXT("MtLight"));
-						MtLight->SetWorldLocation(FVector(BlockCenterX, BlockCenterY, 200.f));
-						MtLight->SetIntensity(3000.f);
-						MtLight->SetAttenuationRadius(1800.f);
-						MtLight->SetLightColor(FColor(255, 220, 160));
-						MtLight->SetCastShadows(false);
-						MtLight->RegisterComponent();
-						MtActor->SetRootComponent(MtLight);
-						MtActor->AddInstanceComponent(MtLight);
-					}
-				}
 				break;
-			}
 
 			// =======================================================
-			// RESIDENTIAL — 1-3 buildings (2 for outer ring)
+			// RESIDENTIAL — removed (rendering performance)
 			// =======================================================
 			case ECityDistrict::Residential:
-			{
-				// Structured 2x2 neighborhood grid — houses face roads
-				const bool bOuterRing = (bx <= 2 || bx >= 21 || by <= 2 || by >= 21);
-				const int32 HouseCount = bOuterRing ? 3 : 4;
-
-				// Grid positions: 2 columns x 2 rows within the block (compact)
-				const float FrontSetback = 60.f;
-				const float SideMargin = 40.f;
-				const float HalfBlock = BlockW * 0.5f;
-
-				// Row Y positions (north row and south row)
-				const float NorthRowY = BlockMinY + FrontSetback;
-				const float SouthRowY = BlockMinY + BlockH - FrontSetback;
-				// Column X positions (left and right)
-				const float LeftColX = BlockMinX + SideMargin + 100.f;
-				const float RightColX = BlockMinX + BlockW - SideMargin - 100.f;
-
-				struct FHouseSlot { float X; float Y; bool bFacesSouth; };
-				const FHouseSlot Slots[] = {
-					{ LeftColX,  NorthRowY + 100.f, false },  // NW — faces north road
-					{ RightColX, NorthRowY + 100.f, false },  // NE — faces north road
-					{ LeftColX,  SouthRowY - 100.f, true  },  // SW — faces south road
-					{ RightColX, SouthRowY - 100.f, true  },  // SE — faces south road
-				};
-
-				for (int32 n = 0; n < HouseCount; ++n)
-				{
-					// 80% chance to skip each slot — reduces total houses by ~80%
-					if (CityRandom.FRand() > 0.20f) continue;
-
-					const FHouseSlot& Slot = Slots[n];
-					// Small random jitter for natural feel
-					const float JitterX = CityRandom.FRandRange(-15.f, 15.f);
-					const float JitterY = CityRandom.FRandRange(-10.f, 10.f);
-
-					// Varied house sizes (scaled for compact blocks)
-					const float BldgW = CityRandom.FRandRange(190.f, 340.f);
-					const float BldgD = CityRandom.FRandRange(190.f, 320.f);
-					const FVector Loc(Slot.X + JitterX, Slot.Y + JitterY, 0.f);
-					const FLinearColor& WallColor = ResidentialColors[CityRandom.RandRange(0, NumResidentialColors - 1)];
-					const FLinearColor& RoofColor = RoofColors[CityRandom.RandRange(0, NumRoofColors - 1)];
-
-					// 85% houses, 15% corner shops
-					const float Roll = CityRandom.FRandRange(0.f, 1.f);
-					if (Roll < 0.85f)
-					{
-						const int32 Stories = CityRandom.RandRange(1, 2); // genuine 1 or 2 story
-						SpawnHouse(Loc, BldgW, BldgD, Stories, WallColor, RoofColor);
-					}
-					else
-					{
-						SpawnShop(Loc, BldgW, BldgD, 1, WallColor, RoofColor);
-					}
-
-					// Driveway: small dark-gray slab from house front to block edge
-					{
-						UWorld* DriveWorld = GetWorld();
-						if (DriveWorld && CubeMesh)
-						{
-							const float DriveW = 40.f;
-							const float DriveThick = 6.f;
-							float DriveLen, DriveY;
-							if (Slot.bFacesSouth)
-							{
-								DriveLen = (BlockMinY + BlockH) - (Slot.Y + JitterY + BldgD * 0.5f);
-								DriveY = Slot.Y + JitterY + BldgD * 0.5f + DriveLen * 0.5f;
-							}
-							else
-							{
-								DriveLen = (Slot.Y + JitterY - BldgD * 0.5f) - BlockMinY;
-								DriveY = BlockMinY + DriveLen * 0.5f;
-							}
-
-							if (DriveLen > 10.f)
-							{
-								AActor* DriveAct = DriveWorld->SpawnActor<AActor>(
-									AActor::StaticClass(),
-									FVector(Slot.X + JitterX, DriveY, DriveThick * 0.5f),
-									FRotator::ZeroRotator);
-								if (DriveAct)
-								{
-									UStaticMeshComponent* DriveMC = NewObject<UStaticMeshComponent>(
-										DriveAct, TEXT("Driveway"));
-									DriveMC->SetStaticMesh(CubeMesh);
-									DriveMC->SetWorldScale3D(FVector(
-										DriveW / 100.f, DriveLen / 100.f, DriveThick / 100.f));
-									DriveMC->SetWorldLocation(FVector(
-										Slot.X + JitterX, DriveY, DriveThick * 0.5f));
-									DriveMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-									DriveMC->RegisterComponent();
-									UMaterialInstanceDynamic* DMat = UMaterialInstanceDynamic::Create(
-										DriveMC->GetMaterial(0), DriveMC);
-									if (DMat)
-									{
-										DMat->SetVectorParameterValue(TEXT("BaseColor"),
-											FLinearColor(0.25f, 0.25f, 0.25f));
-										DriveMC->SetMaterial(0, DMat);
-									}
-									DriveAct->SetRootComponent(DriveMC);
-									DriveAct->AddInstanceComponent(DriveMC);
-								}
-							}
-						}
-					}
-				}
 				break;
-			}
 
-			// =======================================================
-			// ARTS DISTRICT — Wynwood-style colorful buildings + murals
-			// =======================================================
 			case ECityDistrict::ArtsDistrict:
-			{
-				// 1-2 colorful low-rise buildings per block
-				const int32 Count = CityRandom.RandRange(1, 2);
-				for (int32 n = 0; n < Count; ++n)
-				{
-					const float BldgW = CityRandom.FRandRange(220.f, 360.f);
-					const float BldgD = CityRandom.FRandRange(190.f, 310.f);
-					// Tight grid placement
-					const int32 Col = n % 2;
-					const int32 Row = n / 2;
-					const float OffX = BlockW * (0.28f + 0.44f * Col);
-					const float OffY = BlockH * (0.28f + 0.44f * Row);
-					const FVector Loc(BlockMinX + OffX, BlockMinY + OffY, 0.f);
-					const FLinearColor& WallColor = ArtsColors[CityRandom.RandRange(0, NumArtsColors - 1)];
-					const FLinearColor& AwningColor = ArtsColors[CityRandom.RandRange(0, NumArtsColors - 1)];
-
-					const int32 Stories = CityRandom.RandRange(1, 2);
-					SpawnShop(Loc, BldgW, BldgD, Stories, WallColor, AwningColor);
-
-					// Mural wall panel on one side of the building
-					if (CubeMesh)
-					{
-						const FLinearColor& MuralColor1 = ArtsColors[CityRandom.RandRange(0, NumArtsColors - 1)];
-						const FLinearColor& MuralColor2 = ArtsColors[CityRandom.RandRange(0, NumArtsColors - 1)];
-						const float MuralH = Stories * 280.f * 0.8f;
-						const float MuralW = BldgW * 0.7f;
-
-						// Main mural panel (on +Y face)
-						AActor* MuralAct = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(),
-							FVector(Loc.X, Loc.Y + BldgD * 0.5f + 5.f, MuralH * 0.5f), FRotator::ZeroRotator);
-						if (MuralAct)
-						{
-							UStaticMeshComponent* MP = NewObject<UStaticMeshComponent>(MuralAct, TEXT("Mural"));
-							MP->SetStaticMesh(CubeMesh);
-							MP->SetWorldScale3D(FVector(MuralW / 100.f, 3.f / 100.f, MuralH / 100.f));
-							MP->SetWorldLocation(FVector(Loc.X, Loc.Y + BldgD * 0.5f + 5.f, MuralH * 0.5f));
-							MP->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-							MP->RegisterComponent();
-							UMaterialInstanceDynamic* MMat = UMaterialInstanceDynamic::Create(MP->GetMaterial(0), MP);
-							if (MMat) { MMat->SetVectorParameterValue(TEXT("BaseColor"), MuralColor1); MP->SetMaterial(0, MMat); }
-							MuralAct->SetRootComponent(MP);
-							MuralAct->AddInstanceComponent(MP);
-
-							// Second color stripe on the mural
-							UStaticMeshComponent* Stripe = NewObject<UStaticMeshComponent>(MuralAct, TEXT("MuralStripe"));
-							Stripe->SetStaticMesh(CubeMesh);
-							Stripe->SetWorldScale3D(FVector(MuralW * 0.4f / 100.f, 4.f / 100.f, MuralH * 0.5f / 100.f));
-							Stripe->SetWorldLocation(FVector(Loc.X + MuralW * 0.2f, Loc.Y + BldgD * 0.5f + 7.f, MuralH * 0.65f));
-							Stripe->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-							Stripe->RegisterComponent();
-							UMaterialInstanceDynamic* SMat = UMaterialInstanceDynamic::Create(Stripe->GetMaterial(0), Stripe);
-							if (SMat) { SMat->SetVectorParameterValue(TEXT("BaseColor"), MuralColor2); Stripe->SetMaterial(0, SMat); }
-							MuralAct->AddInstanceComponent(Stripe);
-						}
-					}
-				}
-
-				// Freestanding street art wall (50% chance per block)
-				if (CityRandom.FRand() < 0.50f && CubeMesh)
-				{
-					const float WallW = CityRandom.FRandRange(170.f, 310.f);
-					const float WallH = CityRandom.FRandRange(140.f, 280.f);
-					const float WallX = CityRandom.FRandRange(BlockMinX + 120.f, BlockMinX + BlockW - 120.f);
-					const float WallY = CityRandom.FRandRange(BlockMinY + 120.f, BlockMinY + BlockH - 120.f);
-
-					AActor* WallAct = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(),
-						FVector(WallX, WallY, WallH * 0.5f), FRotator::ZeroRotator);
-					if (WallAct)
-					{
-						UStaticMeshComponent* WC = NewObject<UStaticMeshComponent>(WallAct, TEXT("ArtWall"));
-						WC->SetStaticMesh(CubeMesh);
-						WC->SetWorldScale3D(FVector(WallW / 100.f, 8.f / 100.f, WallH / 100.f));
-						WC->SetWorldLocation(FVector(WallX, WallY, WallH * 0.5f));
-						WC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-						WC->SetCollisionResponseToAllChannels(ECR_Block);
-						WC->RegisterComponent();
-						const FLinearColor& ArtColor = ArtsColors[CityRandom.RandRange(0, NumArtsColors - 1)];
-						UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(WC->GetMaterial(0), WC);
-						if (WMat) { WMat->SetVectorParameterValue(TEXT("BaseColor"), ArtColor); WC->SetMaterial(0, WMat); }
-						WallAct->SetRootComponent(WC);
-						WallAct->AddInstanceComponent(WC);
-
-						// Colorful accent stripe on the art wall
-						const FLinearColor& Stripe2Color = ArtsColors[CityRandom.RandRange(0, NumArtsColors - 1)];
-						UStaticMeshComponent* WS = NewObject<UStaticMeshComponent>(WallAct, TEXT("ArtWallStripe"));
-						WS->SetStaticMesh(CubeMesh);
-						WS->SetWorldScale3D(FVector(WallW * 0.6f / 100.f, 9.f / 100.f, WallH * 0.3f / 100.f));
-						WS->SetWorldLocation(FVector(WallX - WallW * 0.1f, WallY, WallH * 0.7f));
-						WS->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-						WS->RegisterComponent();
-						UMaterialInstanceDynamic* WSMat = UMaterialInstanceDynamic::Create(WS->GetMaterial(0), WS);
-						if (WSMat) { WSMat->SetVectorParameterValue(TEXT("BaseColor"), Stripe2Color); WS->SetMaterial(0, WSMat); }
-						WallAct->AddInstanceComponent(WS);
-					}
-				}
-
-				// Warm colored ground light for the arts district
-				{
-					AActor* AdLight = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(),
-						FVector(BlockCenterX, BlockCenterY, 200.f), FRotator::ZeroRotator);
-					if (AdLight)
-					{
-						UPointLightComponent* PL = NewObject<UPointLightComponent>(AdLight, TEXT("ArtsLight"));
-						PL->SetWorldLocation(FVector(BlockCenterX, BlockCenterY, 200.f));
-						PL->SetIntensity(4000.f);
-						PL->SetAttenuationRadius(2000.f);
-						PL->SetLightColor(FColor(255, 180, 200)); // warm pink
-						PL->SetCastShadows(false);
-						PL->RegisterComponent();
-						AdLight->SetRootComponent(PL);
-						AdLight->AddInstanceComponent(PL);
-					}
-				}
 				break;
-			}
 
-			// =======================================================
-			// WATERFRONT — 1-2 low buildings per block
-			// =======================================================
 			case ECityDistrict::Waterfront:
-			{
-				const int32 Count = CityRandom.RandRange(1, 2);
-				for (int32 n = 0; n < Count; ++n)
-				{
-					if (CityRandom.FRand() > 0.40f) continue;
-					const float BldgW = CityRandom.FRandRange(200.f, 330.f);
-					const float BldgD = CityRandom.FRandRange(200.f, 330.f);
-					// Tight grid placement
-					const int32 Col = n % 2;
-					const int32 Row = n / 2;
-					const float OffX = BlockW * (0.28f + 0.44f * Col);
-					const float OffY = BlockH * (0.28f + 0.44f * Row);
-					const FVector Loc(BlockMinX + OffX, BlockMinY + OffY, 0.f);
-					const FLinearColor& WallColor = WaterfrontWallColors[CityRandom.RandRange(0, NumWaterfrontWallColors - 1)];
-					const FLinearColor& AwningColor = WaterfrontAwningColors[CityRandom.RandRange(0, NumWaterfrontAwningColors - 1)];
-
-					const int32 Stories = CityRandom.RandRange(1, 2);
-					SpawnShop(Loc, BldgW, BldgD, Stories, WallColor, AwningColor);
-				}
 				break;
-			}
 
-			// =======================================================
-			// INDUSTRIAL — 1-2 warehouses per block
-			// =======================================================
 			case ECityDistrict::Industrial:
-			{
-				const int32 Count = CityRandom.RandRange(1, 2);
-				for (int32 n = 0; n < Count; ++n)
-				{
-					if (CityRandom.FRand() > 0.40f) continue;
-					const float W = CityRandom.FRandRange(400.f, 750.f);
-					const float D = CityRandom.FRandRange(300.f, 550.f);
-					const float H = CityRandom.FRandRange(200.f, 420.f);
-					// Tight grid placement
-					const int32 Col = n % 2;
-					const int32 Row = n / 2;
-					const float OffX = BlockW * (0.28f + 0.44f * Col);
-					const float OffY = BlockH * (0.28f + 0.44f * Row);
-					const FVector Loc(BlockMinX + OffX, BlockMinY + OffY, 0.f);
-					const FLinearColor& Color = IndustrialColors[CityRandom.RandRange(0, NumIndustrialColors - 1)];
-					SpawnWarehouse(Loc, W, D, H, Color);
-				}
 				break;
-			}
 
-			// =======================================================
-			// EDGE — 0-1 buildings per block (50% chance)
-			// =======================================================
 			case ECityDistrict::Edge:
-			{
-				if (CityRandom.FRandRange(0.f, 1.f) < 0.10f)
-				{
-					const float BldgW = CityRandom.FRandRange(200.f, 330.f);
-					const float BldgD = CityRandom.FRandRange(200.f, 330.f);
-					// Center the single building in the block
-					const float OffX = BlockW * 0.5f;
-					const float OffY = BlockH * 0.5f;
-					const FVector Loc(BlockMinX + OffX, BlockMinY + OffY, 0.f);
-					const FLinearColor Color = ResidentialColors[CityRandom.RandRange(0, NumResidentialColors - 1)];
-
-					if (CityRandom.FRandRange(0.f, 1.f) < 0.50f)
-					{
-						const float Height = CityRandom.FRandRange(600.f, 850.f);
-						SpawnBuilding(Loc, FVector(BldgW, BldgD, Height), Color, false);
-					}
-					else
-					{
-						SpawnHouse(Loc, BldgW, BldgD, 2, Color,
-							ResidentialColors[CityRandom.RandRange(0, NumResidentialColors - 1)]);
-					}
-				}
 				break;
-			}
 
 			default:
 				break;
@@ -2210,14 +1868,13 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 		}
 	}
 
-	// ---- Lawn (green plane slightly larger than footprint) ----
+	// ---- Lawn (visual only — character walks on roads/sidewalks) ----
 	{
 		UStaticMeshComponent* Lawn = NewObject<UStaticMeshComponent>(House, TEXT("Lawn"));
-		Lawn->SetStaticMesh(PlaneMesh);
-		Lawn->SetWorldScale3D(FVector((W + 200.f) / 100.f, (D + 200.f) / 100.f, 1.f));
-		Lawn->SetWorldLocation(FVector(Loc.X, Loc.Y, 4.f));
-		Lawn->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		Lawn->SetCollisionResponseToAllChannels(ECR_Block);
+		Lawn->SetStaticMesh(CubeMesh);
+		Lawn->SetWorldScale3D(FVector((W + 200.f) / 100.f, (D + 200.f) / 100.f, 0.02f));
+		Lawn->SetWorldLocation(FVector(Loc.X, Loc.Y, 3.f)); // top face at Z=4
+		Lawn->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Lawn->RegisterComponent();
 		UMaterialInstanceDynamic* LMat = UMaterialInstanceDynamic::Create(Lawn->GetMaterial(0), Lawn);
 		if (LMat) { LMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.15f, 0.35f, 0.08f)); LMat->SetScalarParameterValue(TEXT("Roughness"), 0.9f); Lawn->SetMaterial(0, LMat); }
@@ -2535,14 +2192,13 @@ void UPHCCitySubsystem::SpawnShop(const FVector& Loc, float W, float D, int32 St
 		}
 	}
 
-	// ---- Sidewalk pad (light gray in front of shop) ----
+	// ---- Sidewalk pad (visual only — character walks on roads/sidewalks) ----
 	{
 		UStaticMeshComponent* Pad = NewObject<UStaticMeshComponent>(Shop, TEXT("SidewalkPad"));
-		Pad->SetStaticMesh(PlaneMesh);
-		Pad->SetWorldScale3D(FVector(W / 100.f, 1.2f, 1.f));
-		Pad->SetWorldLocation(FVector(Loc.X, Loc.Y + D * 0.5f + 60.f, 4.f));
-		Pad->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		Pad->SetCollisionResponseToAllChannels(ECR_Block);
+		Pad->SetStaticMesh(CubeMesh);
+		Pad->SetWorldScale3D(FVector(W / 100.f, 1.2f, 0.02f));
+		Pad->SetWorldLocation(FVector(Loc.X, Loc.Y + D * 0.5f + 60.f, 3.f)); // top face at Z=4
+		Pad->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Pad->RegisterComponent();
 		UMaterialInstanceDynamic* PMat = UMaterialInstanceDynamic::Create(Pad->GetMaterial(0), Pad);
 		if (PMat) { PMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.55f, 0.53f, 0.50f)); Pad->SetMaterial(0, PMat); }
@@ -3410,19 +3066,25 @@ void UPHCCitySubsystem::SpawnBuilding(const FVector& Location, const FVector& Si
 void UPHCCitySubsystem::SpawnRoadStrip(const FVector& Center, float LengthX, float LengthY)
 {
 	UWorld* World = GetWorld();
-	if (!World || !PlaneMesh) return;
+	// CubeMesh slab with real thickness for robust capsule collision.
+	if (!World || !CubeMesh) return;
+
+	// 50 UU thick slab.  Top face at Z=2, center at Z=−23.
+	const float SlabThick = 50.f;
+	const float TopZ = 2.f;
+	const float SlabCenter = TopZ - SlabThick * 0.5f;
 
 	AActor* Road = World->SpawnActor<AActor>(AActor::StaticClass(),
-		FVector(Center.X, Center.Y, 2.f), FRotator::ZeroRotator);
+		FVector(Center.X, Center.Y, SlabCenter), FRotator::ZeroRotator);
 	if (!Road) return;
 #if WITH_EDITOR
 	Road->SetActorLabel(TEXT("CityRoad"));
 #endif
 
 	UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Road, TEXT("RoadMesh"));
-	MC->SetStaticMesh(PlaneMesh);
-	MC->SetWorldScale3D(FVector(LengthX / 100.f, LengthY / 100.f, 1.f));
-	MC->SetWorldLocation(FVector(Center.X, Center.Y, 2.f));
+	MC->SetStaticMesh(CubeMesh);
+	MC->SetWorldScale3D(FVector(LengthX / 100.f, LengthY / 100.f, SlabThick / 100.f));
+	MC->SetWorldLocation(FVector(Center.X, Center.Y, SlabCenter));
 	MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	MC->SetCollisionResponseToAllChannels(ECR_Block);
 	MC->RegisterComponent();
@@ -3498,19 +3160,25 @@ void UPHCCitySubsystem::SpawnRoadStrip(const FVector& Center, float LengthX, flo
 void UPHCCitySubsystem::SpawnSidewalk(const FVector& Center, float LengthX, float LengthY)
 {
 	UWorld* World = GetWorld();
-	if (!World || !PlaneMesh) return;
+	// CubeMesh slab with real thickness for robust capsule collision.
+	if (!World || !CubeMesh) return;
+
+	// 50 UU thick slab.  Top face at Z=3, center at Z=−22.
+	const float SlabThick = 50.f;
+	const float TopZ = 3.f;
+	const float SlabCenter = TopZ - SlabThick * 0.5f;
 
 	AActor* Walk = World->SpawnActor<AActor>(AActor::StaticClass(),
-		FVector(Center.X, Center.Y, 3.f), FRotator::ZeroRotator);
+		FVector(Center.X, Center.Y, SlabCenter), FRotator::ZeroRotator);
 	if (!Walk) return;
 #if WITH_EDITOR
 	Walk->SetActorLabel(TEXT("CitySidewalk"));
 #endif
 
 	UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Walk, TEXT("SidewalkMesh"));
-	MC->SetStaticMesh(PlaneMesh);
-	MC->SetWorldScale3D(FVector(LengthX / 100.f, LengthY / 100.f, 1.f));
-	MC->SetWorldLocation(FVector(Center.X, Center.Y, 3.f));
+	MC->SetStaticMesh(CubeMesh);
+	MC->SetWorldScale3D(FVector(LengthX / 100.f, LengthY / 100.f, SlabThick / 100.f));
+	MC->SetWorldLocation(FVector(Center.X, Center.Y, SlabCenter));
 	MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	MC->SetCollisionResponseToAllChannels(ECR_Block);
 	MC->RegisterComponent();

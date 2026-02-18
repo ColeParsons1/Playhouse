@@ -71,7 +71,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* CurrencySlot = RootCanvas->AddChildToCanvas(CurrencyBar);
 		CurrencySlot->SetAnchors(FAnchors(1.f, 0.f, 1.f, 0.f)); // top-right
 		CurrencySlot->SetAlignment(FVector2D(1.f, 0.f));
-		CurrencySlot->SetOffsets(FMargin(-16.f, 16.f, 0.f, 0.f));
+		CurrencySlot->SetOffsets(FMargin(-80.f, 16.f, 0.f, 0.f));
 		CurrencySlot->SetAutoSize(true);
 
 		UHorizontalBox* CurrencyHBox = WidgetTree->ConstructWidget<UHorizontalBox>(
@@ -240,7 +240,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* MenuBtnSlot = RootCanvas->AddChildToCanvas(MenuButton);
 		MenuBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f)); // top-left
 		MenuBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		MenuBtnSlot->SetOffsets(FMargin(16.f, 16.f, 80.f, 40.f));
+		MenuBtnSlot->SetOffsets(FMargin(80.f, 16.f, 80.f, 40.f));
 
 		// ============================================================
 		//  TOP-LEFT (below Menu): "Car" button -- spawns Aventador
@@ -265,7 +265,32 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* CarBtnSlot = RootCanvas->AddChildToCanvas(CarButton);
 		CarBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f)); // top-left
 		CarBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		CarBtnSlot->SetOffsets(FMargin(16.f, 64.f, 80.f, 40.f));
+		CarBtnSlot->SetOffsets(FMargin(80.f, 64.f, 80.f, 40.f));
+
+		// ============================================================
+		//  TOP-LEFT (below Car): "Weapons" button
+		// ============================================================
+		WeaponsButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("WeaponsButton"));
+
+		FButtonStyle WepBtnStyle = WeaponsButton->GetStyle();
+		WepBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.6f, 0.1f, 0.1f, 0.85f));
+		WepBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.75f, 0.15f, 0.15f, 0.95f));
+		WepBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.45f, 0.07f, 0.07f, 1.0f));
+		WeaponsButton->SetStyle(WepBtnStyle);
+
+		UTextBlock* WepLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("WeaponsLabel"));
+		WepLabel->SetText(FText::FromString(TEXT("Weapons")));
+		WepLabel->SetFont(BtnFont);
+		WepLabel->SetColorAndOpacity(FSlateColor(White));
+		WepLabel->SetJustification(ETextJustify::Center);
+		WeaponsButton->AddChild(WepLabel);
+
+		UCanvasPanelSlot* WepBtnSlot = RootCanvas->AddChildToCanvas(WeaponsButton);
+		WepBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+		WepBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
+		WepBtnSlot->SetOffsets(FMargin(170.f, 64.f, 100.f, 40.f));
 
 		// ============================================================
 		//  MOBILE-ONLY: On-foot action buttons (bottom-right)
@@ -299,14 +324,51 @@ bool UPHCCityHUD::Initialize()
 			return Btn;
 		};
 
-		// Jump button (large, bottom-right)
-		JumpButton = MakeActionButton(TEXT("JumpButton"), TEXT("Jump"), 20.f, 20.f, 80.f);
+		// ============================================================
+		//  MOBILE-ONLY: Walking touch panels (left = MOVE, right = LOOK)
+		// ============================================================
+		const FSlateFontInfo WalkZoneFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 18);
 
-		// Sprint button (above jump)
-		SprintButton = MakeActionButton(TEXT("SprintButton"), TEXT("Run"), 20.f, 120.f, 70.f);
+		// Move panel (left 45%, bottom 50%)
+		WalkMovePanel = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("WalkMovePanel"));
+		WalkMovePanel->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
+		WalkMovePanel->SetPadding(FMargin(0.f));
 
-		// Interact button (left of jump)
-		InteractButton = MakeActionButton(TEXT("InteractButton"), TEXT("Use"), 120.f, 20.f, 70.f);
+		WalkMoveLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("WalkMoveLabel"));
+		WalkMoveLabel->SetText(FText::FromString(TEXT("MOVE")));
+		WalkMoveLabel->SetFont(WalkZoneFont);
+		WalkMoveLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.12f)));
+		WalkMoveLabel->SetJustification(ETextJustify::Center);
+		WalkMovePanel->SetContent(WalkMoveLabel);
+
+		{
+			UCanvasPanelSlot* WalkMoveSlot = RootCanvas->AddChildToCanvas(WalkMovePanel);
+			WalkMoveSlot->SetAnchors(FAnchors(0.f, 0.5f, 0.45f, 1.f));
+			WalkMoveSlot->SetOffsets(FMargin(0.f, 0.f, 0.f, 0.f));
+		}
+
+		// Look panel (right 55%, bottom 50%)
+		WalkLookPanel = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("WalkLookPanel"));
+		WalkLookPanel->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
+		WalkLookPanel->SetPadding(FMargin(0.f));
+
+		WalkLookLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("WalkLookLabel"));
+		WalkLookLabel->SetText(FText::FromString(TEXT("LOOK")));
+		WalkLookLabel->SetFont(WalkZoneFont);
+		WalkLookLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.12f)));
+		WalkLookLabel->SetJustification(ETextJustify::Center);
+		WalkLookPanel->SetContent(WalkLookLabel);
+
+		{
+			UCanvasPanelSlot* WalkLookSlot = RootCanvas->AddChildToCanvas(WalkLookPanel);
+			WalkLookSlot->SetAnchors(FAnchors(0.45f, 0.5f, 1.f, 1.f));
+			WalkLookSlot->SetOffsets(FMargin(0.f, 0.f, 0.f, 0.f));
+		}
 
 		// ============================================================
 		//  MOBILE-ONLY: Driving controls (hidden by default)
@@ -404,7 +466,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* ExitSlot = RootCanvas->AddChildToCanvas(ExitVehicleButton);
 		ExitSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		ExitSlot->SetAlignment(FVector2D(0.f, 0.f));
-		ExitSlot->SetOffsets(FMargin(16.f, 64.f, 80.f, 40.f));
+		ExitSlot->SetOffsets(FMargin(80.f, 64.f, 80.f, 40.f));
 
 		ExitVehicleButton->SetVisibility(ESlateVisibility::Collapsed);
 #endif
@@ -518,6 +580,138 @@ bool UPHCCityHUD::Initialize()
 		VehicleSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
+		//  Weapon selection popup
+		// ============================================================
+		WeaponSelectOverlay = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("WeaponSelectOverlay"));
+		WeaponSelectOverlay->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.6f));
+		WeaponSelectOverlay->SetPadding(FMargin(0.f));
+
+		UCanvasPanelSlot* WepOverlaySlot = RootCanvas->AddChildToCanvas(WeaponSelectOverlay);
+		WepOverlaySlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+		WepOverlaySlot->SetOffsets(FMargin(0.f));
+
+		UBorder* WepSelectPanel = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("WeaponSelectPanel"));
+		WepSelectPanel->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.08f, 0.95f));
+		WepSelectPanel->SetPadding(FMargin(24.f, 16.f, 24.f, 16.f));
+		WepSelectPanel->SetHorizontalAlignment(HAlign_Center);
+		WepSelectPanel->SetVerticalAlignment(VAlign_Center);
+		WeaponSelectOverlay->SetContent(WepSelectPanel);
+
+		UHorizontalBox* WepHBox = WidgetTree->ConstructWidget<UHorizontalBox>(
+			UHorizontalBox::StaticClass(), TEXT("WeaponSelectHBox"));
+		WepSelectPanel->SetContent(WepHBox);
+
+		// -- Gun button (steel gray) --
+		SelectGunBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectGunBtn"));
+		{
+			FButtonStyle Style = SelectGunBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.35f, 0.35f, 0.40f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.45f, 0.45f, 0.50f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.25f, 0.25f, 0.30f, 1.0f));
+			SelectGunBtn->SetStyle(Style);
+		}
+		UTextBlock* GunLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("GunSelectLabel"));
+		GunLabel->SetText(FText::FromString(TEXT("Gun")));
+		GunLabel->SetFont(BtnFont);
+		GunLabel->SetColorAndOpacity(FSlateColor(White));
+		GunLabel->SetJustification(ETextJustify::Center);
+		SelectGunBtn->AddChild(GunLabel);
+
+		UHorizontalBoxSlot* GunSlot = WepHBox->AddChildToHorizontalBox(SelectGunBtn);
+		GunSlot->SetPadding(FMargin(8.f));
+		GunSlot->SetVerticalAlignment(VAlign_Center);
+		GunSlot->SetHorizontalAlignment(HAlign_Center);
+
+		USpacer* WepSpacer1 = WidgetTree->ConstructWidget<USpacer>(
+			USpacer::StaticClass(), TEXT("WepBtnSpacer1"));
+		WepSpacer1->SetSize(FVector2D(20.f, 0.f));
+		WepHBox->AddChildToHorizontalBox(WepSpacer1);
+
+		// -- RPG button (dark red) --
+		SelectRPGBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectRPGBtn"));
+		{
+			FButtonStyle Style = SelectRPGBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.55f, 0.12f, 0.08f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.70f, 0.18f, 0.12f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.40f, 0.08f, 0.05f, 1.0f));
+			SelectRPGBtn->SetStyle(Style);
+		}
+		UTextBlock* RPGLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("RPGSelectLabel"));
+		RPGLabel->SetText(FText::FromString(TEXT("RPG")));
+		RPGLabel->SetFont(BtnFont);
+		RPGLabel->SetColorAndOpacity(FSlateColor(White));
+		RPGLabel->SetJustification(ETextJustify::Center);
+		SelectRPGBtn->AddChild(RPGLabel);
+
+		UHorizontalBoxSlot* RPGSlot = WepHBox->AddChildToHorizontalBox(SelectRPGBtn);
+		RPGSlot->SetPadding(FMargin(8.f));
+		RPGSlot->SetVerticalAlignment(VAlign_Center);
+		RPGSlot->SetHorizontalAlignment(HAlign_Center);
+
+		USpacer* WepSpacer2 = WidgetTree->ConstructWidget<USpacer>(
+			USpacer::StaticClass(), TEXT("WepBtnSpacer2"));
+		WepSpacer2->SetSize(FVector2D(20.f, 0.f));
+		WepHBox->AddChildToHorizontalBox(WepSpacer2);
+
+		// -- Sword button (gold) --
+		SelectSwordBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectSwordBtn"));
+		{
+			FButtonStyle Style = SelectSwordBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.55f, 0.45f, 0.08f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.70f, 0.58f, 0.12f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.40f, 0.32f, 0.05f, 1.0f));
+			SelectSwordBtn->SetStyle(Style);
+		}
+		UTextBlock* SwordLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("SwordSelectLabel"));
+		SwordLabel->SetText(FText::FromString(TEXT("Sword")));
+		SwordLabel->SetFont(BtnFont);
+		SwordLabel->SetColorAndOpacity(FSlateColor(White));
+		SwordLabel->SetJustification(ETextJustify::Center);
+		SelectSwordBtn->AddChild(SwordLabel);
+
+		UHorizontalBoxSlot* SwordSlot = WepHBox->AddChildToHorizontalBox(SelectSwordBtn);
+		SwordSlot->SetPadding(FMargin(8.f));
+		SwordSlot->SetVerticalAlignment(VAlign_Center);
+		SwordSlot->SetHorizontalAlignment(HAlign_Center);
+
+		WeaponSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
+
+		// ============================================================
+		//  Weapon fire button (bottom-right, shown when weapon equipped)
+		// ============================================================
+		WeaponFireButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("WeaponFireButton"));
+		{
+			FButtonStyle Style = WeaponFireButton->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.7f, 0.12f, 0.08f, 0.85f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.18f, 0.12f, 0.95f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.5f, 0.08f, 0.05f, 1.0f));
+			WeaponFireButton->SetStyle(Style);
+		}
+		WeaponFireLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("WeaponFireLabel"));
+		WeaponFireLabel->SetText(FText::FromString(TEXT("Fire")));
+		WeaponFireLabel->SetFont(BtnFont);
+		WeaponFireLabel->SetColorAndOpacity(FSlateColor(White));
+		WeaponFireLabel->SetJustification(ETextJustify::Center);
+		WeaponFireButton->AddChild(WeaponFireLabel);
+
+		UCanvasPanelSlot* WepFireSlot = RootCanvas->AddChildToCanvas(WeaponFireButton);
+		WepFireSlot->SetAnchors(FAnchors(1.f, 1.f, 1.f, 1.f));
+		WepFireSlot->SetAlignment(FVector2D(1.f, 1.f));
+		WepFireSlot->SetOffsets(FMargin(-20.f, -20.f, 120.f, 60.f));
+
+		WeaponFireButton->SetVisibility(ESlateVisibility::Collapsed);
+
+		// ============================================================
 		//  TOP-LEFT: Multiplayer buttons (below Car button)
 		// ============================================================
 		HostButton = WidgetTree->ConstructWidget<UButton>(
@@ -541,7 +735,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* HostSlot = RootCanvas->AddChildToCanvas(HostButton);
 		HostSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		HostSlot->SetAlignment(FVector2D(0.f, 0.f));
-		HostSlot->SetOffsets(FMargin(16.f, 112.f, 80.f, 40.f));
+		HostSlot->SetOffsets(FMargin(80.f, 112.f, 80.f, 40.f));
 
 		JoinButton = WidgetTree->ConstructWidget<UButton>(
 			UButton::StaticClass(), TEXT("JoinButton"));
@@ -564,7 +758,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* JoinSlot = RootCanvas->AddChildToCanvas(JoinButton);
 		JoinSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		JoinSlot->SetAlignment(FVector2D(0.f, 0.f));
-		JoinSlot->SetOffsets(FMargin(16.f, 160.f, 80.f, 40.f));
+		JoinSlot->SetOffsets(FMargin(80.f, 160.f, 80.f, 40.f));
 
 		// Player count display (top-right, below currency)
 		PlayerCountText = WidgetTree->ConstructWidget<UTextBlock>(
@@ -576,7 +770,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* PlayerCountSlot = RootCanvas->AddChildToCanvas(PlayerCountText);
 		PlayerCountSlot->SetAnchors(FAnchors(1.f, 0.f, 1.f, 0.f));
 		PlayerCountSlot->SetAlignment(FVector2D(1.f, 0.f));
-		PlayerCountSlot->SetOffsets(FMargin(-16.f, 56.f, 0.f, 0.f));
+		PlayerCountSlot->SetOffsets(FMargin(-80.f, 56.f, 0.f, 0.f));
 		PlayerCountSlot->SetAutoSize(true);
 
 		// -- Join IP input overlay (hidden by default) --
@@ -709,6 +903,26 @@ void UPHCCityHUD::NativeConstruct()
 	{
 		DropBombButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDropBombClicked);
 	}
+	if (WeaponsButton)
+	{
+		WeaponsButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnWeaponsButtonClicked);
+	}
+	if (SelectGunBtn)
+	{
+		SelectGunBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectGun);
+	}
+	if (SelectRPGBtn)
+	{
+		SelectRPGBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectRPG);
+	}
+	if (SelectSwordBtn)
+	{
+		SelectSwordBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectSword);
+	}
+	if (WeaponFireButton)
+	{
+		WeaponFireButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnWeaponFirePressed);
+	}
 	if (HostButton)
 	{
 		HostButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnHostButtonClicked);
@@ -727,20 +941,7 @@ void UPHCCityHUD::NativeConstruct()
 	}
 
 #if PLATFORM_IOS || PLATFORM_ANDROID
-	if (JumpButton)
-	{
-		JumpButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnJumpButtonPressed);
-		JumpButton->OnReleased.AddDynamic(this, &UPHCCityHUD::OnJumpButtonReleased);
-	}
-	if (SprintButton)
-	{
-		SprintButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnSprintButtonPressed);
-		SprintButton->OnReleased.AddDynamic(this, &UPHCCityHUD::OnSprintButtonReleased);
-	}
-	if (InteractButton)
-	{
-		InteractButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnInteractButtonClicked);
-	}
+	// Jump/Sprint/Interact buttons removed — mobile uses touch panels.
 	if (ExitVehicleButton)
 	{
 		ExitVehicleButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnExitVehicleClicked);
@@ -789,20 +990,7 @@ void UPHCCityHUD::NativeDestruct()
 	if (JoinCancelButton) { JoinCancelButton->OnClicked.RemoveAll(this); }
 
 #if PLATFORM_IOS || PLATFORM_ANDROID
-	if (JumpButton)
-	{
-		JumpButton->OnPressed.RemoveAll(this);
-		JumpButton->OnReleased.RemoveAll(this);
-	}
-	if (SprintButton)
-	{
-		SprintButton->OnPressed.RemoveAll(this);
-		SprintButton->OnReleased.RemoveAll(this);
-	}
-	if (InteractButton)
-	{
-		InteractButton->OnClicked.RemoveAll(this);
-	}
+	// Jump/Sprint/Interact buttons removed.
 	if (ExitVehicleButton)
 	{
 		ExitVehicleButton->OnClicked.RemoveAll(this);
@@ -822,7 +1010,7 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
-	// Update live location monitor
+	// Update speedometer + live location monitor
 	if (LocationText)
 	{
 		if (APlayerController* PC = GetOwningPlayer())
@@ -830,8 +1018,25 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			if (APawn* P = PC->GetPawn())
 			{
 				const FVector Loc = P->GetActorLocation();
+
+				// Frame-to-frame speed calculation
+				if (!bSpeedInitialized)
+				{
+					PrevPawnLocation = Loc;
+					bSpeedInitialized = true;
+				}
+				const float Dt = FMath::Max(InDeltaTime, 0.001f);
+				const float FrameSpeed = (Loc - PrevPawnLocation).Size() / Dt;
+				SmoothedSpeed = FMath::FInterpTo(SmoothedSpeed, FrameSpeed, InDeltaTime, 5.f);
+				PrevPawnLocation = Loc;
+
+				// Convert UU/s to mph (1 UU = 1 cm; 1 cm/s = 0.02237 mph)
+				const float SpeedMPH = SmoothedSpeed * 0.02237f;
+				const TCHAR* Mode = bDrivingMode ? TEXT("DRIVING") : TEXT("WALKING");
+
 				LocationText->SetText(FText::FromString(
-					FString::Printf(TEXT("X: %.0f  Y: %.0f  Z: %.0f"), Loc.X, Loc.Y, Loc.Z)));
+					FString::Printf(TEXT("%.1f mph  %s  |  X: %.0f  Y: %.0f  Z: %.0f"),
+						SpeedMPH, Mode, Loc.X, Loc.Y, Loc.Z)));
 			}
 		}
 	}
@@ -851,138 +1056,189 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	}
 
 #if PLATFORM_IOS || PLATFORM_ANDROID
-	if (!bDrivingMode || !DrivenVehicle)
-	{
-		return;
-	}
+	do {
+		APlayerController* PC = GetOwningPlayer();
+		if (!PC) break;
 
-	APlayerController* PC = GetOwningPlayer();
-	if (!PC)
-	{
-		return;
-	}
+		int32 VPWidth = 0;
+		int32 VPHeight = 0;
+		PC->GetViewportSize(VPWidth, VPHeight);
+		if (VPWidth == 0 || VPHeight == 0) break;
 
-	int32 VPWidth = 0;
-	int32 VPHeight = 0;
-	PC->GetViewportSize(VPWidth, VPHeight);
-	if (VPWidth == 0 || VPHeight == 0)
-	{
-		return;
-	}
+		const float ScreenHalfX = VPWidth * 0.5f;
+		const float ScreenHalfY = VPHeight * 0.5f;
 
-	const float ScreenHalfX = VPWidth * 0.5f;
-	const float ScreenHalfY = VPHeight * 0.5f;
-
-	float NewSteering = 0.f;
-	float NewThrottle = 0.f;
-	float NewPitch = 0.f;
-	bool bFireTouched = false;
-
-	// Fire button zone: centered at 77% X, from (48%-168px) to 48% Y.
-	const float FireCenterX = VPWidth * 0.77f;
-	const float FireBtnRadius = 84.f; // half of 168
-	const float FireBottomY = VPHeight * 0.48f;
-	const float FireTopY = FireBottomY - FireBtnRadius * 2.f;
-
-	// Read all active touch points.
-	// Left half of screen = steering (touch X position maps to steering angle).
-	// Right half, upper region = gas, lower region = brake.
-	// Fire button zone = upper right (above gas pedal).
-	for (int32 i = 0; i < 5; ++i)
-	{
-		float TouchX = 0.f;
-		float TouchY = 0.f;
-		bool bPressed = false;
-		PC->GetInputTouchState(static_cast<ETouchIndex::Type>(i), TouchX, TouchY, bPressed);
-
-		if (!bPressed)
+		if (bDrivingMode && DrivenVehicle)
 		{
-			continue;
-		}
+			// ---- DRIVING TOUCH INPUT (unchanged) ----
+			float NewSteering = 0.f;
+			float NewThrottle = 0.f;
+			float NewPitch = 0.f;
+			bool bFireTouched = false;
 
-		// Check fire button zone first (circle-ish region).
-		if (TouchX >= FireCenterX - FireBtnRadius && TouchX <= FireCenterX + FireBtnRadius &&
-			TouchY >= FireTopY && TouchY <= FireBottomY)
-		{
-			bFireTouched = true;
-			continue; // Don't let this touch also trigger gas/brake.
-		}
+			const float FireCenterX = VPWidth * 0.77f;
+			const float FireBtnRadius = 84.f;
+			const float FireBottomY = VPHeight * 0.48f;
+			const float FireTopY = FireBottomY - FireBtnRadius * 2.f;
 
-		if (TouchX < ScreenHalfX && TouchY > ScreenHalfY)
-		{
-			// Left side, bottom half = steering zone.
-			// Map [0 .. ScreenHalfX] to [-1 .. +1].
-			NewSteering = (TouchX / ScreenHalfX) * 2.f - 1.f;
-			NewSteering = FMath::Clamp(NewSteering, -1.f, 1.f);
-
-			// For Raptor: vertical position in this zone = pitch.
-			// Map [ScreenHalfY .. VPHeight] to [+1 .. -1] (top = climb, bottom = dive).
-			const float NormY = (TouchY - ScreenHalfY) / ScreenHalfY; // 0..1 (top..bottom)
-			NewPitch = 1.f - NormY * 2.f; // +1 (top) .. -1 (bottom)
-			NewPitch = FMath::Clamp(NewPitch, -1.f, 1.f);
-		}
-		else if (TouchX >= ScreenHalfX && TouchY > ScreenHalfY)
-		{
-			// Right side, bottom half = gas/brake.
-			// Upper portion (50%-75% of screen height) = gas.
-			// Lower portion (75%-100%) = brake.
-			const float ThresholdY = VPHeight * 0.75f;
-			if (TouchY < ThresholdY)
+			for (int32 i = 0; i < 5; ++i)
 			{
-				NewThrottle = 1.f;
+				float TouchX = 0.f;
+				float TouchY = 0.f;
+				bool bPressed = false;
+				PC->GetInputTouchState(static_cast<ETouchIndex::Type>(i), TouchX, TouchY, bPressed);
+				if (!bPressed) { continue; }
+
+				if (TouchX >= FireCenterX - FireBtnRadius && TouchX <= FireCenterX + FireBtnRadius &&
+					TouchY >= FireTopY && TouchY <= FireBottomY)
+				{
+					bFireTouched = true;
+					continue;
+				}
+
+				if (TouchX < ScreenHalfX && TouchY > ScreenHalfY)
+				{
+					NewSteering = (TouchX / ScreenHalfX) * 2.f - 1.f;
+					NewSteering = FMath::Clamp(NewSteering, -1.f, 1.f);
+
+					const float NormY = (TouchY - ScreenHalfY) / ScreenHalfY;
+					NewPitch = 1.f - NormY * 2.f;
+					NewPitch = FMath::Clamp(NewPitch, -1.f, 1.f);
+				}
+				else if (TouchX >= ScreenHalfX && TouchY > ScreenHalfY)
+				{
+					const float ThresholdY = VPHeight * 0.75f;
+					NewThrottle = (TouchY < ThresholdY) ? 1.f : -1.f;
+				}
 			}
-			else
+
+			if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(DrivenVehicle))
 			{
-				NewThrottle = -1.f;
+				V->SteeringInput = NewSteering;
+				V->ThrottleInput = NewThrottle;
+				if (!V->HasAuthority()) { V->ServerSetSteering(NewSteering); V->ServerSetThrottle(NewThrottle); }
+			}
+			else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(DrivenVehicle))
+			{
+				B->SteeringInput = NewSteering;
+				B->ThrottleInput = NewThrottle;
+				if (!B->HasAuthority()) { B->ServerSetSteering(NewSteering); B->ServerSetThrottle(NewThrottle); }
+			}
+			else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(DrivenVehicle))
+			{
+				R->SteeringInput = NewSteering;
+				R->ThrottleInput = NewThrottle;
+				R->PitchInput = NewPitch;
+				if (!R->HasAuthority()) { R->ServerSetSteering(NewSteering); R->ServerSetThrottle(NewThrottle); R->ServerSetPitch(NewPitch); }
+			}
+
+			if (bFireTouched)
+			{
+				if (APHCDuneBuggyPawn* Buggy = Cast<APHCDuneBuggyPawn>(DrivenVehicle)) { Buggy->FireMissile(); }
+				else if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle)) { Raptor->FireRocket(); }
 			}
 		}
-	}
+		else
+		{
+			// ---- WALKING TOUCH INPUT ----
+			// Same pattern as driving: GetInputTouchState each frame.
+			// Left side = virtual joystick (drag from initial touch).
+			// Right side = camera look (drag delta).
 
-	if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(DrivenVehicle))
-	{
-		V->SteeringInput = NewSteering;
-		V->ThrottleInput = NewThrottle;
-		if (!V->HasAuthority())
-		{
-			V->ServerSetSteering(NewSteering);
-			V->ServerSetThrottle(NewThrottle);
-		}
-	}
-	else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(DrivenVehicle))
-	{
-		B->SteeringInput = NewSteering;
-		B->ThrottleInput = NewThrottle;
-		if (!B->HasAuthority())
-		{
-			B->ServerSetSteering(NewSteering);
-			B->ServerSetThrottle(NewThrottle);
-		}
-	}
-	else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(DrivenVehicle))
-	{
-		R->SteeringInput = NewSteering;
-		R->ThrottleInput = NewThrottle;
-		R->PitchInput = NewPitch;
-		if (!R->HasAuthority())
-		{
-			R->ServerSetSteering(NewSteering);
-			R->ServerSetThrottle(NewThrottle);
-			R->ServerSetPitch(NewPitch);
-		}
-	}
+			APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn());
+			if (!Char) break;
 
-	// Fire missile/rocket while touching fire zone (mobile touch-based detection).
-	if (bFireTouched && bDrivingMode)
-	{
-		if (APHCDuneBuggyPawn* Buggy = Cast<APHCDuneBuggyPawn>(DrivenVehicle))
-		{
-			Buggy->FireMissile();
+			const float ScreenMidX = VPWidth * 0.5f;  // 50/50 split
+			const float JoystickMaxRadius = VPWidth * 0.10f;
+			const float DeadZone = VPWidth * 0.015f;
+			const float LookSensitivity = 0.15f;
+			const float ButtonZoneY = VPHeight * 0.25f; // top 25% reserved for buttons
+
+			float MoveX = 0.f;
+			float MoveY = 0.f;
+			float LookDeltaX = 0.f;
+			float LookDeltaY = 0.f;
+			bool bMoveFingStillDown = false;
+			bool bLookFingStillDown = false;
+
+			for (int32 i = 0; i < 5; ++i)
+			{
+				float TouchX = 0.f;
+				float TouchY = 0.f;
+				bool bPressed = false;
+				PC->GetInputTouchState(static_cast<ETouchIndex::Type>(i), TouchX, TouchY, bPressed);
+
+				if (!bPressed)
+				{
+					if (i == WalkMoveFingerIdx)  { WalkMoveFingerIdx = -1; WalkMoveOrigin = FVector2D::ZeroVector; }
+					if (i == WalkLookFingerIdx)  { WalkLookFingerIdx = -1; WalkLookPrev = FVector2D::ZeroVector; }
+					continue;
+				}
+
+				// Skip top 25% of screen where HUD buttons live
+				if (TouchY < ButtonZoneY) { continue; }
+
+				const FVector2D TouchPos(TouchX, TouchY);
+
+				if (TouchX < ScreenMidX)
+				{
+					// --- Left half: movement joystick ---
+					if (WalkMoveFingerIdx < 0)
+					{
+						WalkMoveFingerIdx = i;
+						WalkMoveOrigin = TouchPos;
+					}
+					if (i == WalkMoveFingerIdx)
+					{
+						bMoveFingStillDown = true;
+						const FVector2D Offset = TouchPos - WalkMoveOrigin;
+						const float Dist = Offset.Size();
+						if (Dist > DeadZone)
+						{
+							FVector2D Normalized = Offset / JoystickMaxRadius;
+							if (Normalized.Size() > 1.f) { Normalized = Normalized.GetSafeNormal(); }
+							MoveX = Normalized.X;
+							MoveY = -Normalized.Y; // screen Y is inverted
+						}
+					}
+				}
+				else
+				{
+					// --- Right half: camera look ---
+					if (WalkLookFingerIdx < 0)
+					{
+						WalkLookFingerIdx = i;
+						WalkLookPrev = TouchPos;
+					}
+					if (i == WalkLookFingerIdx)
+					{
+						bLookFingStillDown = true;
+						const FVector2D Delta = (TouchPos - WalkLookPrev) * LookSensitivity;
+						LookDeltaX = Delta.X;
+						LookDeltaY = Delta.Y;
+						WalkLookPrev = TouchPos;
+					}
+				}
+			}
+
+			if (!bMoveFingStillDown && WalkMoveFingerIdx >= 0)
+			{
+				WalkMoveFingerIdx = -1;
+				WalkMoveOrigin = FVector2D::ZeroVector;
+			}
+			if (!bLookFingStillDown && WalkLookFingerIdx >= 0)
+			{
+				WalkLookFingerIdx = -1;
+				WalkLookPrev = FVector2D::ZeroVector;
+			}
+
+			Char->TouchMoveX = MoveX;
+			Char->TouchMoveY = MoveY;
+			Char->TouchLookX = LookDeltaX;
+			Char->TouchLookY = LookDeltaY;
+			Char->bHUDTouchActive = (WalkMoveFingerIdx >= 0 || WalkLookFingerIdx >= 0);
 		}
-		else if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle))
-		{
-			Raptor->FireRocket();
-		}
-	}
+	} while (false);
 #endif
 
 	// Continuous fire while Fire UButton is held (desktop/fallback).
@@ -1028,18 +1284,37 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 
 	// Toggle on-foot controls.
 	if (CarButton) { CarButton->SetVisibility(WalkVis); }
+	if (WeaponsButton) { WeaponsButton->SetVisibility(WalkVis); }
+	if (WeaponFireButton)
+	{
+		// Hide fire button while driving; restore if weapon is equipped on exit
+		if (bDriving)
+		{
+			WeaponFireButton->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		else if (EquippedWeaponType >= 0)
+		{
+			WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
+		}
+	}
 	if (HostButton) { HostButton->SetVisibility(WalkVis); }
 	if (JoinButton) { JoinButton->SetVisibility(WalkVis); }
 #if PLATFORM_IOS || PLATFORM_ANDROID
-	if (JumpButton) { JumpButton->SetVisibility(WalkVis); }
-	if (SprintButton) { SprintButton->SetVisibility(WalkVis); }
-	if (InteractButton) { InteractButton->SetVisibility(WalkVis); }
+	// Jump/Sprint/Interact buttons removed.
+	if (WalkMovePanel) { WalkMovePanel->SetVisibility(WalkVis); }
+	if (WalkLookPanel) { WalkLookPanel->SetVisibility(WalkVis); }
 
 	// Toggle driving controls.
 	if (SteeringPanel) { SteeringPanel->SetVisibility(DriveVis); }
 	if (GasPedalPanel) { GasPedalPanel->SetVisibility(DriveVis); }
 	if (BrakePedalPanel) { BrakePedalPanel->SetVisibility(DriveVis); }
 	if (ExitVehicleButton) { ExitVehicleButton->SetVisibility(DriveVis); }
+
+	// Reset walking touch state.
+	WalkMoveFingerIdx = -1;
+	WalkLookFingerIdx = -1;
+	WalkMoveOrigin = FVector2D::ZeroVector;
+	WalkLookPrev = FVector2D::ZeroVector;
 #endif
 
 	// Zero out vehicle input when exiting.
@@ -1238,63 +1513,7 @@ void UPHCCityHUD::OnDropBombClicked()
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Mobile on-foot button callbacks
-// ---------------------------------------------------------------------------
-
-void UPHCCityHUD::OnJumpButtonPressed()
-{
-	if (APlayerController* PC = GetOwningPlayer())
-	{
-		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
-		{
-			Char->Jump();
-		}
-	}
-}
-
-void UPHCCityHUD::OnJumpButtonReleased()
-{
-	if (APlayerController* PC = GetOwningPlayer())
-	{
-		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
-		{
-			Char->StopJumping();
-		}
-	}
-}
-
-void UPHCCityHUD::OnSprintButtonPressed()
-{
-	if (APlayerController* PC = GetOwningPlayer())
-	{
-		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
-		{
-			Char->bIsSprinting = true;
-			Char->GetCharacterMovement()->MaxWalkSpeed = Char->SprintSpeed;
-		}
-	}
-}
-
-void UPHCCityHUD::OnSprintButtonReleased()
-{
-	if (APlayerController* PC = GetOwningPlayer())
-	{
-		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
-		{
-			Char->bIsSprinting = false;
-			Char->GetCharacterMovement()->MaxWalkSpeed = Char->WalkSpeed;
-		}
-	}
-}
-
-void UPHCCityHUD::OnInteractButtonClicked()
-{
-	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
-	{
-		PC->EnterNearestVehicle();
-	}
-}
+// Jump/Sprint/Interact button callbacks removed — mobile uses touch panels.
 
 // ---------------------------------------------------------------------------
 // Driving mode button callback
@@ -1364,5 +1583,94 @@ void UPHCCityHUD::OnJoinCancelClicked()
 	if (JoinOverlay)
 	{
 		JoinOverlay->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Weapons
+// ---------------------------------------------------------------------------
+
+void UPHCCityHUD::OnWeaponsButtonClicked()
+{
+	ShowWeaponSelection();
+}
+
+void UPHCCityHUD::ShowWeaponSelection()
+{
+	if (WeaponSelectOverlay)
+	{
+		WeaponSelectOverlay->SetVisibility(ESlateVisibility::Visible);
+		bWeaponSelectOpen = true;
+	}
+}
+
+void UPHCCityHUD::HideWeaponSelection()
+{
+	if (WeaponSelectOverlay)
+	{
+		WeaponSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
+		bWeaponSelectOpen = false;
+	}
+}
+
+void UPHCCityHUD::OnSelectGun()
+{
+	HideWeaponSelection();
+	EquippedWeaponType = 0;
+
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->CurrentWeaponType = 0;
+		}
+	}
+
+	if (WeaponFireLabel) WeaponFireLabel->SetText(FText::FromString(TEXT("Fire")));
+	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
+}
+
+void UPHCCityHUD::OnSelectRPG()
+{
+	HideWeaponSelection();
+	EquippedWeaponType = 1;
+
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->CurrentWeaponType = 1;
+		}
+	}
+
+	if (WeaponFireLabel) WeaponFireLabel->SetText(FText::FromString(TEXT("Fire RPG")));
+	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
+}
+
+void UPHCCityHUD::OnSelectSword()
+{
+	HideWeaponSelection();
+	EquippedWeaponType = 2;
+
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->CurrentWeaponType = 2;
+		}
+	}
+
+	if (WeaponFireLabel) WeaponFireLabel->SetText(FText::FromString(TEXT("Swing")));
+	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
+}
+
+void UPHCCityHUD::OnWeaponFirePressed()
+{
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->FireWeapon();
+		}
 	}
 }

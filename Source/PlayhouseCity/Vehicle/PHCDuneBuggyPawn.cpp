@@ -263,6 +263,8 @@ void APHCDuneBuggyPawn::BeginPlay()
 {
 	Super::BeginPlay();
 
+	bHasBeenGrounded = true;
+
 	CreateInputAssets();
 
 	// ---- Apply materials ----
@@ -570,7 +572,8 @@ void APHCDuneBuggyPawn::Tick(float DeltaTime)
 			}
 			// Apply gravity
 			VerticalVelocity -= 980.f * DeltaTime;
-			const float NewZ = Pos.Z + VerticalVelocity * DeltaTime;
+			float NewZ = Pos.Z + VerticalVelocity * DeltaTime;
+			if (NewZ <= 85.f) { NewZ = 85.f; VerticalVelocity = 0.f; }
 			SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 
 			// Flatten pitch while airborne

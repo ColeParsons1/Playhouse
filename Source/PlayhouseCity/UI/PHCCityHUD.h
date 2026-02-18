@@ -72,14 +72,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UButton> CarButton;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UButton> JumpButton;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UButton> SprintButton;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UButton> InteractButton;
+	// Jump/Sprint/Interact buttons removed — mobile uses touch panels only.
 
 	// -- Missile fire button (shown when driving dune buggy) ----------------
 
@@ -114,6 +107,20 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UButton> ExitVehicleButton;
 
+	// -- Walking mode touch panels (mobile only) ----------------------------
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> WalkMovePanel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> WalkMoveLabel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> WalkLookPanel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> WalkLookLabel;
+
 	/** The lobby main HUD shown as an overlay when the menu is opened. */
 	UPROPERTY()
 	TObjectPtr<UPHCMainHUD> MenuOverlay;
@@ -125,6 +132,29 @@ protected:
 	/** The vehicle we're currently controlling via touch. */
 	UPROPERTY()
 	TObjectPtr<APawn> DrivenVehicle;
+
+	// -- Weapon selection popup ------------------------------------------------
+
+	UPROPERTY()
+	TObjectPtr<UButton> WeaponsButton;
+
+	UPROPERTY()
+	TObjectPtr<UBorder> WeaponSelectOverlay;
+
+	UPROPERTY()
+	TObjectPtr<UButton> SelectGunBtn;
+
+	UPROPERTY()
+	TObjectPtr<UButton> SelectRPGBtn;
+
+	UPROPERTY()
+	TObjectPtr<UButton> SelectSwordBtn;
+
+	UPROPERTY()
+	TObjectPtr<UButton> WeaponFireButton;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> WeaponFireLabel;
 
 	// -- Vehicle selection popup -----------------------------------------------
 
@@ -173,6 +203,17 @@ protected:
 	bool bDrivingMode = false;
 	bool bFireHeld = false;
 
+	// Speed tracking for speedometer
+	FVector PrevPawnLocation = FVector::ZeroVector;
+	float SmoothedSpeed = 0.f;
+	bool bSpeedInitialized = false;
+
+	// Walking touch state (virtual joystick + camera look)
+	FVector2D WalkMoveOrigin = FVector2D::ZeroVector;
+	int32 WalkMoveFingerIdx = -1;
+	int32 WalkLookFingerIdx = -1;
+	FVector2D WalkLookPrev = FVector2D::ZeroVector;
+
 private:
 	UFUNCTION()
 	void OnMenuButtonClicked();
@@ -183,20 +224,7 @@ private:
 	UFUNCTION()
 	void OnCarButtonClicked();
 
-	UFUNCTION()
-	void OnJumpButtonPressed();
-
-	UFUNCTION()
-	void OnJumpButtonReleased();
-
-	UFUNCTION()
-	void OnSprintButtonPressed();
-
-	UFUNCTION()
-	void OnSprintButtonReleased();
-
-	UFUNCTION()
-	void OnInteractButtonClicked();
+	// Jump/Sprint/Interact button callbacks removed.
 
 	UFUNCTION()
 	void OnExitVehicleClicked();
@@ -234,6 +262,26 @@ private:
 	void ShowVehicleSelection();
 	void HideVehicleSelection();
 
+	UFUNCTION()
+	void OnWeaponsButtonClicked();
+
+	UFUNCTION()
+	void OnSelectGun();
+
+	UFUNCTION()
+	void OnSelectRPG();
+
+	UFUNCTION()
+	void OnSelectSword();
+
+	UFUNCTION()
+	void OnWeaponFirePressed();
+
+	void ShowWeaponSelection();
+	void HideWeaponSelection();
+
 	bool bMenuOpen = false;
 	bool bVehicleSelectOpen = false;
+	bool bWeaponSelectOpen = false;
+	int32 EquippedWeaponType = -1;
 };
