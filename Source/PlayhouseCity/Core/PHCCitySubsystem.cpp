@@ -5680,9 +5680,13 @@ void UPHCCitySubsystem::SpawnMountainRange()
 	};
 	const int32 NumPeaks = UE_ARRAY_COUNT(Peaks);
 
-	// Snow peaks (8 tallest)
-	const int32 SnowIdx[] = { 4, 8, 2, 13, 10, 6, 15, 0, 27, 25, 31, 29 };
+	// Snow peaks (northern tallest only — southern peaks are volcanic)
+	const int32 SnowIdx[] = { 4, 8, 2, 13, 10, 6, 15, 0 };
 	const int32 NumSnow = UE_ARRAY_COUNT(SnowIdx);
+
+	// Southern front row = indices 23-32, back row = 33-36
+	const int32 VolcanoStartIdx = 23;
+	const int32 VolcanoEndIdx = 36; // inclusive
 
 	// ================================================================
 	// Color palette — layered geological look
@@ -5697,6 +5701,16 @@ void UPHCCitySubsystem::SpawnMountainRange()
 	const FLinearColor SnowFresh(0.94f, 0.95f, 0.97f);   // bright fresh snow
 	const FLinearColor SnowOld(0.82f, 0.84f, 0.88f);     // packed/old snow
 	const FLinearColor RidgeRock(0.30f, 0.28f, 0.26f);   // ridge connector
+
+	// Volcanic palette
+	const FLinearColor VolcanicRock(0.10f, 0.08f, 0.07f);    // dark basalt
+	const FLinearColor VolcanicDark(0.06f, 0.05f, 0.04f);    // obsidian
+	const FLinearColor LavaBright(1.0f, 0.35f, 0.02f);       // bright molten lava
+	const FLinearColor LavaGlow(0.9f, 0.18f, 0.01f);         // deep magma
+	const FLinearColor LavaEmissive(12.f, 3.f, 0.3f);        // emissive glow
+	const FLinearColor LavaCrustEmissive(4.f, 0.8f, 0.1f);   // cooler crust glow
+	const FLinearColor AshGray(0.18f, 0.17f, 0.16f);         // volcanic ash
+	const FLinearColor SmokeColor(0.25f, 0.23f, 0.22f);      // eruption smoke
 
 	// ================================================================
 	// BUILD EACH MOUNTAIN
@@ -5715,6 +5729,8 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		const float RX = PD.RadX;
 		const float RY = PD.RadY;
 
+		const bool bVolcanic = (P >= VolcanoStartIdx && P <= VolcanoEndIdx);
+
 		// Per-peak color jitter
 		const float CJ = CityRandom.FRandRange(-0.03f, 0.03f);
 		auto Jitter = [&](const FLinearColor& C) {
@@ -5731,11 +5747,12 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		// -------------------------------------------------------
 		const float BaseDiamX = RX * 2.2f;
 		const float BaseDiamY = RY * 2.2f;
+		const FLinearColor BaseCol = bVolcanic ? Jitter(VolcanicRock) : Jitter(RockMid);
 		UStaticMeshComponent* Root = MC_Cone(M,
 			FVector(PD.X, PD.Y, 0.f),
 			FVector(BaseDiamX / 100.f, BaseDiamY / 100.f, H * 0.85f / 100.f),
 			FRotator::ZeroRotator,
-			Jitter(RockMid), 0.92f, 0.05f);
+			BaseCol, bVolcanic ? 0.95f : 0.92f, 0.05f);
 		M->SetRootComponent(Root);
 
 		// -------------------------------------------------------
@@ -5936,9 +5953,359 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 
 		// -------------------------------------------------------
-		// J. SNOW (tallest 8 peaks only)
-		// Multiple overlapping white shapes — not one smooth sphere
+		// J. SNOW (northern tallest peaks only) or VOLCANO (southern peaks)
 		// -------------------------------------------------------
+		if (bVolcanic)
+		{
+			// ===== ACTIVE VOLCANO: crater, lava pool, lava flows, eruption =====
+
+			// Crater rim — ring of dark rock at summit (hollow the top)
+			const float CraterRim = RX * 0.55f;
+			const float CraterH = H * 0.08f;
+			MC_Cyl(M,
+				FVector(PD.X, PD.Y, H * 0.78f),
+				FVector(CraterRim / 50.f, CraterRim / 50.f, CraterH / 100.f),
+				FRotator::ZeroRotator,
+				Jitter(VolcanicDark), 0.96f, 0.03f);
+
+			// Lava pool inside crater — bright glowing disc
+			const float LavaPoolR = RX * 0.35f;
+			UStaticMeshComponent* LavaPool = MC_Cyl(M,
+				FVector(PD.X, PD.Y, H * 0.76f),
+				FVector(LavaPoolR / 50.f, LavaPoolR / 50.f, 0.02f),
+				FRotator::ZeroRotator,
+				LavaBright, 0.20f, 0.1f);
+			if (LavaPool)
+			{
+				ApplyPBR(LavaPool, LavaBright, 0.1f, 0.20f, LavaEmissive);
+			}
+
+			// 3-4 lava flows cascading down the mountain face into pools
+			const int32 NumFlows = 3 + CityRandom.RandRange(0, 1);
+			for (int32 LF = 0; LF < NumFlows; ++LF)
+			{
+				const float LFYaw = CityRandom.FRandRange(0.f, 360.f);
+				const float LFRad = FMath::DegreesToRadians(LFYaw);
+
+				// Flow starts near crater and runs down the slope
+				const int32 NumSegments = 5 + CityRandom.RandRange(0, 2);
+				for (int32 Seg = 0; Seg < NumSegments; ++Seg)
+				{
+					const float Frac = (float)Seg / (float)(NumSegments - 1);
+					const float SegDist = RX * (0.15f + Frac * 0.90f);
+					const float SegX = PD.X + SegDist * FMath::Cos(LFRad);
+					const float SegY = PD.Y + SegDist * FMath::Sin(LFRad);
+					const float SegZ = H * (0.70f - Frac * 0.68f); // flows all the way to base
+
+					// Wider near the bottom (lava spreads as it cools)
+					const float WidthMult = 1.f + Frac * 1.5f;
+					const float SegW = RX * CityRandom.FRandRange(0.04f, 0.08f) * WidthMult;
+					const float SegL = RX * CityRandom.FRandRange(0.10f, 0.20f);
+					const float SegH = H * 0.015f;
+
+					// Hotter near summit, cooler crust farther down
+					const FLinearColor FlowEmissive = FLinearColor(
+						FMath::Lerp(LavaEmissive.R, LavaCrustEmissive.R, Frac),
+						FMath::Lerp(LavaEmissive.G, LavaCrustEmissive.G, Frac),
+						FMath::Lerp(LavaEmissive.B, LavaCrustEmissive.B, Frac));
+					const FLinearColor FlowCol = FLinearColor(
+						FMath::Lerp(LavaBright.R, LavaGlow.R, Frac),
+						FMath::Lerp(LavaBright.G, LavaGlow.G, Frac),
+						FMath::Lerp(LavaBright.B, LavaGlow.B, Frac));
+
+					UStaticMeshComponent* FlowSeg = MC_Cube(M,
+						FVector(SegX, SegY, SegZ),
+						FVector(SegL / 100.f, SegW / 100.f, SegH / 100.f),
+						FRotator(CityRandom.FRandRange(10.f, 25.f), LFYaw + 90.f, 0.f),
+						FlowCol, 0.25f, 0.05f);
+					if (FlowSeg)
+					{
+						ApplyPBR(FlowSeg, FlowCol, 0.05f, 0.25f, FlowEmissive);
+					}
+				}
+
+				// ---- Lava collection pool at the base of each flow ----
+				const float PoolDist = RX * 1.05f + CityRandom.FRandRange(0.f, RX * 0.15f);
+				const float PoolX = PD.X + PoolDist * FMath::Cos(LFRad);
+				const float PoolY = PD.Y + PoolDist * FMath::Sin(LFRad);
+				const float PoolZ = H * 0.02f; // at ground level
+				const float PoolR = RX * CityRandom.FRandRange(0.25f, 0.40f);
+
+				// Main pool disc — bright molten lava
+				UStaticMeshComponent* FlowPool = MC_Cyl(M,
+					FVector(PoolX, PoolY, PoolZ),
+					FVector(PoolR / 50.f, PoolR / 50.f, 0.03f),
+					FRotator::ZeroRotator,
+					LavaBright, 0.15f, 0.05f);
+				if (FlowPool)
+				{
+					ApplyPBR(FlowPool, LavaBright, 0.05f, 0.15f, LavaEmissive);
+				}
+
+				// Dark crusted rim around pool edge
+				const float RimR = PoolR * 1.25f;
+				UStaticMeshComponent* PoolRim = MC_Cyl(M,
+					FVector(PoolX, PoolY, PoolZ - 2.f),
+					FVector(RimR / 50.f, RimR / 50.f, 0.02f),
+					FRotator::ZeroRotator,
+					LavaGlow, 0.80f, 0.02f);
+				if (PoolRim)
+				{
+					ApplyPBR(PoolRim, FLinearColor(0.15f, 0.06f, 0.02f), 0.02f, 0.80f, LavaCrustEmissive * 0.5f);
+				}
+
+				// Inner hot spot — smaller, brighter emissive center
+				const float HotR = PoolR * 0.5f;
+				const float HotJX = CityRandom.FRandRange(-PoolR * 0.15f, PoolR * 0.15f);
+				const float HotJY = CityRandom.FRandRange(-PoolR * 0.15f, PoolR * 0.15f);
+				UStaticMeshComponent* HotSpot = MC_Cyl(M,
+					FVector(PoolX + HotJX, PoolY + HotJY, PoolZ + 1.f),
+					FVector(HotR / 50.f, HotR / 50.f, 0.015f),
+					FRotator::ZeroRotator,
+					FLinearColor(1.f, 0.55f, 0.05f), 0.10f, 0.03f);
+				if (HotSpot)
+				{
+					ApplyPBR(HotSpot, FLinearColor(1.f, 0.55f, 0.05f), 0.03f, 0.10f,
+						FLinearColor(18.f, 5.f, 0.5f)); // extra bright hot center
+				}
+
+				// Pool light — strong ground-level glow that illuminates sky
+				AActor* PoolLightActor = World->SpawnActor<AActor>(
+					AActor::StaticClass(), FVector(PoolX, PoolY, PoolZ + 200.f), FRotator::ZeroRotator);
+				if (PoolLightActor)
+				{
+					FString PLN = FString::Printf(TEXT("LavaPoolLight_%d_%d"), P, LF);
+					UPointLightComponent* PLL = NewObject<UPointLightComponent>(PoolLightActor, *PLN);
+					PLL->SetWorldLocation(FVector(PoolX, PoolY, PoolZ + 200.f));
+					PLL->SetIntensity(80000.f);
+					PLL->SetAttenuationRadius(25000.f);
+					PLL->SetLightColor(FColor(255, 90, 15));
+					PLL->SetCastShadows(false);
+					PLL->RegisterComponent();
+					PoolLightActor->SetRootComponent(PLL);
+					PoolLightActor->AddInstanceComponent(PLL);
+				}
+
+				// Mid-flow light — boosted for sky visibility
+				const float MidDist = RX * 0.5f;
+				const FVector FlowLightPos(
+					PD.X + MidDist * FMath::Cos(LFRad),
+					PD.Y + MidDist * FMath::Sin(LFRad),
+					H * 0.35f);
+				AActor* FlowLightActor = World->SpawnActor<AActor>(
+					AActor::StaticClass(), FlowLightPos, FRotator::ZeroRotator);
+				if (FlowLightActor)
+				{
+					FString FLN = FString::Printf(TEXT("LavaFlowLight_%d_%d"), P, LF);
+					UPointLightComponent* FLL = NewObject<UPointLightComponent>(FlowLightActor, *FLN);
+					FLL->SetWorldLocation(FlowLightPos);
+					FLL->SetIntensity(35000.f);
+					FLL->SetAttenuationRadius(15000.f);
+					FLL->SetLightColor(FColor(255, 100, 20));
+					FLL->SetCastShadows(false);
+					FLL->RegisterComponent();
+					FlowLightActor->SetRootComponent(FLL);
+					FlowLightActor->AddInstanceComponent(FLL);
+				}
+			}
+
+			// ---- Large communal lava lake at volcano base ----
+			// All flows converge into a larger molten lake on the downhill side
+			{
+				const float LakeYaw = CityRandom.FRandRange(90.f, 270.f); // generally south-facing (toward pirate ship)
+				const float LakeRad = FMath::DegreesToRadians(LakeYaw);
+				const float LakeDist = RX * 1.3f;
+				const float LakeX = PD.X + LakeDist * FMath::Cos(LakeRad);
+				const float LakeY = PD.Y + LakeDist * FMath::Sin(LakeRad);
+				const float LakeZ = 5.f; // just above ground
+
+				// Primary lake — large bright lava disc
+				const float LakeR = RX * CityRandom.FRandRange(0.55f, 0.75f);
+				UStaticMeshComponent* LakeMC = MC_Cyl(M,
+					FVector(LakeX, LakeY, LakeZ),
+					FVector(LakeR / 50.f, LakeR / 50.f, 0.04f),
+					FRotator::ZeroRotator,
+					LavaBright, 0.12f, 0.05f);
+				if (LakeMC)
+				{
+					ApplyPBR(LakeMC, LavaBright, 0.05f, 0.12f, LavaEmissive);
+				}
+
+				// Darker crusted shoreline ring
+				const float ShoreR = LakeR * 1.3f;
+				UStaticMeshComponent* ShoreMC = MC_Cyl(M,
+					FVector(LakeX, LakeY, LakeZ - 3.f),
+					FVector(ShoreR / 50.f, ShoreR / 50.f, 0.03f),
+					FRotator::ZeroRotator,
+					FLinearColor(0.12f, 0.05f, 0.02f), 0.85f, 0.02f);
+				if (ShoreMC)
+				{
+					ApplyPBR(ShoreMC, FLinearColor(0.12f, 0.05f, 0.02f), 0.02f, 0.85f, LavaCrustEmissive * 0.4f);
+				}
+
+				// 2-3 bright hotspots within the lake
+				for (int32 HS = 0; HS < 2 + CityRandom.RandRange(0, 1); ++HS)
+				{
+					const float HSR = LakeR * CityRandom.FRandRange(0.15f, 0.30f);
+					const float HSAngle = CityRandom.FRandRange(0.f, 360.f);
+					const float HSDist = CityRandom.FRandRange(0.f, LakeR * 0.5f);
+					const float HSX = LakeX + HSDist * FMath::Cos(FMath::DegreesToRadians(HSAngle));
+					const float HSY = LakeY + HSDist * FMath::Sin(FMath::DegreesToRadians(HSAngle));
+
+					UStaticMeshComponent* HSMC = MC_Cyl(M,
+						FVector(HSX, HSY, LakeZ + 2.f),
+						FVector(HSR / 50.f, HSR / 50.f, 0.015f),
+						FRotator::ZeroRotator,
+						FLinearColor(1.f, 0.6f, 0.08f), 0.08f, 0.02f);
+					if (HSMC)
+					{
+						ApplyPBR(HSMC, FLinearColor(1.f, 0.6f, 0.08f), 0.02f, 0.08f,
+							FLinearColor(20.f, 6.f, 0.6f)); // blazing hot
+					}
+				}
+
+				// Solidified lava rock islands in the lake
+				for (int32 RI = 0; RI < 2; ++RI)
+				{
+					const float RIAngle = CityRandom.FRandRange(0.f, 360.f);
+					const float RIDist = CityRandom.FRandRange(LakeR * 0.2f, LakeR * 0.7f);
+					const float RIX = LakeX + RIDist * FMath::Cos(FMath::DegreesToRadians(RIAngle));
+					const float RIY = LakeY + RIDist * FMath::Sin(FMath::DegreesToRadians(RIAngle));
+					const float RIR = LakeR * CityRandom.FRandRange(0.06f, 0.12f);
+
+					FString RIN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+					UStaticMeshComponent* RockMC = NewObject<UStaticMeshComponent>(M, *RIN);
+					RockMC->SetStaticMesh(SphereMesh);
+					RockMC->SetWorldScale3D(FVector(RIR / 50.f, RIR / 50.f, RIR * 0.5f / 50.f));
+					RockMC->SetWorldLocation(FVector(RIX, RIY, LakeZ + 8.f));
+					RockMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					RockMC->SetBoundsScale(10.f);
+					RockMC->RegisterComponent();
+					ApplyPBR(RockMC, VolcanicDark, 0.02f, 0.95f);
+					M->AddInstanceComponent(RockMC);
+				}
+
+				// Lake main light — massive intensity to illuminate the night sky
+				AActor* LakeLightActor = World->SpawnActor<AActor>(
+					AActor::StaticClass(), FVector(LakeX, LakeY, LakeZ + 500.f), FRotator::ZeroRotator);
+				if (LakeLightActor)
+				{
+					FString LLN = FString::Printf(TEXT("LavaLakeLight_%d"), P);
+					UPointLightComponent* LLL = NewObject<UPointLightComponent>(LakeLightActor, *LLN);
+					LLL->SetWorldLocation(FVector(LakeX, LakeY, LakeZ + 500.f));
+					LLL->SetIntensity(120000.f);
+					LLL->SetAttenuationRadius(40000.f);
+					LLL->SetLightColor(FColor(255, 85, 12));
+					LLL->SetCastShadows(false);
+					LLL->RegisterComponent();
+					LakeLightActor->SetRootComponent(LLL);
+					LakeLightActor->AddInstanceComponent(LLL);
+				}
+			}
+
+			// Main crater light — strong orange-red glow illuminating the sky
+			const FVector CraterLightPos(PD.X, PD.Y, H * 0.85f);
+			AActor* CraterLightActor = World->SpawnActor<AActor>(
+				AActor::StaticClass(), CraterLightPos, FRotator::ZeroRotator);
+			if (CraterLightActor)
+			{
+				FString CLN = FString::Printf(TEXT("VolcanoCraterLight_%d"), P);
+				UPointLightComponent* CL = NewObject<UPointLightComponent>(CraterLightActor, *CLN);
+				CL->SetWorldLocation(CraterLightPos);
+				CL->SetIntensity(100000.f);
+				CL->SetAttenuationRadius(35000.f);
+				CL->SetLightColor(FColor(255, 80, 10));
+				CL->SetCastShadows(false);
+				CL->RegisterComponent();
+				CraterLightActor->SetRootComponent(CL);
+				CraterLightActor->AddInstanceComponent(CL);
+			}
+
+			// Sky-glow light — elevated high above the volcano to cast warm light on clouds/sky
+			AActor* SkyGlowActor = World->SpawnActor<AActor>(
+				AActor::StaticClass(), FVector(PD.X, PD.Y, H * 1.5f), FRotator::ZeroRotator);
+			if (SkyGlowActor)
+			{
+				FString SGN = FString::Printf(TEXT("VolcanoSkyGlow_%d"), P);
+				UPointLightComponent* SGL = NewObject<UPointLightComponent>(SkyGlowActor, *SGN);
+				SGL->SetWorldLocation(FVector(PD.X, PD.Y, H * 1.5f));
+				SGL->SetIntensity(60000.f);
+				SGL->SetAttenuationRadius(50000.f);
+				SGL->SetLightColor(FColor(255, 65, 8));
+				SGL->SetCastShadows(false);
+				SGL->RegisterComponent();
+				SkyGlowActor->SetRootComponent(SGL);
+				SkyGlowActor->AddInstanceComponent(SGL);
+			}
+
+			// Eruption plume — stacked spheres above crater (smoke + lava bombs)
+			// Only on front-row volcanic peaks (taller ones)
+			if (P >= VolcanoStartIdx && P <= 32)
+			{
+				// Smoke column — translucent dark spheres rising above crater
+				for (int32 Sm = 0; Sm < 5; ++Sm)
+				{
+					const float SmZ = H * 0.85f + Sm * H * 0.12f;
+					const float SmR = RX * (0.2f + Sm * 0.08f); // expands upward
+					const float SmJX = CityRandom.FRandRange(-RX * 0.1f, RX * 0.1f);
+					const float SmJY = CityRandom.FRandRange(-RY * 0.1f, RY * 0.1f);
+
+					// Use sphere mesh for smoke puffs
+					FString SmN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+					UStaticMeshComponent* SmokeMC = NewObject<UStaticMeshComponent>(M, *SmN);
+					SmokeMC->SetStaticMesh(SphereMesh);
+					SmokeMC->SetWorldScale3D(FVector(SmR / 50.f, SmR / 50.f, SmR * 0.6f / 50.f));
+					SmokeMC->SetWorldLocation(FVector(PD.X + SmJX, PD.Y + SmJY, SmZ));
+					SmokeMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					SmokeMC->SetBoundsScale(10.f);
+					SmokeMC->RegisterComponent();
+					// Dark ash color with subtle warm emissive from below
+					const float SmEmissive = FMath::Max(0.f, 1.f - Sm * 0.25f);
+					ApplyPBR(SmokeMC, AshGray, 0.f, 0.95f,
+						FLinearColor(SmEmissive * 2.f, SmEmissive * 0.4f, SmEmissive * 0.05f));
+					M->AddInstanceComponent(SmokeMC);
+				}
+
+				// Lava bombs — small bright spheres scattered in eruption column
+				for (int32 LB = 0; LB < 4; ++LB)
+				{
+					const float LBZ = H * CityRandom.FRandRange(0.90f, 1.30f);
+					const float LBR = RX * CityRandom.FRandRange(0.03f, 0.06f);
+					const float LBX = PD.X + CityRandom.FRandRange(-RX * 0.25f, RX * 0.25f);
+					const float LBY = PD.Y + CityRandom.FRandRange(-RY * 0.25f, RY * 0.25f);
+
+					FString LBN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+					UStaticMeshComponent* BombMC = NewObject<UStaticMeshComponent>(M, *LBN);
+					BombMC->SetStaticMesh(SphereMesh);
+					BombMC->SetWorldScale3D(FVector(LBR / 50.f));
+					BombMC->SetWorldLocation(FVector(LBX, LBY, LBZ));
+					BombMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					BombMC->SetBoundsScale(10.f);
+					BombMC->RegisterComponent();
+					ApplyPBR(BombMC, LavaBright, 0.1f, 0.15f, LavaEmissive);
+					M->AddInstanceComponent(BombMC);
+				}
+			}
+
+			// Ash deposits at base — dark gray patches instead of green
+			const int32 NumAsh = 3 + CityRandom.RandRange(0, 2);
+			for (int32 A = 0; A < NumAsh; ++A)
+			{
+				const float AYaw = CityRandom.FRandRange(0.f, 360.f);
+				const float ARad = FMath::DegreesToRadians(AYaw);
+				const float ADist = RX * CityRandom.FRandRange(0.8f, 1.3f);
+
+				MC_Cube(M,
+					FVector(PD.X + ADist * FMath::Cos(ARad),
+							PD.Y + ADist * FMath::Sin(ARad),
+							H * 0.02f),
+					FVector(RX * 0.4f / 100.f, RY * 0.3f / 100.f, 0.10f),
+					FRotator(CityRandom.FRandRange(3.f, 12.f), AYaw, 0.f),
+					Jitter(AshGray), 0.96f, 0.f);
+			}
+		}
+		else
+		{
 		bool bSnow = false;
 		for (int32 Si = 0; Si < NumSnow; ++Si)
 		{
@@ -5984,6 +6351,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				FRotator::ZeroRotator,
 				SnowFresh, 0.50f, 0.f);
 		}
+		} // end snow vs volcano
 	}
 
 	// ================================================================

@@ -46,25 +46,70 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
 
-	// -- Blocky character mesh (Roblox Brookhaven style) ---------------------
+	// -- Fortnite-Quality Character (45 components) --------------------------
+	// Sphere-based organic body, facial features, overlapping shapes for
+	// smooth silhouette. All /Engine/BasicShapes/ primitives.
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Mesh")
-	TObjectPtr<UStaticMeshComponent> HeadMesh;
+	// Head & Face
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> HeadMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> JawMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> NeckMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftEyeWhiteMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightEyeWhiteMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftPupilMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightPupilMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> NoseMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> MouthMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftEarMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightEarMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftBrowMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightBrowMesh;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Mesh")
-	TObjectPtr<UStaticMeshComponent> TorsoMesh;
+	// Hair
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> HairTopMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> HairBackMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> HairSideLMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> HairSideRMesh;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Mesh")
-	TObjectPtr<UStaticMeshComponent> LeftArmMesh;
+	// Torso (sphere-based organic)
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> ChestMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> AbsMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> PelvisMesh;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Mesh")
-	TObjectPtr<UStaticMeshComponent> RightArmMesh;
+	// Clothing details
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> CollarMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BeltMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BeltBuckleMesh;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Mesh")
-	TObjectPtr<UStaticMeshComponent> LeftLegMesh;
+	// Left Arm
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftShoulderMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftUpperArmMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftElbowMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftForearmMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftHandMesh;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Mesh")
-	TObjectPtr<UStaticMeshComponent> RightLegMesh;
+	// Right Arm
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightShoulderMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightUpperArmMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightElbowMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightForearmMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightHandMesh;
+
+	// Left Leg
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftThighMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftKneeMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftShinMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftFootMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftToeMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> LeftSoleMesh;
+
+	// Right Leg
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightThighMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightKneeMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightShinMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightFootMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightToeMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> RightSoleMesh;
 
 	// -- Enhanced Input assets (created at runtime) ---------------------------
 
@@ -89,7 +134,7 @@ public:
 	// -- Movement parameters --------------------------------------------------
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Movement")
-	float WalkSpeed = 2771.f;
+	float WalkSpeed = 1788.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Movement")
 	float SprintSpeed = 2000.f;
@@ -116,11 +161,51 @@ public:
 	float WalkCyclePhase = 0.f;
 	float WalkAnimBlend = 0.f;
 
+	// -- Scythe weapon mesh ---------------------------------------------------
+
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> ScytheHandleMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> ScytheBladeMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> ScytheBladeEdgeMesh;
+
+	// -- Minigun weapon mesh --------------------------------------------------
+
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> MinigunBodyMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> MinigunBarrelMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> MinigunMuzzleMesh;
+
 	// -- Weapon state ---------------------------------------------------------
 
-	int32 CurrentWeaponType = -1; // -1=none, 0=Gun, 1=RPG, 2=Sword
+	int32 CurrentWeaponType = 3; // -1=none, 0=Gun, 1=RPG, 2=Sword, 3=Scythe
+
+	float ScytheSwingTimer = 0.f;  // >0 = currently swinging
+
+	float MinigunSpinAngle = 0.f;
+	bool bMinigunFiring = false;
+	float MinigunFireTimer = 0.f;
 
 	void FireWeapon();
+
+	// -- Spring damper for secondary body motion ----------------------------
+
+	struct FSimpleSpring
+	{
+		float Pos = 0.f;
+		float Vel = 0.f;
+		float Update(float Target, float Stiff, float Damp, float DT)
+		{
+			Vel += ((Target - Pos) * Stiff - Vel * Damp) * DT;
+			Pos += Vel * DT;
+			return Pos;
+		}
+	};
+
+	FVector PrevFrameWorldVel = FVector::ZeroVector;
+	FSimpleSpring LeanPitchSpring;
+	FSimpleSpring LeanRollSpring;
+	FSimpleSpring LHandLagX, LHandLagZ;
+	FSimpleSpring RHandLagX, RHandLagZ;
+	FSimpleSpring HairLagZ;
+	float IdleTimer = 0.f;
 
 	// -- Mobile touch input (written by HUD each frame, read by Tick) ------
 

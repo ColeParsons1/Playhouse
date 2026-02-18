@@ -573,7 +573,7 @@ void APHCDuneBuggyPawn::Tick(float DeltaTime)
 			// Apply gravity
 			VerticalVelocity -= 980.f * DeltaTime;
 			float NewZ = Pos.Z + VerticalVelocity * DeltaTime;
-			if (NewZ <= 85.f) { NewZ = 85.f; VerticalVelocity = 0.f; }
+			if (NewZ <= 50.f) { NewZ = 50.f; VerticalVelocity = 0.f; }
 			SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 
 			// Flatten pitch while airborne

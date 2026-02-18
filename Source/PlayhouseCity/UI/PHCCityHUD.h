@@ -151,6 +151,9 @@ protected:
 	TObjectPtr<UButton> SelectSwordBtn;
 
 	UPROPERTY()
+	TObjectPtr<UButton> SelectScytheBtn;
+
+	UPROPERTY()
 	TObjectPtr<UButton> WeaponFireButton;
 
 	UPROPERTY()
@@ -275,7 +278,13 @@ private:
 	void OnSelectSword();
 
 	UFUNCTION()
+	void OnSelectScythe();
+
+	UFUNCTION()
 	void OnWeaponFirePressed();
+
+	UFUNCTION()
+	void OnWeaponFireReleased();
 
 	void ShowWeaponSelection();
 	void HideWeaponSelection();
@@ -283,5 +292,6 @@ private:
 	bool bMenuOpen = false;
 	bool bVehicleSelectOpen = false;
 	bool bWeaponSelectOpen = false;
-	int32 EquippedWeaponType = -1;
+	bool bWeaponFireHeld = false;
+	int32 EquippedWeaponType = 3;
 };

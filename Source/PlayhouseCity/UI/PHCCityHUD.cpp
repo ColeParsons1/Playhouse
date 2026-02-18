@@ -682,32 +682,64 @@ bool UPHCCityHUD::Initialize()
 		SwordSlot->SetVerticalAlignment(VAlign_Center);
 		SwordSlot->SetHorizontalAlignment(HAlign_Center);
 
+		USpacer* WepSpacer3 = WidgetTree->ConstructWidget<USpacer>(
+			USpacer::StaticClass(), TEXT("WepBtnSpacer3"));
+		WepSpacer3->SetSize(FVector2D(20.f, 0.f));
+		WepHBox->AddChildToHorizontalBox(WepSpacer3);
+
+		// -- Scythe button (dark purple) --
+		SelectScytheBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectScytheBtn"));
+		{
+			FButtonStyle Style = SelectScytheBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.30f, 0.10f, 0.40f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.40f, 0.15f, 0.55f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.20f, 0.06f, 0.28f, 1.0f));
+			SelectScytheBtn->SetStyle(Style);
+		}
+		UTextBlock* ScytheLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("ScytheSelectLabel"));
+		ScytheLabel->SetText(FText::FromString(TEXT("Scythe")));
+		ScytheLabel->SetFont(BtnFont);
+		ScytheLabel->SetColorAndOpacity(FSlateColor(White));
+		ScytheLabel->SetJustification(ETextJustify::Center);
+		SelectScytheBtn->AddChild(ScytheLabel);
+
+		UHorizontalBoxSlot* ScytheSlot = WepHBox->AddChildToHorizontalBox(SelectScytheBtn);
+		ScytheSlot->SetPadding(FMargin(8.f));
+		ScytheSlot->SetVerticalAlignment(VAlign_Center);
+		ScytheSlot->SetHorizontalAlignment(HAlign_Center);
+
 		WeaponSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
-		//  Weapon fire button (bottom-right, shown when weapon equipped)
+		//  Weapon fire panel (large, barely visible — like steering panel)
+		//  Right 45% of screen, bottom 50% height
 		// ============================================================
 		WeaponFireButton = WidgetTree->ConstructWidget<UButton>(
 			UButton::StaticClass(), TEXT("WeaponFireButton"));
 		{
 			FButtonStyle Style = WeaponFireButton->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.7f, 0.12f, 0.08f, 0.85f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.18f, 0.12f, 0.95f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.5f, 0.08f, 0.05f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.03f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.06f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.6f, 0.1f, 1.f, 0.12f));
 			WeaponFireButton->SetStyle(Style);
 		}
+		WeaponFireButton->SetTouchMethod(EButtonTouchMethod::DownAndUp);
+		WeaponFireButton->SetClickMethod(EButtonClickMethod::MouseDown);
+		WeaponFireButton->SetPressMethod(EButtonPressMethod::ButtonPress);
+
 		WeaponFireLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("WeaponFireLabel"));
-		WeaponFireLabel->SetText(FText::FromString(TEXT("Fire")));
-		WeaponFireLabel->SetFont(BtnFont);
-		WeaponFireLabel->SetColorAndOpacity(FSlateColor(White));
+		WeaponFireLabel->SetText(FText::FromString(TEXT("SPRAY")));
+		WeaponFireLabel->SetFont(DriveFont);
+		WeaponFireLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.15f)));
 		WeaponFireLabel->SetJustification(ETextJustify::Center);
 		WeaponFireButton->AddChild(WeaponFireLabel);
 
 		UCanvasPanelSlot* WepFireSlot = RootCanvas->AddChildToCanvas(WeaponFireButton);
-		WepFireSlot->SetAnchors(FAnchors(1.f, 1.f, 1.f, 1.f));
-		WepFireSlot->SetAlignment(FVector2D(1.f, 1.f));
-		WepFireSlot->SetOffsets(FMargin(-20.f, -20.f, 120.f, 60.f));
+		WepFireSlot->SetAnchors(FAnchors(0.55f, 0.5f, 1.f, 1.f));
+		WepFireSlot->SetOffsets(FMargin(0.f, 0.f, 0.f, 0.f));
 
 		WeaponFireButton->SetVisibility(ESlateVisibility::Collapsed);
 
@@ -919,9 +951,20 @@ void UPHCCityHUD::NativeConstruct()
 	{
 		SelectSwordBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectSword);
 	}
+	if (SelectScytheBtn)
+	{
+		SelectScytheBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectScythe);
+	}
 	if (WeaponFireButton)
 	{
-		WeaponFireButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnWeaponFirePressed);
+		WeaponFireButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnWeaponFirePressed);
+		WeaponFireButton->OnReleased.AddDynamic(this, &UPHCCityHUD::OnWeaponFireReleased);
+		// Scythe is default equipped — show swing button immediately
+		if (WeaponFireLabel)
+		{
+			WeaponFireLabel->SetText(FText::FromString(TEXT("Swing")));
+		}
+		WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
 	}
 	if (HostButton)
 	{
@@ -1626,7 +1669,7 @@ void UPHCCityHUD::OnSelectGun()
 		}
 	}
 
-	if (WeaponFireLabel) WeaponFireLabel->SetText(FText::FromString(TEXT("Fire")));
+	if (WeaponFireLabel) WeaponFireLabel->SetText(FText::FromString(TEXT("SPRAY")));
 	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
 }
 
@@ -1664,13 +1707,52 @@ void UPHCCityHUD::OnSelectSword()
 	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
 }
 
-void UPHCCityHUD::OnWeaponFirePressed()
+void UPHCCityHUD::OnSelectScythe()
 {
+	HideWeaponSelection();
+	EquippedWeaponType = 3;
+
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
 		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
 		{
-			Char->FireWeapon();
+			Char->CurrentWeaponType = 3;
+		}
+	}
+
+	if (WeaponFireLabel) WeaponFireLabel->SetText(FText::FromString(TEXT("Swing")));
+	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
+}
+
+void UPHCCityHUD::OnWeaponFirePressed()
+{
+	bWeaponFireHeld = true;
+
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			if (EquippedWeaponType == 0) // Minigun — hold to spray
+			{
+				Char->bMinigunFiring = true;
+			}
+			else // All other weapons — single fire on press
+			{
+				Char->FireWeapon();
+			}
+		}
+	}
+}
+
+void UPHCCityHUD::OnWeaponFireReleased()
+{
+	bWeaponFireHeld = false;
+
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->bMinigunFiring = false;
 		}
 	}
 }

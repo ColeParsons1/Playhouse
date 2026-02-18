@@ -245,6 +245,83 @@ void FPlayhouseCityModule::StartupModule()
 			TEXT("PHC: Created and saved M_PHCClearCoat material to %s"), *FilePath);
 		}
 	}
+
+	// ---------------------------------------------------------------------------
+	// M_PHCSkin -- Subsurface skin material for realistic character rendering.
+	// Warm SSS glow when backlit. Same parameters as M_PHCColor plus
+	// SubsurfaceColor and Opacity for SSS control.
+	// ---------------------------------------------------------------------------
+	{
+		const FString PackagePath = TEXT("/Game/Materials/M_PHCSkin");
+		const FString FilePath = FPackageName::LongPackageNameToFilename(
+			PackagePath, FPackageName::GetAssetPackageExtension());
+		if (!FPaths::FileExists(FilePath))
+		{
+		const FString DirPath = FPaths::GetPath(FilePath);
+		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+		PlatformFile.CreateDirectoryTree(*DirPath);
+
+		UPackage* Package = CreatePackage(*PackagePath);
+		UMaterial* Mat = NewObject<UMaterial>(Package, TEXT("M_PHCSkin"),
+			RF_Public | RF_Standalone);
+
+		Mat->SetShadingModel(MSM_Subsurface);
+
+		UMaterialEditorOnlyData* EditorData = Mat->GetEditorOnlyData();
+
+		UMaterialExpressionVectorParameter* BaseColorParam =
+			NewObject<UMaterialExpressionVectorParameter>(Mat);
+		BaseColorParam->ParameterName = TEXT("BaseColor");
+		BaseColorParam->DefaultValue = FLinearColor(0.55f, 0.38f, 0.26f);
+		EditorData->ExpressionCollection.Expressions.Add(BaseColorParam);
+		EditorData->BaseColor.Expression = BaseColorParam;
+
+		UMaterialExpressionScalarParameter* MetallicParam =
+			NewObject<UMaterialExpressionScalarParameter>(Mat);
+		MetallicParam->ParameterName = TEXT("Metallic");
+		MetallicParam->DefaultValue = 0.0f;
+		EditorData->ExpressionCollection.Expressions.Add(MetallicParam);
+		EditorData->Metallic.Expression = MetallicParam;
+
+		UMaterialExpressionScalarParameter* RoughnessParam =
+			NewObject<UMaterialExpressionScalarParameter>(Mat);
+		RoughnessParam->ParameterName = TEXT("Roughness");
+		RoughnessParam->DefaultValue = 0.45f;
+		EditorData->ExpressionCollection.Expressions.Add(RoughnessParam);
+		EditorData->Roughness.Expression = RoughnessParam;
+
+		UMaterialExpressionVectorParameter* SSParam =
+			NewObject<UMaterialExpressionVectorParameter>(Mat);
+		SSParam->ParameterName = TEXT("SubsurfaceColor");
+		SSParam->DefaultValue = FLinearColor(0.9f, 0.2f, 0.1f);
+		EditorData->ExpressionCollection.Expressions.Add(SSParam);
+		EditorData->SubsurfaceColor.Expression = SSParam;
+
+		UMaterialExpressionScalarParameter* OpacityParam =
+			NewObject<UMaterialExpressionScalarParameter>(Mat);
+		OpacityParam->ParameterName = TEXT("Opacity");
+		OpacityParam->DefaultValue = 0.35f;
+		EditorData->ExpressionCollection.Expressions.Add(OpacityParam);
+		EditorData->Opacity.Expression = OpacityParam;
+
+		UMaterialExpressionVectorParameter* EmissiveParam =
+			NewObject<UMaterialExpressionVectorParameter>(Mat);
+		EmissiveParam->ParameterName = TEXT("EmissiveColor");
+		EmissiveParam->DefaultValue = FLinearColor::Black;
+		EditorData->ExpressionCollection.Expressions.Add(EmissiveParam);
+		EditorData->EmissiveColor.Expression = EmissiveParam;
+
+		Mat->PreEditChange(nullptr);
+		Mat->PostEditChange();
+
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		UPackage::SavePackage(Package, Mat, *FilePath, SaveArgs);
+
+		UE_LOG(LogPlayhouseCity, Log,
+			TEXT("PHC: Created and saved M_PHCSkin material to %s"), *FilePath);
+		}
+	}
 #endif
 }
 

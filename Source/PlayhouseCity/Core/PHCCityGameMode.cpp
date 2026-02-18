@@ -59,7 +59,7 @@ APawn* APHCCityGameMode::SpawnDefaultPawnAtTransform_Implementation(AController*
 	SP.ObjectFlags |= RF_Transient;
 
 	// Spawn at desired city location instead of world origin.
-	const FVector SpawnLoc(-28000.f, -28000.f, 85.f);
+	const FVector SpawnLoc(-28000.f, -28000.f, 58.f);
 	const FRotator SpawnRot = SpawnTransform.Rotator();
 
 	APawn* ResultPawn = World->SpawnActor<APawn>(PawnClass, SpawnLoc, SpawnRot, SP);
