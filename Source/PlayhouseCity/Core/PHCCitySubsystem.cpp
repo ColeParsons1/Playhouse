@@ -574,6 +574,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnMountainRange();
 	SpawnSandCastle();
 	SpawnLakeAndPirateShip();
+	SpawnUndergroundCavern();
 }
 
 // ---------------------------------------------------------------------------
@@ -3891,7 +3892,609 @@ void UPHCCitySubsystem::SpawnHills()
 
 void UPHCCitySubsystem::SpawnUndergroundCavern()
 {
-	// Removed — tunnel and underground area no longer spawned.
+	UWorld* World = GetWorld();
+	if (!World || !CubeMesh || !CylinderMesh || !ConeMesh || !SphereMesh || !PlaneMesh) return;
+
+	int32 Idx = 0;
+	(void)Idx; // suppress warning — used in lambdas below
+
+	// ================================================================
+	// Helper lambdas
+	// ================================================================
+	auto AP = [&](AActor* O, UStaticMesh* Mesh, const FVector& Loc, const FVector& S,
+		const FRotator& Rot, const FLinearColor& Col, float Rough, float Metal,
+		bool bColl = false) -> UStaticMeshComponent*
+	{
+		FString N = FString::Printf(TEXT("AP_%d"), Idx++);
+		auto* MC = NewObject<UStaticMeshComponent>(O, *N);
+		MC->SetStaticMesh(Mesh);
+		MC->SetWorldScale3D(S); MC->SetWorldLocation(Loc); MC->SetWorldRotation(Rot);
+		if (bColl)
+		{
+			MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			MC->SetCollisionObjectType(ECC_WorldStatic);
+			MC->SetCollisionResponseToAllChannels(ECR_Block);
+		}
+		else { MC->SetCollisionEnabled(ECollisionEnabled::NoCollision); }
+		MC->SetBoundsScale(10.f);
+		MC->RegisterComponent();
+		ApplyPBR(MC, Col, Metal, Rough);
+		O->AddInstanceComponent(MC);
+		return MC;
+	};
+
+	auto APE = [&](AActor* O, UStaticMesh* Mesh, const FVector& Loc, const FVector& S,
+		const FRotator& Rot, const FLinearColor& Col, float Rough, float Metal,
+		const FLinearColor& Emissive) -> UStaticMeshComponent*
+	{
+		auto* MC = AP(O, Mesh, Loc, S, Rot, Col, Rough, Metal);
+		if (MC) ApplyPBR(MC, Col, Metal, Rough, Emissive);
+		return MC;
+	};
+
+	auto APGlass = [&](AActor* O, const FVector& Loc, const FVector& S,
+		const FRotator& Rot, const FLinearColor& Col, float Opacity) -> UStaticMeshComponent*
+	{
+		FString N = FString::Printf(TEXT("AP_%d"), Idx++);
+		auto* MC = NewObject<UStaticMeshComponent>(O, *N);
+		MC->SetStaticMesh(CubeMesh);
+		MC->SetWorldScale3D(S); MC->SetWorldLocation(Loc); MC->SetWorldRotation(Rot);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(10.f);
+		MC->RegisterComponent();
+		if (GlassMaterial)
+		{
+			UMaterialInstanceDynamic* MI = UMaterialInstanceDynamic::Create(GlassMaterial, MC);
+			if (MI) { MI->SetVectorParameterValue(TEXT("BaseColor"), Col); MI->SetScalarParameterValue(TEXT("Opacity"), Opacity); MI->SetScalarParameterValue(TEXT("Roughness"), 0.1f); MC->SetMaterial(0, MI); }
+		}
+		O->AddInstanceComponent(MC);
+		return MC;
+	};
+
+	auto APLight = [&](AActor* O, const FVector& Loc, FColor Col, float Intensity, float Radius)
+	{
+		FString N = FString::Printf(TEXT("APL_%d"), Idx++);
+		auto* PL = NewObject<UPointLightComponent>(O, *N);
+		PL->SetWorldLocation(Loc);
+		PL->SetLightColor(Col);
+		PL->SetIntensity(Intensity);
+		PL->SetAttenuationRadius(Radius);
+		PL->SetCastShadows(false);
+		PL->RegisterComponent();
+		O->AddInstanceComponent(PL);
+	};
+
+	// ================================================================
+	// Constants & Colors
+	// ================================================================
+	// Airport depth and cavern extents
+	const float AirportZ = -8000.f;         // floor level
+	const float CeilingZ = -3000.f;         // ceiling
+	// Cavern: X 100000..200000, Y -10000..70000
+	const float CavXMin = 100000.f, CavXMax = 200000.f;
+	const float CavYMin = -10000.f, CavYMax = 70000.f;
+	const float CavCX = (CavXMin + CavXMax) * 0.5f; // 150000
+	const float CavCY = (CavYMin + CavYMax) * 0.5f;  // 30000
+	const float CavW = CavXMax - CavXMin;             // 100000
+	const float CavH = CavYMax - CavYMin;             // 80000
+
+	// Hole entrance
+	const float HX = 112000.f;
+	const float HY = 30000.f;
+
+	// Luxury palette
+	const FLinearColor MarbleWhite(0.88f, 0.86f, 0.82f);
+	const FLinearColor MarbleCream(0.82f, 0.78f, 0.70f);
+	const FLinearColor PolishedGranite(0.22f, 0.22f, 0.24f);
+	const FLinearColor DarkSteel(0.12f, 0.12f, 0.15f);
+	const FLinearColor BrushedSteel(0.55f, 0.55f, 0.58f);
+	const FLinearColor Gold(0.90f, 0.75f, 0.30f);
+	const FLinearColor DarkGold(0.70f, 0.55f, 0.20f);
+	const FLinearColor Asphalt(0.06f, 0.06f, 0.08f);
+	const FLinearColor RwyWhite(0.92f, 0.92f, 0.92f);
+	const FLinearColor TermGlass(0.08f, 0.15f, 0.30f);
+	const FLinearColor CyanGlow(0.0f, 2.0f, 3.0f);
+	const FLinearColor WarmGlow(3.0f, 2.0f, 1.0f);
+	const FLinearColor GoldGlow(4.0f, 3.0f, 1.0f);
+	const FLinearColor RedGlow(4.0f, 0.3f, 0.3f);
+	const FLinearColor GreenGlow(0.3f, 3.0f, 0.3f);
+	const FLinearColor BlueGlow(0.3f, 0.8f, 4.0f);
+
+	// ================================================================
+	// MAIN ACTOR — holds the cavern shell
+	// ================================================================
+	AActor* CA = World->SpawnActor<AActor>(AActor::StaticClass(),
+		FVector(CavCX, CavCY, AirportZ), FRotator::ZeroRotator);
+	if (!CA) return;
+#if WITH_EDITOR
+	CA->SetActorLabel(TEXT("SecretAirport"));
+#endif
+
+	// ================================================================
+	// SECTION 1: CAVERN SHELL
+	// ================================================================
+	// Floor — COLLISION (this is what the player walks on!)
+	auto* FloorMC = AP(CA, CubeMesh, FVector(CavCX, CavCY, AirportZ - 1.f),
+		FVector(CavW / 100.f, CavH / 100.f, 0.02f), FRotator::ZeroRotator,
+		PolishedGranite, 0.30f, 0.15f, /*bColl=*/true);
+	CA->SetRootComponent(FloorMC);
+
+	// Luxury floor tiles — alternating marble/granite checkerboard
+	for (float tx = CavXMin + 2500.f; tx < CavXMax; tx += 5000.f)
+	{
+		for (float ty = CavYMin + 2500.f; ty < CavYMax; ty += 5000.f)
+		{
+			const bool bLight = ((int32)((tx - CavXMin) / 5000.f) + (int32)((ty - CavYMin) / 5000.f)) % 2 == 0;
+			AP(CA, CubeMesh, FVector(tx, ty, AirportZ + 1.f),
+				FVector(50.f, 50.f, 0.01f), FRotator::ZeroRotator,
+				bLight ? MarbleWhite : MarbleCream, bLight ? 0.20f : 0.25f, 0.05f);
+		}
+	}
+
+	// Ceiling
+	AP(CA, CubeMesh, FVector(CavCX, CavCY, CeilingZ),
+		FVector(CavW / 100.f, CavH / 100.f, 0.5f), FRotator::ZeroRotator,
+		DarkSteel, 0.85f, 0.20f);
+
+	// Walls (4)
+	AP(CA, CubeMesh, FVector(CavCX, CavYMax, (AirportZ + CeilingZ) * 0.5f),
+		FVector(CavW / 100.f, 0.5f, (CeilingZ - AirportZ) / 100.f), FRotator::ZeroRotator,
+		DarkSteel, 0.70f, 0.30f);
+	AP(CA, CubeMesh, FVector(CavCX, CavYMin, (AirportZ + CeilingZ) * 0.5f),
+		FVector(CavW / 100.f, 0.5f, (CeilingZ - AirportZ) / 100.f), FRotator::ZeroRotator,
+		DarkSteel, 0.70f, 0.30f);
+	AP(CA, CubeMesh, FVector(CavXMax, CavCY, (AirportZ + CeilingZ) * 0.5f),
+		FVector(0.5f, CavH / 100.f, (CeilingZ - AirportZ) / 100.f), FRotator::ZeroRotator,
+		DarkSteel, 0.70f, 0.30f);
+	AP(CA, CubeMesh, FVector(CavXMin, CavCY, (AirportZ + CeilingZ) * 0.5f),
+		FVector(0.5f, CavH / 100.f, (CeilingZ - AirportZ) / 100.f), FRotator::ZeroRotator,
+		DarkSteel, 0.70f, 0.30f);
+
+	// Ceiling structural beams (gold-accented steel I-beams)
+	for (float bx = CavXMin + 10000.f; bx <= CavXMax - 5000.f; bx += 20000.f)
+	{
+		AP(CA, CubeMesh, FVector(bx, CavCY, CeilingZ + 50.f),
+			FVector(2.f, CavH / 100.f, 3.f), FRotator::ZeroRotator,
+			BrushedSteel, 0.35f, 0.60f);
+		// Gold accent strip on beam bottom
+		APE(CA, CubeMesh, FVector(bx, CavCY, CeilingZ + 10.f),
+			FVector(1.f, CavH / 100.f, 0.2f), FRotator::ZeroRotator,
+			Gold, 0.25f, 0.80f, GoldGlow * 0.3f);
+	}
+
+	// ================================================================
+	// LIGHTING — flood the space with light
+	// ================================================================
+	// Massive overhead grid (4x3)
+	for (int32 lx = 0; lx < 4; ++lx)
+		for (int32 ly = 0; ly < 3; ++ly)
+			APLight(CA, FVector(CavXMin + 15000.f + lx * 25000.f, CavYMin + 15000.f + ly * 25000.f, CeilingZ + 200.f),
+				FColor(255, 245, 230), 40000.f, 30000.f);
+
+	// Gold wall-wash uplights around perimeter
+	for (float wx = CavXMin + 10000.f; wx <= CavXMax - 5000.f; wx += 15000.f)
+	{
+		APLight(CA, FVector(wx, CavYMin + 500.f, AirportZ + 100.f), FColor(255, 200, 100), 5000.f, 8000.f);
+		APLight(CA, FVector(wx, CavYMax - 500.f, AirportZ + 100.f), FColor(255, 200, 100), 5000.f, 8000.f);
+	}
+
+	// ================================================================
+	// SECTION 2: ENTRANCE HOLE + RAMP
+	// ================================================================
+	AActor* HA = World->SpawnActor<AActor>(AActor::StaticClass(),
+		FVector(HX, HY, 0.f), FRotator::ZeroRotator);
+	if (!HA) return;
+#if WITH_EDITOR
+	HA->SetActorLabel(TEXT("AirportEntrance"));
+#endif
+
+	// Gold rim around hole (6000 x 8000 UU opening)
+	AP(HA, CubeMesh, FVector(HX, HY + 4200.f, 100.f), FVector(62.f, 3.f, 3.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f);
+	AP(HA, CubeMesh, FVector(HX, HY - 4200.f, 100.f), FVector(62.f, 3.f, 3.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f);
+	AP(HA, CubeMesh, FVector(HX + 3200.f, HY, 100.f), FVector(3.f, 87.f, 3.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f);
+	AP(HA, CubeMesh, FVector(HX - 3200.f, HY, 100.f), FVector(3.f, 87.f, 3.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f);
+
+	// Emissive gold glow on rim
+	APE(HA, CubeMesh, FVector(HX, HY + 4050.f, 50.f), FVector(60.f, 0.3f, 1.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f, GoldGlow);
+	APE(HA, CubeMesh, FVector(HX, HY - 4050.f, 50.f), FVector(60.f, 0.3f, 1.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f, GoldGlow);
+
+	// Warning lights
+	APLight(HA, FVector(HX - 2800.f, HY - 3800.f, 300.f), FColor(255, 180, 50), 4000.f, 3000.f);
+	APLight(HA, FVector(HX + 2800.f, HY - 3800.f, 300.f), FColor(255, 180, 50), 4000.f, 3000.f);
+	APLight(HA, FVector(HX - 2800.f, HY + 3800.f, 300.f), FColor(255, 180, 50), 4000.f, 3000.f);
+	APLight(HA, FVector(HX + 2800.f, HY + 3800.f, 300.f), FColor(255, 180, 50), 4000.f, 3000.f);
+
+	// ============================================================
+	// GIANT BEACON TOWER — visible from across the entire map
+	// ============================================================
+	// Tall glowing pillar (5000 UU tall = way above everything)
+	APE(HA, CylinderMesh, FVector(HX, HY, 2500.f), FVector(8.f, 8.f, 50.f), FRotator::ZeroRotator,
+		Gold, 0.20f, 0.90f, GoldGlow * 2.f);
+	// Massive glowing sphere on top
+	APE(HA, SphereMesh, FVector(HX, HY, 5200.f), FVector(20.f, 20.f, 20.f), FRotator::ZeroRotator,
+		FLinearColor(1.f, 0.8f, 0.2f), 0.15f, 0.90f, FLinearColor(8.f, 6.f, 2.f));
+	// Bright light at the top so it glows from far away
+	APLight(HA, FVector(HX, HY, 5500.f), FColor(255, 220, 80), 80000.f, 50000.f);
+	// Second light halfway up
+	APLight(HA, FVector(HX, HY, 2500.f), FColor(255, 200, 50), 40000.f, 30000.f);
+
+	// Giant glowing arrows pointing down into the hole (4 around the rim)
+	// Arrow shape: a tall wedge pointing downward, using a cone rotated 180 pitch
+	APE(HA, ConeMesh, FVector(HX - 4500.f, HY, 800.f), FVector(12.f, 12.f, 20.f),
+		FRotator(180.f, 0.f, 0.f), FLinearColor(1.f, 0.3f, 0.f), 0.30f, 0.50f, FLinearColor(6.f, 2.f, 0.f));
+	APE(HA, ConeMesh, FVector(HX + 4500.f, HY, 800.f), FVector(12.f, 12.f, 20.f),
+		FRotator(180.f, 0.f, 0.f), FLinearColor(1.f, 0.3f, 0.f), 0.30f, 0.50f, FLinearColor(6.f, 2.f, 0.f));
+	APE(HA, ConeMesh, FVector(HX, HY - 5500.f, 800.f), FVector(12.f, 12.f, 20.f),
+		FRotator(180.f, 0.f, 0.f), FLinearColor(1.f, 0.3f, 0.f), 0.30f, 0.50f, FLinearColor(6.f, 2.f, 0.f));
+	APE(HA, ConeMesh, FVector(HX, HY + 5500.f, 800.f), FVector(12.f, 12.f, 20.f),
+		FRotator(180.f, 0.f, 0.f), FLinearColor(1.f, 0.3f, 0.f), 0.30f, 0.50f, FLinearColor(6.f, 2.f, 0.f));
+
+	// Giant bright red ring around the hole opening (impossible to miss)
+	APE(HA, CylinderMesh, FVector(HX, HY, 10.f), FVector(65.f, 90.f, 0.5f), FRotator::ZeroRotator,
+		FLinearColor(1.f, 0.f, 0.f), 0.30f, 0.50f, FLinearColor(5.f, 0.f, 0.f));
+
+	// RAMP — 20 flat step-segments descending, each with collision
+	// From (HX, HY, 0) down to (CavXMin, HY, AirportZ)
+	const int32 NumSteps = 20;
+	const float RampStartX = HX;
+	const float RampEndX = CavXMin + 2000.f; // 102000
+	const float RampDX = (RampEndX - RampStartX) / (float)NumSteps;
+	const float RampDZ = AirportZ / (float)NumSteps; // -400 per step
+	const float StepWidth = 4000.f;
+
+	for (int32 s = 0; s < NumSteps; ++s)
+	{
+		const float SX = RampStartX + (s + 0.5f) * RampDX;
+		const float SZ = (s + 0.5f) * RampDZ;
+		// Each step: flat collision slab
+		AP(CA, CubeMesh, FVector(SX, HY, SZ),
+			FVector(FMath::Abs(RampDX) / 100.f + 1.f, StepWidth / 100.f, 0.5f), FRotator::ZeroRotator,
+			PolishedGranite, 0.30f, 0.15f, /*bColl=*/true);
+
+		// Walls on each side
+		AP(CA, CubeMesh, FVector(SX, HY - StepWidth * 0.5f - 50.f, SZ + 500.f),
+			FVector(FMath::Abs(RampDX) / 100.f + 1.f, 1.f, 12.f), FRotator::ZeroRotator,
+			DarkSteel, 0.70f, 0.30f);
+		AP(CA, CubeMesh, FVector(SX, HY + StepWidth * 0.5f + 50.f, SZ + 500.f),
+			FVector(FMath::Abs(RampDX) / 100.f + 1.f, 1.f, 12.f), FRotator::ZeroRotator,
+			DarkSteel, 0.70f, 0.30f);
+
+		// Light every 4 steps
+		if (s % 4 == 0)
+			APLight(CA, FVector(SX, HY, SZ + 800.f), FColor(255, 220, 160), 6000.f, 4000.f);
+	}
+
+	// Tunnel ceiling over ramp
+	AP(CA, CubeMesh, FVector((RampStartX + RampEndX) * 0.5f, HY, -2000.f),
+		FVector((RampEndX - RampStartX) / 100.f + 10.f, StepWidth / 100.f + 5.f, 0.5f), FRotator::ZeroRotator,
+		DarkSteel, 0.85f, 0.20f);
+
+	// ================================================================
+	// SECTION 3: RUNWAYS (2 main + 1 taxiway)
+	// ================================================================
+	const float Rwy1Y = 15000.f;
+	const float Rwy2Y = 40000.f;
+	const float TaxiY = 55000.f;
+	const float RwyLen = 80000.f;  // huge runway
+	const float RwyW = 3000.f;
+	const float RwyXC = CavCX;
+
+	// Runway 1
+	AP(CA, CubeMesh, FVector(RwyXC, Rwy1Y, AirportZ + 2.f),
+		FVector(RwyLen / 100.f, RwyW / 100.f, 0.03f), FRotator::ZeroRotator,
+		Asphalt, 0.70f, 0.0f, /*bColl=*/true);
+	// Runway 2
+	AP(CA, CubeMesh, FVector(RwyXC, Rwy2Y, AirportZ + 2.f),
+		FVector(RwyLen / 100.f, RwyW / 100.f, 0.03f), FRotator::ZeroRotator,
+		Asphalt, 0.70f, 0.0f, /*bColl=*/true);
+	// Taxiway
+	AP(CA, CubeMesh, FVector(RwyXC, TaxiY, AirportZ + 2.f),
+		FVector(60000.f / 100.f, 2000.f / 100.f, 0.03f), FRotator::ZeroRotator,
+		FLinearColor(0.10f, 0.10f, 0.12f), 0.75f, 0.0f, /*bColl=*/true);
+
+	// Centerline dashes on runways
+	for (int32 rwy = 0; rwy < 2; ++rwy)
+	{
+		const float RY = (rwy == 0) ? Rwy1Y : Rwy2Y;
+		for (int32 d = 0; d < 25; ++d)
+		{
+			const float DX = RwyXC - RwyLen * 0.45f + d * (RwyLen * 0.9f / 24.f);
+			AP(CA, CubeMesh, FVector(DX, RY, AirportZ + 4.f),
+				FVector(12.f, 1.f, 0.02f), FRotator::ZeroRotator,
+				RwyWhite, 0.60f, 0.0f);
+		}
+	}
+
+	// Runway edge lights
+	for (int32 rwy = 0; rwy < 2; ++rwy)
+	{
+		const float RY = (rwy == 0) ? Rwy1Y : Rwy2Y;
+		for (int32 li = 0; li < 16; ++li)
+		{
+			const float LX = RwyXC - RwyLen * 0.45f + li * (RwyLen * 0.9f / 15.f);
+			APLight(CA, FVector(LX, RY - RwyW * 0.5f - 100.f, AirportZ + 50.f),
+				FColor(100, 200, 255), 1500.f, 1200.f);
+			APLight(CA, FVector(LX, RY + RwyW * 0.5f + 100.f, AirportZ + 50.f),
+				FColor(100, 200, 255), 1500.f, 1200.f);
+		}
+		// Threshold lights
+		APLight(CA, FVector(RwyXC - RwyLen * 0.48f, RY, AirportZ + 50.f), FColor(50, 255, 50), 3000.f, 2000.f);
+		APLight(CA, FVector(RwyXC + RwyLen * 0.48f, RY, AirportZ + 50.f), FColor(255, 50, 50), 3000.f, 2000.f);
+	}
+
+	// Emissive cyan taxiway guide lines
+	for (int32 m = 0; m < 12; ++m)
+	{
+		const float MX = CavXMin + 5000.f + m * 8000.f;
+		APE(CA, CubeMesh, FVector(MX, (Rwy1Y + Rwy2Y) * 0.5f, AirportZ + 1.f),
+			FVector(1.5f, 200.f, 0.01f), FRotator::ZeroRotator,
+			FLinearColor(0.02f, 0.04f, 0.06f), 0.50f, 0.0f, CyanGlow);
+	}
+
+	// ================================================================
+	// SECTION 4: LUXURY TERMINAL
+	// ================================================================
+	AActor* TA = World->SpawnActor<AActor>(AActor::StaticClass(),
+		FVector(CavXMin + 5000.f, CavCY, AirportZ), FRotator::ZeroRotator);
+	if (!TA) return;
+#if WITH_EDITOR
+	TA->SetActorLabel(TEXT("LuxuryTerminal"));
+#endif
+
+	const float TermX = CavXMin + 8000.f; // 108000
+	const float TermW = 12000.f;
+	const float TermD = 40000.f;
+	const float TermH = 4000.f;
+
+	// Main terminal body — white marble
+	auto* TR = AP(TA, CubeMesh, FVector(TermX, CavCY, AirportZ + TermH * 0.5f),
+		FVector(TermW / 100.f, TermD / 100.f, TermH / 100.f), FRotator::ZeroRotator,
+		MarbleWhite, 0.20f, 0.05f);
+	TA->SetRootComponent(TR);
+
+	// Glass curtain wall (runway side)
+	APGlass(TA, FVector(TermX + TermW * 0.5f + 10.f, CavCY, AirportZ + TermH * 0.5f),
+		FVector(0.5f, (TermD - 200.f) / 100.f, (TermH - 200.f) / 100.f), FRotator::ZeroRotator,
+		TermGlass, 0.30f);
+
+	// Glass curtain wall (entrance side)
+	APGlass(TA, FVector(TermX - TermW * 0.5f - 10.f, CavCY, AirportZ + TermH * 0.5f),
+		FVector(0.5f, (TermD - 200.f) / 100.f, (TermH - 200.f) / 100.f), FRotator::ZeroRotator,
+		TermGlass, 0.30f);
+
+	// Roof with gold edge trim
+	AP(TA, CubeMesh, FVector(TermX, CavCY, AirportZ + TermH + 50.f),
+		FVector((TermW + 1000.f) / 100.f, (TermD + 1000.f) / 100.f, 2.f), FRotator::ZeroRotator,
+		BrushedSteel, 0.35f, 0.50f);
+	APE(TA, CubeMesh, FVector(TermX, CavCY, AirportZ + TermH + 10.f),
+		FVector((TermW + 800.f) / 100.f, (TermD + 800.f) / 100.f, 0.3f), FRotator::ZeroRotator,
+		Gold, 0.25f, 0.80f, GoldGlow * 0.2f);
+
+	// 6 marble columns along glass facade
+	for (int32 col = 0; col < 6; ++col)
+	{
+		const float CY = CavCY - TermD * 0.4f + col * (TermD * 0.8f / 5.f);
+		AP(TA, CylinderMesh, FVector(TermX + TermW * 0.5f + 200.f, CY, AirportZ + TermH * 0.5f),
+			FVector(2.f, 2.f, TermH / 100.f), FRotator::ZeroRotator,
+			MarbleCream, 0.20f, 0.05f);
+		// Gold column capital
+		AP(TA, CylinderMesh, FVector(TermX + TermW * 0.5f + 200.f, CY, AirportZ + TermH - 100.f),
+			FVector(3.f, 3.f, 1.5f), FRotator::ZeroRotator,
+			Gold, 0.25f, 0.80f);
+	}
+
+	// Terminal interior lights (warm luxury glow)
+	for (int32 ti = 0; ti < 4; ++ti)
+		APLight(TA, FVector(TermX, CavCY - 12000.f + ti * 8000.f, AirportZ + TermH - 200.f),
+			FColor(255, 230, 200), 20000.f, 10000.f);
+
+	// Emissive departure/arrival signs
+	APE(TA, CubeMesh, FVector(TermX + TermW * 0.5f + 20.f, CavCY + 8000.f, AirportZ + TermH - 500.f),
+		FVector(0.3f, 25.f, 5.f), FRotator::ZeroRotator,
+		FLinearColor(0.02f, 0.05f, 0.02f), 0.50f, 0.0f, GreenGlow);
+	APE(TA, CubeMesh, FVector(TermX + TermW * 0.5f + 20.f, CavCY - 8000.f, AirportZ + TermH - 500.f),
+		FVector(0.3f, 25.f, 5.f), FRotator::ZeroRotator,
+		FLinearColor(0.05f, 0.04f, 0.01f), 0.50f, 0.0f, FLinearColor(3.0f, 2.0f, 0.5f));
+
+	// 4 Jet bridges — gold-trimmed walkways to gates
+	for (int32 jb = 0; jb < 4; ++jb)
+	{
+		const float JBY = CavCY - 15000.f + jb * 10000.f;
+		AP(TA, CubeMesh, FVector(TermX + TermW * 0.5f + 2500.f, JBY, AirportZ + 1500.f),
+			FVector(30.f, 5.f, 4.f), FRotator::ZeroRotator,
+			BrushedSteel, 0.40f, 0.40f);
+		APE(TA, CubeMesh, FVector(TermX + TermW * 0.5f + 2500.f, JBY, AirportZ + 1300.f),
+			FVector(30.f, 5.5f, 0.2f), FRotator::ZeroRotator,
+			Gold, 0.25f, 0.80f, GoldGlow * 0.15f);
+	}
+
+	// ================================================================
+	// SECTION 5: CONTROL TOWER
+	// ================================================================
+	AActor* TW = World->SpawnActor<AActor>(AActor::StaticClass(),
+		FVector(CavXMax - 15000.f, CavYMax - 10000.f, AirportZ), FRotator::ZeroRotator);
+	if (!TW) return;
+#if WITH_EDITOR
+	TW->SetActorLabel(TEXT("ControlTower"));
+#endif
+	const float TWX = CavXMax - 15000.f, TWY = CavYMax - 10000.f;
+	auto* TWR = AP(TW, CylinderMesh, FVector(TWX, TWY, AirportZ + 2000.f),
+		FVector(6.f, 6.f, 40.f), FRotator::ZeroRotator,
+		BrushedSteel, 0.35f, 0.50f);
+	TW->SetRootComponent(TWR);
+	// Cab
+	AP(TW, CylinderMesh, FVector(TWX, TWY, CeilingZ - 400.f),
+		FVector(14.f, 14.f, 5.f), FRotator::ZeroRotator, DarkSteel, 0.30f, 0.40f);
+	APGlass(TW, FVector(TWX, TWY, CeilingZ - 400.f),
+		FVector(14.5f, 14.5f, 4.5f), FRotator::ZeroRotator, TermGlass, 0.25f);
+	// Gold band
+	APE(TW, CylinderMesh, FVector(TWX, TWY, CeilingZ - 600.f),
+		FVector(15.f, 15.f, 0.5f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f, GoldGlow * 0.3f);
+	APLight(TW, FVector(TWX, TWY, CeilingZ - 200.f), FColor(200, 255, 200), 20000.f, 20000.f);
+
+	// ================================================================
+	// SECTION 6: HANGARS (3 luxury hangars)
+	// ================================================================
+	const float HangarX = CavXMax - 12000.f;
+	const float HangarYs[] = { 5000.f, 25000.f, 48000.f };
+	const FLinearColor HCols[] = { BrushedSteel, DarkSteel, FLinearColor(0.18f, 0.20f, 0.28f) };
+
+	for (int32 h = 0; h < 3; ++h)
+	{
+		AP(CA, CubeMesh, FVector(HangarX, HangarYs[h], AirportZ + 1500.f),
+			FVector(80.f, 100.f, 30.f), FRotator::ZeroRotator, HCols[h], 0.55f, 0.40f);
+		// Door
+		AP(CA, CubeMesh, FVector(HangarX - 4050.f, HangarYs[h], AirportZ + 800.f),
+			FVector(0.3f, 60.f, 16.f), FRotator::ZeroRotator, FLinearColor(0.02f, 0.02f, 0.03f), 0.95f, 0.0f);
+		// Gold trim over door
+		APE(CA, CubeMesh, FVector(HangarX - 4050.f, HangarYs[h], AirportZ + 1650.f),
+			FVector(0.5f, 65.f, 1.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f, GoldGlow * 0.2f);
+		// Interior lights
+		APLight(CA, FVector(HangarX - 1000.f, HangarYs[h], AirportZ + 2800.f), FColor(255, 240, 210), 12000.f, 6000.f);
+		APLight(CA, FVector(HangarX + 2000.f, HangarYs[h], AirportZ + 2800.f), FColor(255, 240, 210), 12000.f, 6000.f);
+	}
+
+	// ================================================================
+	// SECTION 7: LUXURY AIRCRAFT (5 private jets + 2 airliners)
+	// ================================================================
+	struct FJetDef { FVector Pos; float Yaw; FLinearColor Body; FLinearColor Accent; float Scale; };
+	const FJetDef Jets[] = {
+		// Private jets on runway 1
+		{ FVector(130000.f, Rwy1Y, AirportZ + 100.f),  0.f,   MarbleWhite, Gold, 1.0f },
+		{ FVector(155000.f, Rwy1Y, AirportZ + 100.f),  0.f,   FLinearColor(0.05f, 0.05f, 0.08f), FLinearColor(0.80f, 0.10f, 0.10f), 1.0f },
+		// Airliners on runway 2
+		{ FVector(140000.f, Rwy2Y, AirportZ + 100.f),  0.f,   FLinearColor(0.90f, 0.90f, 0.92f), FLinearColor(0.10f, 0.25f, 0.65f), 1.8f },
+		{ FVector(170000.f, Rwy2Y, AirportZ + 100.f), 180.f,  FLinearColor(0.90f, 0.90f, 0.92f), FLinearColor(0.65f, 0.15f, 0.15f), 1.8f },
+		// In hangars
+		{ FVector(HangarX, 5000.f,  AirportZ + 100.f),  90.f, FLinearColor(0.90f, 0.88f, 0.80f), DarkGold, 1.0f },
+		{ FVector(HangarX, 25000.f, AirportZ + 100.f),  90.f, FLinearColor(0.02f, 0.02f, 0.04f), FLinearColor(0.60f, 0.60f, 0.65f), 1.2f },
+		{ FVector(HangarX, 48000.f, AirportZ + 100.f),  90.f, FLinearColor(0.85f, 0.85f, 0.88f), Gold, 1.0f },
+	};
+
+	for (int32 j = 0; j < 7; ++j)
+	{
+		const FJetDef& JD = Jets[j];
+		AActor* JA = World->SpawnActor<AActor>(AActor::StaticClass(), JD.Pos, FRotator(0.f, JD.Yaw, 0.f));
+		if (!JA) continue;
+#if WITH_EDITOR
+		JA->SetActorLabel(*FString::Printf(TEXT("Jet_%d"), j));
+#endif
+		const FRotator JR(0.f, JD.Yaw, 0.f);
+		const FVector Fwd = JR.RotateVector(FVector(1.f, 0.f, 0.f));
+		const FVector Rt = JR.RotateVector(FVector(0.f, 1.f, 0.f));
+		const FVector Up(0.f, 0.f, 1.f);
+		const float Sc = JD.Scale;
+
+		// Fuselage
+		auto* JRoot = AP(JA, CubeMesh, JD.Pos,
+			FVector(30.f * Sc, 3.5f * Sc, 3.5f * Sc), JR, JD.Body, 0.30f, 0.25f);
+		JA->SetRootComponent(JRoot);
+
+		const float HLen = 1500.f * Sc;
+		// Nose
+		AP(JA, ConeMesh, JD.Pos + Fwd * (HLen + 300.f * Sc),
+			FVector(3.5f * Sc, 3.5f * Sc, 10.f * Sc), FRotator(-90.f, JD.Yaw, 0.f),
+			JD.Body, 0.30f, 0.25f);
+		// Wings
+		const float WO = 250.f * Sc + 600.f * Sc;
+		AP(JA, CubeMesh, JD.Pos + Fwd * (-100.f * Sc) + Rt * (-WO) + Up * (-50.f),
+			FVector(10.f * Sc, 18.f * Sc, 0.5f), JR, JD.Accent, 0.35f, 0.20f);
+		AP(JA, CubeMesh, JD.Pos + Fwd * (-100.f * Sc) + Rt * (WO) + Up * (-50.f),
+			FVector(10.f * Sc, 18.f * Sc, 0.5f), JR, JD.Accent, 0.35f, 0.20f);
+		// Vertical tail
+		AP(JA, CubeMesh, JD.Pos + Fwd * (-HLen + 100.f * Sc) + Up * 250.f * Sc,
+			FVector(6.f * Sc, 0.5f, 6.f * Sc), JR, JD.Accent, 0.35f, 0.20f);
+		// Horizontal tail
+		AP(JA, CubeMesh, JD.Pos + Fwd * (-HLen + 100.f * Sc) + Rt * (-350.f * Sc) + Up * 80.f,
+			FVector(5.f * Sc, 6.f * Sc, 0.3f), JR, JD.Accent, 0.35f, 0.20f);
+		AP(JA, CubeMesh, JD.Pos + Fwd * (-HLen + 100.f * Sc) + Rt * (350.f * Sc) + Up * 80.f,
+			FVector(5.f * Sc, 6.f * Sc, 0.3f), JR, JD.Accent, 0.35f, 0.20f);
+		// Engines
+		AP(JA, CylinderMesh, JD.Pos + Fwd * (-200.f * Sc) + Rt * (-WO * 0.55f) + Up * (-120.f),
+			FVector(2.f * Sc, 2.f * Sc, 5.f * Sc), FRotator(-90.f, JD.Yaw, 0.f),
+			BrushedSteel, 0.35f, 0.50f);
+		AP(JA, CylinderMesh, JD.Pos + Fwd * (-200.f * Sc) + Rt * (WO * 0.55f) + Up * (-120.f),
+			FVector(2.f * Sc, 2.f * Sc, 5.f * Sc), FRotator(-90.f, JD.Yaw, 0.f),
+			BrushedSteel, 0.35f, 0.50f);
+		// Engine exhaust glow
+		APE(JA, SphereMesh, JD.Pos + Fwd * (-200.f * Sc - 300.f * Sc) + Rt * (-WO * 0.55f) + Up * (-120.f),
+			FVector(1.5f * Sc, 1.5f * Sc, 1.5f * Sc), FRotator::ZeroRotator,
+			FLinearColor(0.90f, 0.50f, 0.15f), 0.20f, 0.0f, FLinearColor(4.0f, 2.0f, 0.4f));
+		APE(JA, SphereMesh, JD.Pos + Fwd * (-200.f * Sc - 300.f * Sc) + Rt * (WO * 0.55f) + Up * (-120.f),
+			FVector(1.5f * Sc, 1.5f * Sc, 1.5f * Sc), FRotator::ZeroRotator,
+			FLinearColor(0.90f, 0.50f, 0.15f), 0.20f, 0.0f, FLinearColor(4.0f, 2.0f, 0.4f));
+		// Cockpit glass
+		APGlass(JA, JD.Pos + Fwd * (HLen * 0.6f) + Up * 120.f * Sc,
+			FVector(4.f * Sc, 2.f * Sc, 2.f * Sc), JR, TermGlass, 0.25f);
+		// Gold stripe on fuselage
+		APE(JA, CubeMesh, JD.Pos + Up * 20.f,
+			FVector(28.f * Sc, 0.2f, 0.2f), JR, Gold, 0.25f, 0.80f, GoldGlow * 0.1f);
+	}
+
+	// ================================================================
+	// SECTION 8: VIP LOUNGE & DETAILS
+	// ================================================================
+	// Luxury seating areas along terminal side
+	for (int32 seat = 0; seat < 8; ++seat)
+	{
+		const float SY = CavCY - 14000.f + seat * 4000.f;
+		// Bench (dark leather)
+		AP(CA, CubeMesh, FVector(TermX - 3000.f, SY, AirportZ + 200.f),
+			FVector(8.f, 15.f, 4.f), FRotator::ZeroRotator,
+			FLinearColor(0.12f, 0.08f, 0.05f), 0.50f, 0.0f);
+		// Gold armrest
+		AP(CA, CubeMesh, FVector(TermX - 3000.f, SY - 700.f, AirportZ + 350.f),
+			FVector(8.f, 0.5f, 2.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f);
+	}
+
+	// Luxury carpet runners (red velvet along terminal approach)
+	AP(CA, CubeMesh, FVector(TermX - 5000.f, CavCY, AirportZ + 5.f),
+		FVector(40.f, 30.f, 0.01f), FRotator::ZeroRotator,
+		FLinearColor(0.45f, 0.05f, 0.05f), 0.85f, 0.0f);
+
+	// Potted plants (gold pots with green sphere topiary)
+	for (int32 pl = 0; pl < 6; ++pl)
+	{
+		const float PY = CavCY - 10000.f + pl * 4000.f;
+		AP(CA, CylinderMesh, FVector(TermX + TermW * 0.5f + 500.f, PY, AirportZ + 200.f),
+			FVector(2.f, 2.f, 4.f), FRotator::ZeroRotator, DarkGold, 0.30f, 0.70f);
+		AP(CA, SphereMesh, FVector(TermX + TermW * 0.5f + 500.f, PY, AirportZ + 600.f),
+			FVector(3.f, 3.f, 3.f), FRotator::ZeroRotator,
+			FLinearColor(0.15f, 0.30f, 0.10f), 0.80f, 0.0f);
+	}
+
+	// Large luxury fountain at terminal entrance
+	AP(CA, CylinderMesh, FVector(TermX - 4000.f, CavCY, AirportZ + 100.f),
+		FVector(10.f, 10.f, 2.f), FRotator::ZeroRotator, MarbleCream, 0.20f, 0.05f);
+	AP(CA, CylinderMesh, FVector(TermX - 4000.f, CavCY, AirportZ + 400.f),
+		FVector(4.f, 4.f, 8.f), FRotator::ZeroRotator, MarbleWhite, 0.20f, 0.05f);
+	APE(CA, SphereMesh, FVector(TermX - 4000.f, CavCY, AirportZ + 1000.f),
+		FVector(3.f, 3.f, 3.f), FRotator::ZeroRotator,
+		FLinearColor(0.20f, 0.40f, 0.70f), 0.10f, 0.0f, BlueGlow);
+	APLight(CA, FVector(TermX - 4000.f, CavCY, AirportZ + 600.f), FColor(100, 180, 255), 8000.f, 5000.f);
+
+	// Cargo/fuel area near hangars
+	FRandomStream Rng(42);
+	for (int32 c = 0; c < 25; ++c)
+	{
+		const float CX = HangarX - 6000.f + Rng.FRandRange(-3000.f, 3000.f);
+		const float CY2 = 2000.f + Rng.FRandRange(0.f, 55000.f);
+		const float CS = Rng.FRandRange(2.f, 6.f);
+		AP(CA, CubeMesh, FVector(CX, CY2, AirportZ + CS * 50.f),
+			FVector(CS, CS * 0.7f, CS), FRotator(0.f, Rng.FRandRange(0.f, 360.f), 0.f),
+			FLinearColor(0.25f + Rng.FRandRange(-0.05f, 0.05f), 0.22f, 0.18f), 0.85f, 0.0f);
+	}
+
+	// Fuel tanks
+	for (int32 ft = 0; ft < 4; ++ft)
+	{
+		AP(CA, CylinderMesh, FVector(HangarX + 5000.f, 8000.f + ft * 4000.f, AirportZ + 300.f),
+			FVector(4.f, 4.f, 12.f), FRotator(90.f, 0.f, 0.f),
+			BrushedSteel, 0.25f, 0.70f);
+	}
+
+	UE_LOG(LogPlayhouseCity, Log,
+		TEXT("PHCCitySubsystem: Underground luxury airport spawned (%d components)."), Idx);
 }
 
 
@@ -5588,13 +6191,22 @@ void UPHCCitySubsystem::SpawnMountainRange()
 	// Mesh helpers
 	// ================================================================
 	auto MC_Cube = [&](AActor* O, const FVector& Loc, const FVector& S,
-		const FRotator& Rot, const FLinearColor& Col, float Rough, float Metal) -> UStaticMeshComponent*
+		const FRotator& Rot, const FLinearColor& Col, float Rough, float Metal, bool bCollision = false) -> UStaticMeshComponent*
 	{
 		FString N = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
 		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(O, *N);
 		MC->SetStaticMesh(CubeMesh);
 		MC->SetWorldScale3D(S); MC->SetWorldLocation(Loc); MC->SetWorldRotation(Rot);
-		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (bCollision)
+		{
+			MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			MC->SetCollisionObjectType(ECC_WorldStatic);
+			MC->SetCollisionResponseToAllChannels(ECR_Block);
+		}
+		else
+		{
+			MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
 		MC->SetBoundsScale(10.f);
 		MC->RegisterComponent();
 		ApplyPBR(MC, Col, Metal, Rough);
@@ -5603,13 +6215,22 @@ void UPHCCitySubsystem::SpawnMountainRange()
 	};
 
 	auto MC_Cone = [&](AActor* O, const FVector& Loc, const FVector& S,
-		const FRotator& Rot, const FLinearColor& Col, float Rough, float Metal) -> UStaticMeshComponent*
+		const FRotator& Rot, const FLinearColor& Col, float Rough, float Metal, bool bCollision = false) -> UStaticMeshComponent*
 	{
 		FString N = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
 		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(O, *N);
 		MC->SetStaticMesh(ConeMesh);
 		MC->SetWorldScale3D(S); MC->SetWorldLocation(Loc); MC->SetWorldRotation(Rot);
-		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (bCollision)
+		{
+			MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			MC->SetCollisionObjectType(ECC_WorldStatic);
+			MC->SetCollisionResponseToAllChannels(ECR_Block);
+		}
+		else
+		{
+			MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
 		MC->SetBoundsScale(10.f);
 		MC->RegisterComponent();
 		ApplyPBR(MC, Col, Metal, Rough);
@@ -5618,13 +6239,22 @@ void UPHCCitySubsystem::SpawnMountainRange()
 	};
 
 	auto MC_Cyl = [&](AActor* O, const FVector& Loc, const FVector& S,
-		const FRotator& Rot, const FLinearColor& Col, float Rough, float Metal) -> UStaticMeshComponent*
+		const FRotator& Rot, const FLinearColor& Col, float Rough, float Metal, bool bCollision = false) -> UStaticMeshComponent*
 	{
 		FString N = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
 		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(O, *N);
 		MC->SetStaticMesh(CylinderMesh);
 		MC->SetWorldScale3D(S); MC->SetWorldLocation(Loc); MC->SetWorldRotation(Rot);
-		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (bCollision)
+		{
+			MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			MC->SetCollisionObjectType(ECC_WorldStatic);
+			MC->SetCollisionResponseToAllChannels(ECR_Block);
+		}
+		else
+		{
+			MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
 		MC->SetBoundsScale(10.f);
 		MC->RegisterComponent();
 		ApplyPBR(MC, Col, Metal, Rough);
@@ -5752,7 +6382,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 			FVector(PD.X, PD.Y, 0.f),
 			FVector(BaseDiamX / 100.f, BaseDiamY / 100.f, H * 0.85f / 100.f),
 			FRotator::ZeroRotator,
-			BaseCol, bVolcanic ? 0.95f : 0.92f, 0.05f);
+			BaseCol, bVolcanic ? 0.95f : 0.92f, 0.05f, /*bCollision=*/true);
 		M->SetRootComponent(Root);
 
 		// -------------------------------------------------------
@@ -5766,7 +6396,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 					H * 0.65f),
 			FVector(SpireDiam / 100.f, SpireDiam * 0.8f / 100.f, SpireH / 100.f),
 			FRotator(CityRandom.FRandRange(-3.f, 3.f), CityRandom.FRandRange(0.f, 360.f), 0.f),
-			Jitter(RockLight), 0.88f, 0.08f);
+			Jitter(RockLight), 0.88f, 0.08f, /*bCollision=*/true);
 
 		// -------------------------------------------------------
 		// C. CLIFF FACES — 4-6 tall narrow cubes angled steeply
@@ -5846,7 +6476,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				FVector(SX, SY, 0.f),
 				FVector(SDiam / 100.f, SDiam * 0.85f / 100.f, SH / 100.f),
 				FRotator(CityRandom.FRandRange(-4.f, 4.f), SYaw, CityRandom.FRandRange(-3.f, 3.f)),
-				Jitter(RockMid), 0.90f, 0.05f);
+				Jitter(RockMid), 0.90f, 0.05f, /*bCollision=*/true);
 
 			// Sharp tip on secondary peaks
 			MC_Cone(M,
@@ -6382,7 +7012,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 			FVector(MidX, MidY, 0.f),
 			FVector(Dist * 0.55f / 100.f, RW / 100.f, RH / 100.f),
 			FRotator(0.f, Yaw, 0.f),
-			RidgeRock, 0.93f, 0.04f);
+			RidgeRock, 0.93f, 0.04f, /*bCollision=*/true);
 		RA->SetRootComponent(RidgeRoot);
 
 		// 3-5 jagged teeth along the ridge crest
@@ -6451,7 +7081,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 			FVector(MidX, MidY, 0.f),
 			FVector(Dist * 0.55f / 100.f, RW / 100.f, RH / 100.f),
 			FRotator(0.f, Yaw, 0.f),
-			RidgeRock, 0.93f, 0.04f);
+			RidgeRock, 0.93f, 0.04f, /*bCollision=*/true);
 		RA->SetRootComponent(RidgeRoot);
 
 		const int32 NumTeeth = 3 + CityRandom.RandRange(0, 2);
@@ -6607,6 +7237,967 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				ApplyPBR(LowFlake, FLinearColor(0.95f, 0.96f, 0.98f), 0.f, 0.35f);
 				SnowActor->AddInstanceComponent(LowFlake);
 			}
+		}
+	}
+
+	// ================================================================
+	// MAGICAL CHRISTMAS WONDERLAND — expansive area beside snowy mountains
+	// ================================================================
+	{
+		// Greatly expanded Christmas area covering a huge zone south of mountains
+		const float XmasMinX = -95000.f;
+		const float XmasMaxX =  95000.f;
+		const float XmasMinY =  62000.f;
+		const float XmasMaxY =  95000.f;
+
+		// --- MASSIVE SNOW GROUND COVER ---
+		AActor* SnowGround = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(0.f, 78000.f, 0.f), FRotator::ZeroRotator);
+		if (SnowGround)
+		{
+#if WITH_EDITOR
+			SnowGround->SetActorLabel(TEXT("XmasSnowGround"));
+#endif
+			// Giant snow blanket covering the entire wonderland
+			UStaticMeshComponent* SGRoot = MC_Cube(SnowGround,
+				FVector(0.f, 78000.f, -5.f),
+				FVector(2000.f, 400.f, 0.15f),
+				FRotator::ZeroRotator,
+				SnowFresh, 0.50f, 0.f);
+			SnowGround->SetRootComponent(SGRoot);
+
+			// Many overlapping snow patches for full coverage
+			for (int32 S = 0; S < 80; ++S)
+			{
+				const float SX = CityRandom.FRandRange(XmasMinX - 5000.f, XmasMaxX + 5000.f);
+				const float SY = CityRandom.FRandRange(XmasMinY - 3000.f, XmasMaxY + 3000.f);
+				const float SSize = CityRandom.FRandRange(40.f, 120.f);
+				MC_Cube(SnowGround,
+					FVector(SX, SY, -3.f),
+					FVector(SSize, SSize * CityRandom.FRandRange(0.6f, 1.4f), 0.18f),
+					FRotator(0.f, CityRandom.FRandRange(0.f, 360.f), 0.f),
+					SnowFresh, 0.50f, 0.f);
+			}
+
+			// Snow drifts — rounded mounds
+			for (int32 D = 0; D < 50; ++D)
+			{
+				const float DX = CityRandom.FRandRange(XmasMinX, XmasMaxX);
+				const float DY = CityRandom.FRandRange(XmasMinY, XmasMaxY);
+				const float DR = CityRandom.FRandRange(200.f, 800.f);
+				const float DH = CityRandom.FRandRange(30.f, 120.f);
+
+				FString DN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+				UStaticMeshComponent* Drift = NewObject<UStaticMeshComponent>(SnowGround, *DN);
+				Drift->SetStaticMesh(SphereMesh);
+				Drift->SetWorldLocation(FVector(DX, DY, DH * 0.3f));
+				Drift->SetWorldScale3D(FVector(DR / 50.f, DR * CityRandom.FRandRange(0.6f, 1.2f) / 50.f, DH / 50.f));
+				Drift->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Drift->SetBoundsScale(10.f);
+				Drift->RegisterComponent();
+				ApplyPBR(Drift, SnowFresh, 0.48f, 0.f);
+				SnowGround->AddInstanceComponent(Drift);
+			}
+		}
+
+		// ---- GIANT CHRISTMAS TREES ----
+		// 24 giant trees spread across the expanded area
+		struct FXmasTreeDef { float X; float Y; float Height; };
+		const FXmasTreeDef Trees[] = {
+			{ -90000.f, 70000.f, 9000.f },
+			{ -75000.f, 85000.f, 8000.f },
+			{ -72000.f, 68000.f, 7000.f },
+			{ -55000.f, 78000.f, 10000.f },
+			{ -50000.f, 65000.f, 8500.f },
+			{ -38000.f, 88000.f, 7500.f },
+			{ -30000.f, 72000.f, 11500.f },
+			{ -20000.f, 84000.f, 11000.f },
+			{ -12000.f, 66000.f, 9500.f },
+			{  -5000.f, 90000.f, 9000.f },
+			{   5000.f, 73000.f, 10000.f },
+			{  12000.f, 83000.f, 8500.f },
+			{  20000.f, 67000.f, 12000.f },
+			{  28000.f, 87000.f, 12000.f },
+			{  35000.f, 72000.f, 8000.f },
+			{  45000.f, 81000.f, 9500.f },
+			{  55000.f, 66000.f, 10500.f },
+			{  60000.f, 89000.f, 7000.f },
+			{  68000.f, 74000.f, 9000.f },
+			{  75000.f, 84000.f, 10500.f },
+			{  85000.f, 69000.f, 7500.f },
+			{ -48000.f, 91000.f, 6500.f },
+			{  38000.f, 92000.f, 7500.f },
+			{ -85000.f, 78000.f, 8000.f },
+		};
+		const int32 NumXmasTrees = UE_ARRAY_COUNT(Trees);
+
+		// Christmas colors
+		const FLinearColor TreeGreenDark(0.02f, 0.14f, 0.03f);
+		const FLinearColor TreeGreenLight(0.05f, 0.20f, 0.06f);
+		const FLinearColor TrunkBrown(0.22f, 0.14f, 0.07f);
+		const FLinearColor StarGold(1.0f, 0.85f, 0.1f);
+
+		// Christmas light colors (emissive)
+		const FLinearColor LightRed(3.0f, 0.1f, 0.05f);
+		const FLinearColor LightGreen(0.1f, 3.0f, 0.15f);
+		const FLinearColor LightBlue(0.1f, 0.3f, 3.5f);
+		const FLinearColor LightGold(3.0f, 2.2f, 0.3f);
+		const FLinearColor LightWhite(3.0f, 3.0f, 3.5f);
+		const FLinearColor LightPurple(2.0f, 0.2f, 3.0f);
+		const FLinearColor BulbColors[] = { LightRed, LightGreen, LightBlue, LightGold, LightWhite, LightPurple };
+		const int32 NumBulbColors = UE_ARRAY_COUNT(BulbColors);
+
+		for (int32 T = 0; T < NumXmasTrees; ++T)
+		{
+			const FXmasTreeDef& TD = Trees[T];
+			const float TH = TD.Height;
+			const float BaseRadius = TH * 0.35f;  // wide conical tree
+
+			AActor* TA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(TD.X, TD.Y, 0.f), FRotator::ZeroRotator);
+			if (!TA) continue;
+#if WITH_EDITOR
+			TA->SetActorLabel(*FString::Printf(TEXT("XmasTree_%d"), T));
+#endif
+
+			// A. TRUNK — thick brown cylinder
+			const float TrunkH = TH * 0.12f;
+			const float TrunkR = TH * 0.04f;
+			UStaticMeshComponent* TrunkComp = MC_Cyl(TA,
+				FVector(TD.X, TD.Y, TrunkH * 0.5f),
+				FVector(TrunkR / 50.f, TrunkR / 50.f, TrunkH / 100.f),
+				FRotator::ZeroRotator,
+				TrunkBrown, 0.85f, 0.f);
+			TA->SetRootComponent(TrunkComp);
+
+			// B. FOLIAGE TIERS — 4 stacked cones getting smaller toward top
+			const int32 NumTiers = 4;
+			for (int32 Tier = 0; Tier < NumTiers; ++Tier)
+			{
+				const float TierFrac = (float)Tier / (float)NumTiers;
+				const float TierZ = TrunkH + TH * TierFrac * 0.85f;
+				const float TierRadius = BaseRadius * (1.0f - TierFrac * 0.75f);
+				const float TierH = TH * 0.35f * (1.0f - TierFrac * 0.3f);
+				const FLinearColor TierCol = (Tier % 2 == 0) ? TreeGreenDark : TreeGreenLight;
+
+				MC_Cone(TA,
+					FVector(TD.X, TD.Y, TierZ),
+					FVector(TierRadius / 50.f, TierRadius / 50.f, TierH / 100.f),
+					FRotator::ZeroRotator,
+					TierCol, 0.80f, 0.f);
+			}
+
+			// C. STAR ON TOP — bright golden sphere with strong emissive
+			{
+				const float StarZ = TrunkH + TH * 0.92f;
+				const float StarSize = TH * 0.06f;
+				FString SN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+				UStaticMeshComponent* StarComp = NewObject<UStaticMeshComponent>(TA, *SN);
+				StarComp->SetStaticMesh(SphereMesh);
+				StarComp->SetWorldLocation(FVector(TD.X, TD.Y, StarZ));
+				StarComp->SetWorldScale3D(FVector(StarSize / 50.f));
+				StarComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				StarComp->SetBoundsScale(10.f);
+				StarComp->RegisterComponent();
+				TA->AddInstanceComponent(StarComp);
+				// Gold with strong emissive glow
+				ApplyPBR(StarComp, StarGold, 0.8f, 0.3f);
+				if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(StarComp->GetMaterial(0)))
+				{
+					MI->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(8.0f, 6.5f, 1.0f));
+				}
+
+				// Point light at star
+				FString LN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+				UPointLightComponent* StarLight = NewObject<UPointLightComponent>(TA, *LN);
+				StarLight->SetWorldLocation(FVector(TD.X, TD.Y, StarZ));
+				StarLight->SetIntensity(15000.f);
+				StarLight->SetAttenuationRadius(TH * 1.5f);
+				StarLight->SetLightColor(FColor(255, 220, 80));
+				StarLight->SetCastShadows(false);
+				StarLight->RegisterComponent();
+				TA->AddInstanceComponent(StarLight);
+			}
+
+			// D. CHRISTMAS LIGHTS — glowing ornament spheres spiraling around tree
+			const int32 NumLights = 30 + CityRandom.RandRange(0, 15);
+			for (int32 L = 0; L < NumLights; ++L)
+			{
+				const float LFrac = (float)L / (float)NumLights;
+				const float LZ = TrunkH + TH * 0.05f + LFrac * TH * 0.85f;
+				// Spiral pattern
+				const float Angle = LFrac * 8.0f * PI + CityRandom.FRandRange(0.f, 0.5f);
+				const float RadAtHeight = BaseRadius * (1.0f - LFrac * 0.8f) * 0.85f;
+				const float LX = TD.X + RadAtHeight * FMath::Cos(Angle);
+				const float LY = TD.Y + RadAtHeight * FMath::Sin(Angle);
+				const float BulbSize = TH * CityRandom.FRandRange(0.012f, 0.022f);
+
+				const FLinearColor& BulbEmissive = BulbColors[CityRandom.RandRange(0, NumBulbColors - 1)];
+
+				FString BN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+				UStaticMeshComponent* Bulb = NewObject<UStaticMeshComponent>(TA, *BN);
+				Bulb->SetStaticMesh(SphereMesh);
+				Bulb->SetWorldLocation(FVector(LX, LY, LZ));
+				Bulb->SetWorldScale3D(FVector(BulbSize / 50.f));
+				Bulb->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Bulb->SetBoundsScale(10.f);
+				Bulb->RegisterComponent();
+				TA->AddInstanceComponent(Bulb);
+
+				// Bright base color + strong emissive for magic glow
+				FLinearColor BulbBase(
+					FMath::Clamp(BulbEmissive.R * 0.25f, 0.f, 1.f),
+					FMath::Clamp(BulbEmissive.G * 0.25f, 0.f, 1.f),
+					FMath::Clamp(BulbEmissive.B * 0.25f, 0.f, 1.f));
+				ApplyPBR(Bulb, BulbBase, 0.3f, 0.6f);
+				if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(Bulb->GetMaterial(0)))
+				{
+					MI->SetVectorParameterValue(TEXT("EmissiveColor"), BulbEmissive);
+				}
+			}
+
+			// E. GARLAND STRANDS — thin bright cylinders wrapping horizontally
+			const int32 NumGarlands = 3;
+			for (int32 G = 0; G < NumGarlands; ++G)
+			{
+				const float GFrac = 0.2f + 0.25f * (float)G;
+				const float GZ = TrunkH + GFrac * TH * 0.85f;
+				const float GRad = BaseRadius * (1.0f - GFrac * 0.75f) * 0.82f;
+
+				// 8 short cylinder segments forming a ring
+				for (int32 Seg = 0; Seg < 8; ++Seg)
+				{
+					const float A1 = (float)Seg / 8.f * 2.f * PI;
+					const float A2 = (float)(Seg + 1) / 8.f * 2.f * PI;
+					const float GX = TD.X + GRad * FMath::Cos((A1 + A2) * 0.5f);
+					const float GY = TD.Y + GRad * FMath::Sin((A1 + A2) * 0.5f);
+					const float SegLen = GRad * 2.f * PI / 8.f;
+					const float SegYaw = FMath::RadiansToDegrees((A1 + A2) * 0.5f + PI * 0.5f);
+
+					FString GN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+					UStaticMeshComponent* Garl = NewObject<UStaticMeshComponent>(TA, *GN);
+					Garl->SetStaticMesh(CylinderMesh);
+					Garl->SetWorldLocation(FVector(GX, GY, GZ));
+					Garl->SetWorldScale3D(FVector(TH * 0.003f / 50.f, SegLen * 0.55f / 50.f, TH * 0.003f / 100.f));
+					Garl->SetWorldRotation(FRotator(90.f, SegYaw, 0.f));
+					Garl->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					Garl->SetBoundsScale(10.f);
+					Garl->RegisterComponent();
+					TA->AddInstanceComponent(Garl);
+
+					const FLinearColor GarlCol = (G == 0) ? LightGold : ((G == 1) ? LightRed : LightWhite);
+					ApplyPBR(Garl, FLinearColor(0.8f, 0.7f, 0.2f), 0.2f, 0.8f);
+					if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(Garl->GetMaterial(0)))
+					{
+						MI->SetVectorParameterValue(TEXT("EmissiveColor"), GarlCol * 0.5f);
+					}
+				}
+			}
+
+			// F. SNOW ON BRANCHES — white patches on the foliage tiers
+			for (int32 SP = 0; SP < 6; ++SP)
+			{
+				const float SPFrac = CityRandom.FRandRange(0.1f, 0.8f);
+				const float SPZ = TrunkH + SPFrac * TH * 0.85f;
+				const float SPRad = BaseRadius * (1.0f - SPFrac * 0.75f) * 0.7f;
+				const float SPAngle = CityRandom.FRandRange(0.f, 2.f * PI);
+
+				MC_Cube(TA,
+					FVector(TD.X + SPRad * FMath::Cos(SPAngle),
+							TD.Y + SPRad * FMath::Sin(SPAngle), SPZ),
+					FVector(TH * 0.04f / 100.f, TH * 0.03f / 100.f, TH * 0.005f / 100.f),
+					FRotator(CityRandom.FRandRange(-5.f, 5.f), CityRandom.FRandRange(0.f, 360.f), 0.f),
+					SnowFresh, 0.50f, 0.f);
+			}
+		}
+
+		// ---- SNOWMEN ----
+		// 30 snowmen scattered across the expanded wonderland
+		struct FSnowmanDef { float X; float Y; float Scale; };
+		const FSnowmanDef Snowmen[] = {
+			{ -90000.f, 72000.f, 1.0f },
+			{ -70000.f, 83000.f, 1.0f },
+			{ -65000.f, 67000.f, 0.9f },
+			{ -60000.f, 86000.f, 0.8f },
+			{ -48000.f, 75000.f, 1.2f },
+			{ -35000.f, 85000.f, 0.9f },
+			{ -28000.f, 65000.f, 1.1f },
+			{ -22000.f, 88000.f, 1.1f },
+			{ -12000.f, 70000.f, 0.7f },
+			{  -3000.f, 82000.f, 1.0f },
+			{   5000.f, 66000.f, 1.3f },
+			{  15000.f, 81000.f, 1.3f },
+			{  22000.f, 69000.f, 0.85f },
+			{  35000.f, 83000.f, 1.0f },
+			{  40000.f, 67000.f, 0.95f },
+			{  50000.f, 86000.f, 0.95f },
+			{  58000.f, 71000.f, 1.1f },
+			{  65000.f, 82000.f, 1.1f },
+			{  75000.f, 68000.f, 0.75f },
+			{  78000.f, 88000.f, 0.75f },
+			{  88000.f, 73000.f, 0.9f },
+			{ -82000.f, 87000.f, 0.9f },
+			{ -55000.f, 69000.f, 0.8f },
+			{ -30000.f, 92000.f, 0.8f },
+			{   8000.f, 91000.f, 1.0f },
+			{  42000.f, 90000.f, 0.85f },
+			{  70000.f, 85000.f, 1.05f },
+			{ -15000.f, 78000.f, 1.15f },
+			{  30000.f, 76000.f, 0.9f },
+			{  82000.f, 80000.f, 1.0f },
+		};
+		const int32 NumSnowmen = UE_ARRAY_COUNT(Snowmen);
+
+		const FLinearColor SnowWhite(0.95f, 0.96f, 0.98f);
+		const FLinearColor CoalBlack(0.03f, 0.03f, 0.03f);
+		const FLinearColor CarrotOrange(0.85f, 0.35f, 0.02f);
+		const FLinearColor ScarfRed(0.75f, 0.05f, 0.05f);
+		const FLinearColor HatBlack(0.05f, 0.05f, 0.05f);
+
+		for (int32 S = 0; S < NumSnowmen; ++S)
+		{
+			const FSnowmanDef& SD = Snowmen[S];
+			const float SC = SD.Scale;
+			const float BaseSize = 600.f * SC;   // bottom ball radius
+			const float MidSize = 420.f * SC;    // middle ball radius
+			const float HeadSize = 280.f * SC;   // head radius
+
+			AActor* SA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(SD.X, SD.Y, 0.f), FRotator::ZeroRotator);
+			if (!SA) continue;
+#if WITH_EDITOR
+			SA->SetActorLabel(*FString::Printf(TEXT("Snowman_%d"), S));
+#endif
+			const float FaceYaw = CityRandom.FRandRange(0.f, 360.f);
+
+			// Bottom ball
+			FString BN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+			UStaticMeshComponent* Bottom = NewObject<UStaticMeshComponent>(SA, *BN);
+			Bottom->SetStaticMesh(SphereMesh);
+			Bottom->SetWorldLocation(FVector(SD.X, SD.Y, BaseSize * 0.8f));
+			Bottom->SetWorldScale3D(FVector(BaseSize / 50.f, BaseSize / 50.f, BaseSize * 0.85f / 50.f));
+			Bottom->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Bottom->SetBoundsScale(10.f);
+			Bottom->RegisterComponent();
+			ApplyPBR(Bottom, SnowWhite, 0.50f, 0.f);
+			SA->AddInstanceComponent(Bottom);
+			SA->SetRootComponent(Bottom);
+
+			// Middle ball
+			const float MidZ = BaseSize * 1.5f + MidSize * 0.7f;
+			FString MN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+			UStaticMeshComponent* Mid = NewObject<UStaticMeshComponent>(SA, *MN);
+			Mid->SetStaticMesh(SphereMesh);
+			Mid->SetWorldLocation(FVector(SD.X, SD.Y, MidZ));
+			Mid->SetWorldScale3D(FVector(MidSize / 50.f, MidSize / 50.f, MidSize * 0.9f / 50.f));
+			Mid->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Mid->SetBoundsScale(10.f);
+			Mid->RegisterComponent();
+			ApplyPBR(Mid, SnowWhite, 0.50f, 0.f);
+			SA->AddInstanceComponent(Mid);
+
+			// Head
+			const float HeadZ = MidZ + MidSize * 0.75f + HeadSize * 0.6f;
+			FString HN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+			UStaticMeshComponent* Head = NewObject<UStaticMeshComponent>(SA, *HN);
+			Head->SetStaticMesh(SphereMesh);
+			Head->SetWorldLocation(FVector(SD.X, SD.Y, HeadZ));
+			Head->SetWorldScale3D(FVector(HeadSize / 50.f));
+			Head->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Head->SetBoundsScale(10.f);
+			Head->RegisterComponent();
+			ApplyPBR(Head, SnowWhite, 0.48f, 0.f);
+			SA->AddInstanceComponent(Head);
+
+			// EYES — two coal spheres
+			const float EyeSize = HeadSize * 0.12f;
+			const float EyeForward = HeadSize * 0.85f;
+			const float FaceRad = FMath::DegreesToRadians(FaceYaw);
+			for (int32 E = 0; E < 2; ++E)
+			{
+				const float EyeSide = (E == 0) ? -1.f : 1.f;
+				const float PerpdRad = FaceRad + PI * 0.5f;
+				const float EX = SD.X + EyeForward * FMath::Cos(FaceRad) + EyeSide * HeadSize * 0.3f * FMath::Cos(PerpdRad);
+				const float EY = SD.Y + EyeForward * FMath::Sin(FaceRad) + EyeSide * HeadSize * 0.3f * FMath::Sin(PerpdRad);
+				const float EZ = HeadZ + HeadSize * 0.15f;
+
+				FString EN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+				UStaticMeshComponent* Eye = NewObject<UStaticMeshComponent>(SA, *EN);
+				Eye->SetStaticMesh(SphereMesh);
+				Eye->SetWorldLocation(FVector(EX, EY, EZ));
+				Eye->SetWorldScale3D(FVector(EyeSize / 50.f));
+				Eye->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Eye->SetBoundsScale(10.f);
+				Eye->RegisterComponent();
+				ApplyPBR(Eye, CoalBlack, 0.70f, 0.f);
+				SA->AddInstanceComponent(Eye);
+			}
+
+			// CARROT NOSE — small orange cone pointing forward
+			{
+				const float NoseLen = HeadSize * 0.6f;
+				const float NoseX = SD.X + HeadSize * 0.85f * FMath::Cos(FaceRad);
+				const float NoseY = SD.Y + HeadSize * 0.85f * FMath::Sin(FaceRad);
+				MC_Cone(SA,
+					FVector(NoseX, NoseY, HeadZ),
+					FVector(HeadSize * 0.08f / 50.f, HeadSize * 0.08f / 50.f, NoseLen / 100.f),
+					FRotator(90.f, FaceYaw, 0.f),
+					CarrotOrange, 0.70f, 0.f);
+			}
+
+			// COAL MOUTH — 5 small coal spheres in a smile
+			for (int32 Mth = 0; Mth < 5; ++Mth)
+			{
+				const float MthAngle = FMath::DegreesToRadians(-30.f + 15.f * (float)Mth);
+				const float PerpdRad = FaceRad + PI * 0.5f;
+				const float MouthFwd = HeadSize * 0.88f;
+				const float MouthSide = HeadSize * 0.35f * FMath::Sin(MthAngle);
+				const float MX = SD.X + MouthFwd * FMath::Cos(FaceRad) + MouthSide * FMath::Cos(PerpdRad);
+				const float MY = SD.Y + MouthFwd * FMath::Sin(FaceRad) + MouthSide * FMath::Sin(PerpdRad);
+				const float MZ = HeadZ - HeadSize * 0.15f + HeadSize * 0.12f * FMath::Cos(MthAngle);
+
+				FString MMN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+				UStaticMeshComponent* Mouth = NewObject<UStaticMeshComponent>(SA, *MMN);
+				Mouth->SetStaticMesh(SphereMesh);
+				Mouth->SetWorldLocation(FVector(MX, MY, MZ));
+				Mouth->SetWorldScale3D(FVector(EyeSize * 0.6f / 50.f));
+				Mouth->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Mouth->SetBoundsScale(10.f);
+				Mouth->RegisterComponent();
+				ApplyPBR(Mouth, CoalBlack, 0.70f, 0.f);
+				SA->AddInstanceComponent(Mouth);
+			}
+
+			// TOP HAT — cylinder brim + tall cylinder
+			{
+				const float HatBrimR = HeadSize * 0.7f;
+				const float HatBodyR = HeadSize * 0.45f;
+				const float HatHeight = HeadSize * 0.8f;
+				const float HatZ = HeadZ + HeadSize * 0.75f;
+
+				// Brim
+				MC_Cyl(SA,
+					FVector(SD.X, SD.Y, HatZ),
+					FVector(HatBrimR / 50.f, HatBrimR / 50.f, HeadSize * 0.05f / 100.f),
+					FRotator::ZeroRotator,
+					HatBlack, 0.60f, 0.f);
+
+				// Hat body
+				MC_Cyl(SA,
+					FVector(SD.X, SD.Y, HatZ + HatHeight * 0.5f),
+					FVector(HatBodyR / 50.f, HatBodyR / 50.f, HatHeight / 100.f),
+					FRotator::ZeroRotator,
+					HatBlack, 0.60f, 0.f);
+
+				// Red hat band
+				MC_Cyl(SA,
+					FVector(SD.X, SD.Y, HatZ + HatHeight * 0.15f),
+					FVector(HatBodyR * 1.03f / 50.f, HatBodyR * 1.03f / 50.f, HatHeight * 0.12f / 100.f),
+					FRotator::ZeroRotator,
+					ScarfRed, 0.55f, 0.f);
+			}
+
+			// SCARF — red cylinder wrapped around neck
+			{
+				const float ScarfZ = MidZ + MidSize * 0.65f;
+				MC_Cyl(SA,
+					FVector(SD.X, SD.Y, ScarfZ),
+					FVector(MidSize * 0.55f / 50.f, MidSize * 0.55f / 50.f, MidSize * 0.18f / 100.f),
+					FRotator::ZeroRotator,
+					ScarfRed, 0.55f, 0.f);
+
+				// Hanging scarf tail
+				const float TailX = SD.X + MidSize * 0.4f * FMath::Cos(FaceRad + 0.5f);
+				const float TailY = SD.Y + MidSize * 0.4f * FMath::Sin(FaceRad + 0.5f);
+				MC_Cube(SA,
+					FVector(TailX, TailY, ScarfZ - MidSize * 0.25f),
+					FVector(MidSize * 0.08f / 100.f, MidSize * 0.15f / 100.f, MidSize * 0.3f / 100.f),
+					FRotator(12.f, FaceYaw + 30.f, 0.f),
+					ScarfRed, 0.55f, 0.f);
+			}
+
+			// STICK ARMS — two brown cylinders
+			for (int32 Arm = 0; Arm < 2; ++Arm)
+			{
+				const float ArmSide = (Arm == 0) ? -1.f : 1.f;
+				const float PerpdRad = FaceRad + PI * 0.5f;
+				const float ArmX = SD.X + ArmSide * MidSize * 0.8f * FMath::Cos(PerpdRad);
+				const float ArmY = SD.Y + ArmSide * MidSize * 0.8f * FMath::Sin(PerpdRad);
+				const float ArmLen = MidSize * 1.2f;
+				const float ArmYaw = FaceYaw + 90.f + ArmSide * CityRandom.FRandRange(15.f, 35.f);
+
+				MC_Cyl(SA,
+					FVector(ArmX, ArmY, MidZ + MidSize * 0.2f),
+					FVector(MidSize * 0.03f / 50.f, MidSize * 0.03f / 50.f, ArmLen / 100.f),
+					FRotator(80.f + ArmSide * 10.f, ArmYaw, 0.f),
+					TrunkBrown, 0.85f, 0.f);
+			}
+
+			// COAL BUTTONS — 3 on the front of the middle ball
+			for (int32 Btn = 0; Btn < 3; ++Btn)
+			{
+				const float BtnZ = MidZ - MidSize * 0.3f + (float)Btn * MidSize * 0.3f;
+				const float BtnFwd = MidSize * 0.88f;
+				const float BX = SD.X + BtnFwd * FMath::Cos(FaceRad);
+				const float BY = SD.Y + BtnFwd * FMath::Sin(FaceRad);
+
+				FString BBN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+				UStaticMeshComponent* Button = NewObject<UStaticMeshComponent>(SA, *BBN);
+				Button->SetStaticMesh(SphereMesh);
+				Button->SetWorldLocation(FVector(BX, BY, BtnZ));
+				Button->SetWorldScale3D(FVector(MidSize * 0.06f / 50.f));
+				Button->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Button->SetBoundsScale(10.f);
+				Button->RegisterComponent();
+				ApplyPBR(Button, CoalBlack, 0.70f, 0.f);
+				SA->AddInstanceComponent(Button);
+			}
+		}
+
+		// ================================================================
+		// MAGICAL ELEMENTS — floating orbs, ice pillars, candy canes,
+		// aurora lights, gift boxes, ice crystal arches, frozen pond
+		// ================================================================
+
+		// ---- FLOATING MAGIC ORBS — glowing spheres hovering at various heights ----
+		for (int32 Orb = 0; Orb < 120; ++Orb)
+		{
+			const float OX = CityRandom.FRandRange(XmasMinX, XmasMaxX);
+			const float OY = CityRandom.FRandRange(XmasMinY, XmasMaxY);
+			const float OZ = CityRandom.FRandRange(500.f, 6000.f);
+			const float OSize = CityRandom.FRandRange(40.f, 180.f);
+
+			// Pick a magical color
+			const int32 OrbColorIdx = CityRandom.RandRange(0, 5);
+			FLinearColor OrbEmissive;
+			FLinearColor OrbBase;
+			switch (OrbColorIdx)
+			{
+				case 0: OrbEmissive = FLinearColor(4.0f, 0.5f, 4.5f); OrbBase = FLinearColor(0.6f, 0.1f, 0.7f); break; // purple
+				case 1: OrbEmissive = FLinearColor(0.3f, 4.0f, 4.5f); OrbBase = FLinearColor(0.1f, 0.6f, 0.7f); break; // cyan
+				case 2: OrbEmissive = FLinearColor(4.0f, 3.0f, 0.5f); OrbBase = FLinearColor(0.7f, 0.5f, 0.1f); break; // gold
+				case 3: OrbEmissive = FLinearColor(0.3f, 4.5f, 0.5f); OrbBase = FLinearColor(0.1f, 0.7f, 0.1f); break; // green
+				case 4: OrbEmissive = FLinearColor(4.5f, 0.3f, 0.3f); OrbBase = FLinearColor(0.7f, 0.1f, 0.1f); break; // red
+				default: OrbEmissive = FLinearColor(3.5f, 3.5f, 4.5f); OrbBase = FLinearColor(0.7f, 0.7f, 0.9f); break; // white-blue
+			}
+
+			AActor* OrbA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(OX, OY, OZ), FRotator::ZeroRotator);
+			if (!OrbA) continue;
+
+			FString ON = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+			UStaticMeshComponent* OrbMesh = NewObject<UStaticMeshComponent>(OrbA, *ON);
+			OrbMesh->SetStaticMesh(SphereMesh);
+			OrbMesh->SetWorldLocation(FVector(OX, OY, OZ));
+			OrbMesh->SetWorldScale3D(FVector(OSize / 50.f));
+			OrbMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			OrbMesh->SetBoundsScale(10.f);
+			OrbMesh->RegisterComponent();
+			OrbA->AddInstanceComponent(OrbMesh);
+			OrbA->SetRootComponent(OrbMesh);
+			ApplyPBR(OrbMesh, OrbBase, 0.15f, 0.6f);
+			if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(OrbMesh->GetMaterial(0)))
+			{
+				MI->SetVectorParameterValue(TEXT("EmissiveColor"), OrbEmissive);
+			}
+		}
+
+		// ---- GIANT CANDY CANES — red & white striped poles ----
+		for (int32 CC = 0; CC < 20; ++CC)
+		{
+			const float CCX = CityRandom.FRandRange(XmasMinX + 5000.f, XmasMaxX - 5000.f);
+			const float CCY = CityRandom.FRandRange(XmasMinY, XmasMaxY);
+			const float CCH = CityRandom.FRandRange(2500.f, 5000.f);
+			const float CCR = CCH * 0.04f;
+
+			AActor* CCA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(CCX, CCY, 0.f), FRotator::ZeroRotator);
+			if (!CCA) continue;
+
+			// Straight pole (white)
+			UStaticMeshComponent* Pole = MC_Cyl(CCA,
+				FVector(CCX, CCY, CCH * 0.5f),
+				FVector(CCR / 50.f, CCR / 50.f, CCH / 100.f),
+				FRotator::ZeroRotator,
+				FLinearColor(0.95f, 0.95f, 0.97f), 0.35f, 0.f);
+			CCA->SetRootComponent(Pole);
+
+			// Red stripes spiraling up (cylinders at angles)
+			const int32 NumStripes = 8;
+			for (int32 St = 0; St < NumStripes; ++St)
+			{
+				const float StFrac = (float)St / (float)NumStripes;
+				const float StZ = CCH * 0.1f + StFrac * CCH * 0.75f;
+				const float StAngle = StFrac * 4.f * PI;
+				const float StX = CCX + CCR * 0.6f * FMath::Cos(StAngle);
+				const float StY = CCY + CCR * 0.6f * FMath::Sin(StAngle);
+
+				MC_Cube(CCA,
+					FVector(StX, StY, StZ),
+					FVector(CCR * 0.8f / 100.f, CCR * 1.5f / 100.f, CCH * 0.06f / 100.f),
+					FRotator(15.f, FMath::RadiansToDegrees(StAngle), 0.f),
+					FLinearColor(0.85f, 0.05f, 0.05f), 0.40f, 0.f);
+			}
+
+			// Curved hook at top (sphere)
+			FString HN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+			UStaticMeshComponent* Hook = NewObject<UStaticMeshComponent>(CCA, *HN);
+			Hook->SetStaticMesh(SphereMesh);
+			Hook->SetWorldLocation(FVector(CCX + CCR * 2.f, CCY, CCH * 0.95f));
+			Hook->SetWorldScale3D(FVector(CCR * 1.5f / 50.f, CCR * 1.5f / 50.f, CCR * 2.f / 50.f));
+			Hook->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Hook->SetBoundsScale(10.f);
+			Hook->RegisterComponent();
+			ApplyPBR(Hook, FLinearColor(0.85f, 0.05f, 0.05f), 0.40f, 0.f);
+			CCA->AddInstanceComponent(Hook);
+		}
+
+		// ---- ICE CRYSTAL PILLARS — translucent blue-white columns with emissive glow ----
+		for (int32 IC = 0; IC < 25; ++IC)
+		{
+			const float ICX = CityRandom.FRandRange(XmasMinX, XmasMaxX);
+			const float ICY = CityRandom.FRandRange(XmasMinY, XmasMaxY);
+			const float ICH = CityRandom.FRandRange(1500.f, 4500.f);
+			const float ICR = CityRandom.FRandRange(80.f, 250.f);
+
+			AActor* ICA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(ICX, ICY, 0.f), FRotator::ZeroRotator);
+			if (!ICA) continue;
+
+			// Main crystal column
+			UStaticMeshComponent* Crystal = MC_Cyl(ICA,
+				FVector(ICX, ICY, ICH * 0.5f),
+				FVector(ICR / 50.f, ICR * 0.7f / 50.f, ICH / 100.f),
+				FRotator(CityRandom.FRandRange(-5.f, 5.f), CityRandom.FRandRange(0.f, 360.f), 0.f),
+				FLinearColor(0.75f, 0.85f, 0.95f), 0.10f, 0.7f);
+			ICA->SetRootComponent(Crystal);
+
+			// Inner glow
+			if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(Crystal->GetMaterial(0)))
+			{
+				MI->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.4f, 0.7f, 1.5f));
+			}
+
+			// Pointed tip
+			MC_Cone(ICA,
+				FVector(ICX, ICY, ICH),
+				FVector(ICR * 0.8f / 50.f, ICR * 0.6f / 50.f, ICH * 0.25f / 100.f),
+				FRotator(CityRandom.FRandRange(-3.f, 3.f), 0.f, 0.f),
+				FLinearColor(0.8f, 0.9f, 1.0f), 0.08f, 0.8f);
+
+			// Light at base
+			FString LN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+			UPointLightComponent* CrystalLight = NewObject<UPointLightComponent>(ICA, *LN);
+			CrystalLight->SetWorldLocation(FVector(ICX, ICY, ICH * 0.5f));
+			CrystalLight->SetIntensity(5000.f);
+			CrystalLight->SetAttenuationRadius(ICH * 1.2f);
+			CrystalLight->SetLightColor(FColor(130, 180, 255));
+			CrystalLight->SetCastShadows(false);
+			CrystalLight->RegisterComponent();
+			ICA->AddInstanceComponent(CrystalLight);
+		}
+
+		// ---- GIFT BOXES — colorful wrapped presents scattered on the ground ----
+		for (int32 GB = 0; GB < 60; ++GB)
+		{
+			const float GBX = CityRandom.FRandRange(XmasMinX, XmasMaxX);
+			const float GBY = CityRandom.FRandRange(XmasMinY, XmasMaxY);
+			const float GBSize = CityRandom.FRandRange(150.f, 600.f);
+			const float GBH = GBSize * CityRandom.FRandRange(0.6f, 1.2f);
+
+			// Box color
+			const int32 BoxCol = CityRandom.RandRange(0, 4);
+			FLinearColor BoxColor;
+			FLinearColor RibbonColor;
+			switch (BoxCol)
+			{
+				case 0: BoxColor = FLinearColor(0.8f, 0.05f, 0.05f); RibbonColor = FLinearColor(0.9f, 0.85f, 0.1f); break;
+				case 1: BoxColor = FLinearColor(0.05f, 0.4f, 0.8f); RibbonColor = FLinearColor(0.9f, 0.9f, 0.95f); break;
+				case 2: BoxColor = FLinearColor(0.1f, 0.65f, 0.15f); RibbonColor = FLinearColor(0.85f, 0.05f, 0.05f); break;
+				case 3: BoxColor = FLinearColor(0.6f, 0.1f, 0.65f); RibbonColor = FLinearColor(0.9f, 0.85f, 0.1f); break;
+				default: BoxColor = FLinearColor(0.9f, 0.85f, 0.1f); RibbonColor = FLinearColor(0.8f, 0.05f, 0.05f); break;
+			}
+
+			AActor* GBA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(GBX, GBY, 0.f), FRotator::ZeroRotator);
+			if (!GBA) continue;
+
+			const float GBYaw = CityRandom.FRandRange(0.f, 360.f);
+
+			// Box body
+			UStaticMeshComponent* Box = MC_Cube(GBA,
+				FVector(GBX, GBY, GBH * 0.5f),
+				FVector(GBSize / 100.f, GBSize / 100.f, GBH / 100.f),
+				FRotator(0.f, GBYaw, 0.f),
+				BoxColor, 0.55f, 0.1f);
+			GBA->SetRootComponent(Box);
+
+			// Ribbon cross — two thin strips
+			MC_Cube(GBA,
+				FVector(GBX, GBY, GBH * 0.51f),
+				FVector(GBSize * 0.12f / 100.f, GBSize * 1.02f / 100.f, GBH * 1.02f / 100.f),
+				FRotator(0.f, GBYaw, 0.f),
+				RibbonColor, 0.40f, 0.3f);
+			MC_Cube(GBA,
+				FVector(GBX, GBY, GBH * 0.51f),
+				FVector(GBSize * 1.02f / 100.f, GBSize * 0.12f / 100.f, GBH * 1.02f / 100.f),
+				FRotator(0.f, GBYaw, 0.f),
+				RibbonColor, 0.40f, 0.3f);
+
+			// Bow on top — two small spheres
+			for (int32 Bow = 0; Bow < 2; ++Bow)
+			{
+				const float BowOffset = (Bow == 0) ? -GBSize * 0.15f : GBSize * 0.15f;
+				FString BN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+				UStaticMeshComponent* BowComp = NewObject<UStaticMeshComponent>(GBA, *BN);
+				BowComp->SetStaticMesh(SphereMesh);
+				BowComp->SetWorldLocation(FVector(GBX + BowOffset, GBY, GBH + GBSize * 0.12f));
+				BowComp->SetWorldScale3D(FVector(GBSize * 0.18f / 50.f, GBSize * 0.12f / 50.f, GBSize * 0.1f / 50.f));
+				BowComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				BowComp->SetBoundsScale(10.f);
+				BowComp->RegisterComponent();
+				ApplyPBR(BowComp, RibbonColor, 0.35f, 0.3f);
+				GBA->AddInstanceComponent(BowComp);
+			}
+		}
+
+		// ---- AURORA BOREALIS — large emissive planes high in the sky ----
+		{
+			AActor* Aurora = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(0.f, 78000.f, 18000.f), FRotator::ZeroRotator);
+			if (Aurora)
+			{
+#if WITH_EDITOR
+				Aurora->SetActorLabel(TEXT("AuroraBorealis"));
+#endif
+				const FLinearColor AuroraColors[] = {
+					FLinearColor(0.1f, 2.0f, 0.5f),   // green
+					FLinearColor(0.2f, 0.8f, 2.5f),   // cyan-blue
+					FLinearColor(1.5f, 0.3f, 2.0f),   // purple
+					FLinearColor(0.1f, 2.5f, 1.0f),   // bright green
+					FLinearColor(0.5f, 0.2f, 2.5f),   // deep purple
+					FLinearColor(0.1f, 1.5f, 2.0f),   // teal
+				};
+
+				for (int32 A = 0; A < 12; ++A)
+				{
+					const float AX = CityRandom.FRandRange(-80000.f, 80000.f);
+					const float AY = CityRandom.FRandRange(65000.f, 95000.f);
+					const float AZ = CityRandom.FRandRange(14000.f, 22000.f);
+					const float AW = CityRandom.FRandRange(15000.f, 40000.f);
+					const float AH = CityRandom.FRandRange(3000.f, 8000.f);
+
+					FString AN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+					UStaticMeshComponent* AuroraMesh = NewObject<UStaticMeshComponent>(Aurora, *AN);
+					AuroraMesh->SetStaticMesh(PlaneMesh);
+					AuroraMesh->SetWorldLocation(FVector(AX, AY, AZ));
+					AuroraMesh->SetWorldScale3D(FVector(AW / 100.f, AH / 100.f, 1.f));
+					AuroraMesh->SetWorldRotation(FRotator(CityRandom.FRandRange(60.f, 85.f),
+						CityRandom.FRandRange(-30.f, 30.f), 0.f));
+					AuroraMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					AuroraMesh->SetBoundsScale(10.f);
+					AuroraMesh->RegisterComponent();
+					Aurora->AddInstanceComponent(AuroraMesh);
+					if (A == 0) Aurora->SetRootComponent(AuroraMesh);
+
+					// Use glass material for translucent aurora
+					UMaterial* GlassMat = Cast<UMaterial>(StaticLoadObject(UMaterial::StaticClass(), nullptr,
+						TEXT("/Game/Materials/M_PHCGlass.M_PHCGlass")));
+					if (GlassMat)
+					{
+						UMaterialInstanceDynamic* MI = UMaterialInstanceDynamic::Create(GlassMat, AuroraMesh);
+						const FLinearColor& AC = AuroraColors[A % 6];
+						MI->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(AC.R * 0.3f, AC.G * 0.3f, AC.B * 0.3f));
+						MI->SetScalarParameterValue(TEXT("Opacity"), 0.25f);
+						MI->SetVectorParameterValue(TEXT("EmissiveColor"), AC);
+						AuroraMesh->SetMaterial(0, MI);
+					}
+				}
+			}
+		}
+
+		// ---- FROZEN POND — icy reflective surface ----
+		{
+			const float PondX = 0.f;
+			const float PondY = 76000.f;
+			const float PondRadius = 8000.f;
+
+			AActor* Pond = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(PondX, PondY, 0.f), FRotator::ZeroRotator);
+			if (Pond)
+			{
+#if WITH_EDITOR
+				Pond->SetActorLabel(TEXT("FrozenPond"));
+#endif
+				// Ice surface
+				UStaticMeshComponent* IceSurface = MC_Cyl(Pond,
+					FVector(PondX, PondY, 2.f),
+					FVector(PondRadius / 50.f, PondRadius / 50.f, 3.f / 100.f),
+					FRotator::ZeroRotator,
+					FLinearColor(0.75f, 0.88f, 0.95f), 0.05f, 0.85f);
+				Pond->SetRootComponent(IceSurface);
+
+				// Subtle emissive for icy sheen
+				if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(IceSurface->GetMaterial(0)))
+				{
+					MI->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.15f, 0.25f, 0.5f));
+				}
+
+				// Snow rim around the pond
+				for (int32 Rim = 0; Rim < 16; ++Rim)
+				{
+					const float RAngle = (float)Rim / 16.f * 2.f * PI;
+					const float RX = PondX + (PondRadius + 300.f) * FMath::Cos(RAngle);
+					const float RY = PondY + (PondRadius + 300.f) * FMath::Sin(RAngle);
+
+					FString RN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+					UStaticMeshComponent* RimSnow = NewObject<UStaticMeshComponent>(Pond, *RN);
+					RimSnow->SetStaticMesh(SphereMesh);
+					RimSnow->SetWorldLocation(FVector(RX, RY, 50.f));
+					RimSnow->SetWorldScale3D(FVector(PondRadius * 0.15f / 50.f, PondRadius * 0.1f / 50.f, 80.f / 50.f));
+					RimSnow->SetWorldRotation(FRotator(0.f, FMath::RadiansToDegrees(RAngle), 0.f));
+					RimSnow->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					RimSnow->SetBoundsScale(10.f);
+					RimSnow->RegisterComponent();
+					ApplyPBR(RimSnow, SnowFresh, 0.48f, 0.f);
+					Pond->AddInstanceComponent(RimSnow);
+				}
+
+				// Ice glow light
+				FString PLN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+				UPointLightComponent* PondLight = NewObject<UPointLightComponent>(Pond, *PLN);
+				PondLight->SetWorldLocation(FVector(PondX, PondY, 500.f));
+				PondLight->SetIntensity(8000.f);
+				PondLight->SetAttenuationRadius(PondRadius * 2.f);
+				PondLight->SetLightColor(FColor(150, 200, 255));
+				PondLight->SetCastShadows(false);
+				PondLight->RegisterComponent();
+				Pond->AddInstanceComponent(PondLight);
+			}
+		}
+
+		// ---- SPARKLE DUST — tiny bright particles floating everywhere ----
+		for (int32 Sp = 0; Sp < 200; ++Sp)
+		{
+			const float SpX = CityRandom.FRandRange(XmasMinX, XmasMaxX);
+			const float SpY = CityRandom.FRandRange(XmasMinY, XmasMaxY);
+			const float SpZ = CityRandom.FRandRange(100.f, 4000.f);
+			const float SpSize = CityRandom.FRandRange(15.f, 50.f);
+
+			AActor* SpA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(SpX, SpY, SpZ), FRotator::ZeroRotator);
+			if (!SpA) continue;
+
+			FString SPN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+			UStaticMeshComponent* Sparkle = NewObject<UStaticMeshComponent>(SpA, *SPN);
+			Sparkle->SetStaticMesh(SphereMesh);
+			Sparkle->SetWorldLocation(FVector(SpX, SpY, SpZ));
+			Sparkle->SetWorldScale3D(FVector(SpSize / 50.f));
+			Sparkle->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Sparkle->SetBoundsScale(10.f);
+			Sparkle->RegisterComponent();
+			SpA->AddInstanceComponent(Sparkle);
+			SpA->SetRootComponent(Sparkle);
+
+			// Sparkling white-gold emissive
+			ApplyPBR(Sparkle, FLinearColor(0.95f, 0.92f, 0.8f), 0.1f, 0.8f);
+			if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(Sparkle->GetMaterial(0)))
+			{
+				const float Brightness = CityRandom.FRandRange(2.f, 6.f);
+				MI->SetVectorParameterValue(TEXT("EmissiveColor"),
+					FLinearColor(Brightness, Brightness * 0.9f, Brightness * 0.6f));
+			}
+		}
+
+		// ---- MAGICAL LAMP POSTS — ornate street-style poles with warm glow ----
+		for (int32 LP = 0; LP < 16; ++LP)
+		{
+			const float LPX = CityRandom.FRandRange(XmasMinX + 10000.f, XmasMaxX - 10000.f);
+			const float LPY = CityRandom.FRandRange(XmasMinY + 2000.f, XmasMaxY - 2000.f);
+			const float LPH = CityRandom.FRandRange(2000.f, 3500.f);
+
+			AActor* LPA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(LPX, LPY, 0.f), FRotator::ZeroRotator);
+			if (!LPA) continue;
+
+			// Pole
+			UStaticMeshComponent* LPPole = MC_Cyl(LPA,
+				FVector(LPX, LPY, LPH * 0.5f),
+				FVector(60.f / 50.f, 60.f / 50.f, LPH / 100.f),
+				FRotator::ZeroRotator,
+				FLinearColor(0.15f, 0.12f, 0.08f), 0.50f, 0.7f);
+			LPA->SetRootComponent(LPPole);
+
+			// Ornamental base
+			MC_Cyl(LPA,
+				FVector(LPX, LPY, 100.f),
+				FVector(200.f / 50.f, 200.f / 50.f, 200.f / 100.f),
+				FRotator::ZeroRotator,
+				FLinearColor(0.12f, 0.10f, 0.07f), 0.45f, 0.8f);
+
+			// Lantern globe on top (sphere with emissive)
+			FString GLN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+			UStaticMeshComponent* Globe = NewObject<UStaticMeshComponent>(LPA, *GLN);
+			Globe->SetStaticMesh(SphereMesh);
+			Globe->SetWorldLocation(FVector(LPX, LPY, LPH + 150.f));
+			Globe->SetWorldScale3D(FVector(250.f / 50.f));
+			Globe->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Globe->SetBoundsScale(10.f);
+			Globe->RegisterComponent();
+			ApplyPBR(Globe, FLinearColor(0.9f, 0.8f, 0.4f), 0.2f, 0.3f);
+			if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(Globe->GetMaterial(0)))
+			{
+				MI->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(5.0f, 3.5f, 1.5f));
+			}
+			LPA->AddInstanceComponent(Globe);
+
+			// Warm point light
+			FString LLN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+			UPointLightComponent* LampLight = NewObject<UPointLightComponent>(LPA, *LLN);
+			LampLight->SetWorldLocation(FVector(LPX, LPY, LPH + 200.f));
+			LampLight->SetIntensity(12000.f);
+			LampLight->SetAttenuationRadius(5000.f);
+			LampLight->SetLightColor(FColor(255, 200, 100));
+			LampLight->SetCastShadows(false);
+			LampLight->RegisterComponent();
+			LPA->AddInstanceComponent(LampLight);
+
+			// Holly wreath on pole
+			FString WN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+			UStaticMeshComponent* Wreath = NewObject<UStaticMeshComponent>(LPA, *WN);
+			Wreath->SetStaticMesh(CylinderMesh);
+			Wreath->SetWorldLocation(FVector(LPX, LPY, LPH * 0.6f));
+			Wreath->SetWorldScale3D(FVector(200.f / 50.f, 200.f / 50.f, 30.f / 100.f));
+			Wreath->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Wreath->SetBoundsScale(10.f);
+			Wreath->RegisterComponent();
+			ApplyPBR(Wreath, FLinearColor(0.05f, 0.25f, 0.05f), 0.70f, 0.f);
+			LPA->AddInstanceComponent(Wreath);
+		}
+
+		// ---- SNOWFALL PARTICLES — white spheres drifting in the air ----
+		for (int32 SF = 0; SF < 300; ++SF)
+		{
+			const float SFX = CityRandom.FRandRange(XmasMinX - 5000.f, XmasMaxX + 5000.f);
+			const float SFY = CityRandom.FRandRange(XmasMinY - 3000.f, XmasMaxY + 5000.f);
+			const float SFZ = CityRandom.FRandRange(200.f, 12000.f);
+			const float SFSize = CityRandom.FRandRange(10.f, 35.f);
+
+			AActor* SFA = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(SFX, SFY, SFZ), FRotator::ZeroRotator);
+			if (!SFA) continue;
+
+			FString SFN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+			UStaticMeshComponent* Flake = NewObject<UStaticMeshComponent>(SFA, *SFN);
+			Flake->SetStaticMesh(SphereMesh);
+			Flake->SetWorldLocation(FVector(SFX, SFY, SFZ));
+			Flake->SetWorldScale3D(FVector(SFSize / 50.f));
+			Flake->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Flake->SetBoundsScale(10.f);
+			Flake->RegisterComponent();
+			ApplyPBR(Flake, FLinearColor(0.96f, 0.97f, 0.99f), 0.50f, 0.f);
+			SFA->AddInstanceComponent(Flake);
+			SFA->SetRootComponent(Flake);
 		}
 	}
 

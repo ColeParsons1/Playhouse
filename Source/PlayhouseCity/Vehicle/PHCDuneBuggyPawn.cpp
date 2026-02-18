@@ -541,9 +541,9 @@ void APHCDuneBuggyPawn::Tick(float DeltaTime)
 
 				const float TargetZ = Hit.ImpactPoint.Z;
 
-				// Follow any surface above us (hills) or within 100 UU below (small dips).
-				// Surfaces >100 UU below = airborne (ramp launches, cliff edges).
-				if (TargetZ >= Pos.Z - 100.f)
+				// Follow any surface above us (hills) or within 200 UU below (slopes, small dips).
+				// Surfaces >200 UU below = airborne (ramp launches, cliff edges).
+				if (TargetZ >= Pos.Z - 200.f)
 				{
 					bFoundSurface = true;
 					bHasBeenGrounded = true;
