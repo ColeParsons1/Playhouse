@@ -23,6 +23,7 @@
 #include "Components/Spacer.h"
 #include "Blueprint/WidgetTree.h"
 #include "Misc/Paths.h"
+#include "Core/PHCCitySubsystem.h"
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -291,6 +292,31 @@ bool UPHCCityHUD::Initialize()
 		WepBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		WepBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
 		WepBtnSlot->SetOffsets(FMargin(170.f, 64.f, 100.f, 40.f));
+
+		// ============================================================
+		//  TOP-LEFT (below Weapons): "Night" toggle button
+		// ============================================================
+		NightButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("NightButton"));
+
+		FButtonStyle NightBtnStyle = NightButton->GetStyle();
+		NightBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.1f, 0.1f, 0.35f, 0.85f));
+		NightBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.15f, 0.15f, 0.45f, 0.95f));
+		NightBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.07f, 0.07f, 0.25f, 1.0f));
+		NightButton->SetStyle(NightBtnStyle);
+
+		NightButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("NightButtonLabel"));
+		NightButtonLabel->SetText(FText::FromString(TEXT("Night")));
+		NightButtonLabel->SetFont(BtnFont);
+		NightButtonLabel->SetColorAndOpacity(FSlateColor(White));
+		NightButtonLabel->SetJustification(ETextJustify::Center);
+		NightButton->AddChild(NightButtonLabel);
+
+		UCanvasPanelSlot* NightBtnSlot = RootCanvas->AddChildToCanvas(NightButton);
+		NightBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+		NightBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
+		NightBtnSlot->SetOffsets(FMargin(170.f, 120.f, 100.f, 40.f));
 
 		// ============================================================
 		//  MOBILE-ONLY: On-foot action buttons (bottom-right)
@@ -740,7 +766,7 @@ bool UPHCCityHUD::Initialize()
 		WeaponFireButton->AddChild(WeaponFireLabel);
 
 		UCanvasPanelSlot* WepFireSlot = RootCanvas->AddChildToCanvas(WeaponFireButton);
-		WepFireSlot->SetAnchors(FAnchors(0.55f, 0.5f, 1.f, 1.f));
+		WepFireSlot->SetAnchors(FAnchors(0.55f, 0.75f, 1.f, 1.f));
 		WepFireSlot->SetOffsets(FMargin(0.f, 0.f, 0.f, 0.f));
 
 		WeaponFireButton->SetVisibility(ESlateVisibility::Collapsed);
@@ -940,6 +966,10 @@ void UPHCCityHUD::NativeConstruct()
 	if (WeaponsButton)
 	{
 		WeaponsButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnWeaponsButtonClicked);
+	}
+	if (NightButton)
+	{
+		NightButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnNightButtonClicked);
 	}
 	if (SelectGunBtn)
 	{
@@ -1638,6 +1668,35 @@ void UPHCCityHUD::OnJoinCancelClicked()
 void UPHCCityHUD::OnWeaponsButtonClicked()
 {
 	ShowWeaponSelection();
+}
+
+void UPHCCityHUD::OnNightButtonClicked()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+	if (!CitySub) return;
+
+	if (!CitySub->bNightModeLocked)
+	{
+		// Switch to night and freeze
+		CitySub->DayNightTime = 0.75f; // midnight
+		CitySub->bNightModeLocked = true;
+		if (NightButtonLabel)
+		{
+			NightButtonLabel->SetText(FText::FromString(TEXT("Cycle")));
+		}
+	}
+	else
+	{
+		// Resume normal cycle from current time
+		CitySub->bNightModeLocked = false;
+		if (NightButtonLabel)
+		{
+			NightButtonLabel->SetText(FText::FromString(TEXT("Night")));
+		}
+	}
 }
 
 void UPHCCityHUD::ShowWeaponSelection()

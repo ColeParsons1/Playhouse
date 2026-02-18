@@ -600,39 +600,76 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	// ---- Ground following -----------------------------------------------
 	{
 		const FVector Pos = GetActorLocation();
-		const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 5000.f);
-		const FVector TraceEnd(Pos.X, Pos.Y, Pos.Z - 2000.f);
-		FCollisionQueryParams Params;
-		Params.AddIgnoredActor(this);
 
-		TArray<FHitResult> Hits;
-		bool bFoundSurface = false;
-		if (GetWorld()->LineTraceMultiByChannel(Hits, TraceStart, TraceEnd, ECC_WorldStatic, Params))
+		// --- Underground tunnel zone override ---
+		// Tunnel: X from 102000 to 116000, Y from 28000 to 32000
+		// Slope: Z=60 at X=116000, Z=-8000 at X=102000
+		// Airport floor: X from 100000 to 200000, Y from -10000 to 70000, Z=-8000
+		const bool bInTunnel = (Pos.X >= 102000.f && Pos.X <= 116000.f &&
+			Pos.Y >= 28000.f && Pos.Y <= 32000.f);
+		const bool bInAirport = (Pos.X >= 100000.f && Pos.X <= 200000.f &&
+			Pos.Y >= -10000.f && Pos.Y <= 70000.f && Pos.Z < 60.f);
+
+		// Character pivot is ~58 UU above their feet (floor clamp on surface = 58)
+		const float FootOffset = 58.f;
+
+		if (bInTunnel || bInAirport)
 		{
-			for (const FHitResult& Hit : Hits)
+			float TargetZ;
+			if (bInTunnel && Pos.X >= 102000.f && Pos.X <= 116000.f)
 			{
-				if (Hit.bStartPenetrating) continue;
-				const float TargetZ = Hit.ImpactPoint.Z;
-				if (TargetZ >= Pos.Z - 100.f)
-				{
-					bFoundSurface = true;
-					bHasBeenGrounded = true;
-					ManualVelocityZ = 0.f;
-					const float NewZ = FMath::FInterpTo(Pos.Z, TargetZ, DeltaTime, 12.f);
-					SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
-					break;
-				}
+				// Linear slope: X=116000 → Z=60,  X=102000 → Z=-8000+FootOffset
+				const float Alpha = (Pos.X - 102000.f) / (116000.f - 102000.f);
+				TargetZ = FMath::Lerp(-8000.f + FootOffset, 60.f, Alpha);
+				if (Pos.Z < TargetZ - 200.f) TargetZ = -8000.f + FootOffset;
 			}
-		}
-		if (!bFoundSurface && bHasBeenGrounded)
-		{
-			if (bWasGrounded) ManualVelocityZ = 0.f;
-			ManualVelocityZ -= 980.f * DeltaTime;
-			float NewZ = Pos.Z + ManualVelocityZ * DeltaTime;
-			if (NewZ <= 58.f) { NewZ = 58.f; ManualVelocityZ = 0.f; }
+			else
+			{
+				TargetZ = -8000.f + FootOffset; // airport floor
+			}
+			bHasBeenGrounded = true;
+			bWasGrounded = true;
+			ManualVelocityZ = 0.f;
+			const float NewZ = FMath::FInterpTo(Pos.Z, TargetZ, DeltaTime, 12.f);
 			SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 		}
-		bWasGrounded = bFoundSurface;
+		else
+		{
+			// Normal ground trace for above-ground areas
+			const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 5000.f);
+			const FVector TraceEnd(Pos.X, Pos.Y, Pos.Z - 2000.f);
+			FCollisionQueryParams Params;
+			Params.AddIgnoredActor(this);
+
+			TArray<FHitResult> Hits;
+			bool bFoundSurface = false;
+			if (GetWorld()->LineTraceMultiByChannel(Hits, TraceStart, TraceEnd, ECC_WorldStatic, Params))
+			{
+				for (const FHitResult& Hit : Hits)
+				{
+					if (Hit.bStartPenetrating) continue;
+					const float TargetZ = Hit.ImpactPoint.Z;
+					if (TargetZ >= Pos.Z - 100.f)
+					{
+						bFoundSurface = true;
+						bHasBeenGrounded = true;
+						ManualVelocityZ = 0.f;
+						const float NewZ = FMath::FInterpTo(Pos.Z, TargetZ, DeltaTime, 12.f);
+						SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
+						break;
+					}
+				}
+			}
+			if (!bFoundSurface && bHasBeenGrounded)
+			{
+				if (bWasGrounded) ManualVelocityZ = 0.f;
+				ManualVelocityZ -= 980.f * DeltaTime;
+				float NewZ = Pos.Z + ManualVelocityZ * DeltaTime;
+				if (NewZ <= 58.f) { NewZ = 58.f; ManualVelocityZ = 0.f; }
+				SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
+			}
+			bWasGrounded = bFoundSurface;
+		}
 	}
 
 	// ---- Orient body to movement direction ------------------------------

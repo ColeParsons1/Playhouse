@@ -159,6 +159,14 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UTextBlock> WeaponFireLabel;
 
+	// -- Night mode toggle -----------------------------------------------------
+
+	UPROPERTY()
+	TObjectPtr<UButton> NightButton;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> NightButtonLabel;
+
 	// -- Vehicle selection popup -----------------------------------------------
 
 	UPROPERTY()
@@ -285,6 +293,9 @@ private:
 
 	UFUNCTION()
 	void OnWeaponFireReleased();
+
+	UFUNCTION()
+	void OnNightButtonClicked();
 
 	void ShowWeaponSelection();
 	void HideWeaponSelection();

@@ -64,6 +64,7 @@ private:
 	void SpawnHills();
 	void SpawnCloudLayer();
 	void SpawnUndergroundCavern();
+	void SpawnGiantCrab();
 	void SpawnMountainRange();
 	void SpawnSandCastle();
 	void SpawnLakeAndPirateShip();
@@ -126,9 +127,14 @@ private:
 	/** Global unbound post-process volume for cinematic look. */
 	UPROPERTY(Transient) TObjectPtr<APostProcessVolume> PostProcessVolume;
 
+public:
 	/** Normalized time in the day/night cycle (0 = sunrise, 0.25 = noon, 0.5 = sunset, 0.75 = midnight). */
 	float DayNightTime = 0.f;
 
+	/** When true, DayNightTime is frozen (Night mode from HUD button). */
+	bool bNightModeLocked = false;
+
+private:
 	/** Night-lit window materials and their warm glow colors. */
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> NightWindowMaterials;
 	TArray<FLinearColor> NightWindowLitColors;
@@ -136,6 +142,16 @@ private:
 	float NightWindowBrightness = 0.f;
 	float WindowToggleTimer = 0.f;
 	float SkyRecaptureTimer = 0.f;
+
+	/** Giant crab NPC — night only. */
+	UPROPERTY(Transient) TObjectPtr<AActor> GiantCrabActor;
+	TArray<TObjectPtr<USceneComponent>> CrabHipJoints;
+	TArray<TObjectPtr<USceneComponent>> CrabKneeJoints;
+	TArray<FRotator> CrabHipBaseRot;
+	TArray<FRotator> CrabKneeBaseRot;
+	FVector CrabRoamTarget = FVector::ZeroVector;
+	float CrabAnimTime = 0.f;
+	bool bCrabVisible = false;
 
 	/** Cloud layer actors for parallax drift. */
 	UPROPERTY(Transient) TObjectPtr<AActor> CloudLayerActor;

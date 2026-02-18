@@ -273,8 +273,11 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	// T=0.0 sunrise, T=0.25 noon, T=0.5 sunset, T=0.75 midnight, T=1.0 sunrise.
 	constexpr float FullCycleDuration = 1200.f;
 
-	DayNightTime += DeltaTime / FullCycleDuration;
-	if (DayNightTime >= 1.f) DayNightTime -= 1.f;
+	if (!bNightModeLocked)
+	{
+		DayNightTime += DeltaTime / FullCycleDuration;
+		if (DayNightTime >= 1.f) DayNightTime -= 1.f;
+	}
 
 	const float T = DayNightTime;
 	const float SunSine = FMath::Sin(T * 2.f * UE_PI); // +1 at noon, -1 at midnight
@@ -307,7 +310,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	if (MoonLightComp)
 	{
 		const float MoonElevation = FMath::Max(0.f, -SunSine);
-		MoonLightComp->SetIntensity(MoonElevation * 0.35f);
+		MoonLightComp->SetIntensity(MoonElevation * 0.08f);
 		const float MoonPitch = -60.f * MoonElevation;
 		const float MoonYaw = 90.f - T * 360.f + 180.f;
 		MoonLightComp->SetWorldRotation(FRotator(MoonPitch, MoonYaw, 0.f));
@@ -316,14 +319,14 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	// ---- Sky light (ambient fill) ----
 	if (SkyLightComp)
 	{
-		// Bright during day, dim at night.
+		// Bright during day, very dim at night.
 		const float DayFactor = FMath::Max(0.f, SunSine);
-		SkyLightComp->SetIntensity(FMath::Lerp(0.20f, 1.5f, DayFactor));
+		SkyLightComp->SetIntensity(FMath::Lerp(0.03f, 1.5f, DayFactor));
 
-		// Tint: blue-white during day, deep blue at night.
+		// Tint: blue-white during day, very deep blue at night.
 		const float NightFactor = FMath::Max(0.f, -SunSine);
 		const FLinearColor DayTint(0.6f, 0.7f, 1.0f);
-		const FLinearColor NightTint(0.06f, 0.06f, 0.15f);
+		const FLinearColor NightTint(0.04f, 0.01f, 0.06f);
 		SkyLightComp->SetLightColor(FMath::Lerp(DayTint, NightTint, NightFactor));
 
 		// RecaptureSky is extremely expensive (full cubemap capture).
@@ -340,16 +343,19 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	if (FogComp)
 	{
 		const float NightFactor = FMath::Max(0.f, -SunSine);
-		FogComp->SetFogDensity(FMath::Lerp(0.0008f, 0.0015f, NightFactor));
-		FogComp->SetVolumetricFogDistance(FMath::Lerp(20000.f, 12000.f, NightFactor));
+		FogComp->SetFogDensity(FMath::Lerp(0.0008f, 0.003f, NightFactor));
+		FogComp->SetFogMaxOpacity(FMath::Lerp(0.45f, 0.05f, NightFactor));
+		FogComp->SetVolumetricFogDistance(FMath::Lerp(20000.f, 6000.f, NightFactor));
 
-		// GTA V-style directional inscattering -- warm haze at dawn/dusk
+		// GTA V-style directional inscattering -- warm haze at dawn/dusk, near-black at night
 		const float DawnDusk = 1.f - FMath::Abs(SunSine);
 		FogComp->SetDirectionalInscatteringExponent(8.f);
 		FogComp->SetDirectionalInscatteringStartDistance(5000.f);
 		const FLinearColor NeutralFog(0.6f, 0.6f, 0.7f);
 		const FLinearColor WarmHaze(1.0f, 0.7f, 0.3f);
-		const FLinearColor InscatterColor = FMath::Lerp(NeutralFog, WarmHaze, DawnDusk);
+		const FLinearColor NightFog(0.02f, 0.005f, 0.03f);
+		FLinearColor InscatterColor = FMath::Lerp(NeutralFog, WarmHaze, DawnDusk);
+		InscatterColor = FMath::Lerp(InscatterColor, NightFog, NightFactor);
 		FogComp->SetFogInscatteringColor(InscatterColor);
 	}
 
@@ -388,23 +394,24 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		}
 		else
 		{
-			// Night: cool blue
-			TargetGain = FVector4(0.85f, 0.90f, 1.10f, 1.0f);
-			TargetOffset = FVector4(-0.01f, 0.0f, 0.02f, 0.0f);
+			// Night: very dark purple
+			TargetGain = FVector4(0.42f, 0.32f, 0.48f, 1.0f);
+			TargetOffset = FVector4(-0.01f, -0.04f, 0.01f, 0.0f);
 		}
 		// Smooth interpolation to target
 		PP.ColorGain = FMath::Lerp(PP.ColorGain, TargetGain, FMath::Min(1.f, DeltaTime * 2.f));
 		PP.ColorOffset = FMath::Lerp(PP.ColorOffset, TargetOffset, FMath::Min(1.f, DeltaTime * 2.f));
 
 		// Legacy ColorGamma still used for base warmth
-		const float WarmR = FMath::Lerp(1.0f, 1.05f, NF);
-		const float WarmB = FMath::Lerp(0.92f, 0.85f, NF);
-		PP.ColorGamma = FVector4(WarmR, 0.97f, WarmB, 1.0f);
+		const float WarmR = FMath::Lerp(1.0f, 1.08f, NF);
+		const float WarmB = FMath::Lerp(0.92f, 0.90f, NF);
+		const float WarmG = FMath::Lerp(0.97f, 0.88f, NF);
+		PP.ColorGamma = FVector4(WarmR, WarmG, WarmB, 1.0f);
 
 		PP.VignetteIntensity = FMath::Lerp(0.25f, 0.45f, DawnDuskFactor);
 
-		PP.AutoExposureMinBrightness = FMath::Lerp(0.5f, 0.05f, NF);
-		PP.AutoExposureMaxBrightness = FMath::Lerp(3.0f, 1.5f, NF);
+		PP.AutoExposureMinBrightness = FMath::Lerp(0.5f, 0.01f, NF);
+		PP.AutoExposureMaxBrightness = FMath::Lerp(3.0f, 0.48f, NF);
 
 		// ---- Depth of Field: sharper when walking, blurry background when driving ----
 		// Check if any local player is currently possessing a vehicle
@@ -554,6 +561,78 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			}
 		}
 	}
+
+	// ---- Giant Crab NPC (night only) ----
+	if (GiantCrabActor)
+	{
+		const float CrabNF = FMath::Max(0.f, -SunSine);
+		const bool bShouldShow = (CrabNF > 0.3f) || bNightModeLocked;
+
+		if (bShouldShow != bCrabVisible)
+		{
+			bCrabVisible = bShouldShow;
+			GiantCrabActor->SetActorHiddenInGame(!bShouldShow);
+		}
+
+		if (bCrabVisible)
+		{
+			// --- Movement: roam toward target ---
+			FVector CPos = GiantCrabActor->GetActorLocation();
+			FVector ToTarget = CrabRoamTarget - CPos;
+			ToTarget.Z = 0;
+
+			if (ToTarget.Size2D() < 1500.f)
+			{
+				// Pick new random roam target
+				CrabRoamTarget = FVector(
+					FMath::FRandRange(-25000.f, 25000.f),
+					FMath::FRandRange(-25000.f, 25000.f),
+					CPos.Z);
+			}
+
+			const float CrabSpeed = 2235.f;
+			FVector MoveDir = ToTarget.GetSafeNormal2D();
+			GiantCrabActor->AddActorWorldOffset(MoveDir * CrabSpeed * DeltaTime);
+
+			// Face movement direction (head is at local +Y)
+			FRotator DesiredRot(0, MoveDir.Rotation().Yaw - 90.f, 0);
+			FRotator CurRot = GiantCrabActor->GetActorRotation();
+			GiantCrabActor->SetActorRotation(
+				FMath::RInterpTo(CurRot, DesiredRot, DeltaTime, 1.5f));
+
+			// --- Leg animation ---
+			CrabAnimTime += DeltaTime;
+			const float GaitFreq = 3.0f;
+
+			for (int i = 0; i < CrabHipJoints.Num() && i < CrabHipBaseRot.Num(); i++)
+			{
+				int LegInSide = i % 4;
+				int Side = i / 4;
+
+				// Alternating gait: even/odd legs on opposite sides in sync
+				float Phase = (LegInSide % 2 == 0) ? 0.f : UE_PI;
+				if (Side == 1) Phase += UE_PI;
+				Phase += LegInSide * 0.25f;
+
+				float A = CrabAnimTime * GaitFreq * UE_TWO_PI + Phase;
+
+				// Hip: oscillate Roll for forward/back swing
+				float HipSwing = FMath::Sin(A) * 12.f;
+				FRotator HR = CrabHipBaseRot[i];
+				HR.Roll += HipSwing;
+				CrabHipJoints[i]->SetRelativeRotation(HR);
+
+				// Knee: oscillate Pitch for flex (more bend when lifted)
+				if (i < CrabKneeJoints.Num() && i < CrabKneeBaseRot.Num())
+				{
+					float KneeFlex = FMath::Sin(A + UE_HALF_PI) * 15.f;
+					FRotator KR = CrabKneeBaseRot[i];
+					KR.Pitch += KneeFlex;
+					CrabKneeJoints[i]->SetRelativeRotation(KR);
+				}
+			}
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -575,6 +654,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnSandCastle();
 	SpawnLakeAndPirateShip();
 	SpawnUndergroundCavern();
+	SpawnGiantCrab();
 }
 
 // ---------------------------------------------------------------------------
@@ -1437,8 +1517,8 @@ void UPHCCitySubsystem::SpawnStreetLights()
 void UPHCCitySubsystem::SpawnPalmTrees()
 {
 	// ---- City sidewalk palm trees ----
-	// Every 3rd avenue, both sides
-	for (int32 i = 0; i < NumRoads; i += 3)
+	// Every avenue, both sides — dense palm forest feel
+	for (int32 i = 0; i < NumRoads; i += 1)
 	{
 		const float RoadX = FirstRoad + i * RoadSpacing;
 		const float SidewalkOff = RoadWidth * 0.5f + SidewalkWidth * 0.5f;
@@ -1447,99 +1527,149 @@ void UPHCCitySubsystem::SpawnPalmTrees()
 		float Y = FirstRoad + 500.f;
 		while (Y < -FirstRoad - 500.f)
 		{
-			// Determine if this is inner city (downtown/midtown) or outer
 			const bool bInner = (i >= 5 && i <= 11);
-			const float SkipChance = bInner ? 0.55f : 0.70f;
+			const float SkipChance = bInner ? 0.35f : 0.45f;
 
 			if (CityRandom.FRand() > SkipChance)
 			{
 				const float H = CityRandom.FRandRange(600.f, 1200.f);
 				SpawnPalmTree(FVector(RoadX, Y, 0.f), H, bInner);
 			}
-			// Trees on the other side of the road too
 			if (CityRandom.FRand() > SkipChance)
 			{
 				const float H = CityRandom.FRandRange(600.f, 1200.f);
 				SpawnPalmTree(FVector(RoadX + SidewalkOff * 2.f, Y, 0.f), H, bInner);
 			}
 
-			Y += CityRandom.FRandRange(1500.f, 3000.f);
+			Y += CityRandom.FRandRange(800.f, 1800.f);
 		}
 	}
 
-	// ---- East coast beach palms ----
+	// ---- East coast palm forest (deep band of trees) ----
 	{
-		float Y = -70000.f;
-		while (Y < 70000.f)
+		// 8 rows from X=58000 to X=72000 (14000 UU deep)
+		for (int32 row = 0; row < 8; ++row)
 		{
-			const float TX = 68000.f + CityRandom.FRandRange(-200.f, 400.f);
-			const float H = CityRandom.FRandRange(700.f, 1400.f);
-			SpawnPalmTree(FVector(TX, Y, 0.f), H, false);
-			Y += CityRandom.FRandRange(500.f, 1200.f);
+			const float RowX = 58000.f + row * 2000.f;
+			float Y = -70000.f;
+			while (Y < 70000.f)
+			{
+				const float TX = RowX + CityRandom.FRandRange(-800.f, 800.f);
+				const float H = CityRandom.FRandRange(600.f, 1400.f);
+				SpawnPalmTree(FVector(TX, Y, 0.f), H, false);
+				Y += CityRandom.FRandRange(400.f, 900.f);
+			}
 		}
 	}
 
-	// ---- South coast beach palms ----
+	// ---- South coast palm forest ----
 	{
-		float X = -65000.f;
-		while (X < 65000.f)
+		for (int32 row = 0; row < 8; ++row)
 		{
-			const float TY = -68000.f + CityRandom.FRandRange(-200.f, 400.f);
-			const float H = CityRandom.FRandRange(600.f, 1300.f);
-			SpawnPalmTree(FVector(X, TY, 0.f), H, false);
-			X += CityRandom.FRandRange(600.f, 1400.f);
+			const float RowY = -58000.f - row * 2000.f;
+			float X = -65000.f;
+			while (X < 65000.f)
+			{
+				const float TY = RowY + CityRandom.FRandRange(-800.f, 800.f);
+				const float H = CityRandom.FRandRange(500.f, 1300.f);
+				SpawnPalmTree(FVector(X, TY, 0.f), H, false);
+				X += CityRandom.FRandRange(400.f, 900.f);
+			}
 		}
 	}
 
-	// ---- North coast beach palms (west of bay) ----
+	// ---- North coast palm forest (west of bay) ----
 	{
-		float X = -65000.f;
-		while (X < 0.f)
+		for (int32 row = 0; row < 6; ++row)
 		{
-			const float TY = 66000.f + CityRandom.FRandRange(-200.f, 400.f);
-			const float H = CityRandom.FRandRange(600.f, 1200.f);
-			SpawnPalmTree(FVector(X, TY, 0.f), H, false);
-			X += CityRandom.FRandRange(700.f, 1500.f);
+			const float RowY = 58000.f + row * 2000.f;
+			float X = -65000.f;
+			while (X < 5000.f)
+			{
+				const float TY = RowY + CityRandom.FRandRange(-800.f, 800.f);
+				const float H = CityRandom.FRandRange(500.f, 1200.f);
+				SpawnPalmTree(FVector(X, TY, 0.f), H, false);
+				X += CityRandom.FRandRange(400.f, 1000.f);
+			}
 		}
 	}
 
-	// ---- Bay shoreline palms ----
+	// ---- Bay shoreline palm forest ----
 	{
-		// South edge of bay
-		float X = 32000.f;
-		while (X < 55000.f)
+		// South edge of bay — thicker
+		for (int32 row = 0; row < 4; ++row)
 		{
-			const float TY = 53000.f + CityRandom.FRandRange(-300.f, 300.f);
-			const float H = CityRandom.FRandRange(500.f, 1100.f);
-			SpawnPalmTree(FVector(X, TY, 0.f), H, false);
-			X += CityRandom.FRandRange(600.f, 1200.f);
+			float X = 30000.f;
+			while (X < 58000.f)
+			{
+				const float TY = 51000.f + row * 1500.f + CityRandom.FRandRange(-500.f, 500.f);
+				const float H = CityRandom.FRandRange(500.f, 1100.f);
+				SpawnPalmTree(FVector(X, TY, 0.f), H, false);
+				X += CityRandom.FRandRange(500.f, 1000.f);
+			}
 		}
-		// West edge of bay
-		float Y2 = 53000.f;
-		while (Y2 < 68000.f)
+		// West edge of bay — thicker
+		for (int32 row = 0; row < 4; ++row)
 		{
-			const float TX = 33000.f + CityRandom.FRandRange(-300.f, 300.f);
-			const float H = CityRandom.FRandRange(500.f, 1000.f);
-			SpawnPalmTree(FVector(TX, Y2, 0.f), H, false);
-			Y2 += CityRandom.FRandRange(600.f, 1200.f);
+			float Y2 = 51000.f;
+			while (Y2 < 70000.f)
+			{
+				const float TX = 30000.f + row * 1500.f + CityRandom.FRandRange(-500.f, 500.f);
+				const float H = CityRandom.FRandRange(500.f, 1000.f);
+				SpawnPalmTree(FVector(TX, Y2, 0.f), H, false);
+				Y2 += CityRandom.FRandRange(500.f, 1000.f);
+			}
 		}
 	}
 
 	// ---- Waterfront district bonus palms ----
-	// Scatter extra palms in the waterfront area (bx >= 18, by >= 17 in block coords)
 	{
 		const float WFMinX = FirstRoad + 18 * RoadSpacing;
 		const float WFMinY = FirstRoad + 17 * RoadSpacing;
 		const float WFMaxX = FirstRoad + 22 * RoadSpacing;
 		const float WFMaxY = FirstRoad + 21 * RoadSpacing;
 
-		for (int32 t = 0; t < 40; ++t)
+		for (int32 t = 0; t < 80; ++t)
 		{
 			const float TX = CityRandom.FRandRange(WFMinX, WFMaxX);
 			const float TY = CityRandom.FRandRange(WFMinY, WFMaxY);
 			const float H = CityRandom.FRandRange(600.f, 1100.f);
 			SpawnPalmTree(FVector(TX, TY, 0.f), H, false);
 		}
+	}
+
+	// ---- Large palm forest patches near city edges ----
+	// Southeast forest
+	for (int32 t = 0; t < 200; ++t)
+	{
+		const float TX = CityRandom.FRandRange(45000.f, 58000.f);
+		const float TY = CityRandom.FRandRange(-58000.f, -45000.f);
+		const float H = CityRandom.FRandRange(500.f, 1300.f);
+		SpawnPalmTree(FVector(TX, TY, 0.f), H, false);
+	}
+	// Northeast forest
+	for (int32 t = 0; t < 200; ++t)
+	{
+		const float TX = CityRandom.FRandRange(45000.f, 58000.f);
+		const float TY = CityRandom.FRandRange(45000.f, 58000.f);
+		const float H = CityRandom.FRandRange(500.f, 1300.f);
+		SpawnPalmTree(FVector(TX, TY, 0.f), H, false);
+	}
+	// Southwest forest
+	for (int32 t = 0; t < 150; ++t)
+	{
+		const float TX = CityRandom.FRandRange(-58000.f, -45000.f);
+		const float TY = CityRandom.FRandRange(-58000.f, -45000.f);
+		const float H = CityRandom.FRandRange(500.f, 1200.f);
+		SpawnPalmTree(FVector(TX, TY, 0.f), H, false);
+	}
+	// Northwest forest
+	for (int32 t = 0; t < 150; ++t)
+	{
+		const float TX = CityRandom.FRandRange(-58000.f, -45000.f);
+		const float TY = CityRandom.FRandRange(45000.f, 58000.f);
+		const float H = CityRandom.FRandRange(500.f, 1200.f);
+		SpawnPalmTree(FVector(TX, TY, 0.f), H, false);
 	}
 }
 
@@ -4079,8 +4209,19 @@ void UPHCCitySubsystem::SpawnUndergroundCavern()
 	}
 
 	// ================================================================
-	// SECTION 2: ENTRANCE HOLE + RAMP
+	// SECTION 2: TUNNEL ENTRANCE + STAIRCASE
 	// ================================================================
+	// Single clear tunnel entrance at beach.  The tunnel is a 2000 UU wide
+	// corridor heading WEST (negative X) from the beacon location.
+	// A staircase inside descends to the airport.
+	//
+	// CHARACTER GROUND-FOLLOW RULES (from PHCCityCharacter.cpp):
+	//   LineTraceMulti from Pos.Z+5000 to Pos.Z-2000
+	//   Snaps to hit surface IF TargetZ >= Pos.Z - 100
+	//   Otherwise: gravity → floor clamp Z=58
+	// Therefore each stair step must drop ≤ 80 UU from the previous one,
+	// and the FIRST step must be a raised platform the trace will find.
+
 	AActor* HA = World->SpawnActor<AActor>(AActor::StaticClass(),
 		FVector(HX, HY, 0.f), FRotator::ZeroRotator);
 	if (!HA) return;
@@ -4088,85 +4229,107 @@ void UPHCCitySubsystem::SpawnUndergroundCavern()
 	HA->SetActorLabel(TEXT("AirportEntrance"));
 #endif
 
-	// Gold rim around hole (6000 x 8000 UU opening)
-	AP(HA, CubeMesh, FVector(HX, HY + 4200.f, 100.f), FVector(62.f, 3.f, 3.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f);
-	AP(HA, CubeMesh, FVector(HX, HY - 4200.f, 100.f), FVector(62.f, 3.f, 3.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f);
-	AP(HA, CubeMesh, FVector(HX + 3200.f, HY, 100.f), FVector(3.f, 87.f, 3.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f);
-	AP(HA, CubeMesh, FVector(HX - 3200.f, HY, 100.f), FVector(3.f, 87.f, 3.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f);
-
-	// Emissive gold glow on rim
-	APE(HA, CubeMesh, FVector(HX, HY + 4050.f, 50.f), FVector(60.f, 0.3f, 1.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f, GoldGlow);
-	APE(HA, CubeMesh, FVector(HX, HY - 4050.f, 50.f), FVector(60.f, 0.3f, 1.f), FRotator::ZeroRotator, Gold, 0.25f, 0.80f, GoldGlow);
-
-	// Warning lights
-	APLight(HA, FVector(HX - 2800.f, HY - 3800.f, 300.f), FColor(255, 180, 50), 4000.f, 3000.f);
-	APLight(HA, FVector(HX + 2800.f, HY - 3800.f, 300.f), FColor(255, 180, 50), 4000.f, 3000.f);
-	APLight(HA, FVector(HX - 2800.f, HY + 3800.f, 300.f), FColor(255, 180, 50), 4000.f, 3000.f);
-	APLight(HA, FVector(HX + 2800.f, HY + 3800.f, 300.f), FColor(255, 180, 50), 4000.f, 3000.f);
-
-	// ============================================================
-	// GIANT BEACON TOWER — visible from across the entire map
-	// ============================================================
-	// Tall glowing pillar (5000 UU tall = way above everything)
+	// --- Beacon tower (visible from far away) ---
 	APE(HA, CylinderMesh, FVector(HX, HY, 2500.f), FVector(8.f, 8.f, 50.f), FRotator::ZeroRotator,
 		Gold, 0.20f, 0.90f, GoldGlow * 2.f);
-	// Massive glowing sphere on top
 	APE(HA, SphereMesh, FVector(HX, HY, 5200.f), FVector(20.f, 20.f, 20.f), FRotator::ZeroRotator,
 		FLinearColor(1.f, 0.8f, 0.2f), 0.15f, 0.90f, FLinearColor(8.f, 6.f, 2.f));
-	// Bright light at the top so it glows from far away
 	APLight(HA, FVector(HX, HY, 5500.f), FColor(255, 220, 80), 80000.f, 50000.f);
-	// Second light halfway up
-	APLight(HA, FVector(HX, HY, 2500.f), FColor(255, 200, 50), 40000.f, 30000.f);
 
-	// Giant glowing arrows pointing down into the hole (4 around the rim)
-	// Arrow shape: a tall wedge pointing downward, using a cone rotated 180 pitch
-	APE(HA, ConeMesh, FVector(HX - 4500.f, HY, 800.f), FVector(12.f, 12.f, 20.f),
-		FRotator(180.f, 0.f, 0.f), FLinearColor(1.f, 0.3f, 0.f), 0.30f, 0.50f, FLinearColor(6.f, 2.f, 0.f));
-	APE(HA, ConeMesh, FVector(HX + 4500.f, HY, 800.f), FVector(12.f, 12.f, 20.f),
-		FRotator(180.f, 0.f, 0.f), FLinearColor(1.f, 0.3f, 0.f), 0.30f, 0.50f, FLinearColor(6.f, 2.f, 0.f));
-	APE(HA, ConeMesh, FVector(HX, HY - 5500.f, 800.f), FVector(12.f, 12.f, 20.f),
-		FRotator(180.f, 0.f, 0.f), FLinearColor(1.f, 0.3f, 0.f), 0.30f, 0.50f, FLinearColor(6.f, 2.f, 0.f));
-	APE(HA, ConeMesh, FVector(HX, HY + 5500.f, 800.f), FVector(12.f, 12.f, 20.f),
-		FRotator(180.f, 0.f, 0.f), FLinearColor(1.f, 0.3f, 0.f), 0.30f, 0.50f, FLinearColor(6.f, 2.f, 0.f));
+	// --- Tunnel dimensions ---
+	const float TunW = 2000.f;   // tunnel width (Y extent)
+	const float TunH = 1500.f;   // tunnel height (Z extent above floor)
+	const float TunWall = 100.f;  // wall thickness
 
-	// Giant bright red ring around the hole opening (impossible to miss)
-	APE(HA, CylinderMesh, FVector(HX, HY, 10.f), FVector(65.f, 90.f, 0.5f), FRotator::ZeroRotator,
-		FLinearColor(1.f, 0.f, 0.f), 0.30f, 0.50f, FLinearColor(5.f, 0.f, 0.f));
+	// --- Helper: spawn a standalone collision slab as its own actor ---
+	// Components added to distant actors don't reliably register collision.
+	// Each stair step is its own actor with the mesh as root → guaranteed
+	// to appear in LineTraceMultiByChannel.
+	auto SpawnCollisionSlab = [&](const FVector& Loc, const FVector& Scale,
+		const FLinearColor& Col, float Rough, float Metal)
+	{
+		AActor* SA = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
+		if (!SA) return;
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(SA, TEXT("SlabMesh"));
+		MC->SetStaticMesh(CubeMesh);
+		MC->SetWorldLocation(Loc);
+		MC->SetWorldScale3D(Scale);
+		MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		MC->SetCollisionObjectType(ECC_WorldStatic);
+		MC->SetCollisionResponseToAllChannels(ECR_Block);
+		MC->RegisterComponent();
+		SA->SetRootComponent(MC);
+		ApplyPBR(MC, Col, Metal, Rough);
+	};
 
-	// RAMP — 20 flat step-segments descending, each with collision
-	// From (HX, HY, 0) down to (CavXMin, HY, AirportZ)
-	const int32 NumSteps = 20;
-	const float RampStartX = HX;
-	const float RampEndX = CavXMin + 2000.f; // 102000
-	const float RampDX = (RampEndX - RampStartX) / (float)NumSteps;
-	const float RampDZ = AirportZ / (float)NumSteps; // -400 per step
-	const float StepWidth = 4000.f;
+	// --- Entry platform: walk onto this to begin descent ---
+	const float PlatZ = 60.f;
+	const float PlatLen = 4000.f;
+	const float PlatCX = HX + PlatLen * 0.5f;
+	SpawnCollisionSlab(FVector(PlatCX, HY, PlatZ),
+		FVector(PlatLen / 100.f, TunW / 100.f, 0.5f),
+		PolishedGranite, 0.30f, 0.15f);
+
+	// Bright emissive floor strip
+	APE(HA, CubeMesh, FVector(PlatCX, HY, PlatZ + 27.f),
+		FVector(PlatLen / 100.f, 3.f, 0.05f), FRotator::ZeroRotator,
+		Gold, 0.25f, 0.80f, GoldGlow);
+	// Platform walls
+	AP(HA, CubeMesh, FVector(PlatCX, HY - TunW * 0.5f - TunWall * 0.5f, PlatZ + TunH * 0.5f),
+		FVector(PlatLen / 100.f, TunWall / 100.f, TunH / 100.f), FRotator::ZeroRotator,
+		DarkSteel, 0.70f, 0.30f);
+	AP(HA, CubeMesh, FVector(PlatCX, HY + TunW * 0.5f + TunWall * 0.5f, PlatZ + TunH * 0.5f),
+		FVector(PlatLen / 100.f, TunWall / 100.f, TunH / 100.f), FRotator::ZeroRotator,
+		DarkSteel, 0.70f, 0.30f);
+	// Platform ceiling
+	AP(HA, CubeMesh, FVector(PlatCX, HY, PlatZ + TunH),
+		FVector(PlatLen / 100.f, (TunW + TunWall * 2.f) / 100.f, 0.5f), FRotator::ZeroRotator,
+		DarkSteel, 0.85f, 0.20f);
+	// Back wall
+	AP(HA, CubeMesh, FVector(HX + PlatLen + TunWall * 0.5f, HY, PlatZ + TunH * 0.5f),
+		FVector(TunWall / 100.f, (TunW + TunWall * 2.f) / 100.f, TunH / 100.f), FRotator::ZeroRotator,
+		DarkSteel, 0.70f, 0.30f);
+	// Emissive sign
+	APE(HA, CubeMesh, FVector(HX - 50.f, HY, PlatZ + TunH - 200.f),
+		FVector(0.1f, 15.f, 3.f), FRotator::ZeroRotator,
+		FLinearColor(0.0f, 0.0f, 0.0f), 0.30f, 0.50f, FLinearColor(0.f, 5.f, 0.f));
+	APLight(HA, FVector(PlatCX, HY, PlatZ + TunH - 100.f), FColor(255, 240, 200), 10000.f, 5000.f);
+
+	// --- STAIRCASE: each step is a standalone collision actor ---
+	const float StairTopZ = PlatZ;
+	const float StepDrop = 80.f;
+	const int32 NumSteps = (int32)FMath::CeilToFloat((StairTopZ - AirportZ) / StepDrop);
+	const float StairStartX = HX;
+	const float StairEndX = CavXMin + 2000.f;
+	const float StairDX = (StairEndX - StairStartX) / (float)NumSteps;
 
 	for (int32 s = 0; s < NumSteps; ++s)
 	{
-		const float SX = RampStartX + (s + 0.5f) * RampDX;
-		const float SZ = (s + 0.5f) * RampDZ;
-		// Each step: flat collision slab
-		AP(CA, CubeMesh, FVector(SX, HY, SZ),
-			FVector(FMath::Abs(RampDX) / 100.f + 1.f, StepWidth / 100.f, 0.5f), FRotator::ZeroRotator,
-			PolishedGranite, 0.30f, 0.15f, /*bColl=*/true);
+		const float SX = StairStartX + (s + 0.5f) * StairDX;
+		const float SZ = StairTopZ - (s + 0.5f) * StepDrop;
 
-		// Walls on each side
-		AP(CA, CubeMesh, FVector(SX, HY - StepWidth * 0.5f - 50.f, SZ + 500.f),
-			FVector(FMath::Abs(RampDX) / 100.f + 1.f, 1.f, 12.f), FRotator::ZeroRotator,
-			DarkSteel, 0.70f, 0.30f);
-		AP(CA, CubeMesh, FVector(SX, HY + StepWidth * 0.5f + 50.f, SZ + 500.f),
-			FVector(FMath::Abs(RampDX) / 100.f + 1.f, 1.f, 12.f), FRotator::ZeroRotator,
-			DarkSteel, 0.70f, 0.30f);
+		// Each stair step = standalone collision actor
+		SpawnCollisionSlab(FVector(SX, HY, SZ),
+			FVector(FMath::Abs(StairDX) / 100.f + 0.5f, TunW / 100.f, 0.5f),
+			PolishedGranite, 0.30f, 0.15f);
 
-		// Light every 4 steps
-		if (s % 4 == 0)
-			APLight(CA, FVector(SX, HY, SZ + 800.f), FColor(255, 220, 160), 6000.f, 4000.f);
+		// Tunnel walls + lights (visual only, on HA actor)
+		if (s % 10 == 0)
+		{
+			AP(HA, CubeMesh, FVector(SX, HY - TunW * 0.5f - TunWall * 0.5f, SZ + TunH * 0.5f),
+				FVector(FMath::Abs(StairDX) * 10.f / 100.f + 1.f, TunWall / 100.f, TunH / 100.f), FRotator::ZeroRotator,
+				DarkSteel, 0.70f, 0.30f);
+			AP(HA, CubeMesh, FVector(SX, HY + TunW * 0.5f + TunWall * 0.5f, SZ + TunH * 0.5f),
+				FVector(FMath::Abs(StairDX) * 10.f / 100.f + 1.f, TunWall / 100.f, TunH / 100.f), FRotator::ZeroRotator,
+				DarkSteel, 0.70f, 0.30f);
+		}
+		if (s % 15 == 0)
+			APLight(HA, FVector(SX, HY, SZ + TunH - 50.f), FColor(255, 220, 160), 8000.f, 5000.f);
 	}
 
-	// Tunnel ceiling over ramp
-	AP(CA, CubeMesh, FVector((RampStartX + RampEndX) * 0.5f, HY, -2000.f),
-		FVector((RampEndX - RampStartX) / 100.f + 10.f, StepWidth / 100.f + 5.f, 0.5f), FRotator::ZeroRotator,
+	// Tunnel ceiling over staircase
+	AP(HA, CubeMesh, FVector((StairStartX + StairEndX) * 0.5f, HY, -2000.f),
+		FVector(FMath::Abs(StairEndX - StairStartX) / 100.f + 5.f, (TunW + TunWall * 2.f) / 100.f, 0.5f), FRotator::ZeroRotator,
 		DarkSteel, 0.85f, 0.20f);
 
 	// ================================================================
@@ -4495,6 +4658,257 @@ void UPHCCitySubsystem::SpawnUndergroundCavern()
 
 	UE_LOG(LogPlayhouseCity, Log,
 		TEXT("PHCCitySubsystem: Underground luxury airport spawned (%d components)."), Idx);
+}
+
+
+// ---------------------------------------------------------------------------
+// Giant Crab NPC — spawns hidden, revealed at night, roams the city
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::SpawnGiantCrab()
+{
+	UWorld* W = GetWorld();
+	if (!W || !SphereMesh || !CylinderMesh || !CubeMesh || !ConeMesh || !ColorMaterial) return;
+
+	GiantCrabActor = W->SpawnActor<AActor>(AActor::StaticClass(),
+		FVector(0.f, 0.f, 1200.f), FRotator::ZeroRotator);
+	if (!GiantCrabActor) return;
+
+	CrabRoamTarget = FVector(0.f, 0.f, 1200.f);
+
+	// --- Root ---
+	USceneComponent* Root = NewObject<USceneComponent>(GiantCrabActor, TEXT("CrabRoot"));
+	Root->RegisterComponent();
+	GiantCrabActor->SetRootComponent(Root);
+	GiantCrabActor->AddInstanceComponent(Root);
+
+	// --- Mesh helper ---
+	auto CM = [&](UStaticMesh* Mesh, USceneComponent* Parent, const FVector& Loc,
+		const FRotator& Rot, const FVector& S, const FLinearColor& Col,
+		float Metal, float Rough, const FName& Name,
+		const FLinearColor& Emis = FLinearColor(0.0f, 3.0f, 0.2f)) -> UStaticMeshComponent*
+	{
+		auto* C = NewObject<UStaticMeshComponent>(GiantCrabActor, Name);
+		C->SetStaticMesh(Mesh);
+		C->SetRelativeLocation(Loc);
+		C->SetRelativeRotation(Rot);
+		C->SetRelativeScale3D(S);
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->SetCastShadow(false);
+		auto* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, C);
+		Mat->SetVectorParameterValue(TEXT("BaseColor"), Col);
+		Mat->SetScalarParameterValue(TEXT("Metallic"), Metal);
+		Mat->SetScalarParameterValue(TEXT("Roughness"), Rough);
+		if (Emis.R > 0.001f || Emis.G > 0.001f || Emis.B > 0.001f)
+			Mat->SetVectorParameterValue(TEXT("EmissiveColor"), Emis);
+		C->SetMaterial(0, Mat);
+		C->AttachToComponent(Parent, FAttachmentTransformRules::KeepRelativeTransform);
+		C->RegisterComponent();
+		GiantCrabActor->AddInstanceComponent(C);
+		return C;
+	};
+
+	auto MakeJoint = [&](USceneComponent* Parent, const FVector& Loc,
+		const FRotator& Rot, const FName& Name) -> USceneComponent*
+	{
+		auto* SC = NewObject<USceneComponent>(GiantCrabActor, Name);
+		SC->SetRelativeLocation(Loc);
+		SC->SetRelativeRotation(Rot);
+		SC->AttachToComponent(Parent, FAttachmentTransformRules::KeepRelativeTransform);
+		SC->RegisterComponent();
+		GiantCrabActor->AddInstanceComponent(SC);
+		return SC;
+	};
+
+	// --- Colors ---
+	const FLinearColor Shell(0.55f, 0.15f, 0.08f);
+	const FLinearColor ShellDark(0.40f, 0.10f, 0.05f);
+	const FLinearColor Leg(0.45f, 0.12f, 0.06f);
+	const FLinearColor Claw(0.50f, 0.10f, 0.05f);
+	const FLinearColor Belly(0.60f, 0.35f, 0.20f);
+	const FLinearColor Glow(0.0f, 3.0f, 0.2f); // neon green emissive
+
+	// ========== BODY ==========
+	// Carapace — wide flat ellipsoid
+	CM(SphereMesh, Root, FVector(0, 0, 250), FRotator::ZeroRotator,
+		FVector(15, 10, 5), Shell, 0.15f, 0.7f, TEXT("Carapace"), Glow);
+
+	// Head bump
+	CM(SphereMesh, Root, FVector(0, 450, 300), FRotator::ZeroRotator,
+		FVector(10, 7, 3.5f), Shell * 0.9f, 0.15f, 0.65f, TEXT("HeadBump"));
+
+	// Belly (lighter)
+	CM(SphereMesh, Root, FVector(0, 0, 130), FRotator::ZeroRotator,
+		FVector(12, 8, 2.5f), Belly, 0.05f, 0.8f, TEXT("Belly"));
+
+	// Shell ridges (3 bumps along back)
+	for (int R = 0; R < 3; R++)
+	{
+		float Y = -200.f + R * 200.f;
+		CM(SphereMesh, Root, FVector(0, Y, 420), FRotator::ZeroRotator,
+			FVector(6, 4, 2), ShellDark, 0.2f, 0.6f,
+			FName(*FString::Printf(TEXT("Ridge%d"), R)));
+	}
+
+	// Rear shell edge
+	CM(SphereMesh, Root, FVector(0, -350, 200), FRotator::ZeroRotator,
+		FVector(12, 5, 3), ShellDark, 0.15f, 0.7f, TEXT("RearEdge"));
+
+	// ========== EYES ==========
+	for (int E = 0; E < 2; E++)
+	{
+		float SX = (E == 0) ? -200.f : 200.f;
+		float Tilt = (E == 0) ? 15.f : -15.f;
+		FString Side = (E == 0) ? TEXT("L") : TEXT("R");
+
+		// Stalk
+		CM(CylinderMesh, Root,
+			FVector(SX, 500, 430), FRotator(20, 0, Tilt),
+			FVector(0.6f, 0.6f, 2.5f), Leg, 0.1f, 0.75f,
+			FName(*(TEXT("EyeStalk_") + Side)));
+
+		// Eyeball with red emissive
+		CM(SphereMesh, Root,
+			FVector(SX * 1.3f, 550, 620), FRotator::ZeroRotator,
+			FVector(1.5f, 1.5f, 1.5f),
+			FLinearColor(0.02f, 0.01f, 0.01f), 0.8f, 0.2f,
+			FName(*(TEXT("Eye_") + Side)),
+			FLinearColor(0.0f, 4.0f, 0.3f));
+	}
+
+	// ========== MOUTH PARTS ==========
+	// Mandibles — two small angled pieces under the head
+	for (int M = 0; M < 2; M++)
+	{
+		float SX = (M == 0) ? -80.f : 80.f;
+		CM(CubeMesh, Root,
+			FVector(SX, 600, 150), FRotator(25, (M == 0) ? -10.f : 10.f, 0),
+			FVector(0.8f, 2.5f, 0.5f), ShellDark, 0.1f, 0.7f,
+			FName(*FString::Printf(TEXT("Mandible%d"), M)));
+	}
+
+	// ========== CLAWS ==========
+	for (int C = 0; C < 2; C++)
+	{
+		float SS = (C == 0) ? -1.f : 1.f; // side sign
+		FString Side = (C == 0) ? TEXT("L") : TEXT("R");
+
+		// Arm — cylinder extending forward and outward
+		CM(CylinderMesh, Root,
+			FVector(SS * 550, 650, 200),
+			FRotator(30, SS * 25, SS * -40),
+			FVector(2.0f, 2.0f, 4.5f), Claw, 0.15f, 0.65f,
+			FName(*(TEXT("ClawArm_") + Side)));
+
+		// Hand base
+		FVector HP(SS * 900, 1100, 130);
+		CM(CubeMesh, Root, HP,
+			FRotator(0, SS * 30, 0),
+			FVector(3.5f, 5.f, 2.f), Claw * 0.85f, 0.2f, 0.6f,
+			FName(*(TEXT("ClawHand_") + Side)));
+
+		// Lower pincer (fixed)
+		CM(CubeMesh, Root,
+			HP + FVector(SS * 40, 300, -40),
+			FRotator(-5, SS * 25, 0),
+			FVector(2.2f, 4.5f, 1.0f), Claw * 0.8f, 0.2f, 0.55f,
+			FName(*(TEXT("ClawLower_") + Side)));
+
+		// Upper pincer
+		CM(CubeMesh, Root,
+			HP + FVector(SS * 40, 280, 90),
+			FRotator(8, SS * 25, 0),
+			FVector(2.0f, 4.0f, 0.8f), Claw * 0.8f, 0.2f, 0.55f,
+			FName(*(TEXT("ClawUpper_") + Side)));
+
+		// Pincer tip (pointed)
+		CM(ConeMesh, Root,
+			HP + FVector(SS * 40, 600, 20),
+			FRotator(90, SS * 25, 0),
+			FVector(1.5f, 1.0f, 2.5f), Claw * 0.75f, 0.2f, 0.5f,
+			FName(*(TEXT("ClawTip_") + Side)));
+	}
+
+	// ========== WALKING LEGS (8 total) ==========
+	struct FLegDef { float HipX, HipY, HipZ, FwdAngle; };
+	const FLegDef Legs[4] = {
+		{ 600, 300, 200, 15 },   // front
+		{ 680, 100, 180, 5 },    // mid-front
+		{ 680, -100, 180, -5 },  // mid-back
+		{ 600, -300, 200, -15 }, // back
+	};
+
+	const float UpperLen = 400.f;
+	const float LowerLen = 350.f;
+
+	for (int Side = 0; Side < 2; Side++)
+	{
+		float SS = (Side == 0) ? 1.f : -1.f;
+		FString SN = (Side == 0) ? TEXT("L") : TEXT("R");
+
+		for (int L = 0; L < 4; L++)
+		{
+			const FLegDef& D = Legs[L];
+			FVector HipPos(D.HipX * SS, D.HipY, D.HipZ);
+
+			// Hip base rotation: Pitch tilts outward+down, Roll fans fwd/back
+			FRotator HipBase(SS * 120.f, 0.f, -D.FwdAngle);
+
+			USceneComponent* Hip = MakeJoint(Root, HipPos, HipBase,
+				FName(*FString::Printf(TEXT("Hip_%s%d"), *SN, L)));
+			CrabHipJoints.Add(Hip);
+			CrabHipBaseRot.Add(HipBase);
+
+			// Upper leg mesh — pivot at hip, extends along joint Z
+			CM(CylinderMesh, Hip,
+				FVector(0, 0, UpperLen * 0.5f), FRotator::ZeroRotator,
+				FVector(1.0f, 1.0f, UpperLen / 50.f),
+				Leg, 0.1f, 0.7f,
+				FName(*FString::Printf(TEXT("UpperLeg_%s%d"), *SN, L)));
+
+			// Knee joint at end of upper leg
+			FRotator KneeBase(25, 0, 0);
+			USceneComponent* Knee = MakeJoint(Hip, FVector(0, 0, UpperLen), KneeBase,
+				FName(*FString::Printf(TEXT("Knee_%s%d"), *SN, L)));
+			CrabKneeJoints.Add(Knee);
+			CrabKneeBaseRot.Add(KneeBase);
+
+			// Lower leg mesh
+			CM(CylinderMesh, Knee,
+				FVector(0, 0, LowerLen * 0.5f), FRotator::ZeroRotator,
+				FVector(0.7f, 0.7f, LowerLen / 50.f),
+				Leg * 0.9f, 0.1f, 0.7f,
+				FName(*FString::Printf(TEXT("LowerLeg_%s%d"), *SN, L)));
+
+			// Foot tip — small pointed sphere
+			CM(SphereMesh, Knee,
+				FVector(0, 0, LowerLen), FRotator::ZeroRotator,
+				FVector(1.2f, 1.2f, 0.7f),
+				Leg * 0.8f, 0.1f, 0.75f,
+				FName(*FString::Printf(TEXT("Foot_%s%d"), *SN, L)));
+		}
+	}
+
+	// ========== GLOW LIGHTS ==========
+	auto AddGlow = [&](const FVector& Loc, float Inten, float Rad, const FColor& Col, const FName& Name)
+	{
+		auto* PL = NewObject<UPointLightComponent>(GiantCrabActor, Name);
+		PL->SetRelativeLocation(Loc);
+		PL->SetIntensity(Inten);
+		PL->SetAttenuationRadius(Rad);
+		PL->SetLightColor(Col);
+		PL->SetCastShadows(false);
+		PL->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+		PL->RegisterComponent();
+		GiantCrabActor->AddInstanceComponent(PL);
+	};
+
+	AddGlow(FVector(0, 0, 50), 8000.f, 5000.f, FColor(0, 255, 40), TEXT("CrabGlow1"));
+	AddGlow(FVector(0, 400, 350), 5000.f, 4000.f, FColor(0, 255, 30), TEXT("CrabGlow2"));
+	AddGlow(FVector(0, -300, 350), 4000.f, 3500.f, FColor(0, 255, 20), TEXT("CrabGlow3"));
+
+	// Start hidden — revealed at night
+	GiantCrabActor->SetActorHiddenInGame(true);
 }
 
 

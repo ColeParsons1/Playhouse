@@ -552,6 +552,33 @@ void APHCVehiclePawn::Tick(float DeltaTime)
 	// ---- Ground following (downward trace to ride slopes, ramps, ocean floor) ----
 	{
 		const FVector Pos = GetActorLocation();
+
+		// --- Underground tunnel/airport zone override ---
+		const bool bInTunnel = (Pos.X >= 102000.f && Pos.X <= 116000.f &&
+			Pos.Y >= 28000.f && Pos.Y <= 32000.f);
+		const bool bInAirport = (Pos.X >= 100000.f && Pos.X <= 200000.f &&
+			Pos.Y >= -10000.f && Pos.Y <= 70000.f && Pos.Z < 60.f);
+
+		const float FootOffset = 50.f; // vehicle pivot above wheels
+
+		if (bInTunnel || bInAirport)
+		{
+			float TargetZ;
+			if (bInTunnel && Pos.X >= 102000.f && Pos.X <= 116000.f)
+			{
+				const float Alpha = (Pos.X - 102000.f) / (116000.f - 102000.f);
+				TargetZ = FMath::Lerp(-8000.f + FootOffset, 60.f, Alpha);
+				if (Pos.Z < TargetZ - 200.f) TargetZ = -8000.f + FootOffset;
+			}
+			else { TargetZ = -8000.f + FootOffset; }
+			bHasBeenGrounded = true;
+			bWasGrounded = true;
+			VerticalVelocity = 0.f;
+			const float NewZ = FMath::FInterpTo(Pos.Z, TargetZ, DeltaTime, 12.f);
+			SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
+		}
+		else
+		{
 		const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 5000.f);
 		const FVector TraceEnd(Pos.X, Pos.Y, Pos.Z - 2000.f);
 		FCollisionQueryParams Params;
@@ -567,8 +594,6 @@ void APHCVehiclePawn::Tick(float DeltaTime)
 
 				const float TargetZ = Hit.ImpactPoint.Z;
 
-				// Follow any surface above us (hills) or within 200 UU below (slopes, small dips).
-				// Surfaces >200 UU below = airborne (ramp launches, cliff edges).
 				if (TargetZ >= Pos.Z - 200.f)
 				{
 					bFoundSurface = true;
@@ -577,7 +602,6 @@ void APHCVehiclePawn::Tick(float DeltaTime)
 					const float NewZ = FMath::FInterpTo(Pos.Z, TargetZ, DeltaTime, 12.f);
 					SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 
-					// Tilt pitch to match slope
 					const FVector Forward2D = FVector(GetActorForwardVector().X, GetActorForwardVector().Y, 0.f).GetSafeNormal();
 					const float ForwardSlope = -(Hit.ImpactNormal.X * Forward2D.X + Hit.ImpactNormal.Y * Forward2D.Y) / FMath::Max(Hit.ImpactNormal.Z, 0.01f);
 					const float TargetPitch = FMath::RadiansToDegrees(FMath::Atan(ForwardSlope));
@@ -590,24 +614,22 @@ void APHCVehiclePawn::Tick(float DeltaTime)
 		}
 		if (!bFoundSurface && bHasBeenGrounded)
 		{
-			// Airborne: if we just left the ground, calculate launch velocity from pitch
 			if (bWasGrounded)
 			{
 				const float PitchRad = FMath::DegreesToRadians(GetActorRotation().Pitch);
 				VerticalVelocity = FMath::Abs(CurrentSpeed) * FMath::Sin(PitchRad);
 			}
-			// Apply gravity
 			VerticalVelocity -= 980.f * DeltaTime;
 			float NewZ = Pos.Z + VerticalVelocity * DeltaTime;
 			if (NewZ <= 50.f) { NewZ = 50.f; VerticalVelocity = 0.f; }
 			SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 
-			// Flatten pitch while airborne
 			FRotator Rot = GetActorRotation();
 			Rot.Pitch = FMath::FInterpTo(Rot.Pitch, 0.f, DeltaTime, 3.f);
 			SetActorRotation(Rot);
 		}
 		bWasGrounded = bFoundSurface;
+		} // end else (not in tunnel/airport)
 	}
 
 }
