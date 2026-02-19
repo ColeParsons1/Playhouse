@@ -134,6 +134,12 @@ public:
 	/** When true, DayNightTime is frozen (Night mode from HUD button). */
 	bool bNightModeLocked = false;
 
+	/** Natural disaster system. */
+	enum class EDisasterType : uint8 { None, Tornado, Earthquake, Thunderstorm, MeteorShower };
+	EDisasterType ActiveDisaster = EDisasterType::None;
+	float DisasterTimer = 0.f;
+	float DisasterCooldown = 180.f;
+
 private:
 	/** Night-lit window materials and their warm glow colors. */
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> NightWindowMaterials;
@@ -169,6 +175,26 @@ private:
 	float WeatherTimer = 0.f;
 	float WeatherTransitionAlpha = 1.f;
 	bool bIsRaining = false;
+
+	/** Tornado. */
+	void SpawnTornado();
+	UPROPERTY(Transient) TObjectPtr<AActor> TornadoActor;
+	FVector TornadoPos = FVector::ZeroVector;
+	float TornadoAngle = 0.f;
+	float TornadoSpinTime = 0.f;
+
+	/** Earthquake. */
+	float EarthquakeIntensity = 0.f;
+	float EarthquakePhase = 0.f;
+
+	/** Thunderstorm. */
+	float ThunderTimer = 0.f;
+	float LightningFlashAlpha = 0.f;
+
+	/** Meteor shower. */
+	float MeteorSpawnTimer = 0.f;
+	UPROPERTY(Transient) TArray<TObjectPtr<AActor>> ActiveMeteors;
+	TArray<FVector> MeteorVelocities;
 
 	/** Deterministic random stream for city generation. */
 	FRandomStream CityRandom;

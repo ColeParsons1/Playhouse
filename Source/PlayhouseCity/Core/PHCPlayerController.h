@@ -16,6 +16,7 @@ class APHCVehiclePawn;
 class APHCDuneBuggyPawn;
 class APHCRaptorPawn;
 class APHCCityCharacter;
+class APHCTankPawn;
 
 /**
  * Top-level player controller for the PlayhouseCity lobby.
@@ -109,6 +110,10 @@ public:
 	/** Called by the vehicle pawn when the player presses the exit key. */
 	UFUNCTION()
 	void OnVehicleExitRequested();
+
+	/** Equip or remove the jetpack on the character. */
+	void EquipJetpack();
+	void UnequipJetpack();
 
 	/** Server RPC: spawn a vehicle on the server and enter it. */
 	UFUNCTION(Server, Reliable)

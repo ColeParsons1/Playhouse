@@ -10,6 +10,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/StaticMesh.h"
+#include "Components/PointLightComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -243,6 +244,17 @@ APHCCityCharacter::APHCCityCharacter()
 	MinigunBodyMesh   = MakeCyl(TEXT("MinigunBody"),   FVector(0.f, 26.f, 40.f), 3.f, 50.f);
 	MinigunBarrelMesh = MakeCyl(TEXT("MinigunBarrel"), FVector(0.f, 26.f, 70.f), 1.5f, 60.f);
 	MinigunMuzzleMesh = MakeCyl(TEXT("MinigunMuzzle"), FVector(0.f, 26.f, 100.f), 4.f, 3.f);
+
+	// ================================================================
+	//  BAZOOKA (RPG) WEAPON — shoulder-mounted tube launcher
+	// ================================================================
+	BazookaTubeMesh       = MakeCyl(TEXT("BazookaTube"),       FVector(0.f, 26.f, 56.f), 4.f, 120.f);
+	BazookaRearEndMesh    = MakeCyl(TEXT("BazookaRear"),       FVector(0.f, 26.f, -4.f), 5.5f, 8.f);
+	BazookaFrontSightMesh = MakeCube(TEXT("BazookaFrontSight"),FVector(0.f, 26.f, 112.f), FVector(2.f, 2.f, 6.f));
+	BazookaRearSightMesh  = MakeCube(TEXT("BazookaRearSight"), FVector(0.f, 26.f, 20.f),  FVector(2.f, 2.f, 5.f));
+	BazookaGripMesh       = MakeCube(TEXT("BazookaGrip"),      FVector(0.f, 26.f, 40.f),  FVector(3.f, 6.f, 14.f));
+	BazookaScopeMesh      = MakeCyl(TEXT("BazookaScope"),      FVector(0.f, 26.f, 80.f), 2.5f, 18.f);
+	BazookaMuzzleMesh     = MakeSph(TEXT("BazookaMuzzle"),     FVector(0.f, 26.f, 120.f), 8.f);
 
 	// Enable shadows on major body parts for visual depth and grounding
 	auto Shadow = [](UStaticMeshComponent* C) { if (C) C->CastShadow = true; };
@@ -536,6 +548,31 @@ void APHCCityCharacter::BeginPlay()
 	ApplyColor(MinigunBarrelMesh, BarrelSteel, 0.25f, 0.95f);
 	ApplyColor(MinigunMuzzleMesh, FLinearColor(0.08f, 0.08f, 0.08f), 0.40f, 0.8f);
 
+	// Bazooka materials
+	const FLinearColor BazookaOlive(0.22f, 0.24f, 0.14f);  // military olive drab
+	const FLinearColor BazookaSight(0.10f, 0.10f, 0.10f);   // dark steel sights
+	const FLinearColor BazookaRubber(0.06f, 0.06f, 0.06f);  // dark rubber grip
+	const FLinearColor BazookaAnodized(0.04f, 0.04f, 0.06f);// black anodized scope
+	ApplyColor(BazookaTubeMesh,       BazookaOlive,    0.85f, 0.25f);
+	ApplyColor(BazookaRearEndMesh,    BazookaOlive,    0.85f, 0.25f);
+	ApplyColor(BazookaFrontSightMesh, BazookaSight,    0.40f, 0.6f);
+	ApplyColor(BazookaRearSightMesh,  BazookaSight,    0.40f, 0.6f);
+	ApplyColor(BazookaGripMesh,       BazookaRubber,   0.95f, 0.0f);
+	ApplyColor(BazookaScopeMesh,      BazookaAnodized, 0.30f, 0.7f);
+	// Muzzle flash: bright emissive (applied manually for emissive)
+	if (BazookaMuzzleMesh && BazookaMuzzleMesh->GetStaticMesh() && ColorMat)
+	{
+		UMaterialInstanceDynamic* MuzMID = UMaterialInstanceDynamic::Create(ColorMat, BazookaMuzzleMesh);
+		if (MuzMID)
+		{
+			MuzMID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(1.f, 0.6f, 0.1f));
+			MuzMID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(10.f, 6.f, 2.f));
+			MuzMID->SetScalarParameterValue(TEXT("Metallic"), 0.f);
+			MuzMID->SetScalarParameterValue(TEXT("Roughness"), 0.5f);
+			BazookaMuzzleMesh->SetMaterial(0, MuzMID);
+		}
+	}
+
 	// Mark as grounded immediately — ground plane has no collision.
 	bHasBeenGrounded = true;
 
@@ -550,6 +587,22 @@ void APHCCityCharacter::BeginPlay()
 void APHCCityCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	// ---- Camera shake (RPG fire recoil, GTA V style) --------------------
+	if (CameraShakeTimer > 0.f && CameraBoom)
+	{
+		CameraShakeTimer -= DeltaTime;
+		const float Decay = FMath::Max(CameraShakeTimer / 0.35f, 0.f);
+		const float ShakeX = FMath::RandRange(-CameraShakeIntensity, CameraShakeIntensity) * Decay;
+		const float ShakeZ = FMath::RandRange(-CameraShakeIntensity, CameraShakeIntensity) * Decay;
+		CameraBoom->SocketOffset = FVector(0.f, 75.f + ShakeX, 60.f + ShakeZ);
+
+		if (CameraShakeTimer <= 0.f)
+		{
+			// Restore default socket offset
+			CameraBoom->SocketOffset = FVector(0.f, 75.f, 60.f);
+		}
+	}
 
 	// ---- Process deferred vehicle interaction ---------------------------
 	if (bPendingVehicleInteract)
@@ -589,8 +642,52 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	}
 	PendingMoveInput = FVector::ZeroVector;
 
+	const float Speed = bJetpackEquipped ? 3576.f : (bIsSprinting ? SprintSpeed : WalkSpeed);
+
+	// ---- Jetpack hover mode ---------------------------------------------
+	if (bJetpackEquipped)
+	{
+		const float JetpackSpeed = 3576.f; // 80 mph in UU/s
+		const float JetpackClimbSpeed = 1800.f; // vertical speed UU/s
+
+		// Mobile: use look-Y (right thumb vertical swipe) for altitude
+		float VertInput = JetpackVerticalInput;
+		if (bHUDTouchActive && FMath::Abs(TouchLookY) > 0.01f)
+		{
+			VertInput = FMath::Clamp(-TouchLookY * 3.f, -1.f, 1.f);
+		}
+
+		// Horizontal
+		if (!MoveDir.IsNearlyZero())
+		{
+			const FVector Delta = MoveDir * JetpackSpeed * DeltaTime;
+			AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), false);
+		}
+
+		// Vertical — free flight up/down, floor clamp at 58 UU
+		FVector Pos = GetActorLocation();
+		float NewZ = Pos.Z + VertInput * JetpackClimbSpeed * DeltaTime;
+		if (NewZ < 58.f) NewZ = 58.f; // don't go below ground
+		SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
+
+		// Animate exhaust cone flicker under boots
+		if (JetpackFlameL)
+		{
+			float Flicker = 0.9f + FMath::Sin(GetWorld()->GetTimeSeconds() * 20.f) * 0.1f;
+			JetpackFlameL->SetRelativeScale3D(FVector(0.04f, 0.04f, 0.08f * Flicker));
+		}
+		if (JetpackFlameR)
+		{
+			float Flicker = 0.9f + FMath::Cos(GetWorld()->GetTimeSeconds() * 22.f) * 0.1f;
+			JetpackFlameR->SetRelativeScale3D(FVector(0.04f, 0.04f, 0.08f * Flicker));
+		}
+
+		// don't return — weapon/animation code runs below
+	}
+	else
+	{
+
 	// ---- Horizontal movement --------------------------------------------
-	const float Speed = bIsSprinting ? SprintSpeed : WalkSpeed;
 	if (!MoveDir.IsNearlyZero())
 	{
 		const FVector Delta = MoveDir * Speed * DeltaTime;
@@ -672,6 +769,8 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		}
 	}
 
+	} // end else (not jetpack)
+
 	// ---- Orient body to movement direction ------------------------------
 	if (!MoveDir.IsNearlyZero())
 	{
@@ -687,9 +786,9 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	//  momentum lean, idle animation, hand/hair spring lag, breathing
 	// =====================================================================
 	{
-		const bool bMoving = !MoveDir.IsNearlyZero();
+		const bool bMoving = !MoveDir.IsNearlyZero() && !bJetpackEquipped;
 		const float TargetBlend = bMoving ? 1.f : 0.f;
-		WalkAnimBlend = FMath::FInterpTo(WalkAnimBlend, TargetBlend, DeltaTime, 8.f);
+		WalkAnimBlend = bJetpackEquipped ? 0.f : FMath::FInterpTo(WalkAnimBlend, TargetBlend, DeltaTime, 8.f);
 
 		if (bMoving)
 		{
@@ -697,9 +796,13 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			WalkCyclePhase += CycleSpeed * DeltaTime;
 			IdleTimer = 0.f;
 		}
-		else
+		else if (!bJetpackEquipped)
 		{
 			IdleTimer += DeltaTime;
+		}
+		else
+		{
+			IdleTimer = 0.f;
 		}
 
 		// Organic sine — adds harmonics for natural, non-robotic gait
@@ -1110,6 +1213,74 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				}
 			}
 		}
+
+		// ---- Bazooka: held on right shoulder, fires like tank cannon ----
+		{
+			const bool bShowBazooka = (CurrentWeaponType == 1);
+
+			auto SetVis = [](UStaticMeshComponent* C, bool V) { if (C) C->SetVisibility(V); };
+			SetVis(BazookaTubeMesh, bShowBazooka);
+			SetVis(BazookaRearEndMesh, bShowBazooka);
+			SetVis(BazookaFrontSightMesh, bShowBazooka);
+			SetVis(BazookaRearSightMesh, bShowBazooka);
+			SetVis(BazookaGripMesh, bShowBazooka);
+			SetVis(BazookaScopeMesh, bShowBazooka);
+			SetVis(BazookaMuzzleMesh, bShowBazooka && BazookaMuzzleFlashTimer > 0.f);
+
+			if (bShowBazooka)
+			{
+				// Shoulder weapon pose: tube on right shoulder pointing forward
+				const FVector RShoulder = RightShoulderMesh
+					? RightShoulderMesh->GetRelativeLocation()
+					: FVector(0.f, 22.f, 46.f);
+
+				// Cylinder axis is Z, so Pitch 90 points it forward (actor X)
+				const FRotator GunRot(90.f, 0.f, 0.f);
+				const FVector TubeCenter = RShoulder + FVector(25.f, 4.f, 0.f);
+
+				if (BazookaTubeMesh)
+				{
+					BazookaTubeMesh->SetRelativeLocation(TubeCenter);
+					BazookaTubeMesh->SetRelativeRotation(GunRot);
+				}
+				if (BazookaRearEndMesh)
+				{
+					// Rear flare sits at back end of tube (tube half-length = 60 back)
+					BazookaRearEndMesh->SetRelativeLocation(TubeCenter + FVector(-60.f, 0.f, 0.f));
+					BazookaRearEndMesh->SetRelativeRotation(GunRot);
+				}
+				if (BazookaFrontSightMesh)
+				{
+					// Front sight on top, near muzzle end
+					BazookaFrontSightMesh->SetRelativeLocation(TubeCenter + FVector(52.f, 0.f, 5.f));
+				}
+				if (BazookaRearSightMesh)
+				{
+					// Rear sight on top, near shoulder end
+					BazookaRearSightMesh->SetRelativeLocation(TubeCenter + FVector(-20.f, 0.f, 5.f));
+				}
+				if (BazookaGripMesh)
+				{
+					// Pistol grip underneath tube center
+					BazookaGripMesh->SetRelativeLocation(TubeCenter + FVector(0.f, 0.f, -10.f));
+				}
+				if (BazookaScopeMesh)
+				{
+					// Scope on top between sights
+					BazookaScopeMesh->SetRelativeLocation(TubeCenter + FVector(16.f, 0.f, 7.f));
+					BazookaScopeMesh->SetRelativeRotation(GunRot);
+				}
+				if (BazookaMuzzleMesh)
+				{
+					// Muzzle flash at barrel tip
+					BazookaMuzzleMesh->SetRelativeLocation(TubeCenter + FVector(68.f, 0.f, 0.f));
+				}
+
+				// Timers
+				if (BazookaMuzzleFlashTimer > 0.f) BazookaMuzzleFlashTimer -= DeltaTime;
+				if (BazookaFireTimer > 0.f) BazookaFireTimer -= DeltaTime;
+			}
+		}
 	}
 }
 
@@ -1151,6 +1322,11 @@ void APHCCityCharacter::HandleLook(const FInputActionValue& Value)
 
 void APHCCityCharacter::HandleJumpStarted(const FInputActionValue& /*Value*/)
 {
+	if (bJetpackEquipped)
+	{
+		JetpackVerticalInput = 1.f; // ascend
+		return;
+	}
 	if (bHasBeenGrounded)
 	{
 		ManualVelocityZ = 420.f;
@@ -1161,15 +1337,22 @@ void APHCCityCharacter::HandleJumpStarted(const FInputActionValue& /*Value*/)
 
 void APHCCityCharacter::HandleJumpCompleted(const FInputActionValue& /*Value*/)
 {
+	if (bJetpackEquipped) JetpackVerticalInput = 0.f;
 }
 
 void APHCCityCharacter::HandleSprintStarted(const FInputActionValue& /*Value*/)
 {
+	if (bJetpackEquipped)
+	{
+		JetpackVerticalInput = -1.f; // descend
+		return;
+	}
 	bIsSprinting = true;
 }
 
 void APHCCityCharacter::HandleSprintCompleted(const FInputActionValue& /*Value*/)
 {
+	if (bJetpackEquipped) { JetpackVerticalInput = 0.f; return; }
 	bIsSprinting = false;
 }
 
@@ -1235,21 +1418,98 @@ void APHCCityCharacter::FireWeapon()
 			Bullet->StartTrail(FLinearColor(0.6f, 0.1f, 1.f)); // neon purple trail
 		}
 	}
-	else if (CurrentWeaponType == 1) // RPG
+	else if (CurrentWeaponType == 1) // RPG (Bazooka) — GTA V style
 	{
+		if (BazookaFireTimer > 0.f) return; // ~2s reload (GTA V animation-driven)
+		BazookaFireTimer = 2.0f;
+		BazookaMuzzleFlashTimer = 0.1f;
+
+		// Camera shake on fire (GTA V has moderate recoil shake)
+		CameraShakeTimer = 0.35f;
+		CameraShakeIntensity = 6.f;
+
 		APHCMissileProjectile* Rocket = World->SpawnActor<APHCMissileProjectile>(
 			APHCMissileProjectile::StaticClass(), SpawnLoc, SpawnRot, SP);
 		if (Rocket)
 		{
-			Rocket->Speed = 12000.f;
-			Rocket->bUseManualGravity = true;
-			Rocket->ManualGravityScale = 0.4f;
-			Rocket->SetLifeSpan(3.f);
+			// GTA V RPG: 60 m/s = 6,000 UU/s, straight line, 5s lifespan (300m range)
+			Rocket->Speed = 6000.f;
+			Rocket->bUseManualGravity = false;  // GTA V: no gravity drop
+			Rocket->SetLifeSpan(5.f);           // GTA V: self-detonates at 5s
+			Rocket->bIsRPGRocket = true;        // enables collision + explosion
+
+			// Visible rocket with orange-yellow rear flame (GTA V style)
 			if (Rocket->ProjectileMesh)
 			{
+				// Slightly larger projectile — visible warhead
 				Rocket->ProjectileMesh->SetRelativeScale3D(FVector(2.5f, 0.25f, 0.25f));
+
+				UMaterial* RocketMat = LoadObject<UMaterial>(nullptr,
+					TEXT("/Game/Materials/M_PHCColor.M_PHCColor"));
+				if (RocketMat)
+				{
+					UMaterialInstanceDynamic* RMID = UMaterialInstanceDynamic::Create(
+						(UMaterialInterface*)RocketMat, Rocket);
+					if (RMID)
+					{
+						RMID->SetVectorParameterValue(TEXT("BaseColor"),
+							FLinearColor(0.35f, 0.35f, 0.30f));   // dark olive warhead
+						RMID->SetVectorParameterValue(TEXT("EmissiveColor"),
+							FLinearColor(6.f, 3.f, 0.5f));        // orange-yellow rear flame glow
+						RMID->SetScalarParameterValue(TEXT("Metallic"), 0.6f);
+						RMID->SetScalarParameterValue(TEXT("Roughness"), 0.3f);
+						Rocket->ProjectileMesh->SetMaterial(0, RMID);
+					}
+				}
 			}
-			Rocket->StartTrail(FLinearColor(1.f, 0.3f, 0.05f));
+
+			// GTA V smoke trail: white-gray, thick, persistent, rises
+			Rocket->TrailDotScale = 0.35f;       // thick smoke puffs
+			Rocket->TrailDotLifespan = 2.5f;     // lingers several seconds
+			Rocket->TrailDotInterval = 0.02f;    // dense trail
+			Rocket->TrailDotRandomSpread = 15.f; // organic smoke spread
+			Rocket->StartTrail(FLinearColor(0.65f, 0.65f, 0.60f)); // white-gray smoke
+		}
+
+		// Backblast — brief exhaust puff behind the character
+		{
+			const FVector BackLoc = GetActorLocation()
+				- GetActorForwardVector() * 80.f
+				+ FVector(0.f, 0.f, 30.f);
+
+			UStaticMesh* SphMesh = LoadObject<UStaticMesh>(nullptr,
+				TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+			if (SphMesh && World)
+			{
+				FActorSpawnParameters BackSP;
+				BackSP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+				AActor* BackBlast = World->SpawnActor<AActor>(
+					AActor::StaticClass(), BackLoc, FRotator::ZeroRotator, BackSP);
+				if (BackBlast)
+				{
+					BackBlast->SetReplicates(false);
+					BackBlast->SetLifeSpan(0.6f);
+					UStaticMeshComponent* BM = NewObject<UStaticMeshComponent>(
+						BackBlast, UStaticMeshComponent::StaticClass(), TEXT("BackblastMesh"));
+					BM->SetStaticMesh(SphMesh);
+					BM->SetRelativeScale3D(FVector(1.2f));
+					BM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					BM->CastShadow = false;
+					BackBlast->SetRootComponent(BM);
+					BM->RegisterComponent();
+
+					UMaterialInstanceDynamic* BMat = UMaterialInstanceDynamic::Create(
+						BM->GetMaterial(0), BackBlast);
+					if (BMat)
+					{
+						BMat->SetVectorParameterValue(TEXT("BaseColor"),
+							FLinearColor(0.5f, 0.5f, 0.45f));
+						BMat->SetVectorParameterValue(TEXT("EmissiveColor"),
+							FLinearColor(2.f, 1.f, 0.3f));
+						BM->SetMaterial(0, BMat);
+					}
+				}
+			}
 		}
 	}
 	else if (CurrentWeaponType == 2) // Sword
@@ -1304,4 +1564,140 @@ void APHCCityCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(APHCCityCharacter, bIsSprinting);
+}
+
+// ---------------------------------------------------------------------------
+// Jetpack
+// ---------------------------------------------------------------------------
+
+void APHCCityCharacter::EquipJetpack()
+{
+	if (bJetpackEquipped) return;
+	bJetpackEquipped = true;
+
+	UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	UStaticMesh* CylMesh  = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	UStaticMesh* ConeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cone.Cone"));
+	UMaterial* ColorMat   = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCColor.M_PHCColor"));
+	if (!CubeMesh || !CylMesh || !ConeMesh || !ColorMat) return;
+
+	auto MakePart = [&](UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot,
+		const FVector& Scale, const FLinearColor& Col, float Metal, float Rough,
+		const FName& Name, const FLinearColor& Emis = FLinearColor::Black) -> UStaticMeshComponent*
+	{
+		auto* C = NewObject<UStaticMeshComponent>(this, Name);
+		C->SetStaticMesh(Mesh);
+		C->SetRelativeLocation(Loc);
+		C->SetRelativeRotation(Rot);
+		C->SetRelativeScale3D(Scale);
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->SetCastShadow(false);
+		auto* Mat = UMaterialInstanceDynamic::Create(ColorMat, C);
+		Mat->SetVectorParameterValue(TEXT("BaseColor"), Col);
+		Mat->SetScalarParameterValue(TEXT("Metallic"), Metal);
+		Mat->SetScalarParameterValue(TEXT("Roughness"), Rough);
+		if (Emis.R > 0.001f || Emis.G > 0.001f || Emis.B > 0.001f)
+			Mat->SetVectorParameterValue(TEXT("EmissiveColor"), Emis);
+		C->SetMaterial(0, Mat);
+		C->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+		C->RegisterComponent();
+		return C;
+	};
+
+	const FLinearColor BootShell(0.08f, 0.08f, 0.10f);   // dark techwear
+	const FLinearColor BootTrim(0.20f, 0.20f, 0.25f);    // lighter accent
+	const FLinearColor ThrustGlow(0.2f, 0.6f, 1.0f);     // cyan-blue emissive
+
+	// Left boot — outer shell wrapping over the foot
+	JetpackBodyMesh = MakePart(CubeMesh,
+		FVector(4.f, -11.f, -66.f), FRotator::ZeroRotator,
+		FVector(0.24f, 0.14f, 0.12f), BootShell, 0.85f, 0.30f, TEXT("AirBootL"));
+
+	// Right boot — outer shell
+	JetpackNozzleL = MakePart(CubeMesh,
+		FVector(4.f, 11.f, -66.f), FRotator::ZeroRotator,
+		FVector(0.24f, 0.14f, 0.12f), BootShell, 0.85f, 0.30f, TEXT("AirBootR"));
+
+	// Left boot ankle cuff
+	JetpackNozzleR = MakePart(CylMesh,
+		FVector(2.f, -11.f, -58.f), FRotator::ZeroRotator,
+		FVector(0.08f, 0.08f, 0.04f), BootTrim, 0.80f, 0.35f, TEXT("AirCuffL"));
+
+	// Right boot ankle cuff
+	JetpackStrapL = MakePart(CylMesh,
+		FVector(2.f, 11.f, -58.f), FRotator::ZeroRotator,
+		FVector(0.08f, 0.08f, 0.04f), BootTrim, 0.80f, 0.35f, TEXT("AirCuffR"));
+
+	// Left sole thruster — glowing disc under the boot
+	JetpackStrapR = MakePart(CylMesh,
+		FVector(4.f, -11.f, -74.f), FRotator::ZeroRotator,
+		FVector(0.10f, 0.10f, 0.015f), ThrustGlow, 0.0f, 1.0f, TEXT("AirThrusterL"),
+		FLinearColor(0.3f, 1.5f, 3.0f));
+
+	// Right sole thruster
+	JetpackFlameL = MakePart(CylMesh,
+		FVector(4.f, 11.f, -74.f), FRotator::ZeroRotator,
+		FVector(0.10f, 0.10f, 0.015f), ThrustGlow, 0.0f, 1.0f, TEXT("AirThrusterR"),
+		FLinearColor(0.3f, 1.5f, 3.0f));
+
+	// Left exhaust cone — small thrust flame below sole
+	JetpackFlameR = MakePart(ConeMesh,
+		FVector(4.f, -11.f, -82.f), FRotator(180.f, 0.f, 0.f),
+		FVector(0.04f, 0.04f, 0.08f),
+		FLinearColor(0.4f, 0.7f, 1.0f), 0.0f, 1.0f, TEXT("AirFlameL"),
+		FLinearColor(1.0f, 3.0f, 5.0f));
+
+	// Right exhaust cone
+	// (reuse JetpackFlameL/R names for the flame cones that animate in Tick)
+	// We'll store left flame in JetpackFlameR, right flame needs a temp — swap below
+
+	auto* RightFlame = MakePart(ConeMesh,
+		FVector(4.f, 11.f, -82.f), FRotator(180.f, 0.f, 0.f),
+		FVector(0.04f, 0.04f, 0.08f),
+		FLinearColor(0.4f, 0.7f, 1.0f), 0.0f, 1.0f, TEXT("AirFlameR"),
+		FLinearColor(1.0f, 3.0f, 5.0f));
+
+	// Reassign so the flame flicker animation in Tick targets the cones
+	// JetpackFlameL = right sole thruster (cylinder), JetpackFlameR = left exhaust cone
+	// We need the two cones in JetpackFlameL/R for the flicker anim
+	JetpackFlameL = JetpackFlameR; // left exhaust cone
+	JetpackFlameR = RightFlame;    // right exhaust cone
+
+	// Glow lights under each boot
+	auto AddGlow = [&](const FVector& Loc, const FColor& Col, const FName& Name) -> UPointLightComponent*
+	{
+		auto* PL = NewObject<UPointLightComponent>(this, Name);
+		PL->SetRelativeLocation(Loc);
+		PL->SetIntensity(4000.f);
+		PL->SetAttenuationRadius(400.f);
+		PL->SetLightColor(Col);
+		PL->SetCastShadows(false);
+		PL->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+		PL->RegisterComponent();
+		return PL;
+	};
+
+	JetpackGlowL = AddGlow(FVector(4.f, -11.f, -80.f), FColor(80, 180, 255), TEXT("AirGlowL"));
+	JetpackGlowR = AddGlow(FVector(4.f, 11.f, -80.f), FColor(80, 180, 255), TEXT("AirGlowR"));
+}
+
+void APHCCityCharacter::UnequipJetpack()
+{
+	if (!bJetpackEquipped) return;
+	bJetpackEquipped = false;
+
+	auto Destroy = [](UActorComponent*& C)
+	{
+		if (C) { C->DestroyComponent(); C = nullptr; }
+	};
+
+	Destroy(reinterpret_cast<UActorComponent*&>(JetpackBodyMesh));
+	Destroy(reinterpret_cast<UActorComponent*&>(JetpackNozzleL));
+	Destroy(reinterpret_cast<UActorComponent*&>(JetpackNozzleR));
+	Destroy(reinterpret_cast<UActorComponent*&>(JetpackFlameL));
+	Destroy(reinterpret_cast<UActorComponent*&>(JetpackFlameR));
+	Destroy(reinterpret_cast<UActorComponent*&>(JetpackStrapL));
+	Destroy(reinterpret_cast<UActorComponent*&>(JetpackStrapR));
+	Destroy(reinterpret_cast<UActorComponent*&>(JetpackGlowL));
+	Destroy(reinterpret_cast<UActorComponent*&>(JetpackGlowR));
 }

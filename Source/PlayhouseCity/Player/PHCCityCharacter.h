@@ -13,6 +13,7 @@ class UCameraComponent;
 class UStaticMeshComponent;
 class UInputMappingContext;
 class UInputAction;
+class UPointLightComponent;
 struct FInputActionValue;
 
 /**
@@ -161,6 +162,23 @@ public:
 	float WalkCyclePhase = 0.f;
 	float WalkAnimBlend = 0.f;
 
+	// -- Jetpack --------------------------------------------------------------
+
+	bool bJetpackEquipped = false;
+	float JetpackVerticalInput = 0.f;  // +1 = ascend, -1 = descend
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> JetpackBodyMesh;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> JetpackNozzleL;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> JetpackNozzleR;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> JetpackFlameL;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> JetpackFlameR;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> JetpackStrapL;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> JetpackStrapR;
+	UPROPERTY(Transient) TObjectPtr<UPointLightComponent> JetpackGlowL;
+	UPROPERTY(Transient) TObjectPtr<UPointLightComponent> JetpackGlowR;
+
+	void EquipJetpack();
+	void UnequipJetpack();
+
 	// -- Scythe weapon mesh ---------------------------------------------------
 
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> ScytheHandleMesh;
@@ -173,6 +191,16 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> MinigunBarrelMesh;
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> MinigunMuzzleMesh;
 
+	// -- Bazooka (RPG) weapon mesh --------------------------------------------
+
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BazookaTubeMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BazookaRearEndMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BazookaFrontSightMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BazookaRearSightMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BazookaGripMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BazookaScopeMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BazookaMuzzleMesh;
+
 	// -- Weapon state ---------------------------------------------------------
 
 	int32 CurrentWeaponType = 3; // -1=none, 0=Gun, 1=RPG, 2=Sword, 3=Scythe
@@ -182,6 +210,11 @@ public:
 	float MinigunSpinAngle = 0.f;
 	bool bMinigunFiring = false;
 	float MinigunFireTimer = 0.f;
+
+	float BazookaFireTimer = 0.f;
+	float BazookaMuzzleFlashTimer = 0.f;
+	float CameraShakeTimer = 0.f;
+	float CameraShakeIntensity = 0.f;
 
 	void FireWeapon();
 

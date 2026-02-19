@@ -7,6 +7,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -70,6 +71,16 @@ void APHCMissileProjectile::BeginPlay()
 	SetLifeSpan(LifeSpan);
 }
 
+void APHCMissileProjectile::LifeSpanExpired()
+{
+	// RPG rockets self-detonate on expiry (GTA V: 5s = 300m range)
+	if (bIsRPGRocket)
+	{
+		SpawnExplosion(GetActorLocation());
+	}
+	Super::LifeSpanExpired();
+}
+
 void APHCMissileProjectile::OnHit(
 	UPrimitiveComponent* /*HitComponent*/,
 	AActor* OtherActor,
@@ -124,12 +135,38 @@ void APHCMissileProjectile::Tick(float DeltaTime)
 		ManualVelocity.Z -= 980.f * ManualGravityScale * DeltaTime;
 	}
 
+	const FVector PrevLoc = GetActorLocation();
+	const FVector StepDelta = ManualVelocity * DeltaTime;
+
+	// RPG collision detection via line trace ahead
+	if (bIsRPGRocket)
+	{
+		UWorld* World = GetWorld();
+		if (World)
+		{
+			FCollisionQueryParams Params;
+			Params.AddIgnoredActor(this);
+			if (OwnerVehicle) Params.AddIgnoredActor(OwnerVehicle);
+
+			FHitResult Hit;
+			if (World->LineTraceSingleByChannel(Hit, PrevLoc, PrevLoc + StepDelta,
+				ECC_WorldStatic, Params))
+			{
+				// Impact — explode at hit point
+				SpawnExplosion(Hit.ImpactPoint);
+				Destroy();
+				return;
+			}
+		}
+	}
+
 	// Move forward — simple SetActorLocation, no sweep, no PMC overhead
-	SetActorLocation(GetActorLocation() + ManualVelocity * DeltaTime);
+	SetActorLocation(PrevLoc + StepDelta);
 
 	// Altitude detonation (for gravity bombs hitting ground)
 	if (DetonateAtAltitude >= 0.f && GetActorLocation().Z <= DetonateAtAltitude)
 	{
+		if (bIsRPGRocket) SpawnExplosion(GetActorLocation());
 		if (OnHitSpawnClass)
 		{
 			UWorld* World = GetWorld();
@@ -148,7 +185,7 @@ void APHCMissileProjectile::Tick(float DeltaTime)
 
 	TrailTimer -= DeltaTime;
 	if (TrailTimer > 0.f) return;
-	TrailTimer = TrailInterval;
+	TrailTimer = TrailDotInterval;
 
 	SpawnTrailDot();
 }
@@ -161,17 +198,27 @@ void APHCMissileProjectile::SpawnTrailDot()
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
+	// Optional random spread for organic smoke look
+	FVector SpawnLoc = GetActorLocation();
+	if (TrailDotRandomSpread > 0.f)
+	{
+		SpawnLoc += FVector(
+			FMath::RandRange(-TrailDotRandomSpread, TrailDotRandomSpread),
+			FMath::RandRange(-TrailDotRandomSpread, TrailDotRandomSpread),
+			FMath::RandRange(0.f, TrailDotRandomSpread * 0.5f)); // bias upward
+	}
+
 	AActor* Dot = World->SpawnActor<AActor>(
-		AActor::StaticClass(), GetActorLocation(), FRotator::ZeroRotator, SP);
+		AActor::StaticClass(), SpawnLoc, FRotator::ZeroRotator, SP);
 	if (!Dot) return;
 
 	Dot->SetReplicates(false);
-	Dot->SetLifeSpan(0.4f);
+	Dot->SetLifeSpan(TrailDotLifespan);
 
 	UStaticMeshComponent* Mesh = NewObject<UStaticMeshComponent>(
 		Dot, UStaticMeshComponent::StaticClass(), TEXT("TrailMesh"));
 	Mesh->SetStaticMesh(TrailSphereMesh);
-	Mesh->SetRelativeScale3D(FVector(0.12f));
+	Mesh->SetRelativeScale3D(FVector(TrailDotScale));
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Dot->SetRootComponent(Mesh);
 	Mesh->RegisterComponent();
@@ -184,4 +231,153 @@ void APHCMissileProjectile::SpawnTrailDot()
 		Mat->SetVectorParameterValue(TEXT("EmissiveColor"), TrailColor);
 		Mesh->SetMaterial(0, Mat);
 	}
+}
+
+// ---------------------------------------------------------------------------
+// RPG Explosion (GTA V style)
+// ---------------------------------------------------------------------------
+
+void APHCMissileProjectile::SpawnExplosion(const FVector& Location)
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	UStaticMesh* SphereMesh = LoadObject<UStaticMesh>(nullptr,
+		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	UStaticMesh* CylMesh = LoadObject<UStaticMesh>(nullptr,
+		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	UMaterial* ColorMat = LoadObject<UMaterial>(nullptr,
+		TEXT("/Game/Materials/M_PHCColor.M_PHCColor"));
+	UMaterial* GlassMat = LoadObject<UMaterial>(nullptr,
+		TEXT("/Game/Materials/M_PHCGlass.M_PHCGlass"));
+
+	FActorSpawnParameters SP;
+	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	auto SpawnMeshActor = [&](UStaticMesh* MeshAsset, const FVector& Loc,
+		const FVector& Scale, float Life, const FLinearColor& BaseColor,
+		const FLinearColor& Emissive, float Metallic, float Roughness,
+		bool bUseGlass = false) -> AActor*
+	{
+		if (!MeshAsset) return nullptr;
+		AActor* A = World->SpawnActor<AActor>(
+			AActor::StaticClass(), Loc, FRotator::ZeroRotator, SP);
+		if (!A) return nullptr;
+		A->SetReplicates(false);
+		A->SetLifeSpan(Life);
+
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(
+			A, UStaticMeshComponent::StaticClass(), TEXT("ExpMesh"));
+		MC->SetStaticMesh(MeshAsset);
+		MC->SetRelativeScale3D(Scale);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->CastShadow = false;
+		A->SetRootComponent(MC);
+		MC->RegisterComponent();
+
+		UMaterial* BaseMat = bUseGlass ? GlassMat : ColorMat;
+		if (BaseMat)
+		{
+			UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(
+				(UMaterialInterface*)BaseMat, A);
+			if (MID)
+			{
+				MID->SetVectorParameterValue(TEXT("BaseColor"), BaseColor);
+				MID->SetVectorParameterValue(TEXT("EmissiveColor"), Emissive);
+				MID->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+				MID->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+				if (bUseGlass)
+					MID->SetScalarParameterValue(TEXT("Opacity"), 0.6f);
+				MC->SetMaterial(0, MID);
+			}
+		}
+		return A;
+	};
+
+	// === FIREBALL — bright orange-yellow core (GTA V: 5-8m diameter) ===
+	// Inner fireball: intense bright core
+	SpawnMeshActor(SphereMesh, Location, FVector(4.5f), 0.35f,
+		FLinearColor(1.0f, 0.55f, 0.05f),     // hot orange
+		FLinearColor(20.f, 10.f, 2.f),         // intense emissive glow
+		0.f, 0.5f);
+
+	// Outer fireball: slightly larger, darker orange
+	SpawnMeshActor(SphereMesh, Location + FVector(0.f, 0.f, 30.f), FVector(6.f), 0.5f,
+		FLinearColor(0.8f, 0.3f, 0.02f),      // deep orange
+		FLinearColor(12.f, 4.f, 0.5f),         // warm glow
+		0.f, 0.6f);
+
+	// === SHOCKWAVE RING — expanding flat disc ===
+	SpawnMeshActor(CylMesh, Location + FVector(0.f, 0.f, 5.f),
+		FVector(8.f, 8.f, 0.03f), 0.3f,       // wide, paper-thin cylinder
+		FLinearColor(1.f, 0.8f, 0.4f),        // hot white-yellow
+		FLinearColor(6.f, 4.f, 1.5f),
+		0.f, 0.5f, true);                     // glass mat for translucency
+
+	// === DARK SMOKE CLOUD — GTA V lingers 3-5 seconds, rises ===
+	// Inner smoke puffs (6 around center, close range)
+	for (int32 i = 0; i < 6; ++i)
+	{
+		const float Angle = (float)i * 60.f;
+		const float Rad = FMath::DegreesToRadians(Angle);
+		const float OffR = FMath::RandRange(40.f, 120.f);
+		const FVector Offset(
+			FMath::Cos(Rad) * OffR,
+			FMath::Sin(Rad) * OffR,
+			FMath::RandRange(20.f, 80.f));    // slightly elevated
+		const float SmokeScale = FMath::RandRange(2.5f, 4.0f);
+		const float SmokeLife = FMath::RandRange(2.0f, 3.5f);
+		const float Gray = FMath::RandRange(0.04f, 0.12f);
+
+		SpawnMeshActor(SphereMesh, Location + Offset,
+			FVector(SmokeScale), SmokeLife,
+			FLinearColor(Gray, Gray, Gray),    // dark gray/black smoke
+			FLinearColor::Black,               // no glow
+			0.f, 0.95f);
+	}
+
+	// Outer rising smoke (4 higher, larger, longer lasting — GTA V convection)
+	for (int32 i = 0; i < 4; ++i)
+	{
+		const float Angle = (float)i * 90.f + 45.f;
+		const float Rad = FMath::DegreesToRadians(Angle);
+		const float OffR = FMath::RandRange(60.f, 160.f);
+		const FVector Offset(
+			FMath::Cos(Rad) * OffR,
+			FMath::Sin(Rad) * OffR,
+			FMath::RandRange(120.f, 250.f));  // higher — rising smoke
+		const float SmokeScale = FMath::RandRange(3.5f, 5.5f);
+		const float SmokeLife = FMath::RandRange(3.5f, 5.0f);
+		const float Gray = FMath::RandRange(0.06f, 0.15f);
+
+		SpawnMeshActor(SphereMesh, Location + Offset,
+			FVector(SmokeScale), SmokeLife,
+			FLinearColor(Gray, Gray, Gray),
+			FLinearColor::Black,
+			0.f, 0.95f);
+	}
+
+	// === EMBERS / DEBRIS — small bright particles scattered outward ===
+	for (int32 i = 0; i < 10; ++i)
+	{
+		const FVector Scatter(
+			FMath::RandRange(-200.f, 200.f),
+			FMath::RandRange(-200.f, 200.f),
+			FMath::RandRange(30.f, 200.f));
+		const float EmberScale = FMath::RandRange(0.06f, 0.15f);
+		const float EmberLife = FMath::RandRange(0.3f, 0.8f);
+
+		SpawnMeshActor(SphereMesh, Location + Scatter,
+			FVector(EmberScale), EmberLife,
+			FLinearColor(1.f, 0.6f, 0.1f),    // hot orange ember
+			FLinearColor(8.f, 4.f, 1.f),       // bright glow
+			0.f, 0.5f);
+	}
+
+	// === SCORCH MARK — flat dark disc on ground ===
+	SpawnMeshActor(CylMesh, FVector(Location.X, Location.Y, 2.f),
+		FVector(5.f, 5.f, 0.02f), 8.f,        // stays 8 seconds
+		FLinearColor(0.02f, 0.02f, 0.02f),    // near-black scorch
+		FLinearColor::Black,
+		0.f, 0.98f);
 }

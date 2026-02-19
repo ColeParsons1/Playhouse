@@ -40,6 +40,7 @@
 #include "Vehicle/PHCVehiclePawn.h"
 #include "Vehicle/PHCDuneBuggyPawn.h"
 #include "Vehicle/PHCRaptorPawn.h"
+#include "Vehicle/PHCTankPawn.h"
 #include "Player/PHCCityCharacter.h"
 #include "Core/PHCCityGameMode.h"
 #include "EnhancedInputSubsystems.h"
@@ -543,6 +544,19 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 			SpawnedVehicle = Raptor;
 		}
 	}
+	else if (VehicleType == 3)
+	{
+		APHCTankPawn* Tank = World->SpawnActor<APHCTankPawn>(
+			APHCTankPawn::StaticClass(), SpawnLoc, SpawnRot, SP);
+		if (Tank)
+		{
+			Tank->SetBodyColor(FLinearColor(0.22f, 0.24f, 0.14f));
+			Tank->bIsOccupied = true;
+			Tank->CurrentSpeed = 0.f;
+			Tank->SetHeadlightsEnabled(true);
+			SpawnedVehicle = Tank;
+		}
+	}
 	else if (VehicleType == 1)
 	{
 		APHCDuneBuggyPawn* Buggy = World->SpawnActor<APHCDuneBuggyPawn>(
@@ -595,6 +609,18 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 		VehicleType, *SpawnedVehicle->GetActorLocation().ToString());
 }
 
+void APHCPlayerController::EquipJetpack()
+{
+	APHCCityCharacter* Char = Cast<APHCCityCharacter>(GetPawn());
+	if (Char) Char->EquipJetpack();
+}
+
+void APHCPlayerController::UnequipJetpack()
+{
+	APHCCityCharacter* Char = Cast<APHCCityCharacter>(GetPawn());
+	if (Char) Char->UnequipJetpack();
+}
+
 void APHCPlayerController::OnVehicleExitRequested()
 {
 	if (!CurrentVehicle || !SavedCharacterPawn) return;
@@ -636,6 +662,15 @@ void APHCPlayerController::OnVehicleExitRequested()
 		R->SteeringInput = 0.f;
 		R->PitchInput = 0.f;
 		R->CurrentSpeed = 0.f;
+	}
+	else if (APHCTankPawn* T = Cast<APHCTankPawn>(CurrentVehicle))
+	{
+		ExitLoc = T->GetExitLocation();
+		T->bIsOccupied = false;
+		T->ThrottleInput = 0.f;
+		T->SteeringInput = 0.f;
+		T->CurrentSpeed = 0.f;
+		T->SetHeadlightsEnabled(false);
 	}
 
 	// Unpossess vehicle, repossess character (server authority).

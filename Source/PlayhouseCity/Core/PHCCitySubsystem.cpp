@@ -633,6 +633,290 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			}
 		}
 	}
+
+	// ---- Natural Disasters ----
+	{
+		using DT = EDisasterType;
+
+		// Random disaster trigger
+		if (ActiveDisaster == DT::None)
+		{
+			DisasterCooldown -= DeltaTime;
+			if (DisasterCooldown <= 0.f)
+			{
+				const int32 Pick = FMath::RandRange(0, 3);
+				switch (Pick)
+				{
+				case 0: ActiveDisaster = DT::Tornado;       DisasterTimer = 30.f; break;
+				case 1: ActiveDisaster = DT::Earthquake;     DisasterTimer = 20.f; break;
+				case 2: ActiveDisaster = DT::Thunderstorm;   DisasterTimer = 45.f; break;
+				case 3: ActiveDisaster = DT::MeteorShower;   DisasterTimer = 40.f; break;
+				}
+				DisasterCooldown = FMath::FRandRange(120.f, 300.f);
+			}
+		}
+
+		if (ActiveDisaster != DT::None)
+		{
+			DisasterTimer -= DeltaTime;
+
+			// ---- TORNADO ----
+			if (ActiveDisaster == DT::Tornado)
+			{
+				// Spawn tornado actor if needed
+				if (!TornadoActor || TornadoActor->IsHidden())
+				{
+					if (!TornadoActor)
+					{
+						SpawnTornado();
+					}
+					if (TornadoActor)
+					{
+						// Place near world origin at random angle
+						float RandAngle = FMath::FRandRange(0.f, 360.f);
+						TornadoPos = FVector(
+							FMath::Cos(FMath::DegreesToRadians(RandAngle)) * 8000.f,
+							FMath::Sin(FMath::DegreesToRadians(RandAngle)) * 8000.f,
+							0.f);
+						TornadoActor->SetActorLocation(TornadoPos);
+						TornadoActor->SetActorHiddenInGame(false);
+						TornadoAngle = FMath::FRandRange(0.f, 360.f);
+					}
+				}
+
+				if (TornadoActor)
+				{
+					// Spin the tornado
+					TornadoSpinTime += DeltaTime;
+					TornadoActor->SetActorRotation(FRotator(0, TornadoSpinTime * 720.f, 0));
+
+					// Wander
+					TornadoAngle += FMath::FRandRange(-30.f, 30.f) * DeltaTime;
+					FVector Dir(FMath::Cos(FMath::DegreesToRadians(TornadoAngle)),
+						FMath::Sin(FMath::DegreesToRadians(TornadoAngle)), 0.f);
+					TornadoPos += Dir * 2000.f * DeltaTime;
+					TornadoActor->SetActorLocation(TornadoPos);
+				}
+
+				// Atmospheric effects: thicken fog, speed clouds
+				if (FogComp)
+				{
+					float BaseDensity = FogComp->FogDensity;
+					FogComp->SetFogDensity(FMath::Max(BaseDensity, 0.004f));
+				}
+				if (CloudLayerActor)
+				{
+					CloudLayerActor->AddActorWorldOffset(FVector(DeltaTime * 80.f, DeltaTime * 30.f, 0.f));
+				}
+				if (CloudLayerActor2)
+				{
+					CloudLayerActor2->AddActorWorldOffset(FVector(DeltaTime * 50.f, DeltaTime * 15.f, 0.f));
+				}
+			}
+
+			// ---- EARTHQUAKE ----
+			if (ActiveDisaster == DT::Earthquake)
+			{
+				EarthquakePhase += DeltaTime * 25.f;
+
+				// Intensity ramp: up over 3s, sustain, down over last 3s
+				float Duration = 20.f;
+				float Elapsed = Duration - DisasterTimer;
+				if (Elapsed < 3.f)
+					EarthquakeIntensity = Elapsed / 3.f;
+				else if (DisasterTimer < 3.f)
+					EarthquakeIntensity = DisasterTimer / 3.f;
+				else
+					EarthquakeIntensity = 1.f;
+
+				// Shake the player pawn
+				UWorld* W = GetWorld();
+				if (W)
+				{
+					APawn* P = W->GetFirstPlayerController() ? W->GetFirstPlayerController()->GetPawn() : nullptr;
+					if (P)
+					{
+						FVector ShakeOffset(
+							FMath::Sin(EarthquakePhase * 1.1f) * 15.f * EarthquakeIntensity,
+							FMath::Sin(EarthquakePhase * 0.9f) * 10.f * EarthquakeIntensity,
+							FMath::Sin(EarthquakePhase * 1.7f) * 5.f * EarthquakeIntensity);
+						P->AddActorWorldOffset(ShakeOffset);
+					}
+				}
+
+				// Dusty fog
+				if (FogComp)
+				{
+					FogComp->SetFogDensity(FMath::Max(FogComp->FogDensity, 0.002f * EarthquakeIntensity));
+					FogComp->SetFogInscatteringColor(FLinearColor(0.4f, 0.3f, 0.15f));
+				}
+				if (PostProcessVolume)
+				{
+					PostProcessVolume->Settings.SceneFringeIntensity = 0.4f + 1.6f * EarthquakeIntensity;
+				}
+			}
+
+			// ---- THUNDERSTORM ----
+			if (ActiveDisaster == DT::Thunderstorm)
+			{
+				// Darken sky
+				if (SkyLightComp)
+				{
+					SkyLightComp->SetIntensity(FMath::Min(SkyLightComp->Intensity, 0.4f));
+				}
+				if (FogComp)
+				{
+					FogComp->SetFogDensity(FMath::Max(FogComp->FogDensity, 0.005f));
+					FogComp->SetFogInscatteringColor(FLinearColor(0.15f, 0.15f, 0.25f));
+				}
+
+				// Lightning flash
+				ThunderTimer -= DeltaTime;
+				if (ThunderTimer <= 0.f)
+				{
+					LightningFlashAlpha = 1.f;
+					ThunderTimer = FMath::FRandRange(3.f, 8.f);
+				}
+
+				if (LightningFlashAlpha > 0.f)
+				{
+					LightningFlashAlpha -= DeltaTime * 8.f; // rapid decay
+					if (LightningFlashAlpha < 0.f) LightningFlashAlpha = 0.f;
+
+					if (SunLightComp)
+					{
+						SunLightComp->SetIntensity(SunLightComp->Intensity + 20.f * LightningFlashAlpha);
+					}
+					if (PostProcessVolume)
+					{
+						float F = LightningFlashAlpha;
+						PostProcessVolume->Settings.ColorGain = FVector4(
+							1.f + 2.f * F, 1.f + 2.f * F, 1.f + 2.f * F, 1.f);
+					}
+				}
+
+				// Speed up clouds
+				if (CloudLayerActor)
+				{
+					CloudLayerActor->AddActorWorldOffset(FVector(DeltaTime * 40.f, DeltaTime * 15.f, 0.f));
+				}
+				if (CloudLayerActor2)
+				{
+					CloudLayerActor2->AddActorWorldOffset(FVector(DeltaTime * 25.f, DeltaTime * 10.f, 0.f));
+				}
+			}
+
+			// ---- METEOR SHOWER ----
+			if (ActiveDisaster == DT::MeteorShower)
+			{
+				MeteorSpawnTimer -= DeltaTime;
+				UWorld* W = GetWorld();
+
+				if (MeteorSpawnTimer <= 0.f && ActiveMeteors.Num() < 8 && W && SphereMesh && ColorMaterial)
+				{
+					MeteorSpawnTimer = FMath::FRandRange(0.5f, 1.2f);
+
+					FVector StartPos(
+						FMath::FRandRange(-25000.f, 25000.f),
+						FMath::FRandRange(-25000.f, 25000.f),
+						FMath::FRandRange(12000.f, 15000.f));
+
+					AActor* Meteor = W->SpawnActor<AActor>(AActor::StaticClass(), StartPos, FRotator::ZeroRotator);
+					if (Meteor)
+					{
+						USceneComponent* MRoot = NewObject<USceneComponent>(Meteor, TEXT("MRoot"));
+						MRoot->RegisterComponent();
+						Meteor->SetRootComponent(MRoot);
+						Meteor->AddInstanceComponent(MRoot);
+
+						auto* MC = NewObject<UStaticMeshComponent>(Meteor, TEXT("MeteorMesh"));
+						MC->SetStaticMesh(SphereMesh);
+						MC->SetRelativeScale3D(FVector(FMath::FRandRange(2.f, 5.f)));
+						MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+						MC->SetCastShadow(false);
+						auto* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, MC);
+						Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.3f, 0.08f, 0.02f));
+						Mat->SetScalarParameterValue(TEXT("Metallic"), 0.6f);
+						Mat->SetScalarParameterValue(TEXT("Roughness"), 0.4f);
+						Mat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(5.f, 2.f, 0.3f));
+						MC->SetMaterial(0, Mat);
+						MC->AttachToComponent(MRoot, FAttachmentTransformRules::KeepRelativeTransform);
+						MC->RegisterComponent();
+						Meteor->AddInstanceComponent(MC);
+
+						auto* PL = NewObject<UPointLightComponent>(Meteor, TEXT("MeteorLight"));
+						PL->SetIntensity(6000.f);
+						PL->SetAttenuationRadius(3000.f);
+						PL->SetLightColor(FColor(255, 150, 30));
+						PL->SetCastShadows(false);
+						PL->AttachToComponent(MRoot, FAttachmentTransformRules::KeepRelativeTransform);
+						PL->RegisterComponent();
+						Meteor->AddInstanceComponent(PL);
+
+						ActiveMeteors.Add(Meteor);
+
+						float Angle = FMath::FRandRange(-70.f, -45.f);
+						float HDir = FMath::FRandRange(0.f, 360.f);
+						float Speed = FMath::FRandRange(8000.f, 15000.f);
+						FVector Vel(
+							FMath::Cos(FMath::DegreesToRadians(HDir)) * FMath::Cos(FMath::DegreesToRadians(Angle)) * Speed,
+							FMath::Sin(FMath::DegreesToRadians(HDir)) * FMath::Cos(FMath::DegreesToRadians(Angle)) * Speed,
+							FMath::Sin(FMath::DegreesToRadians(Angle)) * Speed);
+						MeteorVelocities.Add(Vel);
+					}
+				}
+
+				// Move and cull meteors
+				for (int32 i = ActiveMeteors.Num() - 1; i >= 0; --i)
+				{
+					if (ActiveMeteors[i])
+					{
+						ActiveMeteors[i]->AddActorWorldOffset(MeteorVelocities[i] * DeltaTime);
+						if (ActiveMeteors[i]->GetActorLocation().Z < 50.f)
+						{
+							ActiveMeteors[i]->Destroy();
+							ActiveMeteors.RemoveAt(i);
+							MeteorVelocities.RemoveAt(i);
+						}
+					}
+					else
+					{
+						ActiveMeteors.RemoveAt(i);
+						MeteorVelocities.RemoveAt(i);
+					}
+				}
+			}
+
+			// ---- Disaster expiration ----
+			if (DisasterTimer <= 0.f)
+			{
+				// Cleanup
+				if (ActiveDisaster == DT::Tornado && TornadoActor)
+				{
+					TornadoActor->SetActorHiddenInGame(true);
+				}
+				if (ActiveDisaster == DT::Earthquake && PostProcessVolume)
+				{
+					PostProcessVolume->Settings.SceneFringeIntensity = 0.4f;
+					EarthquakeIntensity = 0.f;
+				}
+				if (ActiveDisaster == DT::Thunderstorm)
+				{
+					LightningFlashAlpha = 0.f;
+					ThunderTimer = 0.f;
+				}
+				if (ActiveDisaster == DT::MeteorShower)
+				{
+					for (auto& M : ActiveMeteors) { if (M) M->Destroy(); }
+					ActiveMeteors.Empty();
+					MeteorVelocities.Empty();
+					MeteorSpawnTimer = 0.f;
+				}
+				ActiveDisaster = DT::None;
+				DisasterTimer = 0.f;
+			}
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -4671,13 +4955,14 @@ void UPHCCitySubsystem::SpawnGiantCrab()
 	if (!W || !SphereMesh || !CylinderMesh || !CubeMesh || !ConeMesh || !ColorMaterial) return;
 
 	GiantCrabActor = W->SpawnActor<AActor>(AActor::StaticClass(),
-		FVector(0.f, 0.f, 1200.f), FRotator::ZeroRotator);
+		FVector(0.f, 0.f, 600.f), FRotator::ZeroRotator);
 	if (!GiantCrabActor) return;
 
-	CrabRoamTarget = FVector(0.f, 0.f, 1200.f);
+	CrabRoamTarget = FVector(0.f, 0.f, 600.f);
 
 	// --- Root ---
 	USceneComponent* Root = NewObject<USceneComponent>(GiantCrabActor, TEXT("CrabRoot"));
+	Root->SetRelativeScale3D(FVector(0.5f));
 	Root->RegisterComponent();
 	GiantCrabActor->SetRootComponent(Root);
 	GiantCrabActor->AddInstanceComponent(Root);
@@ -4911,6 +5196,153 @@ void UPHCCitySubsystem::SpawnGiantCrab()
 	GiantCrabActor->SetActorHiddenInGame(true);
 }
 
+// ---------------------------------------------------------------------------
+// Tornado funnel — 8 stacked spinning translucent cylinders
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::SpawnTornado()
+{
+	UWorld* W = GetWorld();
+	if (!W || !CylinderMesh || !SphereMesh || !GlassMaterial || !ColorMaterial) return;
+
+	TornadoActor = W->SpawnActor<AActor>(AActor::StaticClass(),
+		FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TornadoActor) return;
+
+	USceneComponent* Root = NewObject<USceneComponent>(TornadoActor, TEXT("TornadoRoot"));
+	Root->RegisterComponent();
+	TornadoActor->SetRootComponent(Root);
+	TornadoActor->AddInstanceComponent(Root);
+
+	// ========== DARK STORM CLOUD MASS at top ==========
+	// Multiple overlapping dark spheres to form a menacing cloud base
+	const float CloudZ = 10000.f;
+	const FLinearColor StormDark(0.06f, 0.06f, 0.08f);
+
+	struct FCloudBlob { float X, Y, Z, SX, SY, SZ; float Opacity; };
+	const FCloudBlob Blobs[] = {
+		{     0,     0, CloudZ,         60, 50, 12, 0.70f },  // main mass
+		{  1500,   800, CloudZ + 200,   45, 35, 10, 0.60f },  // right lobe
+		{ -1200,  -600, CloudZ - 100,   40, 40,  8, 0.55f },  // left lobe
+		{   500, -1000, CloudZ + 400,   35, 30,  9, 0.50f },  // rear
+		{  -800,  1200, CloudZ + 100,   30, 25,  7, 0.45f },  // front
+		{     0,     0, CloudZ - 400,   50, 45, 6,  0.65f },  // underbelly (darker)
+	};
+
+	for (int32 i = 0; i < UE_ARRAY_COUNT(Blobs); i++)
+	{
+		const auto& B = Blobs[i];
+		auto* SC = NewObject<UStaticMeshComponent>(TornadoActor,
+			FName(*FString::Printf(TEXT("StormCloud%d"), i)));
+		SC->SetStaticMesh(SphereMesh);
+		SC->SetRelativeLocation(FVector(B.X, B.Y, B.Z));
+		SC->SetRelativeScale3D(FVector(B.SX, B.SY, B.SZ));
+		SC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		SC->SetCastShadow(false);
+
+		auto* Mat = UMaterialInstanceDynamic::Create(GlassMaterial, SC);
+		Mat->SetVectorParameterValue(TEXT("BaseColor"), StormDark);
+		Mat->SetScalarParameterValue(TEXT("Opacity"), B.Opacity);
+		Mat->SetScalarParameterValue(TEXT("Roughness"), 1.0f);
+		SC->SetMaterial(0, Mat);
+
+		SC->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+		SC->RegisterComponent();
+		TornadoActor->AddInstanceComponent(SC);
+	}
+
+	// ========== FUNNEL — descends from cloud to near ground ==========
+	// 12 stacked cylinders: wide at cloud base, narrow at ground
+	const int32 NumSegments = 12;
+	const float FunnelTop = CloudZ - 600.f;    // just below cloud
+	const float FunnelBottom = 200.f;           // near ground
+	const float TotalHeight = FunnelTop - FunnelBottom;
+	const float SegHeight = TotalHeight / NumSegments;
+	const float TopRadius = 18.f;    // wide where it meets the cloud
+	const float BottomRadius = 3.f;  // narrow tip near ground
+
+	for (int32 i = 0; i < NumSegments; i++)
+	{
+		float Alpha = (float)i / (float)(NumSegments - 1);   // 0=top, 1=bottom
+		float Radius = FMath::Lerp(TopRadius, BottomRadius, Alpha);
+		float Z = FunnelTop - i * SegHeight;
+
+		// Slight opacity variation — thicker in middle
+		float MidFactor = 1.f - FMath::Abs(Alpha - 0.5f) * 2.f;
+		float Opacity = 0.35f + MidFactor * 0.25f;
+
+		auto* Cyl = NewObject<UStaticMeshComponent>(TornadoActor,
+			FName(*FString::Printf(TEXT("FunnelSeg%d"), i)));
+		Cyl->SetStaticMesh(CylinderMesh);
+		Cyl->SetRelativeLocation(FVector(0, 0, Z));
+		Cyl->SetRelativeScale3D(FVector(Radius, Radius, SegHeight / 100.f));
+		Cyl->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Cyl->SetCastShadow(false);
+
+		auto* Mat = UMaterialInstanceDynamic::Create(GlassMaterial, Cyl);
+		// Darker at top, slightly lighter gray-brown at bottom
+		FLinearColor FunnelColor = FMath::Lerp(
+			FLinearColor(0.08f, 0.08f, 0.10f),   // top (near-black)
+			FLinearColor(0.20f, 0.18f, 0.14f),    // bottom (dusty)
+			Alpha);
+		Mat->SetVectorParameterValue(TEXT("BaseColor"), FunnelColor);
+		Mat->SetScalarParameterValue(TEXT("Opacity"), Opacity);
+		Mat->SetScalarParameterValue(TEXT("Roughness"), 0.95f);
+		Cyl->SetMaterial(0, Mat);
+
+		Cyl->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+		Cyl->RegisterComponent();
+		TornadoActor->AddInstanceComponent(Cyl);
+	}
+
+	// ========== DEBRIS CLOUD at base ==========
+	// A few dusty spheres swirling near ground level
+	for (int32 i = 0; i < 5; i++)
+	{
+		float Angle = i * 72.f;
+		float Dist = 400.f + i * 100.f;
+		auto* DS = NewObject<UStaticMeshComponent>(TornadoActor,
+			FName(*FString::Printf(TEXT("Debris%d"), i)));
+		DS->SetStaticMesh(SphereMesh);
+		DS->SetRelativeLocation(FVector(
+			FMath::Cos(FMath::DegreesToRadians(Angle)) * Dist,
+			FMath::Sin(FMath::DegreesToRadians(Angle)) * Dist,
+			150.f + i * 80.f));
+		DS->SetRelativeScale3D(FVector(5.f + i, 4.f + i, 2.f + i * 0.5f));
+		DS->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		DS->SetCastShadow(false);
+
+		auto* Mat = UMaterialInstanceDynamic::Create(GlassMaterial, DS);
+		Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.25f, 0.20f, 0.12f));
+		Mat->SetScalarParameterValue(TEXT("Opacity"), 0.3f);
+		Mat->SetScalarParameterValue(TEXT("Roughness"), 1.0f);
+		DS->SetMaterial(0, Mat);
+
+		DS->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+		DS->RegisterComponent();
+		TornadoActor->AddInstanceComponent(DS);
+	}
+
+	// ========== LIGHTING ==========
+	// Eerie greenish glow under the cloud
+	auto AddLight = [&](const FVector& Loc, float Inten, float Rad, const FColor& Col, const FName& Name)
+	{
+		auto* PL = NewObject<UPointLightComponent>(TornadoActor, Name);
+		PL->SetRelativeLocation(Loc);
+		PL->SetIntensity(Inten);
+		PL->SetAttenuationRadius(Rad);
+		PL->SetLightColor(Col);
+		PL->SetCastShadows(false);
+		PL->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+		PL->RegisterComponent();
+		TornadoActor->AddInstanceComponent(PL);
+	};
+
+	AddLight(FVector(0, 0, CloudZ - 800), 12000.f, 15000.f, FColor(120, 150, 100), TEXT("CloudGlow"));
+	AddLight(FVector(0, 0, 500),           8000.f, 8000.f,  FColor(200, 180, 140), TEXT("BaseGlow"));
+
+	TornadoActor->SetActorHiddenInGame(true);
+}
 
 // ---------------------------------------------------------------------------
 // Starfield -- Milky Way night sky with scattered stars

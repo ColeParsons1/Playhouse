@@ -24,6 +24,7 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
+	virtual void LifeSpanExpired() override;
 
 	/** Enable a glowing trail of dots behind this projectile. */
 	void StartTrail(const FLinearColor& Color);
@@ -58,6 +59,15 @@ public:
 	FVector ManualVelocity = FVector::ZeroVector;
 	float ManualGravityScale = 1.f;
 
+	// -- RPG rocket mode (GTA V style) ----
+	bool bIsRPGRocket = false;
+
+	// -- Trail configuration (overridable per projectile) --
+	float TrailDotScale = 0.12f;
+	float TrailDotLifespan = 0.4f;
+	float TrailDotInterval = 0.03f;
+	float TrailDotRandomSpread = 0.f;
+
 private:
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
@@ -70,10 +80,12 @@ private:
 	bool bHasTrail = false;
 	FLinearColor TrailColor;
 	float TrailTimer = 0.f;
-	static constexpr float TrailInterval = 0.03f;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMesh> TrailSphereMesh;
 
 	void SpawnTrailDot();
+
+	/** Spawn GTA V-style explosion at given location. */
+	void SpawnExplosion(const FVector& Location);
 };

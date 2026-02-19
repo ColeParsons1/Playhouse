@@ -15,6 +15,7 @@ class UPHCMainHUD;
 class APHCVehiclePawn;
 class APHCDuneBuggyPawn;
 class APHCRaptorPawn;
+class APHCTankPawn;
 
 /**
  * Lightweight HUD overlay for the PlayhouseCity 3D open world.
@@ -167,6 +168,32 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UTextBlock> NightButtonLabel;
 
+	// -- Disaster selection popup ----------------------------------------------
+
+	UPROPERTY()
+	TObjectPtr<UButton> DisastersButton;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> DisastersButtonLabel;
+
+	UPROPERTY()
+	TObjectPtr<UBorder> DisasterSelectOverlay;
+
+	UPROPERTY()
+	TObjectPtr<UButton> SelectTornadoBtn;
+
+	UPROPERTY()
+	TObjectPtr<UButton> SelectEarthquakeBtn;
+
+	UPROPERTY()
+	TObjectPtr<UButton> SelectThunderstormBtn;
+
+	UPROPERTY()
+	TObjectPtr<UButton> SelectMeteorBtn;
+
+	UPROPERTY()
+	TObjectPtr<UButton> StopDisasterBtn;
+
 	// -- Vehicle selection popup -----------------------------------------------
 
 	UPROPERTY()
@@ -180,6 +207,12 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UButton> SelectRaptorBtn;
+
+	UPROPERTY()
+	TObjectPtr<UButton> SelectJetpackBtn;
+
+	UPROPERTY()
+	TObjectPtr<UButton> SelectTankBtn;
 
 	// -- Multiplayer UI -------------------------------------------------------
 
@@ -256,6 +289,12 @@ private:
 	void OnSelectRaptor();
 
 	UFUNCTION()
+	void OnSelectJetpack();
+
+	UFUNCTION()
+	void OnSelectTank();
+
+	UFUNCTION()
 	void OnDropBombClicked();
 
 	UFUNCTION()
@@ -297,12 +336,34 @@ private:
 	UFUNCTION()
 	void OnNightButtonClicked();
 
+	UFUNCTION()
+	void OnDisastersButtonClicked();
+
+	UFUNCTION()
+	void OnSelectTornado();
+
+	UFUNCTION()
+	void OnSelectEarthquake();
+
+	UFUNCTION()
+	void OnSelectThunderstorm();
+
+	UFUNCTION()
+	void OnSelectMeteor();
+
+	UFUNCTION()
+	void OnStopDisaster();
+
 	void ShowWeaponSelection();
 	void HideWeaponSelection();
+
+	void ShowDisasterSelection();
+	void HideDisasterSelection();
 
 	bool bMenuOpen = false;
 	bool bVehicleSelectOpen = false;
 	bool bWeaponSelectOpen = false;
+	bool bDisasterSelectOpen = false;
 	bool bWeaponFireHeld = false;
 	int32 EquippedWeaponType = 3;
 };

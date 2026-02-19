@@ -9,6 +9,7 @@
 #include "Vehicle/PHCVehiclePawn.h"
 #include "Vehicle/PHCDuneBuggyPawn.h"
 #include "Vehicle/PHCRaptorPawn.h"
+#include "Vehicle/PHCTankPawn.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "PlayhouseCity.h"
@@ -319,6 +320,31 @@ bool UPHCCityHUD::Initialize()
 		NightBtnSlot->SetOffsets(FMargin(170.f, 120.f, 100.f, 40.f));
 
 		// ============================================================
+		//  Disasters button (below Night)
+		// ============================================================
+		DisastersButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("DisastersButton"));
+
+		FButtonStyle DisBtnStyle = DisastersButton->GetStyle();
+		DisBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.5f, 0.15f, 0.05f, 0.85f));
+		DisBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.6f, 0.20f, 0.08f, 0.95f));
+		DisBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.35f, 0.10f, 0.03f, 1.0f));
+		DisastersButton->SetStyle(DisBtnStyle);
+
+		DisastersButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("DisastersButtonLabel"));
+		DisastersButtonLabel->SetText(FText::FromString(TEXT("Disasters")));
+		DisastersButtonLabel->SetFont(BtnFont);
+		DisastersButtonLabel->SetColorAndOpacity(FSlateColor(White));
+		DisastersButtonLabel->SetJustification(ETextJustify::Center);
+		DisastersButton->AddChild(DisastersButtonLabel);
+
+		UCanvasPanelSlot* DisBtnSlot = RootCanvas->AddChildToCanvas(DisastersButton);
+		DisBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+		DisBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
+		DisBtnSlot->SetOffsets(FMargin(170.f, 176.f, 100.f, 40.f));
+
+		// ============================================================
 		//  MOBILE-ONLY: On-foot action buttons (bottom-right)
 		// ============================================================
 #if PLATFORM_IOS || PLATFORM_ANDROID
@@ -603,6 +629,57 @@ bool UPHCCityHUD::Initialize()
 		RpSlot->SetVerticalAlignment(VAlign_Center);
 		RpSlot->SetHorizontalAlignment(HAlign_Center);
 
+		USpacer* VehSpacer3 = WidgetTree->ConstructWidget<USpacer>(
+			USpacer::StaticClass(), TEXT("VehBtnSpacer3"));
+		VehSpacer3->SetSize(FVector2D(20.f, 0.f));
+		SelectHBox->AddChildToHorizontalBox(VehSpacer3);
+
+		// -- Jetpack button (sky blue) --
+		SelectJetpackBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectJetpackBtn"));
+		{
+			FButtonStyle Style = SelectJetpackBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.10f, 0.30f, 0.55f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.15f, 0.40f, 0.70f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.07f, 0.20f, 0.40f, 1.0f));
+			SelectJetpackBtn->SetStyle(Style);
+		}
+		UTextBlock* JetpackLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("JetpackSelectLabel"));
+		JetpackLabel->SetText(FText::FromString(TEXT("AirBoots")));
+		JetpackLabel->SetFont(BtnFont);
+		JetpackLabel->SetColorAndOpacity(FSlateColor(White));
+		JetpackLabel->SetJustification(ETextJustify::Center);
+		SelectJetpackBtn->AddChild(JetpackLabel);
+
+		UHorizontalBoxSlot* JpSlot = SelectHBox->AddChildToHorizontalBox(SelectJetpackBtn);
+		JpSlot->SetPadding(FMargin(8.f));
+		JpSlot->SetVerticalAlignment(VAlign_Center);
+		JpSlot->SetHorizontalAlignment(HAlign_Center);
+
+		// -- M60 Tank button (olive green) --
+		SelectTankBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectTankBtn"));
+		{
+			FButtonStyle Style = SelectTankBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.22f, 0.28f, 0.14f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.30f, 0.38f, 0.20f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.15f, 0.20f, 0.10f, 1.0f));
+			SelectTankBtn->SetStyle(Style);
+		}
+		UTextBlock* TankLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("TankSelectLabel"));
+		TankLabel->SetText(FText::FromString(TEXT("M60 Tank")));
+		TankLabel->SetFont(BtnFont);
+		TankLabel->SetColorAndOpacity(FSlateColor(White));
+		TankLabel->SetJustification(ETextJustify::Center);
+		SelectTankBtn->AddChild(TankLabel);
+
+		UHorizontalBoxSlot* TankSlot = SelectHBox->AddChildToHorizontalBox(SelectTankBtn);
+		TankSlot->SetPadding(FMargin(8.f));
+		TankSlot->SetVerticalAlignment(VAlign_Center);
+		TankSlot->SetHorizontalAlignment(HAlign_Center);
+
 		VehicleSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
@@ -737,6 +814,165 @@ bool UPHCCityHUD::Initialize()
 		ScytheSlot->SetHorizontalAlignment(HAlign_Center);
 
 		WeaponSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
+
+		// ============================================================
+		//  Disaster selection overlay
+		// ============================================================
+		DisasterSelectOverlay = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("DisasterSelectOverlay"));
+		DisasterSelectOverlay->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.6f));
+		DisasterSelectOverlay->SetPadding(FMargin(0.f));
+
+		UCanvasPanelSlot* DisOverlaySlot = RootCanvas->AddChildToCanvas(DisasterSelectOverlay);
+		DisOverlaySlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+		DisOverlaySlot->SetOffsets(FMargin(0.f));
+
+		UBorder* DisSelectPanel = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("DisasterSelectPanel"));
+		DisSelectPanel->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.08f, 0.95f));
+		DisSelectPanel->SetPadding(FMargin(24.f, 16.f, 24.f, 16.f));
+		DisSelectPanel->SetHorizontalAlignment(HAlign_Center);
+		DisSelectPanel->SetVerticalAlignment(VAlign_Center);
+		DisasterSelectOverlay->SetContent(DisSelectPanel);
+
+		UHorizontalBox* DisHBox = WidgetTree->ConstructWidget<UHorizontalBox>(
+			UHorizontalBox::StaticClass(), TEXT("DisasterSelectHBox"));
+		DisSelectPanel->SetContent(DisHBox);
+
+		// -- Tornado button (gray) --
+		SelectTornadoBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectTornadoBtn"));
+		{
+			FButtonStyle Style = SelectTornadoBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.40f, 0.40f, 0.38f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.50f, 0.50f, 0.48f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.30f, 0.30f, 0.28f, 1.0f));
+			SelectTornadoBtn->SetStyle(Style);
+		}
+		{
+			UTextBlock* L = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TornadoLabel"));
+			L->SetText(FText::FromString(TEXT("Tornado")));
+			L->SetFont(BtnFont);
+			L->SetColorAndOpacity(FSlateColor(White));
+			L->SetJustification(ETextJustify::Center);
+			SelectTornadoBtn->AddChild(L);
+		}
+		{
+			UHorizontalBoxSlot* S = DisHBox->AddChildToHorizontalBox(SelectTornadoBtn);
+			S->SetPadding(FMargin(8.f));
+			S->SetVerticalAlignment(VAlign_Center);
+			S->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		{ USpacer* Sp = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("DisSp1")); Sp->SetSize(FVector2D(16.f, 0.f)); DisHBox->AddChildToHorizontalBox(Sp); }
+
+		// -- Earthquake button (brown) --
+		SelectEarthquakeBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectEarthquakeBtn"));
+		{
+			FButtonStyle Style = SelectEarthquakeBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.45f, 0.30f, 0.15f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.55f, 0.38f, 0.20f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.35f, 0.22f, 0.10f, 1.0f));
+			SelectEarthquakeBtn->SetStyle(Style);
+		}
+		{
+			UTextBlock* L = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuakeLabel"));
+			L->SetText(FText::FromString(TEXT("Quake")));
+			L->SetFont(BtnFont);
+			L->SetColorAndOpacity(FSlateColor(White));
+			L->SetJustification(ETextJustify::Center);
+			SelectEarthquakeBtn->AddChild(L);
+		}
+		{
+			UHorizontalBoxSlot* S = DisHBox->AddChildToHorizontalBox(SelectEarthquakeBtn);
+			S->SetPadding(FMargin(8.f));
+			S->SetVerticalAlignment(VAlign_Center);
+			S->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		{ USpacer* Sp = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("DisSp2")); Sp->SetSize(FVector2D(16.f, 0.f)); DisHBox->AddChildToHorizontalBox(Sp); }
+
+		// -- Thunderstorm button (purple) --
+		SelectThunderstormBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectThunderstormBtn"));
+		{
+			FButtonStyle Style = SelectThunderstormBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.20f, 0.10f, 0.35f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.30f, 0.15f, 0.50f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.15f, 0.07f, 0.25f, 1.0f));
+			SelectThunderstormBtn->SetStyle(Style);
+		}
+		{
+			UTextBlock* L = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ThunderLabel"));
+			L->SetText(FText::FromString(TEXT("Thunder")));
+			L->SetFont(BtnFont);
+			L->SetColorAndOpacity(FSlateColor(White));
+			L->SetJustification(ETextJustify::Center);
+			SelectThunderstormBtn->AddChild(L);
+		}
+		{
+			UHorizontalBoxSlot* S = DisHBox->AddChildToHorizontalBox(SelectThunderstormBtn);
+			S->SetPadding(FMargin(8.f));
+			S->SetVerticalAlignment(VAlign_Center);
+			S->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		{ USpacer* Sp = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("DisSp3")); Sp->SetSize(FVector2D(16.f, 0.f)); DisHBox->AddChildToHorizontalBox(Sp); }
+
+		// -- Meteor button (orange-red) --
+		SelectMeteorBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectMeteorBtn"));
+		{
+			FButtonStyle Style = SelectMeteorBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.55f, 0.20f, 0.05f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.70f, 0.28f, 0.08f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.40f, 0.14f, 0.03f, 1.0f));
+			SelectMeteorBtn->SetStyle(Style);
+		}
+		{
+			UTextBlock* L = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MeteorLabel"));
+			L->SetText(FText::FromString(TEXT("Meteor")));
+			L->SetFont(BtnFont);
+			L->SetColorAndOpacity(FSlateColor(White));
+			L->SetJustification(ETextJustify::Center);
+			SelectMeteorBtn->AddChild(L);
+		}
+		{
+			UHorizontalBoxSlot* S = DisHBox->AddChildToHorizontalBox(SelectMeteorBtn);
+			S->SetPadding(FMargin(8.f));
+			S->SetVerticalAlignment(VAlign_Center);
+			S->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		{ USpacer* Sp = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("DisSp4")); Sp->SetSize(FVector2D(16.f, 0.f)); DisHBox->AddChildToHorizontalBox(Sp); }
+
+		// -- Stop button (dark gray) --
+		StopDisasterBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("StopDisasterBtn"));
+		{
+			FButtonStyle Style = StopDisasterBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.25f, 0.25f, 0.25f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.15f, 0.15f, 0.15f, 1.0f));
+			StopDisasterBtn->SetStyle(Style);
+		}
+		{
+			UTextBlock* L = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StopDisLabel"));
+			L->SetText(FText::FromString(TEXT("Stop")));
+			L->SetFont(BtnFont);
+			L->SetColorAndOpacity(FSlateColor(White));
+			L->SetJustification(ETextJustify::Center);
+			StopDisasterBtn->AddChild(L);
+		}
+		{
+			UHorizontalBoxSlot* S = DisHBox->AddChildToHorizontalBox(StopDisasterBtn);
+			S->SetPadding(FMargin(8.f));
+			S->SetVerticalAlignment(VAlign_Center);
+			S->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		DisasterSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
 		//  Weapon fire panel (large, barely visible — like steering panel)
@@ -954,6 +1190,14 @@ void UPHCCityHUD::NativeConstruct()
 	{
 		SelectRaptorBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectRaptor);
 	}
+	if (SelectJetpackBtn)
+	{
+		SelectJetpackBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectJetpack);
+	}
+	if (SelectTankBtn)
+	{
+		SelectTankBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectTank);
+	}
 	if (FireButton)
 	{
 		FireButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnFireButtonPressed);
@@ -970,6 +1214,30 @@ void UPHCCityHUD::NativeConstruct()
 	if (NightButton)
 	{
 		NightButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnNightButtonClicked);
+	}
+	if (DisastersButton)
+	{
+		DisastersButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDisastersButtonClicked);
+	}
+	if (SelectTornadoBtn)
+	{
+		SelectTornadoBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectTornado);
+	}
+	if (SelectEarthquakeBtn)
+	{
+		SelectEarthquakeBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectEarthquake);
+	}
+	if (SelectThunderstormBtn)
+	{
+		SelectThunderstormBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectThunderstorm);
+	}
+	if (SelectMeteorBtn)
+	{
+		SelectMeteorBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectMeteor);
+	}
+	if (StopDisasterBtn)
+	{
+		StopDisasterBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnStopDisaster);
 	}
 	if (SelectGunBtn)
 	{
@@ -1206,11 +1474,20 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 				R->PitchInput = NewPitch;
 				if (!R->HasAuthority()) { R->ServerSetSteering(NewSteering); R->ServerSetThrottle(NewThrottle); R->ServerSetPitch(NewPitch); }
 			}
+			else if (APHCTankPawn* T = Cast<APHCTankPawn>(DrivenVehicle))
+			{
+				T->SteeringInput = NewSteering;
+				T->ThrottleInput = NewThrottle;
+				// Use pitch axis (left panel vertical) for turret rotation
+				T->TurretYawInput = NewPitch;
+				if (!T->HasAuthority()) { T->ServerSetSteering(NewSteering); T->ServerSetThrottle(NewThrottle); T->ServerSetTurretYaw(NewPitch); }
+			}
 
 			if (bFireTouched)
 			{
 				if (APHCDuneBuggyPawn* Buggy = Cast<APHCDuneBuggyPawn>(DrivenVehicle)) { Buggy->FireMissile(); }
 				else if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle)) { Raptor->FireRocket(); }
+				else if (APHCTankPawn* Tank = Cast<APHCTankPawn>(DrivenVehicle)) { Tank->FireCannon(); }
 			}
 		}
 		else
@@ -1327,6 +1604,10 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		{
 			Raptor->FireRocket();
 		}
+		else if (APHCTankPawn* Tank = Cast<APHCTankPawn>(DrivenVehicle))
+		{
+			Tank->FireCannon();
+		}
 	}
 }
 
@@ -1346,7 +1627,7 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 	if (FireButton)
 	{
 		const bool bShowFire = bDriving &&
-			(Cast<APHCDuneBuggyPawn>(Vehicle) != nullptr || Cast<APHCRaptorPawn>(Vehicle) != nullptr);
+			(Cast<APHCDuneBuggyPawn>(Vehicle) != nullptr || Cast<APHCRaptorPawn>(Vehicle) != nullptr || Cast<APHCTankPawn>(Vehicle) != nullptr);
 		FireButton->SetVisibility(bShowFire ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 
@@ -1580,6 +1861,30 @@ void UPHCCityHUD::OnSelectRaptor()
 	}
 }
 
+void UPHCCityHUD::OnSelectJetpack()
+{
+	HideVehicleSelection();
+	APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer());
+	if (!PC) return;
+	APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn());
+	if (!Char) return;
+
+	if (Char->bJetpackEquipped)
+		PC->UnequipJetpack();
+	else
+		PC->EquipJetpack();
+}
+
+void UPHCCityHUD::OnSelectTank()
+{
+	HideVehicleSelection();
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		PC->SpawnAndEnterVehicle(3);
+		SetDrivingMode(true, PC->GetPawn());
+	}
+}
+
 void UPHCCityHUD::OnDropBombClicked()
 {
 	if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle))
@@ -1698,6 +2003,97 @@ void UPHCCityHUD::OnNightButtonClicked()
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Disaster selection
+// ---------------------------------------------------------------------------
+
+void UPHCCityHUD::OnDisastersButtonClicked()
+{
+	if (bDisasterSelectOpen)
+	{
+		HideDisasterSelection();
+	}
+	else
+	{
+		ShowDisasterSelection();
+	}
+}
+
+void UPHCCityHUD::ShowDisasterSelection()
+{
+	if (DisasterSelectOverlay)
+	{
+		DisasterSelectOverlay->SetVisibility(ESlateVisibility::Visible);
+		bDisasterSelectOpen = true;
+	}
+}
+
+void UPHCCityHUD::HideDisasterSelection()
+{
+	if (DisasterSelectOverlay)
+	{
+		DisasterSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
+		bDisasterSelectOpen = false;
+	}
+}
+
+void UPHCCityHUD::OnSelectTornado()
+{
+	HideDisasterSelection();
+	UWorld* World = GetWorld();
+	if (!World) return;
+	UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+	if (!CitySub) return;
+	CitySub->ActiveDisaster = UPHCCitySubsystem::EDisasterType::Tornado;
+	CitySub->DisasterTimer = 30.f;
+}
+
+void UPHCCityHUD::OnSelectEarthquake()
+{
+	HideDisasterSelection();
+	UWorld* World = GetWorld();
+	if (!World) return;
+	UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+	if (!CitySub) return;
+	CitySub->ActiveDisaster = UPHCCitySubsystem::EDisasterType::Earthquake;
+	CitySub->DisasterTimer = 20.f;
+}
+
+void UPHCCityHUD::OnSelectThunderstorm()
+{
+	HideDisasterSelection();
+	UWorld* World = GetWorld();
+	if (!World) return;
+	UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+	if (!CitySub) return;
+	CitySub->ActiveDisaster = UPHCCitySubsystem::EDisasterType::Thunderstorm;
+	CitySub->DisasterTimer = 45.f;
+}
+
+void UPHCCityHUD::OnSelectMeteor()
+{
+	HideDisasterSelection();
+	UWorld* World = GetWorld();
+	if (!World) return;
+	UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+	if (!CitySub) return;
+	CitySub->ActiveDisaster = UPHCCitySubsystem::EDisasterType::MeteorShower;
+	CitySub->DisasterTimer = 40.f;
+}
+
+void UPHCCityHUD::OnStopDisaster()
+{
+	HideDisasterSelection();
+	UWorld* World = GetWorld();
+	if (!World) return;
+	UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+	if (!CitySub) return;
+	CitySub->ActiveDisaster = UPHCCitySubsystem::EDisasterType::None;
+	CitySub->DisasterTimer = 0.f;
+}
+
+// ---------------------------------------------------------------------------
 
 void UPHCCityHUD::ShowWeaponSelection()
 {
