@@ -22,6 +22,10 @@
 #include "Engine/Engine.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Engine/PostProcessVolume.h"
+#include "Components/TextRenderComponent.h"
+#include "Vehicle/PHCMissileProjectile.h"
+#include "Player/PHCCityCharacter.h"
+#include "EngineUtils.h"
 
 // ---------------------------------------------------------------------------
 // Centralized city-grid constants (used across multiple Spawn* functions).
@@ -394,18 +398,18 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		}
 		else
 		{
-			// Night: very dark purple
-			TargetGain = FVector4(0.42f, 0.32f, 0.48f, 1.0f);
-			TargetOffset = FVector4(-0.01f, -0.04f, 0.01f, 0.0f);
+			// Night: realistic dark desaturated blue
+			TargetGain = FVector4(0.38f, 0.42f, 0.50f, 1.0f);
+			TargetOffset = FVector4(-0.015f, -0.01f, 0.005f, 0.0f);
 		}
 		// Smooth interpolation to target
 		PP.ColorGain = FMath::Lerp(PP.ColorGain, TargetGain, FMath::Min(1.f, DeltaTime * 2.f));
 		PP.ColorOffset = FMath::Lerp(PP.ColorOffset, TargetOffset, FMath::Min(1.f, DeltaTime * 2.f));
 
-		// Legacy ColorGamma still used for base warmth
-		const float WarmR = FMath::Lerp(1.0f, 1.08f, NF);
-		const float WarmB = FMath::Lerp(0.92f, 0.90f, NF);
-		const float WarmG = FMath::Lerp(0.97f, 0.88f, NF);
+		// Legacy ColorGamma — neutral at night, slight warmth during day
+		const float WarmR = FMath::Lerp(1.0f, 0.98f, NF);
+		const float WarmG = FMath::Lerp(0.97f, 0.97f, NF);
+		const float WarmB = FMath::Lerp(0.92f, 1.02f, NF);
 		PP.ColorGamma = FVector4(WarmR, WarmG, WarmB, 1.0f);
 
 		PP.VignetteIntensity = FMath::Lerp(0.25f, 0.45f, DawnDuskFactor);
@@ -460,6 +464,25 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			// Second layer drifts slower for parallax
 			CloudLayerActor2->AddActorWorldOffset(FVector(CloudDrift * 0.6f, CloudDrift * 0.15f, 0.f));
 		}
+	}
+
+	// ---- LYNX Blue Line light rail shuttle ----
+	if (LightRailTrainActor)
+	{
+		const float TrackYStart = FirstRoad + 5.f * RoadSpacing;
+		const float TrackYEnd   = FirstRoad + 21.f * RoadSpacing;
+		const float TrackLength = TrackYEnd - TrackYStart;
+		const float TrainSpeed  = 3000.f; // ~22 mph, realistic urban rail speed
+
+		LightRailPosition += (bLightRailForward ? 1.f : -1.f) * TrainSpeed * DeltaTime / TrackLength;
+
+		if (LightRailPosition >= 1.f) { LightRailPosition = 1.f; bLightRailForward = false; }
+		if (LightRailPosition <= 0.f) { LightRailPosition = 0.f; bLightRailForward = true; }
+
+		const float TrackX = FirstRoad + 12.5f * RoadSpacing;
+		const float TrainY = TrackYStart + LightRailPosition * TrackLength;
+		LightRailTrainActor->SetActorLocation(FVector(TrackX, TrainY, 0.f));
+		LightRailTrainActor->SetActorRotation(FRotator(0.f, bLightRailForward ? 90.f : -90.f, 0.f));
 	}
 
 	// ---- Ocean wave heave ----
@@ -562,73 +585,228 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		}
 	}
 
-	// ---- Giant Crab NPC (night only) ----
-	if (GiantCrabActor)
+	// ---- NPC enemies (night only, chase player, avoid safe zones) ----
 	{
 		const float CrabNF = FMath::Max(0.f, -SunSine);
-		const bool bShouldShow = (CrabNF > 0.3f) || bNightModeLocked;
+		const bool bShouldShowCrabs = (CrabNF > 0.3f) || bNightModeLocked;
 
-		if (bShouldShow != bCrabVisible)
+		if (bShouldShowCrabs != bCrabsNightVisible)
 		{
-			bCrabVisible = bShouldShow;
-			GiantCrabActor->SetActorHiddenInGame(!bShouldShow);
+			bCrabsNightVisible = bShouldShowCrabs;
+			for (int32 CI = 0; CI < NumGiantCrabs; ++CI)
+			{
+				if (Crabs[CI].Actor)
+				{
+					if (bShouldShowCrabs)
+					{
+						// Night starting — respawn all at original positions
+						RespawnCrab(CI);
+					}
+					else
+					{
+						// Day starting — kill all, hide them
+						Crabs[CI].Actor->SetActorHiddenInGame(true);
+						Crabs[CI].bVisible = false;
+						Crabs[CI].Health = 0.f;
+					}
+				}
+			}
 		}
 
-		if (bCrabVisible)
+		// Get player location once
+		FVector PlayerLoc = FVector::ZeroVector;
+		if (APlayerController* PC = World->GetFirstPlayerController())
 		{
-			// --- Movement: roam toward target ---
-			FVector CPos = GiantCrabActor->GetActorLocation();
-			FVector ToTarget = CrabRoamTarget - CPos;
-			ToTarget.Z = 0;
+			if (APawn* Pawn = PC->GetPawn())
+				PlayerLoc = Pawn->GetActorLocation();
+		}
 
-			if (ToTarget.Size2D() < 1500.f)
+		if (bCrabsNightVisible)
+		{
+		const float CrabSpeed = 2380.f;
+		const float GaitFreq = 4.0f;
+		const float MinPlayerDist = 1200.f; // get very close before orbiting
+		const float PaceRadius = 800.f;     // tight orbit around the player
+
+		for (int32 CI = 0; CI < NumGiantCrabs; ++CI)
+		{
+			FCrabData& CD = Crabs[CI];
+			if (!CD.Actor || !CD.bVisible) continue;
+
+			// --- Movement: approach player but keep distance ---
+			FVector CPos = CD.Actor->GetActorLocation();
+			FVector ToPlayer = PlayerLoc - CPos;
+			ToPlayer.Z = 0;
+			const float DistToPlayer = ToPlayer.Size2D();
+
+			FVector MoveDir;
+			if (DistToPlayer > MinPlayerDist)
 			{
-				// Pick new random roam target
-				CrabRoamTarget = FVector(
-					FMath::FRandRange(-25000.f, 25000.f),
-					FMath::FRandRange(-25000.f, 25000.f),
-					CPos.Z);
+				// Far away — walk toward player
+				MoveDir = ToPlayer.GetSafeNormal2D();
+			}
+			else
+			{
+				// Close — pace laterally around the player (orbit)
+				FVector Tangent(-ToPlayer.Y, ToPlayer.X, 0.f);
+				Tangent = Tangent.GetSafeNormal2D();
+				// Alternate orbit direction per crab index
+				if (CI % 2 == 0) Tangent = -Tangent;
+				// Slight drift outward if too close
+				FVector Outward = -ToPlayer.GetSafeNormal2D();
+				float InwardBias = (DistToPlayer < PaceRadius) ? 0.4f : -0.1f;
+				MoveDir = (Tangent + Outward * InwardBias).GetSafeNormal2D();
 			}
 
-			const float CrabSpeed = 2235.f;
-			FVector MoveDir = ToTarget.GetSafeNormal2D();
-			GiantCrabActor->AddActorWorldOffset(MoveDir * CrabSpeed * DeltaTime);
+			FVector NewPos = CPos + MoveDir * CrabSpeed * DeltaTime;
+			NewPos.Z = 0.f;
+
+			// Only move if destination is not in a safe zone
+			if (!IsInCrabForbiddenZone(NewPos))
+			{
+				CD.Actor->SetActorLocation(NewPos);
+			}
 
 			// Face movement direction (head is at local +Y)
-			FRotator DesiredRot(0, MoveDir.Rotation().Yaw - 90.f, 0);
-			FRotator CurRot = GiantCrabActor->GetActorRotation();
-			GiantCrabActor->SetActorRotation(
-				FMath::RInterpTo(CurRot, DesiredRot, DeltaTime, 1.5f));
-
-			// --- Leg animation ---
-			CrabAnimTime += DeltaTime;
-			const float GaitFreq = 3.0f;
-
-			for (int i = 0; i < CrabHipJoints.Num() && i < CrabHipBaseRot.Num(); i++)
+			if (!MoveDir.IsNearlyZero())
 			{
-				int LegInSide = i % 4;
-				int Side = i / 4;
+				FRotator DesiredRot(0, MoveDir.Rotation().Yaw - 90.f, 0);
+				FRotator CurRot = CD.Actor->GetActorRotation();
+				CD.Actor->SetActorRotation(
+					FMath::RInterpTo(CurRot, DesiredRot, DeltaTime, 4.0f));
+			}
 
-				// Alternating gait: even/odd legs on opposite sides in sync
-				float Phase = (LegInSide % 2 == 0) ? 0.f : UE_PI;
-				if (Side == 1) Phase += UE_PI;
-				Phase += LegInSide * 0.25f;
+			// --- Damage flash (briefly turn all meshes dark red) ---
+			if (CD.DamageFlashTimer > 0.f)
+			{
+				CD.DamageFlashTimer -= DeltaTime;
+				const bool bFlashOn = (CD.DamageFlashTimer > 0.f);
+				const FLinearColor FlashEmissive = bFlashOn
+					? FLinearColor(4.f, 0.2f, 0.1f) : FLinearColor(0.f, 0.f, 0.f);
 
-				float A = CrabAnimTime * GaitFreq * UE_TWO_PI + Phase;
-
-				// Hip: oscillate Roll for forward/back swing
-				float HipSwing = FMath::Sin(A) * 12.f;
-				FRotator HR = CrabHipBaseRot[i];
-				HR.Roll += HipSwing;
-				CrabHipJoints[i]->SetRelativeRotation(HR);
-
-				// Knee: oscillate Pitch for flex (more bend when lifted)
-				if (i < CrabKneeJoints.Num() && i < CrabKneeBaseRot.Num())
+				TArray<UStaticMeshComponent*> MeshComps;
+				CD.Actor->GetComponents<UStaticMeshComponent>(MeshComps);
+				for (UStaticMeshComponent* MC : MeshComps)
 				{
-					float KneeFlex = FMath::Sin(A + UE_HALF_PI) * 15.f;
-					FRotator KR = CrabKneeBaseRot[i];
-					KR.Pitch += KneeFlex;
-					CrabKneeJoints[i]->SetRelativeRotation(KR);
+					if (UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(MC->GetMaterial(0)))
+					{
+						if (bFlashOn)
+						{
+							MID->SetVectorParameterValue(TEXT("EmissiveColor"), FlashEmissive);
+						}
+						else
+						{
+							// Reset to original (no emissive)
+							MID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.f, 0.f, 0.f));
+						}
+					}
+				}
+			}
+
+			// --- Biped walk animation (legs + arms swing) ---
+			CD.AnimTime += DeltaTime;
+
+			// Legs: HipJoints[0]=left, [1]=right — swing in Roll (around X)
+			for (int i = 0; i < CD.HipJoints.Num() && i < CD.HipBaseRot.Num(); i++)
+			{
+				float Phase = (i == 0) ? 0.f : UE_PI;
+				float A = CD.AnimTime * GaitFreq * UE_TWO_PI + Phase;
+				float Swing = FMath::Sin(A) * 25.f;
+				FRotator HR = CD.HipBaseRot[i];
+				HR.Roll += Swing;
+				CD.HipJoints[i]->SetRelativeRotation(HR);
+			}
+
+			// Arms: KneeJoints[0]=left, [1]=right — swing opposite to same-side leg
+			for (int i = 0; i < CD.KneeJoints.Num() && i < CD.KneeBaseRot.Num(); i++)
+			{
+				float Phase = (i == 0) ? UE_PI : 0.f;
+				float A = CD.AnimTime * GaitFreq * UE_TWO_PI + Phase;
+				float Swing = FMath::Sin(A) * 20.f;
+				FRotator KR = CD.KneeBaseRot[i];
+				KR.Roll += Swing;
+				CD.KneeJoints[i]->SetRelativeRotation(KR);
+			}
+		}
+		} // if bCrabsNightVisible
+
+		// --- Projectile vs crab collision (all bullets + RPGs) ---
+		// Get player character for kill tracking
+		APHCCityCharacter* PlayerChar = nullptr;
+		if (APlayerController* PCC = World->GetFirstPlayerController())
+		{
+			PlayerChar = Cast<APHCCityCharacter>(PCC->GetPawn());
+		}
+
+		for (TActorIterator<APHCMissileProjectile> It(World); It; ++It)
+		{
+			APHCMissileProjectile* Proj = *It;
+			if (!Proj) continue;
+
+			const FVector PLoc = Proj->GetActorLocation();
+			const bool bIsRPG = Proj->bIsRPGRocket;
+			const float HitRadius = bIsRPG ? 800.f : 400.f;
+			const float BulletDamage = bIsRPG ? 100.f : 11.12f; // RPG = instant, Gun = ~11.12 per hit (9 shots to kill)
+
+			for (int32 CI = 0; CI < NumGiantCrabs; ++CI)
+			{
+				if (!Crabs[CI].Actor || !Crabs[CI].bVisible) continue;
+				const FVector CLoc = Crabs[CI].Actor->GetActorLocation();
+				if (FVector::Dist2D(PLoc, CLoc) < HitRadius)
+				{
+					Crabs[CI].Health -= BulletDamage;
+					Crabs[CI].DamageFlashTimer = 0.2f;
+
+					if (Crabs[CI].Health <= 0.f)
+					{
+						// NPC killed — explode and respawn at origin
+						Proj->SpawnExplosion(CLoc);
+						if (PlayerChar)
+						{
+							PlayerChar->CrabKills++;
+						}
+						RespawnCrab(CI);
+					}
+
+					Proj->Destroy();
+					break;
+				}
+			}
+		}
+
+		// --- Crab contact damage to player ---
+		if (PlayerChar && PlayerChar->Health > 0.f)
+		{
+			const float ContactRadius = 450.f;
+			const float ContactDamage = 25.f;
+			const float ContactCooldownTime = 0.6f;
+
+			for (int32 CI = 0; CI < NumGiantCrabs; ++CI)
+			{
+				FCrabData& CD = Crabs[CI];
+				if (!CD.Actor || !CD.bVisible) continue;
+
+				// Tick down cooldown
+				if (CD.ContactCooldown > 0.f)
+				{
+					CD.ContactCooldown -= DeltaTime;
+					continue;
+				}
+
+				const float Dist = FVector::Dist2D(PlayerLoc, CD.Actor->GetActorLocation());
+				if (Dist < ContactRadius)
+				{
+					PlayerChar->Health -= ContactDamage;
+					PlayerChar->DamageFlashTimer = 0.3f;
+					CD.ContactCooldown = ContactCooldownTime;
+
+					if (PlayerChar->Health <= 0.f)
+					{
+						// Player died — increment deaths, respawn
+						PlayerChar->Deaths++;
+						PlayerChar->Health = PlayerChar->MaxHealth;
+						PlayerChar->SetActorLocation(FVector(0.f, 0.f, 100.f));
+					}
 				}
 			}
 		}
@@ -928,6 +1106,9 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnCityGrid();
 	SpawnBlockStreets();
 	SpawnSkyscrapers();
+	// SpawnStreetLabels();  // removed per user request
+	SpawnLightRail();
+	SpawnLangtree();
 	SpawnStreetLights();
 	SpawnRamps();
 	SpawnOutskirts();
@@ -1367,59 +1548,22 @@ void UPHCCitySubsystem::SpawnSkyAndLighting()
 void UPHCCitySubsystem::SpawnCityGrid()
 {
 	// ---------------------------------------------------------------
-	// 1. Landmark table & lookup set
+	// 1. Charlotte Uptown — no landmark table needed (SpawnSkyscrapers
+	//    handles all named buildings individually).
 	// ---------------------------------------------------------------
-	struct FLandmark { int32 bx, by; float W, D, H; FLinearColor Wall, Accent; };
-	const FLandmark Landmarks[] = {
-		{ 3,  14, 900,  700, 800, FLinearColor(0.95f, 0.95f, 0.95f), FLinearColor(0.8f, 0.1f, 0.1f)   },  // Hospital
-		{ 3,  20, 650,  550, 600, FLinearColor(0.3f, 0.35f, 0.55f),  FLinearColor(0.85f, 0.75f, 0.2f)  },  // Police
-		{ 20,  3, 550,  480, 500, FLinearColor(0.8f, 0.2f, 0.15f),   FLinearColor(0.85f, 0.85f, 0.2f)  },  // Fire
-		{ 15, 12, 850,  650, 600, FLinearColor(0.75f, 0.6f, 0.4f),   FLinearColor(0.4f, 0.5f, 0.3f)    },  // School
-		{ 6,  13, 480,  400, 400, FLinearColor(0.6f, 0.55f, 0.45f),  FLinearColor(0.3f, 0.6f, 0.25f)   },  // Grocery
-		{ 8,   9, 350,  300, 350, FLinearColor(0.45f, 0.3f, 0.2f),   FLinearColor(0.9f, 0.85f, 0.7f)   },  // Coffee
-		{ 20, 20, 700,  550, 500, FLinearColor(0.9f, 0.9f, 0.88f),   FLinearColor(0.2f, 0.4f, 0.7f)    },  // Marina
-		{ 2,   3, 800,  650, 700, FLinearColor(0.5f, 0.5f, 0.48f),   FLinearColor(0.6f, 0.4f, 0.15f)   },  // Factory
-		{ 16,  6, 1100, 900, 500, FLinearColor(0.6f, 0.6f, 0.58f),   FLinearColor(0.15f, 0.35f, 0.6f)  },  // Stadium
-		{ 1,  12, 420,  350, 350, FLinearColor(0.85f, 0.82f, 0.78f), FLinearColor(0.7f, 0.15f, 0.1f)   },  // Gas Station
-	};
-
 	const int32 NumBlocks = NumRoads - 1; // 24
 
-	TSet<int32> LandmarkKeys;
-	for (const FLandmark& L : Landmarks)
-	{
-		LandmarkKeys.Add(L.by * NumBlocks + L.bx);
-	}
-
 	// ---------------------------------------------------------------
-	// 2. District classification lambda
+	// 2. District classification — Charlotte's Four Wards
 	// ---------------------------------------------------------------
+	// Charlotte Uptown blocks: X roads 6-17, Y roads 7-20
+	// Trade/Tryon intersection at road (12,12)
 	auto GetDistrict = [](int32 bx, int32 by) -> ECityDistrict
 	{
-		if ((bx >= 7 && bx <= 8 && by >= 18 && by <= 19) ||
-			(bx >= 13 && bx <= 14 && by >= 12 && by <= 13))
-		{
-			return ECityDistrict::Park;
-		}
-		if (bx >= 7 && bx <= 10 && by >= 10 && by <= 15)
+		// Charlotte Uptown core — all buildings placed by SpawnSkyscrapers
+		if (bx >= 6 && bx <= 17 && by >= 7 && by <= 20)
 		{
 			return ECityDistrict::DowntownCore;
-		}
-		if (bx >= 5 && bx <= 10 && by >= 8 && by <= 17)
-		{
-			return ECityDistrict::Midtown;
-		}
-		if (bx >= 18 && by >= 17)
-		{
-			return ECityDistrict::Waterfront;
-		}
-		if (bx >= 1 && bx <= 4 && by >= 1 && by <= 6)
-		{
-			return ECityDistrict::Industrial;
-		}
-		if (bx >= 14 && bx <= 17 && by >= 7 && by <= 10)
-		{
-			return ECityDistrict::ArtsDistrict;
 		}
 		if (bx == 0 || bx == 23 || by == 0 || by == 23)
 		{
@@ -1565,98 +1709,21 @@ void UPHCCitySubsystem::SpawnCityGrid()
 			const float BlockMinY = BlockCenterY - BlockW * 0.5f;
 			const float BlockH = BlockW; // square blocks
 
-			// ------- Landmark check (institutions removed) -------
-			const int32 BlockKey = by * NumBlocks + bx;
-			if (LandmarkKeys.Contains(BlockKey))
-			{
-				continue;
-			}
-
 			ECityDistrict District = GetDistrict(bx, by);
 
 			switch (District)
 			{
 			// =======================================================
-			// PARK
-			// =======================================================
-			case ECityDistrict::Park:
-			{
-				const bool bAddFountain = (bx == 7 && by == 18) || (bx == 13 && by == 12);
-				SpawnParkBlock(FVector(BlockCenterX, BlockCenterY, 0.f), BlockW, bAddFountain);
-				break;
-			}
-
-			// =======================================================
-			// DOWNTOWN CORE — 2-4 tall buildings per block
+			// CHARLOTTE UPTOWN — skip, all buildings placed by
+			// SpawnSkyscrapers() with exact real-world positions
 			// =======================================================
 			case ECityDistrict::DowntownCore:
-			{
-				const int32 Count = CityRandom.RandRange(2, 4);
-				for (int32 n = 0; n < Count; ++n)
-				{
-					if (CityRandom.FRand() > 0.40f) continue;
-					const float BldgW = CityRandom.FRandRange(180.f, 320.f);
-					const float BldgD = CityRandom.FRandRange(180.f, 320.f);
-					// Tight 2x2 grid placement
-					const int32 Col = n % 2;
-					const int32 Row = n / 2;
-					const float OffX = BlockW * (0.28f + 0.44f * Col);
-					const float OffY = BlockH * (0.28f + 0.44f * Row);
-					const FVector Loc(BlockMinX + OffX, BlockMinY + OffY, 0.f);
-					const FLinearColor& Color = DowntownColors[CityRandom.RandRange(0, NumDowntownColors - 1)];
-
-					const float Roll = CityRandom.FRandRange(0.f, 1.f);
-					if (Roll < 0.70f)
-					{
-						const float Height = CityRandom.FRandRange(1500.f, 4000.f);
-						SpawnBuilding(Loc, FVector(BldgW, BldgD, Height), Color, true);
-					}
-					else
-					{
-						const int32 Stories = CityRandom.RandRange(2, 3);
-						SpawnShop(Loc, BldgW, BldgD, Stories, Color,
-							DowntownColors[CityRandom.RandRange(0, NumDowntownColors - 1)]);
-					}
-				}
-				// Warm downtown ground light
-				{
-					AActor* DtActor = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(),
-						FVector(BlockCenterX, BlockCenterY, 200.f), FRotator::ZeroRotator);
-					if (DtActor)
-					{
-						UPointLightComponent* DtLight = NewObject<UPointLightComponent>(DtActor, TEXT("DtLight"));
-						DtLight->SetWorldLocation(FVector(BlockCenterX, BlockCenterY, 200.f));
-						DtLight->SetIntensity(5000.f);
-						DtLight->SetAttenuationRadius(2000.f);
-						DtLight->SetLightColor(FColor(255, 210, 150));
-						DtLight->SetCastShadows(false);
-						DtLight->RegisterComponent();
-						DtActor->SetRootComponent(DtLight);
-						DtActor->AddInstanceComponent(DtLight);
-					}
-				}
-				break;
-			}
-
-			// =======================================================
-			// MIDTOWN — removed (rendering performance)
-			// =======================================================
-			case ECityDistrict::Midtown:
 				break;
 
 			// =======================================================
-			// RESIDENTIAL — removed (rendering performance)
+			// RESIDENTIAL (surrounding Charlotte neighborhoods)
 			// =======================================================
 			case ECityDistrict::Residential:
-				break;
-
-			case ECityDistrict::ArtsDistrict:
-				break;
-
-			case ECityDistrict::Waterfront:
-				break;
-
-			case ECityDistrict::Industrial:
 				break;
 
 			case ECityDistrict::Edge:
@@ -2144,6 +2211,7 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 	Body->SetWorldLocation(FVector(Loc.X, Loc.Y, BodyZ));
 	Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Body->SetCollisionResponseToAllChannels(ECR_Block);
+	Body->SetBoundsScale(50.f);
 	Body->RegisterComponent();
 	House->SetRootComponent(Body);
 	UMaterialInstanceDynamic* BodyMat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
@@ -2454,6 +2522,7 @@ void UPHCCitySubsystem::SpawnShop(const FVector& Loc, float W, float D, int32 St
 	Body->SetWorldLocation(FVector(Loc.X, Loc.Y, BodyZ));
 	Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Body->SetCollisionResponseToAllChannels(ECR_Block);
+	Body->SetBoundsScale(50.f);
 	Body->RegisterComponent();
 	Shop->SetRootComponent(Body);
 	UMaterialInstanceDynamic* BodyMat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
@@ -2703,6 +2772,7 @@ void UPHCCitySubsystem::SpawnInstitution(const FVector& Loc, float W, float D, f
 	Body->SetWorldLocation(FVector(Loc.X, Loc.Y, BodyZ));
 	Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Body->SetCollisionResponseToAllChannels(ECR_Block);
+	Body->SetBoundsScale(50.f);
 	Body->RegisterComponent();
 	Inst->SetRootComponent(Body);
 	UMaterialInstanceDynamic* BodyMat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
@@ -2877,6 +2947,7 @@ void UPHCCitySubsystem::SpawnWarehouse(const FVector& Loc, float W, float D, flo
 	Body->SetWorldLocation(FVector(Loc.X, Loc.Y, HalfH));
 	Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Body->SetCollisionResponseToAllChannels(ECR_Block);
+	Body->SetBoundsScale(50.f);
 	Body->RegisterComponent();
 	Bldg->SetRootComponent(Body);
 	UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
@@ -3154,6 +3225,7 @@ void UPHCCitySubsystem::SpawnBuilding(const FVector& Location, const FVector& Si
 	MC->SetWorldLocation(SpawnLoc);
 	MC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	MC->SetCollisionResponseToAllChannels(ECR_Block);
+	MC->SetBoundsScale(50.f);
 	MC->RegisterComponent();
 	Building->SetRootComponent(MC);
 
@@ -4330,7 +4402,7 @@ void UPHCCitySubsystem::SpawnUndergroundCavern()
 			MC->SetCollisionResponseToAllChannels(ECR_Block);
 		}
 		else { MC->SetCollisionEnabled(ECollisionEnabled::NoCollision); }
-		MC->SetBoundsScale(10.f);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		ApplyPBR(MC, Col, Metal, Rough);
 		O->AddInstanceComponent(MC);
@@ -4354,7 +4426,7 @@ void UPHCCitySubsystem::SpawnUndergroundCavern()
 		MC->SetStaticMesh(CubeMesh);
 		MC->SetWorldScale3D(S); MC->SetWorldLocation(Loc); MC->SetWorldRotation(Rot);
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MC->SetBoundsScale(10.f);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		if (GlassMaterial)
 		{
@@ -4946,6 +5018,35 @@ void UPHCCitySubsystem::SpawnUndergroundCavern()
 
 
 // ---------------------------------------------------------------------------
+// Respawn a killed NPC at its original spawn point
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::RespawnCrab(int32 Index)
+{
+	if (Index < 0 || Index >= NumGiantCrabs) return;
+	FCrabData& CD = Crabs[Index];
+	if (!CD.Actor) return;
+
+	CD.Health = 100.f;
+	CD.DamageFlashTimer = 0.f;
+	CD.ContactCooldown = 0.f;
+	CD.Actor->SetActorLocation(CD.SpawnPosition);
+	CD.Actor->SetActorHiddenInGame(!bCrabsNightVisible);
+	CD.bVisible = bCrabsNightVisible;
+
+	// Reset any emissive flash on meshes
+	TArray<UStaticMeshComponent*> MeshComps;
+	CD.Actor->GetComponents<UStaticMeshComponent>(MeshComps);
+	for (UStaticMeshComponent* MC : MeshComps)
+	{
+		if (UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(MC->GetMaterial(0)))
+		{
+			MID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.f, 0.f, 0.f));
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Giant Crab NPC — spawns hidden, revealed at night, roams the city
 // ---------------------------------------------------------------------------
 
@@ -4954,246 +5055,194 @@ void UPHCCitySubsystem::SpawnGiantCrab()
 	UWorld* W = GetWorld();
 	if (!W || !SphereMesh || !CylinderMesh || !CubeMesh || !ConeMesh || !ColorMaterial) return;
 
-	GiantCrabActor = W->SpawnActor<AActor>(AActor::StaticClass(),
-		FVector(0.f, 0.f, 600.f), FRotator::ZeroRotator);
-	if (!GiantCrabActor) return;
-
-	CrabRoamTarget = FVector(0.f, 0.f, 600.f);
-
-	// --- Root ---
-	USceneComponent* Root = NewObject<USceneComponent>(GiantCrabActor, TEXT("CrabRoot"));
-	Root->SetRelativeScale3D(FVector(0.5f));
-	Root->RegisterComponent();
-	GiantCrabActor->SetRootComponent(Root);
-	GiantCrabActor->AddInstanceComponent(Root);
-
-	// --- Mesh helper ---
-	auto CM = [&](UStaticMesh* Mesh, USceneComponent* Parent, const FVector& Loc,
-		const FRotator& Rot, const FVector& S, const FLinearColor& Col,
-		float Metal, float Rough, const FName& Name,
-		const FLinearColor& Emis = FLinearColor(0.0f, 3.0f, 0.2f)) -> UStaticMeshComponent*
-	{
-		auto* C = NewObject<UStaticMeshComponent>(GiantCrabActor, Name);
-		C->SetStaticMesh(Mesh);
-		C->SetRelativeLocation(Loc);
-		C->SetRelativeRotation(Rot);
-		C->SetRelativeScale3D(S);
-		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		C->SetCastShadow(false);
-		auto* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, C);
-		Mat->SetVectorParameterValue(TEXT("BaseColor"), Col);
-		Mat->SetScalarParameterValue(TEXT("Metallic"), Metal);
-		Mat->SetScalarParameterValue(TEXT("Roughness"), Rough);
-		if (Emis.R > 0.001f || Emis.G > 0.001f || Emis.B > 0.001f)
-			Mat->SetVectorParameterValue(TEXT("EmissiveColor"), Emis);
-		C->SetMaterial(0, Mat);
-		C->AttachToComponent(Parent, FAttachmentTransformRules::KeepRelativeTransform);
-		C->RegisterComponent();
-		GiantCrabActor->AddInstanceComponent(C);
-		return C;
+	// 30 spawn positions — 10 inside the city, 20 outside
+	const FVector CrabSpawns[NumGiantCrabs] = {
+		// Inside city (scattered across the 24x24 grid, ±36000 range)
+		{  5000,   5000, 0}, { -8000,  12000, 0}, { 20000, -15000, 0},
+		{-18000, -20000, 0}, { 25000,  25000, 0}, {-25000,   8000, 0},
+		{ 10000, -28000, 0}, {-12000,  30000, 0}, { 30000,   0,    0},
+		{  0,    -10000, 0},
+		// Outside city
+		{-55000, -20000, 0}, {-60000, 15000, 0}, {-50000, -45000, 0},
+		{45000, -30000, 0},  {50000, -50000, 0},
+		{-30000, -50000, 0}, {15000, -55000, 0},  {-50000, -60000, 0},
+		{30000, -45000, 0},  {-15000, -65000, 0},
+		{-60000, -55000, 0}, {-45000, -70000, 0},
+		{-55000, 40000, 0},  {-65000, 50000, 0},  {-45000, 55000, 0},
+		{55000, -60000, 0},  {60000, -40000, 0},
+		{-70000, 0, 0},      {-65000, -35000, 0},
+		{0, -55000, 0},
 	};
 
-	auto MakeJoint = [&](USceneComponent* Parent, const FVector& Loc,
-		const FRotator& Rot, const FName& Name) -> USceneComponent*
+	// --- Colors (Roblox "Noob" style) ---
+	const FLinearColor SkinYellow(1.0f, 0.82f, 0.0f);
+	const FLinearColor ShirtBlue(0.05f, 0.20f, 0.70f);
+	const FLinearColor PantsGreen(0.16f, 0.40f, 0.08f);
+	const FLinearColor EyeWhite(0.95f, 0.95f, 0.95f);
+	const FLinearColor PupilBlack(0.02f, 0.02f, 0.02f);
+	const FLinearColor MouthBlack(0.03f, 0.02f, 0.02f);
+	const FLinearColor NoEmissive(0.f, 0.f, 0.f);
+
+	int32 GCIdx = 0; // global sequential counter for unique component names
+
+	for (int32 CI = 0; CI < NumGiantCrabs; ++CI)
 	{
-		auto* SC = NewObject<USceneComponent>(GiantCrabActor, Name);
-		SC->SetRelativeLocation(Loc);
-		SC->SetRelativeRotation(Rot);
-		SC->AttachToComponent(Parent, FAttachmentTransformRules::KeepRelativeTransform);
-		SC->RegisterComponent();
-		GiantCrabActor->AddInstanceComponent(SC);
-		return SC;
-	};
+		FCrabData& CD = Crabs[CI];
+		CD.HipJoints.Empty();
+		CD.HipBaseRot.Empty();
+		CD.KneeJoints.Empty();
+		CD.KneeBaseRot.Empty();
 
-	// --- Colors ---
-	const FLinearColor Shell(0.55f, 0.15f, 0.08f);
-	const FLinearColor ShellDark(0.40f, 0.10f, 0.05f);
-	const FLinearColor Leg(0.45f, 0.12f, 0.06f);
-	const FLinearColor Claw(0.50f, 0.10f, 0.05f);
-	const FLinearColor Belly(0.60f, 0.35f, 0.20f);
-	const FLinearColor Glow(0.0f, 3.0f, 0.2f); // neon green emissive
+		CD.SpawnPosition = CrabSpawns[CI];
 
-	// ========== BODY ==========
-	// Carapace — wide flat ellipsoid
-	CM(SphereMesh, Root, FVector(0, 0, 250), FRotator::ZeroRotator,
-		FVector(15, 10, 5), Shell, 0.15f, 0.7f, TEXT("Carapace"), Glow);
+		AActor* CrabActor = W->SpawnActor<AActor>(AActor::StaticClass(),
+			CrabSpawns[CI], FRotator::ZeroRotator);
+		if (!CrabActor) continue;
+		CD.Actor = CrabActor;
+		CrabActor->Tags.Add(FName("GiantCrab"));
 
-	// Head bump
-	CM(SphereMesh, Root, FVector(0, 450, 300), FRotator::ZeroRotator,
-		FVector(10, 7, 3.5f), Shell * 0.9f, 0.15f, 0.65f, TEXT("HeadBump"));
+#if WITH_EDITOR
+		CrabActor->SetActorLabel(*FString::Printf(TEXT("GiantCrab_%d"), CI));
+#endif
 
-	// Belly (lighter)
-	CM(SphereMesh, Root, FVector(0, 0, 130), FRotator::ZeroRotator,
-		FVector(12, 8, 2.5f), Belly, 0.05f, 0.8f, TEXT("Belly"));
+		// --- Root ---
+		USceneComponent* Root = NewObject<USceneComponent>(CrabActor,
+			*FString::Printf(TEXT("CR_%d"), GCIdx++));
+		Root->SetRelativeScale3D(FVector(0.25f));
+		Root->RegisterComponent();
+		CrabActor->SetRootComponent(Root);
+		CrabActor->AddInstanceComponent(Root);
+		CrabActor->SetActorLocation(CrabSpawns[CI]);
 
-	// Shell ridges (3 bumps along back)
-	for (int R = 0; R < 3; R++)
-	{
-		float Y = -200.f + R * 200.f;
-		CM(SphereMesh, Root, FVector(0, Y, 420), FRotator::ZeroRotator,
-			FVector(6, 4, 2), ShellDark, 0.2f, 0.6f,
-			FName(*FString::Printf(TEXT("Ridge%d"), R)));
-	}
-
-	// Rear shell edge
-	CM(SphereMesh, Root, FVector(0, -350, 200), FRotator::ZeroRotator,
-		FVector(12, 5, 3), ShellDark, 0.15f, 0.7f, TEXT("RearEdge"));
-
-	// ========== EYES ==========
-	for (int E = 0; E < 2; E++)
-	{
-		float SX = (E == 0) ? -200.f : 200.f;
-		float Tilt = (E == 0) ? 15.f : -15.f;
-		FString Side = (E == 0) ? TEXT("L") : TEXT("R");
-
-		// Stalk
-		CM(CylinderMesh, Root,
-			FVector(SX, 500, 430), FRotator(20, 0, Tilt),
-			FVector(0.6f, 0.6f, 2.5f), Leg, 0.1f, 0.75f,
-			FName(*(TEXT("EyeStalk_") + Side)));
-
-		// Eyeball with red emissive
-		CM(SphereMesh, Root,
-			FVector(SX * 1.3f, 550, 620), FRotator::ZeroRotator,
-			FVector(1.5f, 1.5f, 1.5f),
-			FLinearColor(0.02f, 0.01f, 0.01f), 0.8f, 0.2f,
-			FName(*(TEXT("Eye_") + Side)),
-			FLinearColor(0.0f, 4.0f, 0.3f));
-	}
-
-	// ========== MOUTH PARTS ==========
-	// Mandibles — two small angled pieces under the head
-	for (int M = 0; M < 2; M++)
-	{
-		float SX = (M == 0) ? -80.f : 80.f;
-		CM(CubeMesh, Root,
-			FVector(SX, 600, 150), FRotator(25, (M == 0) ? -10.f : 10.f, 0),
-			FVector(0.8f, 2.5f, 0.5f), ShellDark, 0.1f, 0.7f,
-			FName(*FString::Printf(TEXT("Mandible%d"), M)));
-	}
-
-	// ========== CLAWS ==========
-	for (int C = 0; C < 2; C++)
-	{
-		float SS = (C == 0) ? -1.f : 1.f; // side sign
-		FString Side = (C == 0) ? TEXT("L") : TEXT("R");
-
-		// Arm — cylinder extending forward and outward
-		CM(CylinderMesh, Root,
-			FVector(SS * 550, 650, 200),
-			FRotator(30, SS * 25, SS * -40),
-			FVector(2.0f, 2.0f, 4.5f), Claw, 0.15f, 0.65f,
-			FName(*(TEXT("ClawArm_") + Side)));
-
-		// Hand base
-		FVector HP(SS * 900, 1100, 130);
-		CM(CubeMesh, Root, HP,
-			FRotator(0, SS * 30, 0),
-			FVector(3.5f, 5.f, 2.f), Claw * 0.85f, 0.2f, 0.6f,
-			FName(*(TEXT("ClawHand_") + Side)));
-
-		// Lower pincer (fixed)
-		CM(CubeMesh, Root,
-			HP + FVector(SS * 40, 300, -40),
-			FRotator(-5, SS * 25, 0),
-			FVector(2.2f, 4.5f, 1.0f), Claw * 0.8f, 0.2f, 0.55f,
-			FName(*(TEXT("ClawLower_") + Side)));
-
-		// Upper pincer
-		CM(CubeMesh, Root,
-			HP + FVector(SS * 40, 280, 90),
-			FRotator(8, SS * 25, 0),
-			FVector(2.0f, 4.0f, 0.8f), Claw * 0.8f, 0.2f, 0.55f,
-			FName(*(TEXT("ClawUpper_") + Side)));
-
-		// Pincer tip (pointed)
-		CM(ConeMesh, Root,
-			HP + FVector(SS * 40, 600, 20),
-			FRotator(90, SS * 25, 0),
-			FVector(1.5f, 1.0f, 2.5f), Claw * 0.75f, 0.2f, 0.5f,
-			FName(*(TEXT("ClawTip_") + Side)));
-	}
-
-	// ========== WALKING LEGS (8 total) ==========
-	struct FLegDef { float HipX, HipY, HipZ, FwdAngle; };
-	const FLegDef Legs[4] = {
-		{ 600, 300, 200, 15 },   // front
-		{ 680, 100, 180, 5 },    // mid-front
-		{ 680, -100, 180, -5 },  // mid-back
-		{ 600, -300, 200, -15 }, // back
-	};
-
-	const float UpperLen = 400.f;
-	const float LowerLen = 350.f;
-
-	for (int Side = 0; Side < 2; Side++)
-	{
-		float SS = (Side == 0) ? 1.f : -1.f;
-		FString SN = (Side == 0) ? TEXT("L") : TEXT("R");
-
-		for (int L = 0; L < 4; L++)
+		// --- Mesh helper — uses global counter for guaranteed unique names ---
+		auto CM = [&](UStaticMesh* Mesh, USceneComponent* Parent, const FVector& Loc,
+			const FRotator& Rot, const FVector& S, const FLinearColor& Col,
+			float Metal, float Rough,
+			const FLinearColor& Emis = FLinearColor(0.0f, 3.0f, 0.2f)) -> UStaticMeshComponent*
 		{
-			const FLegDef& D = Legs[L];
-			FVector HipPos(D.HipX * SS, D.HipY, D.HipZ);
+			auto* C = NewObject<UStaticMeshComponent>(CrabActor,
+				*FString::Printf(TEXT("CR_%d"), GCIdx++));
+			C->SetStaticMesh(Mesh);
+			C->SetRelativeLocation(Loc);
+			C->SetRelativeRotation(Rot);
+			C->SetRelativeScale3D(S);
+			C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			C->SetCastShadow(false);
+			auto* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, C);
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), Col);
+			Mat->SetScalarParameterValue(TEXT("Metallic"), Metal);
+			Mat->SetScalarParameterValue(TEXT("Roughness"), Rough);
+			if (Emis.R > 0.001f || Emis.G > 0.001f || Emis.B > 0.001f)
+				Mat->SetVectorParameterValue(TEXT("EmissiveColor"), Emis);
+			C->SetMaterial(0, Mat);
+			C->AttachToComponent(Parent, FAttachmentTransformRules::KeepRelativeTransform);
+			C->RegisterComponent();
+			CrabActor->AddInstanceComponent(C);
+			return C;
+		};
 
-			// Hip base rotation: Pitch tilts outward+down, Roll fans fwd/back
-			FRotator HipBase(SS * 120.f, 0.f, -D.FwdAngle);
+		auto MakeJoint = [&](USceneComponent* Parent, const FVector& Loc,
+			const FRotator& Rot) -> USceneComponent*
+		{
+			auto* SC = NewObject<USceneComponent>(CrabActor,
+				*FString::Printf(TEXT("CR_%d"), GCIdx++));
+			SC->SetRelativeLocation(Loc);
+			SC->SetRelativeRotation(Rot);
+			SC->AttachToComponent(Parent, FAttachmentTransformRules::KeepRelativeTransform);
+			SC->RegisterComponent();
+			CrabActor->AddInstanceComponent(SC);
+			return SC;
+		};
 
-			USceneComponent* Hip = MakeJoint(Root, HipPos, HipBase,
-				FName(*FString::Printf(TEXT("Hip_%s%d"), *SN, L)));
-			CrabHipJoints.Add(Hip);
-			CrabHipBaseRot.Add(HipBase);
+		// ========== ROBLOX-STYLE CHARACTER (2.5x player height) ==========
+		// Player is ~153 UU tall. 2.5x = ~383 UU. Root scale 0.25, so
+		// local coords are 4x actual: ~1530 local units tall.
+		// Character faces local +Y (matches rotation code).
 
-			// Upper leg mesh — pivot at hip, extends along joint Z
-			CM(CylinderMesh, Hip,
-				FVector(0, 0, UpperLen * 0.5f), FRotator::ZeroRotator,
-				FVector(1.0f, 1.0f, UpperLen / 50.f),
-				Leg, 0.1f, 0.7f,
-				FName(*FString::Printf(TEXT("UpperLeg_%s%d"), *SN, L)));
+		// --- HEAD (blocky cube) ---
+		CM(CubeMesh, Root, FVector(0, 0, 1300), FRotator::ZeroRotator,
+			FVector(4.2f, 4.2f, 4.2f), SkinYellow, 0.0f, 0.85f, NoEmissive);
 
-			// Knee joint at end of upper leg
-			FRotator KneeBase(25, 0, 0);
-			USceneComponent* Knee = MakeJoint(Hip, FVector(0, 0, UpperLen), KneeBase,
-				FName(*FString::Printf(TEXT("Knee_%s%d"), *SN, L)));
-			CrabKneeJoints.Add(Knee);
-			CrabKneeBaseRot.Add(KneeBase);
+		// Face — on +Y side of head
+		// Left eye white
+		CM(CubeMesh, Root, FVector(-70, 215, 1330), FRotator::ZeroRotator,
+			FVector(0.9f, 0.12f, 0.9f), EyeWhite, 0.0f, 0.3f, NoEmissive);
+		// Right eye white
+		CM(CubeMesh, Root, FVector(70, 215, 1330), FRotator::ZeroRotator,
+			FVector(0.9f, 0.12f, 0.9f), EyeWhite, 0.0f, 0.3f, NoEmissive);
+		// Left pupil
+		CM(CubeMesh, Root, FVector(-70, 220, 1330), FRotator::ZeroRotator,
+			FVector(0.45f, 0.1f, 0.45f), PupilBlack, 0.0f, 0.2f, NoEmissive);
+		// Right pupil
+		CM(CubeMesh, Root, FVector(70, 220, 1330), FRotator::ZeroRotator,
+			FVector(0.45f, 0.1f, 0.45f), PupilBlack, 0.0f, 0.2f, NoEmissive);
+		// Smile
+		CM(CubeMesh, Root, FVector(0, 220, 1230), FRotator::ZeroRotator,
+			FVector(1.6f, 0.1f, 0.35f), MouthBlack, 0.0f, 0.3f, NoEmissive);
 
-			// Lower leg mesh
-			CM(CylinderMesh, Knee,
-				FVector(0, 0, LowerLen * 0.5f), FRotator::ZeroRotator,
-				FVector(0.7f, 0.7f, LowerLen / 50.f),
-				Leg * 0.9f, 0.1f, 0.7f,
-				FName(*FString::Printf(TEXT("LowerLeg_%s%d"), *SN, L)));
+		// --- TORSO ---
+		CM(CubeMesh, Root, FVector(0, 0, 870), FRotator::ZeroRotator,
+			FVector(4.2f, 2.2f, 5.0f), ShirtBlue, 0.0f, 0.85f, NoEmissive);
 
-			// Foot tip — small pointed sphere
-			CM(SphereMesh, Knee,
-				FVector(0, 0, LowerLen), FRotator::ZeroRotator,
-				FVector(1.2f, 1.2f, 0.7f),
-				Leg * 0.8f, 0.1f, 0.75f,
-				FName(*FString::Printf(TEXT("Foot_%s%d"), *SN, L)));
+		// --- LEGS (with hip joints for walk animation) ---
+		for (int LG = 0; LG < 2; LG++)
+		{
+			float SX = (LG == 0) ? -105.f : 105.f;
+			FVector HipPos(SX, 0, 620);
+			FRotator HipBase(0.f, 0.f, 0.f);
+
+			USceneComponent* Hip = MakeJoint(Root, HipPos, HipBase);
+			CD.HipJoints.Add(Hip);
+			CD.HipBaseRot.Add(HipBase);
+
+			// Leg mesh hangs below hip joint
+			CM(CubeMesh, Hip, FVector(0, 0, -275), FRotator::ZeroRotator,
+				FVector(1.9f, 1.9f, 5.5f), PantsGreen, 0.0f, 0.85f, NoEmissive);
+			// Foot
+			CM(CubeMesh, Hip, FVector(0, 20, -560), FRotator::ZeroRotator,
+				FVector(1.9f, 2.4f, 0.6f), SkinYellow, 0.0f, 0.85f, NoEmissive);
 		}
+
+		// --- ARMS (with shoulder joints for walk animation) ---
+		for (int AR = 0; AR < 2; AR++)
+		{
+			float SX = (AR == 0) ? -310.f : 310.f;
+			FVector ShoulderPos(SX, 0, 1100);
+			FRotator ShoulderBase(0.f, 0.f, 0.f);
+
+			USceneComponent* Shoulder = MakeJoint(Root, ShoulderPos, ShoulderBase);
+			CD.KneeJoints.Add(Shoulder);
+			CD.KneeBaseRot.Add(ShoulderBase);
+
+			// Arm mesh hangs below shoulder joint
+			CM(CubeMesh, Shoulder, FVector(0, 0, -250), FRotator::ZeroRotator,
+				FVector(1.6f, 1.6f, 5.0f), SkinYellow, 0.0f, 0.85f, NoEmissive);
+			// Hand
+			CM(CubeMesh, Shoulder, FVector(0, 0, -510), FRotator::ZeroRotator,
+				FVector(1.6f, 1.6f, 0.8f), SkinYellow, 0.0f, 0.85f, NoEmissive);
+		}
+
+		// --- Amber glow ---
+		auto AddGlow = [&](const FVector& Loc, float Inten, float Rad, const FColor& Col)
+		{
+			auto* PL = NewObject<UPointLightComponent>(CrabActor,
+				*FString::Printf(TEXT("CR_%d"), GCIdx++));
+			PL->SetRelativeLocation(Loc);
+			PL->SetIntensity(Inten);
+			PL->SetAttenuationRadius(Rad);
+			PL->SetLightColor(Col);
+			PL->SetCastShadows(false);
+			PL->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+			PL->RegisterComponent();
+			CrabActor->AddInstanceComponent(PL);
+		};
+
+		AddGlow(FVector(0, 0, 500), 4000.f, 3500.f, FColor(255, 160, 30));
+
+		// Start hidden — revealed at night
+		CrabActor->SetActorHiddenInGame(true);
+		CD.bVisible = false;
 	}
-
-	// ========== GLOW LIGHTS ==========
-	auto AddGlow = [&](const FVector& Loc, float Inten, float Rad, const FColor& Col, const FName& Name)
-	{
-		auto* PL = NewObject<UPointLightComponent>(GiantCrabActor, Name);
-		PL->SetRelativeLocation(Loc);
-		PL->SetIntensity(Inten);
-		PL->SetAttenuationRadius(Rad);
-		PL->SetLightColor(Col);
-		PL->SetCastShadows(false);
-		PL->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
-		PL->RegisterComponent();
-		GiantCrabActor->AddInstanceComponent(PL);
-	};
-
-	AddGlow(FVector(0, 0, 50), 8000.f, 5000.f, FColor(0, 255, 40), TEXT("CrabGlow1"));
-	AddGlow(FVector(0, 400, 350), 5000.f, 4000.f, FColor(0, 255, 30), TEXT("CrabGlow2"));
-	AddGlow(FVector(0, -300, 350), 4000.f, 3500.f, FColor(0, 255, 20), TEXT("CrabGlow3"));
-
-	// Start hidden — revealed at night
-	GiantCrabActor->SetActorHiddenInGame(true);
 }
 
 // ---------------------------------------------------------------------------
@@ -5532,11 +5581,16 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 	int32 WinIdx = 0;
 	int32 BandIdx = 0;
 
+	// Skyscraper amplification — make towers visible from across the map
+	constexpr float HSF = 3.0f;   // height scale factor
+	constexpr float WSF = 2.45f;  // width/depth scale factor (increased for 50% more surface area)
+
 	// ---------------------------------------------------------------
 	// Helper lambdas
 	// ---------------------------------------------------------------
 
 	// Note: Size parameter is in UU; BasicShapes are 100 UU, so divide by 100 for scale.
+	// HSF/WSF applied here so ALL skyscraper geometry scales uniformly.
 	auto MakeCubeMC = [&](AActor* Owner, const FVector& Loc, const FVector& Size,
 		const FLinearColor& Color, const TCHAR* Name,
 		float Metallic = 0.f, float Roughness = 0.5f,
@@ -5544,9 +5598,10 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 	{
 		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, Name);
 		MC->SetStaticMesh(CubeMesh);
-		MC->SetWorldScale3D(Size / 100.f);
-		MC->SetWorldLocation(Loc);
+		MC->SetWorldScale3D(FVector(Size.X * WSF, Size.Y * WSF, Size.Z * HSF) / 100.f);
+		MC->SetWorldLocation(FVector(Loc.X, Loc.Y, Loc.Z * HSF));
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, MC);
 		if (Mat)
@@ -5571,9 +5626,10 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 	{
 		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, Name);
 		MC->SetStaticMesh(CylinderMesh);
-		MC->SetWorldScale3D(Size / 100.f);
-		MC->SetWorldLocation(Loc);
+		MC->SetWorldScale3D(FVector(Size.X * WSF, Size.Y * WSF, Size.Z * HSF) / 100.f);
+		MC->SetWorldLocation(FVector(Loc.X, Loc.Y, Loc.Z * HSF));
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, MC);
 		if (Mat)
@@ -5598,9 +5654,10 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 	{
 		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, Name);
 		MC->SetStaticMesh(SphereMesh);
-		MC->SetWorldScale3D(Size / 100.f);
-		MC->SetWorldLocation(Loc);
+		MC->SetWorldScale3D(FVector(Size.X * WSF, Size.Y * WSF, Size.Z * HSF) / 100.f);
+		MC->SetWorldLocation(FVector(Loc.X, Loc.Y, Loc.Z * HSF));
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, MC);
 		if (Mat)
@@ -5637,20 +5694,22 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 			FLinearColor(0.80f, 0.75f, 0.55f),
 		};
 
-		const int32 NumRows = FMath::Clamp(FMath::FloorToInt((TowerH - StartZ) / FloorH), 1, 14);
+		const int32 NumRows = FMath::Clamp(FMath::FloorToInt((TowerH - StartZ) / FloorH), 1, 30);
 
-		// Two wider faces.
+		// Two wider faces — use scaled offsets so windows sit on scaled tower surface.
+		const float ScW = TowerW * WSF;
+		const float ScD = TowerD * WSF;
 		struct FWF { float OffX, OffY; bool bAlongX; float FW; };
 		FWF Faces[2];
 		if (TowerW >= TowerD)
 		{
-			Faces[0] = { 0.f,  TowerD * 0.5f + 5.f, true, TowerW };
-			Faces[1] = { 0.f, -TowerD * 0.5f - 5.f, true, TowerW };
+			Faces[0] = { 0.f,  ScD * 0.5f + 5.f, true, ScW };
+			Faces[1] = { 0.f, -ScD * 0.5f - 5.f, true, ScW };
 		}
 		else
 		{
-			Faces[0] = {  TowerW * 0.5f + 5.f, 0.f, false, TowerD };
-			Faces[1] = { -TowerW * 0.5f - 5.f, 0.f, false, TowerD };
+			Faces[0] = {  ScW * 0.5f + 5.f, 0.f, false, ScD };
+			Faces[1] = { -ScW * 0.5f - 5.f, 0.f, false, ScD };
 		}
 
 		for (int32 Fi = 0; Fi < 2; ++Fi)
@@ -5704,6 +5763,9 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 		const int32 NumBands = FMath::Clamp(FMath::FloorToInt(H / 1000.f), 2, 8);
 		const float BandH = FMath::Clamp(H * 0.04f, 25.f, 60.f);
 		const float BandD = 5.f;
+		// Scaled face offsets
+		const float ScW = W * WSF;
+		const float ScD = D * WSF;
 
 		for (int32 b = 0; b < NumBands; ++b)
 		{
@@ -5713,16 +5775,16 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 			FString NX = FString::Printf(TEXT("Band_%d"), BIdx++);
 			FString NnX = FString::Printf(TEXT("Band_%d"), BIdx++);
 			// +Y face
-			MakeCubeMC(Owner, FVector(BaseLoc.X, BaseLoc.Y + D * 0.5f + 3.f, BZ),
+			MakeCubeMC(Owner, FVector(BaseLoc.X, BaseLoc.Y + ScD * 0.5f + 3.f, BZ),
 				FVector(W, BandD, BandH), GlassColor, *NY, 0.1f, 0.05f);
 			// -Y face
-			MakeCubeMC(Owner, FVector(BaseLoc.X, BaseLoc.Y - D * 0.5f - 3.f, BZ),
+			MakeCubeMC(Owner, FVector(BaseLoc.X, BaseLoc.Y - ScD * 0.5f - 3.f, BZ),
 				FVector(W, BandD, BandH), GlassColor, *NnY, 0.1f, 0.05f);
 			// +X face
-			MakeCubeMC(Owner, FVector(BaseLoc.X + W * 0.5f + 3.f, BaseLoc.Y, BZ),
+			MakeCubeMC(Owner, FVector(BaseLoc.X + ScW * 0.5f + 3.f, BaseLoc.Y, BZ),
 				FVector(BandD, D, BandH), GlassColor, *NX, 0.1f, 0.05f);
 			// -X face
-			MakeCubeMC(Owner, FVector(BaseLoc.X - W * 0.5f - 3.f, BaseLoc.Y, BZ),
+			MakeCubeMC(Owner, FVector(BaseLoc.X - ScW * 0.5f - 3.f, BaseLoc.Y, BZ),
 				FVector(BandD, D, BandH), GlassColor, *NnX, 0.1f, 0.05f);
 		}
 	};
@@ -5731,8 +5793,8 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 	auto AddCornerColumns = [&](AActor* Owner, const FVector& BaseLoc,
 		float W, float D, float H, float ColW, const FLinearColor& Color)
 	{
-		const float HalfW = W * 0.5f;
-		const float HalfD = D * 0.5f;
+		const float HalfW = W * WSF * 0.5f;
+		const float HalfD = D * WSF * 0.5f;
 		const FVector Corners[] = {
 			{ BaseLoc.X + HalfW, BaseLoc.Y + HalfD, BaseLoc.Z + H * 0.5f },
 			{ BaseLoc.X - HalfW, BaseLoc.Y + HalfD, BaseLoc.Z + H * 0.5f },
@@ -5759,1267 +5821,1026 @@ void UPHCCitySubsystem::SpawnSkyscrapers()
 	int32 SkyCount = 0;
 
 	// ===================================================================
-	// Colors
+	// Charlotte Uptown Color Palette
 	// ===================================================================
 	const FLinearColor SteelGray(0.42f, 0.44f, 0.46f);
 	const FLinearColor DarkSteel(0.20f, 0.22f, 0.24f);
 	const FLinearColor LightConcrete(0.72f, 0.70f, 0.68f);
 	const FLinearColor WarmConcrete(0.65f, 0.58f, 0.50f);
 	const FLinearColor CoolWhite(0.82f, 0.84f, 0.88f);
-	const FLinearColor MidnightBlue(0.08f, 0.10f, 0.18f);
 	const FLinearColor TintedGlass(0.10f, 0.14f, 0.22f);
 	const FLinearColor DarkGlass(0.05f, 0.08f, 0.14f);
 	const FLinearColor SkyGlass(0.12f, 0.18f, 0.28f);
 	const FLinearColor GoldAccent(0.75f, 0.55f, 0.15f);
 	const FLinearColor CopperAccent(0.62f, 0.35f, 0.12f);
-	const FLinearColor RedAccent(0.55f, 0.08f, 0.08f);
 	const FLinearColor AntennaRed(0.85f, 0.10f, 0.10f);
 	const FLinearColor LightGray(0.58f, 0.56f, 0.54f);
 	const FLinearColor SandStone(0.72f, 0.65f, 0.52f);
 	const FLinearColor CharcoalGray(0.15f, 0.15f, 0.17f);
 	const FLinearColor WhiteMarble(0.90f, 0.88f, 0.85f);
-	const FLinearColor CreamColor(0.88f, 0.82f, 0.70f);
-	const FLinearColor NavyBlue(0.06f, 0.08f, 0.20f);
-	const FLinearColor Terracotta(0.68f, 0.38f, 0.18f);
-	const FLinearColor EmeraldGreen(0.05f, 0.32f, 0.15f);
-	const FLinearColor CrystalBlue(0.18f, 0.28f, 0.42f);
-	const FLinearColor GrayGreen(0.35f, 0.40f, 0.35f);
+	// Charlotte-specific
+	const FLinearColor RosyBeige(0.72f, 0.65f, 0.58f);    // BofA Corporate Center granite
+	const FLinearColor BofASilver(0.80f, 0.80f, 0.82f);    // BofA crown spires
+	const FLinearColor CobaltBlue(0.08f, 0.12f, 0.28f);    // 300 South Tryon
+	const FLinearColor OliveDrab(0.22f, 0.24f, 0.14f);     // military/utilitarian
+	const FLinearColor PantherBlack(0.04f, 0.04f, 0.04f);  // Stadium panther statues
+	const FLinearColor StadiumGray(0.55f, 0.55f, 0.52f);   // Stadium concrete
+	const FLinearColor FieldGreen(0.08f, 0.35f, 0.08f);    // Playing field grass
+	const FLinearColor BaseballDirt(0.55f, 0.38f, 0.22f);   // Infield dirt
+	const FLinearColor ParkGreen(0.12f, 0.42f, 0.12f);     // Park lawn
+	const FLinearColor ChurchStone(0.68f, 0.62f, 0.52f);   // Gothic church stone
+	const FLinearColor NASCARSteel(0.70f, 0.72f, 0.74f);   // NASCAR Hall stainless
 
 	// ===================================================================
-	// 1. THE PINNACLE -- Art Deco stepped tower with antenna spire
-	//    Block (8,11), downtown core
+	// CHARLOTTE, NC UPTOWN — Real buildings at real positions
+	// Scale: 8 UU = 1 foot. BlockCenter(12,12) = Trade/Tryon intersection.
 	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(8, 11) + FVector(500.f, 500.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Pinnacle"));
-		if (T)
-		{
-			// Wide podium base (3 stories) -- sandstone concrete
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 500.f),
-				FVector(900.f, 800.f, 1000.f), SandStone, TEXT("Pinnacle_Pod"), 0.f, 0.6f);
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Main tower -- concrete
-			const float MainH = 5000.f;
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1000.f + MainH * 0.5f),
-				FVector(550.f, 500.f, MainH), WarmConcrete, TEXT("Pinnacle_Main"), 0.f, 0.6f);
-
-			// First setback -- concrete
-			const float Set1H = 1800.f;
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1000.f + MainH + Set1H * 0.5f),
-				FVector(400.f, 380.f, Set1H), WarmConcrete * 0.95f, TEXT("Pinnacle_Set1"), 0.f, 0.6f);
-
-			// Second setback (crown) -- sandstone concrete
-			const float Set2H = 900.f;
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1000.f + MainH + Set1H + Set2H * 0.5f),
-				FVector(250.f, 240.f, Set2H), SandStone, TEXT("Pinnacle_Set2"), 0.f, 0.6f);
-
-			// Decorative crown ledges -- gold trim
-			const float CrownZ = 1000.f + MainH + Set1H + Set2H;
-			for (int32 i = 0; i < 4; ++i)
-			{
-				const float LZ = CrownZ - i * 100.f;
-				const float LW = 260.f - i * 15.f;
-				FString LN = FString::Printf(TEXT("Pinnacle_Ledge_%d"), i);
-				MakeCubeMC(T, FVector(Loc.X, Loc.Y, LZ),
-					FVector(LW + 30.f, LW + 20.f, 25.f), GoldAccent, *LN, 0.95f, 0.2f);
-			}
-
-			// Antenna spire -- steel
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, CrownZ + 600.f),
-				FVector(15.f, 15.f, 1200.f), LightGray, TEXT("Pinnacle_Spire"), 0.85f, 0.3f);
-			MakeSphereMC(T, FVector(Loc.X, Loc.Y, CrownZ + 1200.f),
-				FVector(25.f, 25.f, 25.f), AntennaRed, TEXT("Pinnacle_Light"), 0.f, 0.5f,
-				FLinearColor(2.0f, 0.2f, 0.2f));
-
-			AddCornerColumns(T, FVector(Loc.X, Loc.Y, 1000.f), 560.f, 510.f, MainH, 35.f, SandStone * 0.8f);
-			AddGlassBands(T, FVector(Loc.X, Loc.Y, 1000.f), 550.f, 500.f, MainH, TintedGlass, BandIdx);
-			AddWindows(T, FVector(Loc.X, Loc.Y, 1000.f), 550.f, 500.f, MainH + Set1H, WinIdx);
-
-			// Ground floor canopy -- gold trim
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y + 410.f, 280.f),
-				FVector(400.f, 120.f, 15.f), GoldAccent, TEXT("Pinnacle_Canopy"), 0.95f, 0.2f);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
 
 	// ===================================================================
-	// 2. GLASS TOWER -- Sleek modern blue-glass curtain wall
-	//    Block (10,11)
+	// 1. BANK OF AMERICA CORPORATE CENTER — 871 ft (6,968 UU)
+	//    100 N. Tryon St — tallest in Charlotte. Rosy beige granite,
+	//    6 stepped setbacks, iconic 100-ft metal crown spires.
+	//    Block (12,14) — N. Tryon between Trade and 5th St
 	// ===================================================================
 	{
-		const FVector Loc = BlockCenter(10, 11) + FVector(-400.f, 400.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_GlassTower"));
+		const FVector Loc = BlockCenter(12, 14);
+		AActor* T = MakeTower(Loc, TEXT("CLT_BofA_CorporateCenter"));
 		if (T)
 		{
-			const float H = 5500.f;
-			// Glass tower facade
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(500.f, 450.f, H), MidnightBlue, TEXT("Glass_Main"), 0.1f, 0.02f);
+			// 30-ft granite base
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 120.f),
+				FVector(700.f, 600.f, 240.f), RosyBeige, TEXT("BofA_Base"), 0.1f, 0.7f);
 			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			AddGlassBands(T, Loc, 500.f, 450.f, H, SkyGlass, BandIdx);
-
-			// Mechanical penthouse -- steel
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 200.f),
-				FVector(300.f, 250.f, 400.f), DarkSteel, TEXT("Glass_Pent"), 0.85f, 0.3f);
-
-			// Rooftop antenna array -- steel
-			for (int32 i = -1; i <= 1; ++i)
-			{
-				FString AN = FString::Printf(TEXT("Glass_Ant_%d"), i + 1);
-				MakeCylMC(T, FVector(Loc.X + i * 80.f, Loc.Y, H + 400.f + 300.f),
-					FVector(8.f, 8.f, 600.f), LightGray, *AN, 0.85f, 0.3f);
-			}
-
-			// Ground floor glass lobby
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y + 230.f, 200.f),
-				FVector(480.f, 20.f, 380.f), SkyGlass * 1.5f, TEXT("Glass_Lobby"), 0.1f, 0.02f);
-
-			AddWindows(T, Loc, 500.f, 450.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 3. CROWN PLAZA -- Wide base tapering to narrow crown with gold cap
-	//    Block (8,14)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(8, 14) + FVector(400.f, -300.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_CrownPlaza"));
-		if (T)
-		{
-			// Wide base (6 stories) -- concrete
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1000.f),
-				FVector(1000.f, 900.f, 2000.f), LightConcrete, TEXT("Crown_Base"), 0.f, 0.6f);
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Main tower rising from base -- concrete
-			const float TH = 4500.f;
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2000.f + TH * 0.5f),
-				FVector(600.f, 550.f, TH), CoolWhite, TEXT("Crown_Tower"), 0.f, 0.6f);
-
-			// Gold crown cap
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2000.f + TH + 100.f),
-				FVector(650.f, 600.f, 200.f), GoldAccent, TEXT("Crown_Cap1"), 0.95f, 0.2f);
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2000.f + TH + 250.f),
-				FVector(550.f, 500.f, 100.f), GoldAccent, TEXT("Crown_Cap2"), 0.95f, 0.2f);
-
-			AddCornerColumns(T, FVector(Loc.X, Loc.Y, 2000.f), 610.f, 560.f, TH, 40.f, LightConcrete * 0.85f);
-
-			// Center vertical spines -- steel structural
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y + 280.f, 2000.f + TH * 0.5f),
-				FVector(40.f, 8.f, TH), LightConcrete * 0.8f, TEXT("Crown_SpineA"), 0.85f, 0.3f);
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y - 280.f, 2000.f + TH * 0.5f),
-				FVector(40.f, 8.f, TH), LightConcrete * 0.8f, TEXT("Crown_SpineB"), 0.85f, 0.3f);
-
-			AddGlassBands(T, FVector(Loc.X, Loc.Y, 2000.f), 600.f, 550.f, TH, TintedGlass, BandIdx);
-			AddWindows(T, FVector(Loc.X, Loc.Y, 2000.f), 600.f, 550.f, TH, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 4. THE CYLINDER -- Round glass tower with observation deck ring
-	//    Block (10,14)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(10, 14) + FVector(-300.f, -400.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Cylinder"));
-		if (T)
-		{
-			const float H = 5000.f;
-			const float R = 280.f;
-
-			// Steel cylinder body
-			auto* Body = MakeCylMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(R, R, H), SteelGray, TEXT("Cyl_Main"), 0.85f, 0.3f);
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Observation deck ring -- glass
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, H * 0.82f),
-				FVector(R + 80.f, R + 80.f, 180.f), DarkGlass, TEXT("Cyl_ObsDeck"), 0.1f, 0.02f);
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, H * 0.82f - 80.f),
-				FVector(R + 90.f, R + 90.f, 20.f), LightGray, TEXT("Cyl_ObsFloor"), 0.85f, 0.3f);
-
-			// Roof disc -- steel
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, H + 10.f),
-				FVector(R + 20.f, R + 20.f, 20.f), DarkSteel, TEXT("Cyl_Roof"), 0.85f, 0.3f);
-
-			// Antenna -- steel
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, H + 600.f),
-				FVector(12.f, 12.f, 1200.f), LightGray, TEXT("Cyl_Ant"), 0.85f, 0.3f);
-			MakeSphereMC(T, FVector(Loc.X, Loc.Y, H + 1200.f),
-				FVector(20.f, 20.f, 20.f), AntennaRed, TEXT("Cyl_AntLight"), 0.f, 0.5f,
-				FLinearColor(2.0f, 0.2f, 0.2f));
-
-			// Ground floor entrance -- glass
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y + R + 50.f, 200.f),
-				FVector(300.f, 100.f, 380.f), SkyGlass * 1.5f, TEXT("Cyl_Entrance"), 0.1f, 0.02f);
-
-			AddWindows(T, Loc, R * 2.f, R * 2.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 5. STEPPED MONOLITH -- Ultra-tall art deco with 3 dramatic setbacks
-	//    Block (9,11)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(9, 11) + FVector(0.f, 600.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Monolith"));
-		if (T)
-		{
-			// Tier 1: wide base -- steel
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1200.f),
-				FVector(800.f, 700.f, 2400.f), SteelGray, TEXT("Mono_T1"), 0.85f, 0.3f);
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Tier 2 -- steel
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2400.f + 1500.f),
-				FVector(600.f, 520.f, 3000.f), SteelGray * 0.95f, TEXT("Mono_T2"), 0.85f, 0.3f);
-			// Tier 3 -- steel
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 5400.f + 1000.f),
-				FVector(420.f, 380.f, 2000.f), SteelGray * 0.9f, TEXT("Mono_T3"), 0.85f, 0.3f);
-			// Tier 4: crown -- dark steel
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 7400.f + 400.f),
-				FVector(250.f, 230.f, 800.f), DarkSteel, TEXT("Mono_T4"), 0.85f, 0.3f);
-
-			// Setback ledges -- copper accents
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2400.f),
-				FVector(820.f, 720.f, 40.f), CopperAccent, TEXT("Mono_L1"), 0.9f, 0.25f);
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 5400.f),
-				FVector(620.f, 540.f, 40.f), CopperAccent, TEXT("Mono_L2"), 0.9f, 0.25f);
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 7400.f),
-				FVector(440.f, 400.f, 40.f), CopperAccent, TEXT("Mono_L3"), 0.9f, 0.25f);
-
-			// Spire -- steel
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, 8200.f + 700.f),
-				FVector(18.f, 18.f, 1400.f), LightGray, TEXT("Mono_Spire"), 0.85f, 0.3f);
-			MakeSphereMC(T, FVector(Loc.X, Loc.Y, 9600.f),
-				FVector(28.f, 28.f, 28.f), AntennaRed, TEXT("Mono_Light"), 0.f, 0.5f,
-				FLinearColor(2.0f, 0.2f, 0.2f));
-
-			AddGlassBands(T, Loc, 800.f, 700.f, 2400.f, DarkGlass, BandIdx);
-			AddGlassBands(T, FVector(Loc.X, Loc.Y, 2400.f), 600.f, 520.f, 3000.f, DarkGlass, BandIdx);
-			AddWindows(T, Loc, 800.f, 700.f, 7800.f, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 6. TWIN TOWERS -- Two matching towers connected by skybridge
-	//    Block (9,12)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(9, 12) + FVector(0.f, 500.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Twins"));
-		if (T)
-		{
-			const float H = 4800.f;
-			const float Sep = 450.f;
-
-			auto* Body = MakeCubeMC(T, FVector(Loc.X - Sep, Loc.Y, H * 0.5f),
-				FVector(400.f, 380.f, H), CoolWhite, TEXT("Twin_A"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			auto* BodyB = MakeCubeMC(T, FVector(Loc.X + Sep, Loc.Y, H * 0.5f),
-				FVector(400.f, 380.f, H), CoolWhite, TEXT("Twin_B"));
-			BodyB->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			BodyB->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Skybridge at 60% height
-			const float BridgeZ = H * 0.6f;
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, BridgeZ),
-				FVector(Sep * 2.f - 200.f, 180.f, 250.f), SkyGlass * 1.5f, TEXT("Twin_Bridge"));
-
-			MakeCubeMC(T, FVector(Loc.X - 100.f, Loc.Y, BridgeZ - 200.f),
-				FVector(30.f, 30.f, 400.f), LightGray, TEXT("Twin_BridgeColA"));
-			MakeCubeMC(T, FVector(Loc.X + 100.f, Loc.Y, BridgeZ - 200.f),
-				FVector(30.f, 30.f, 400.f), LightGray, TEXT("Twin_BridgeColB"));
-
-			// Mechanical penthouses
-			MakeCubeMC(T, FVector(Loc.X - Sep, Loc.Y, H + 150.f),
-				FVector(250.f, 230.f, 300.f), DarkSteel, TEXT("Twin_PentA"));
-			MakeCubeMC(T, FVector(Loc.X + Sep, Loc.Y, H + 150.f),
-				FVector(250.f, 230.f, 300.f), DarkSteel, TEXT("Twin_PentB"));
-
-			// Antennas
-			MakeCylMC(T, FVector(Loc.X - Sep, Loc.Y, H + 300.f + 400.f),
-				FVector(10.f, 10.f, 800.f), LightGray, TEXT("Twin_AntA"));
-			MakeCylMC(T, FVector(Loc.X + Sep, Loc.Y, H + 300.f + 400.f),
-				FVector(10.f, 10.f, 800.f), LightGray, TEXT("Twin_AntB"));
-
-			AddGlassBands(T, FVector(Loc.X - Sep, Loc.Y, 0.f), 400.f, 380.f, H, TintedGlass, BandIdx);
-			AddGlassBands(T, FVector(Loc.X + Sep, Loc.Y, 0.f), 400.f, 380.f, H, TintedGlass, BandIdx);
-			AddWindows(T, FVector(Loc.X - Sep, Loc.Y, 0.f), 400.f, 380.f, H, WinIdx);
-			AddWindows(T, FVector(Loc.X + Sep, Loc.Y, 0.f), 400.f, 380.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 7. THE SLAB -- Super-thin ultra-tall residential tower
-	//    Block (8,13)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(8, 13) + FVector(0.f, -500.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Slab"));
-		if (T)
-		{
-			const float H = 6500.f;
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(200.f, 600.f, H), CoolWhite, TEXT("Slab_Main"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Balcony ledges
-			for (int32 i = 0; i < 10; ++i)
-			{
-				const float BZ = 500.f + i * 600.f;
-				FString BNA = FString::Printf(TEXT("Slab_BalA_%d"), i);
-				FString BNB = FString::Printf(TEXT("Slab_BalB_%d"), i);
-				MakeCubeMC(T, FVector(Loc.X, Loc.Y + 310.f, BZ),
-					FVector(180.f, 30.f, 12.f), LightGray, *BNA);
-				MakeCubeMC(T, FVector(Loc.X, Loc.Y - 310.f, BZ),
-					FVector(180.f, 30.f, 12.f), LightGray, *BNB);
-			}
-
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 40.f),
-				FVector(220.f, 620.f, 15.f), LightGray, TEXT("Slab_Roof"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 200.f),
-				FVector(160.f, 400.f, 300.f), SkyGlass * 1.5f, TEXT("Slab_Pent"));
-
-			AddGlassBands(T, Loc, 200.f, 600.f, H, SkyGlass, BandIdx);
-			AddWindows(T, Loc, 200.f, 600.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 8. BRUTALIST TOWER -- Chunky concrete with horizontal ledges
-	//    Block (7,12)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(7, 12) + FVector(600.f, 0.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Brutalist"));
-		if (T)
-		{
-			const float H = 4000.f;
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(650.f, 600.f, H), WarmConcrete, TEXT("Brut_Main"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
+			// Floors 1-13: Full footprint
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 240.f + 760.f),
+				FVector(700.f, 600.f, 1520.f), RosyBeige, TEXT("BofA_Tier1"), 0.05f, 0.6f);
+			// Floors 13-44: Setback 1
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1760.f + 1800.f),
+				FVector(600.f, 500.f, 3600.f), RosyBeige * 1.05f, TEXT("BofA_Tier2"), 0.05f, 0.55f);
+			// Floors 44-47
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 5360.f + 180.f),
+				FVector(500.f, 400.f, 360.f), RosyBeige * 1.08f, TEXT("BofA_Tier3"), 0.05f, 0.5f);
+			// Floors 47-53
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 5720.f + 360.f),
+				FVector(400.f, 300.f, 720.f), RosyBeige * 1.10f, TEXT("BofA_Tier4"), 0.05f, 0.5f);
+			// Floors 53-56
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 6440.f + 180.f),
+				FVector(300.f, 250.f, 360.f), BofASilver, TEXT("BofA_Tier5"), 0.3f, 0.4f);
+			// Floors 56-60 (top section)
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 6800.f + 84.f),
+				FVector(200.f, 180.f, 168.f), BofASilver, TEXT("BofA_Tier6"), 0.3f, 0.4f);
+			// Crown spires — 8 vertical rods in a ring (100 ft = 800 UU)
+			const float CrownBase = 6968.f;
 			for (int32 i = 0; i < 8; ++i)
 			{
-				const float LZ = 400.f + i * 480.f;
-				FString LN = FString::Printf(TEXT("Brut_Ledge_%d"), i);
-				MakeCubeMC(T, FVector(Loc.X, Loc.Y, LZ),
-					FVector(680.f, 630.f, 30.f), WarmConcrete * 0.85f, *LN);
+				const float Angle = i * 45.f;
+				const float Rad = FMath::DegreesToRadians(Angle);
+				const float CR = 80.f;
+				FString SN = FString::Printf(TEXT("BofA_Spire_%d"), i);
+				MakeCylMC(T, FVector(Loc.X + FMath::Cos(Rad) * CR, Loc.Y + FMath::Sin(Rad) * CR, CrownBase + 400.f),
+					FVector(8.f, 8.f, 800.f), BofASilver, *SN, 0.9f, 0.1f);
 			}
-
-			for (int32 i = 0; i < 5; ++i)
-			{
-				const float WX = Loc.X - 250.f + i * 125.f;
-				FString WNA = FString::Printf(TEXT("Brut_SlotA_%d"), i);
-				FString WNB = FString::Printf(TEXT("Brut_SlotB_%d"), i);
-				MakeCubeMC(T, FVector(WX, Loc.Y + 305.f, H * 0.5f),
-					FVector(50.f, 10.f, H * 0.85f), CharcoalGray, *WNA);
-				MakeCubeMC(T, FVector(WX, Loc.Y - 305.f, H * 0.5f),
-					FVector(50.f, 10.f, H * 0.85f), CharcoalGray, *WNB);
-			}
-
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 150.f),
-				FVector(500.f, 450.f, 300.f), CharcoalGray, TEXT("Brut_Mech"));
-
-			AddWindows(T, FVector(Loc.X, Loc.Y, 0.f), 650.f, 600.f, H, WinIdx);
-
+			AddGlassBands(T, Loc, 700.f, 600.f, 5360.f, SkyGlass, BandIdx);
+			AddWindows(T, Loc, 700.f, 600.f, 6968.f, WinIdx);
 			T->SetRootComponent(Body);
 			SkyCount++;
 		}
 	}
 
 	// ===================================================================
-	// 9. COPPER SPIRE -- Hexagonal profile with spire
-	//    Block (10,12)
+	// 2. 550 SOUTH TRYON (fmr. Duke Energy Center) — 786 ft (6,288 UU)
+	//    Glass curtain wall, "handlebar" crown with LED arches.
+	//    Block (12,8)
 	// ===================================================================
 	{
-		const FVector Loc = BlockCenter(10, 12) + FVector(-500.f, 0.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_CopperSpire"));
+		const FVector Loc = BlockCenter(12, 8);
+		AActor* T = MakeTower(Loc, TEXT("CLT_550_SouthTryon"));
 		if (T)
 		{
-			const float H = 5800.f;
-
+			const float H = 6288.f;
 			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(450.f, 400.f, H), LightConcrete, TEXT("Copper_Main"));
+				FVector(550.f, 500.f, H), TintedGlass, TEXT("550S_Main"), 0.15f, 0.08f);
 			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			MakeCubeMC(T, FVector(Loc.X + 60.f, Loc.Y + 60.f, H * 0.5f),
-				FVector(350.f, 350.f, H * 0.97f), LightConcrete * 0.95f, TEXT("Copper_Facet"));
-
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.75f + H * 0.125f),
-				FVector(380.f, 340.f, H * 0.25f), CopperAccent * 0.8f, TEXT("Copper_Upper"));
-
-			const float CrownBase = H;
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, CrownBase + 200.f),
-				FVector(350.f, 310.f, 400.f), CopperAccent, TEXT("Copper_Crown1"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, CrownBase + 500.f),
-				FVector(250.f, 220.f, 200.f), CopperAccent * 1.1f, TEXT("Copper_Crown2"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, CrownBase + 700.f),
-				FVector(150.f, 130.f, 200.f), CopperAccent * 1.2f, TEXT("Copper_Crown3"));
-
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, CrownBase + 800.f + 500.f),
-				FVector(14.f, 14.f, 1000.f), CopperAccent * 0.7f, TEXT("Copper_Spire"));
-
-			AddGlassBands(T, Loc, 450.f, 400.f, H * 0.7f, TintedGlass, BandIdx);
-			AddWindows(T, Loc, 450.f, 400.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 10. THE OBELISK -- Tapered rectangular tower
-	//     Block (7,13)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(7, 13) + FVector(500.f, 0.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Obelisk"));
-		if (T)
-		{
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1500.f),
-				FVector(700.f, 650.f, 3000.f), DarkSteel, TEXT("Obel_Lower"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 3000.f + 1250.f),
-				FVector(550.f, 500.f, 2500.f), DarkSteel * 1.05f, TEXT("Obel_Mid"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 5500.f + 750.f),
-				FVector(380.f, 340.f, 1500.f), SteelGray, TEXT("Obel_Upper"));
-
-			// Helipad
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 7000.f + 10.f),
-				FVector(400.f, 360.f, 20.f), LightGray, TEXT("Obel_RoofPad"));
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, 7020.f + 5.f),
-				FVector(120.f, 120.f, 5.f), FLinearColor(0.8f, 0.8f, 0.0f), TEXT("Obel_Heli"));
-
-			// H marking
-			MakeCubeMC(T, FVector(Loc.X - 40.f, Loc.Y, 7028.f),
-				FVector(8.f, 60.f, 3.f), CoolWhite, TEXT("Obel_H1"));
-			MakeCubeMC(T, FVector(Loc.X + 40.f, Loc.Y, 7028.f),
-				FVector(8.f, 60.f, 3.f), CoolWhite, TEXT("Obel_H2"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 7028.f),
-				FVector(80.f, 8.f, 3.f), CoolWhite, TEXT("Obel_H3"));
-
-			AddGlassBands(T, Loc, 700.f, 650.f, 3000.f, SkyGlass, BandIdx);
-			AddGlassBands(T, FVector(Loc.X, Loc.Y, 3000.f), 550.f, 500.f, 2500.f, SkyGlass, BandIdx);
-			AddWindows(T, Loc, 700.f, 650.f, 5500.f, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 11. PRISMATIC TOWER -- Offset stacked boxes
-	//     Block (10,13)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(10, 13) + FVector(-400.f, 0.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Prismatic"));
-		if (T)
-		{
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 900.f),
-				FVector(800.f, 700.f, 1800.f), CoolWhite, TEXT("Prism_T1"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			MakeCubeMC(T, FVector(Loc.X + 80.f, Loc.Y - 50.f, 1800.f + 900.f),
-				FVector(650.f, 580.f, 1800.f), CoolWhite * 0.97f, TEXT("Prism_T2"));
-			MakeCubeMC(T, FVector(Loc.X + 150.f, Loc.Y - 100.f, 3600.f + 750.f),
-				FVector(500.f, 450.f, 1500.f), CoolWhite * 0.94f, TEXT("Prism_T3"));
-			MakeCubeMC(T, FVector(Loc.X + 200.f, Loc.Y - 130.f, 5100.f + 500.f),
-				FVector(350.f, 320.f, 1000.f), CoolWhite * 0.91f, TEXT("Prism_T4"));
-
-			MakeCubeMC(T, FVector(Loc.X - 400.f, Loc.Y, 900.f),
-				FVector(15.f, 700.f, 1800.f), SkyGlass, TEXT("Prism_Stripe"));
-
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1800.f),
-				FVector(820.f, 720.f, 25.f), LightGray, TEXT("Prism_L1"));
-			MakeCubeMC(T, FVector(Loc.X + 80.f, Loc.Y - 50.f, 3600.f),
-				FVector(670.f, 600.f, 25.f), LightGray, TEXT("Prism_L2"));
-			MakeCubeMC(T, FVector(Loc.X + 150.f, Loc.Y - 100.f, 5100.f),
-				FVector(520.f, 470.f, 25.f), LightGray, TEXT("Prism_L3"));
-
-			MakeCubeMC(T, FVector(Loc.X + 200.f, Loc.Y - 130.f, 6100.f + 120.f),
-				FVector(200.f, 180.f, 240.f), DarkSteel, TEXT("Prism_Mech"));
-
-			AddGlassBands(T, Loc, 800.f, 700.f, 1800.f, TintedGlass, BandIdx);
-			AddWindows(T, Loc, 800.f, 700.f, 5600.f, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 12. BEACON TOWER -- Slender tower with dome observatory
-	//     Block (9,14)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(9, 14) + FVector(0.f, -500.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Beacon"));
-		if (T)
-		{
-			const float H = 4200.f;
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(380.f, 350.f, H), SteelGray, TEXT("Beacon_Main"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			MakeSphereMC(T, FVector(Loc.X, Loc.Y, H + 100.f),
-				FVector(320.f, 320.f, 250.f), SkyGlass * 2.f, TEXT("Beacon_Dome"));
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, H),
-				FVector(200.f, 200.f, 40.f), LightGray, TEXT("Beacon_Ring"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H - 30.f),
-				FVector(420.f, 390.f, 30.f), LightGray, TEXT("Beacon_Plat"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 350.f),
-				FVector(500.f, 470.f, 700.f), SteelGray * 1.05f, TEXT("Beacon_Pod"));
-
-			AddCornerColumns(T, Loc, 390.f, 360.f, H, 30.f, DarkSteel);
-			AddGlassBands(T, Loc, 380.f, 350.f, H, TintedGlass, BandIdx);
-			AddWindows(T, Loc, 380.f, 350.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 13. FORTRESS TOWER -- L-shaped footprint with courtyard
-	//     Block (7,15)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(7, 15) + FVector(300.f, -300.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Fortress"));
-		if (T)
-		{
-			const float H = 3800.f;
-
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y - 200.f, H * 0.5f),
-				FVector(800.f, 350.f, H), LightConcrete, TEXT("Fort_WingA"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			auto* WB = MakeCubeMC(T, FVector(Loc.X - 250.f, Loc.Y + 200.f, H * 0.5f),
-				FVector(350.f, 600.f, H), LightConcrete * 0.97f, TEXT("Fort_WingB"));
-			WB->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			WB->SetCollisionResponseToAllChannels(ECR_Block);
-
-			MakeCubeMC(T, FVector(Loc.X - 250.f, Loc.Y - 200.f, H * 0.5f + 500.f),
-				FVector(380.f, 380.f, H + 1000.f), LightConcrete * 0.93f, TEXT("Fort_Corner"));
-			MakeCubeMC(T, FVector(Loc.X - 250.f, Loc.Y - 200.f, H + 1000.f + 100.f),
-				FVector(400.f, 400.f, 50.f), CopperAccent, TEXT("Fort_Crown"));
-			MakeCubeMC(T, FVector(Loc.X + 100.f, Loc.Y + 200.f, 5.f),
-				FVector(350.f, 350.f, 5.f), FLinearColor(0.08f, 0.25f, 0.06f), TEXT("Fort_Court"));
-
-			AddGlassBands(T, FVector(Loc.X, Loc.Y - 200.f, 0.f), 800.f, 350.f, H, TintedGlass, BandIdx);
-			AddWindows(T, FVector(Loc.X, Loc.Y - 200.f, 0.f), 800.f, 350.f, H, WinIdx);
-			AddWindows(T, FVector(Loc.X - 250.f, Loc.Y + 200.f, 0.f), 350.f, 600.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 14. RED STRIPE TOWER -- Dark tower with bold red accent bands
-	//     Block (10,10)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(10, 10) + FVector(-400.f, 400.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_RedStripe"));
-		if (T)
-		{
-			const float H = 4600.f;
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(480.f, 440.f, H), CharcoalGray, TEXT("Red_Main"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			for (int32 i = 0; i < 5; ++i)
-			{
-				const float BZ = 600.f + i * 900.f;
-				FString RN1 = FString::Printf(TEXT("Red_BandA_%d"), i);
-				FString RN2 = FString::Printf(TEXT("Red_BandB_%d"), i);
-				FString RN3 = FString::Printf(TEXT("Red_BandC_%d"), i);
-				FString RN4 = FString::Printf(TEXT("Red_BandD_%d"), i);
-				MakeCubeMC(T, FVector(Loc.X, Loc.Y + 225.f, BZ),
-					FVector(490.f, 10.f, 50.f), RedAccent, *RN1);
-				MakeCubeMC(T, FVector(Loc.X, Loc.Y - 225.f, BZ),
-					FVector(490.f, 10.f, 50.f), RedAccent, *RN2);
-				MakeCubeMC(T, FVector(Loc.X + 245.f, Loc.Y, BZ),
-					FVector(10.f, 450.f, 50.f), RedAccent, *RN3);
-				MakeCubeMC(T, FVector(Loc.X - 245.f, Loc.Y, BZ),
-					FVector(10.f, 450.f, 50.f), RedAccent, *RN4);
-			}
-
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 50.f),
-				FVector(500.f, 460.f, 40.f), RedAccent, TEXT("Red_Crown"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 120.f),
-				FVector(350.f, 310.f, 100.f), CharcoalGray, TEXT("Red_Mech"));
-
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, H + 170.f + 400.f),
-				FVector(10.f, 10.f, 800.f), LightGray, TEXT("Red_Ant"));
-
-			AddWindows(T, Loc, 480.f, 440.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 15. GOLD CREST TOWER -- Elegant tower with gold-framed facade
-	//     Block (7,10)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(7, 10) + FVector(-500.f, -300.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_GoldCrest"));
-		if (T)
-		{
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 600.f),
-				FVector(750.f, 650.f, 1200.f), SandStone, TEXT("Gold_Base"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			const float H = 5200.f;
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1200.f + H * 0.5f),
-				FVector(500.f, 460.f, H), CoolWhite, TEXT("Gold_Tower"));
-
-			for (int32 i = 0; i < 4; ++i)
-			{
-				const float MX = Loc.X - 180.f + i * 120.f;
-				FString MNA = FString::Printf(TEXT("Gold_MullA_%d"), i);
-				FString MNB = FString::Printf(TEXT("Gold_MullB_%d"), i);
-				MakeCubeMC(T, FVector(MX, Loc.Y + 235.f, 1200.f + H * 0.5f),
-					FVector(12.f, 8.f, H), GoldAccent, *MNA);
-				MakeCubeMC(T, FVector(MX, Loc.Y - 235.f, 1200.f + H * 0.5f),
-					FVector(12.f, 8.f, H), GoldAccent, *MNB);
-			}
-			for (int32 i = 0; i < 8; ++i)
-			{
-				const float SZ = 1200.f + 500.f + i * 600.f;
-				FString SNA = FString::Printf(TEXT("Gold_SpanA_%d"), i);
-				FString SNB = FString::Printf(TEXT("Gold_SpanB_%d"), i);
-				MakeCubeMC(T, FVector(Loc.X, Loc.Y + 235.f, SZ),
-					FVector(500.f, 8.f, 15.f), GoldAccent, *SNA);
-				MakeCubeMC(T, FVector(Loc.X, Loc.Y - 235.f, SZ),
-					FVector(500.f, 8.f, 15.f), GoldAccent, *SNB);
-			}
-
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1200.f + H + 80.f),
-				FVector(520.f, 480.f, 60.f), GoldAccent, TEXT("Gold_CrownA"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1200.f + H + 160.f),
-				FVector(450.f, 410.f, 60.f), GoldAccent * 0.9f, TEXT("Gold_CrownB"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1200.f + H + 240.f),
-				FVector(380.f, 340.f, 60.f), GoldAccent * 0.8f, TEXT("Gold_CrownC"));
-
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, 1200.f + H + 270.f + 450.f),
-				FVector(16.f, 16.f, 900.f), GoldAccent * 0.7f, TEXT("Gold_Spire"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y + 340.f, 250.f),
-				FVector(500.f, 80.f, 15.f), GoldAccent, TEXT("Gold_Canopy"));
-
-			AddGlassBands(T, FVector(Loc.X, Loc.Y, 1200.f), 500.f, 460.f, H, TintedGlass, BandIdx);
-			AddWindows(T, FVector(Loc.X, Loc.Y, 1200.f), 500.f, 460.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 16. MARBLE SPIRE -- White marble clad tower with emerald bands
-	//     Block (8,10)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(8, 10) + FVector(200.f, 400.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_MarbleSpire"));
-		if (T)
-		{
-			const float H = 5400.f;
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(480.f, 440.f, H), WhiteMarble, TEXT("Marble_Main"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Emerald accent bands
-			for (int32 i = 0; i < 6; ++i)
-			{
-				const float BZ = 800.f + i * 800.f;
-				FString EN = FString::Printf(TEXT("Marble_EBand_%d"), i);
-				MakeCubeMC(T, FVector(Loc.X, Loc.Y + 225.f, BZ),
-					FVector(490.f, 8.f, 35.f), EmeraldGreen, *EN);
-			}
-
-			// Stepped crown
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 100.f),
-				FVector(400.f, 360.f, 200.f), WhiteMarble * 0.95f, TEXT("Marble_Crown1"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 250.f),
-				FVector(300.f, 260.f, 100.f), WhiteMarble * 0.9f, TEXT("Marble_Crown2"));
-
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, H + 300.f + 500.f),
-				FVector(12.f, 12.f, 1000.f), LightGray, TEXT("Marble_Spire"));
-			MakeSphereMC(T, FVector(Loc.X, Loc.Y, H + 1300.f),
-				FVector(22.f, 22.f, 22.f), AntennaRed, TEXT("Marble_Light"));
-
-			AddGlassBands(T, Loc, 480.f, 440.f, H, CrystalBlue, BandIdx);
-			AddWindows(T, Loc, 480.f, 440.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 17. NAVY TOWER -- Dark navy blue tower with cream horizontal bands
-	//     Block (9,10)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(9, 10) + FVector(-200.f, -400.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_NavyTower"));
-		if (T)
-		{
-			const float H = 4800.f;
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(520.f, 480.f, H), NavyBlue, TEXT("Navy_Main"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Cream horizontal bands every 4 floors
-			for (int32 i = 0; i < 7; ++i)
-			{
-				const float BZ = 500.f + i * 650.f;
-				FString BN = FString::Printf(TEXT("Navy_Cream_%d"), i);
-				MakeCubeMC(T, FVector(Loc.X, Loc.Y, BZ),
-					FVector(540.f, 500.f, 25.f), CreamColor, *BN);
-			}
-
-			// Penthouse with terrace
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 150.f),
-				FVector(380.f, 340.f, 300.f), NavyBlue * 1.2f, TEXT("Navy_Pent"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 15.f),
-				FVector(540.f, 500.f, 30.f), CreamColor, TEXT("Navy_Roof"));
-
-			AddWindows(T, Loc, 520.f, 480.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 18. TERRACOTTA TOWER -- Warm terracotta clad with arched details
-	//     Block (8,15)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(8, 15) + FVector(-300.f, 200.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Terracotta"));
-		if (T)
-		{
-			const float H = 3600.f;
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(550.f, 500.f, H), Terracotta, TEXT("Terra_Main"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Arched entrance facade (approximated with stacked cubes)
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y + 255.f, 250.f),
-				FVector(200.f, 15.f, 500.f), Terracotta * 0.85f, TEXT("Terra_Arch1"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y + 255.f, 520.f),
-				FVector(220.f, 15.f, 40.f), CreamColor, TEXT("Terra_ArchCap"));
-
-			// Cream cornice at mid-height and top
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(570.f, 520.f, 30.f), CreamColor, TEXT("Terra_MidCornice"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 15.f),
-				FVector(570.f, 520.f, 30.f), CreamColor, TEXT("Terra_TopCornice"));
-
-			// Rooftop water tank (typical old-style)
-			MakeCylMC(T, FVector(Loc.X + 100.f, Loc.Y, H + 200.f),
-				FVector(60.f, 60.f, 200.f), GrayGreen, TEXT("Terra_Tank"));
-
+			// "Handlebar" crown — two arched elements (approximated with cylinders)
+			MakeCylMC(T, FVector(Loc.X - 200.f, Loc.Y, H + 200.f),
+				FVector(30.f, 30.f, 400.f), CoolWhite, TEXT("550S_CrownL"), 0.8f, 0.15f,
+				FLinearColor(0.8f, 0.4f, 1.0f));
+			MakeCylMC(T, FVector(Loc.X + 200.f, Loc.Y, H + 200.f),
+				FVector(30.f, 30.f, 400.f), CoolWhite, TEXT("550S_CrownR"), 0.8f, 0.15f,
+				FLinearColor(0.8f, 0.4f, 1.0f));
+			// Crown connecting bar
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 400.f),
+				FVector(450.f, 30.f, 30.f), CoolWhite, TEXT("550S_CrownBar"), 0.8f, 0.15f,
+				FLinearColor(0.8f, 0.4f, 1.0f));
+			AddGlassBands(T, Loc, 550.f, 500.f, H, SkyGlass, BandIdx);
 			AddWindows(T, Loc, 550.f, 500.f, H, WinIdx);
-
 			T->SetRootComponent(Body);
 			SkyCount++;
 		}
 	}
 
 	// ===================================================================
-	// 19. CRYSTAL TOWER -- All-glass tower with crystalline crown
-	//     Block (9,15)
+	// 3. TRUIST CENTER (fmr. Hearst Tower) — 659 ft (5,272 UU)
+	//    Reverse floorplate (widens upward). 15-floor podium base.
+	//    214 N. Tryon St. Block (12,16)
 	// ===================================================================
 	{
-		const FVector Loc = BlockCenter(9, 15) + FVector(300.f, -200.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Crystal"));
+		const FVector Loc = BlockCenter(12, 16);
+		AActor* T = MakeTower(Loc, TEXT("CLT_TruistCenter"));
 		if (T)
 		{
-			const float H = 6000.f;
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(460.f, 420.f, H), CrystalBlue, TEXT("Crystal_Main"));
+			// 15-floor podium base (1,200 UU)
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 600.f),
+				FVector(800.f, 700.f, 1200.f), LightConcrete, TEXT("Truist_Podium"), 0.05f, 0.6f);
 			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Crystalline crown -- angled shards
-			MakeCubeMC(T, FVector(Loc.X - 80.f, Loc.Y, H + 300.f),
-				FVector(200.f, 200.f, 600.f), CrystalBlue * 1.3f, TEXT("Crystal_ShardA"));
-			MakeCubeMC(T, FVector(Loc.X + 80.f, Loc.Y, H + 200.f),
-				FVector(180.f, 180.f, 400.f), CrystalBlue * 1.5f, TEXT("Crystal_ShardB"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y - 60.f, H + 400.f),
-				FVector(150.f, 150.f, 800.f), SkyGlass * 2.f, TEXT("Crystal_ShardC"));
-
-			// Glass fins on facade
-			for (int32 i = 0; i < 6; ++i)
-			{
-				const float FZ = 800.f + i * 900.f;
-				FString FN = FString::Printf(TEXT("Crystal_Fin_%d"), i);
-				MakeCubeMC(T, FVector(Loc.X + 235.f, Loc.Y, FZ),
-					FVector(15.f, 380.f, 60.f), SkyGlass * 1.5f, *FN);
-			}
-
-			AddGlassBands(T, Loc, 460.f, 420.f, H, SkyGlass, BandIdx);
-			AddWindows(T, Loc, 460.f, 420.f, H, WinIdx);
-
+			// Tower body — widens upward (reverse floorplate)
+			// Lower section (narrower)
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1200.f + 1000.f),
+				FVector(500.f, 450.f, 2000.f), SteelGray, TEXT("Truist_Lower"), 0.1f, 0.4f);
+			// Upper section (wider)
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 3200.f + 1036.f),
+				FVector(600.f, 550.f, 2072.f), SteelGray * 1.05f, TEXT("Truist_Upper"), 0.1f, 0.4f);
+			// Art Deco crown
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 5272.f + 80.f),
+				FVector(620.f, 570.f, 160.f), CoolWhite, TEXT("Truist_Crown"), 0.4f, 0.2f);
+			AddGlassBands(T, Loc, 600.f, 550.f, 5272.f, TintedGlass, BandIdx);
+			AddWindows(T, Loc, 600.f, 550.f, 5272.f, WinIdx);
 			T->SetRootComponent(Body);
 			SkyCount++;
 		}
 	}
 
 	// ===================================================================
-	// 20. GREEN TOWER -- Eco tower with setback terraces and greenery
-	//     Block (10,15)
+	// 4. BANK OF AMERICA TOWER AT LEGACY UNION — 632 ft (5,056 UU)
+	//    Translucent pyramid crown, LED illuminated.
+	//    Block (12,9)
 	// ===================================================================
 	{
-		const FVector Loc = BlockCenter(10, 15) + FVector(-200.f, 300.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_GreenTower"));
+		const FVector Loc = BlockCenter(12, 9);
+		AActor* T = MakeTower(Loc, TEXT("CLT_BofA_LegacyUnion"));
 		if (T)
 		{
-			const float H = 4400.f;
+			const float H = 5056.f;
 			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(600.f, 550.f, H), GrayGreen, TEXT("Green_Main"));
+				FVector(500.f, 450.f, H), TintedGlass, TEXT("LU_Main"), 0.12f, 0.1f);
 			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Setback terraces with green strips
-			const FLinearColor PlantGreen(0.08f, 0.30f, 0.08f);
-			for (int32 i = 0; i < 4; ++i)
-			{
-				const float TZ = 1000.f + i * 900.f;
-				const float TW = 620.f - i * 40.f;
-				FString TN = FString::Printf(TEXT("Green_Terrace_%d"), i);
-				FString GN = FString::Printf(TEXT("Green_Plant_%d"), i);
-				MakeCubeMC(T, FVector(Loc.X, Loc.Y, TZ),
-					FVector(TW, TW - 50.f, 25.f), LightGray, *TN);
-				MakeCubeMC(T, FVector(Loc.X, Loc.Y + (TW - 50.f) * 0.5f - 20.f, TZ + 30.f),
-					FVector(TW - 40.f, 30.f, 40.f), PlantGreen, *GN);
-			}
-
-			// Wind turbine on roof (decorative)
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, H + 300.f),
-				FVector(20.f, 20.f, 600.f), LightGray, TEXT("Green_TurbPole"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 600.f),
-				FVector(200.f, 15.f, 15.f), CoolWhite, TEXT("Green_Blade"));
-
-			AddGlassBands(T, Loc, 600.f, 550.f, H, SkyGlass, BandIdx);
-			AddWindows(T, Loc, 600.f, 550.f, H, WinIdx);
-
+			// 100-ft translucent pyramid crown (4 angled faces)
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 200.f),
+				FVector(350.f, 350.f, 400.f), CoolWhite, TEXT("LU_PyramidBase"), 0.2f, 0.15f);
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 500.f),
+				FVector(200.f, 200.f, 200.f), CoolWhite, TEXT("LU_PyramidMid"), 0.2f, 0.15f,
+				FLinearColor(2.f, 1.f, 3.f));
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 700.f),
+				FVector(80.f, 80.f, 100.f), CoolWhite, TEXT("LU_PyramidTip"), 0.2f, 0.15f,
+				FLinearColor(3.f, 1.5f, 4.f));
+			AddGlassBands(T, Loc, 500.f, 450.f, H, SkyGlass, BandIdx);
+			AddWindows(T, Loc, 500.f, 450.f, H, WinIdx);
 			T->SetRootComponent(Body);
 			SkyCount++;
 		}
 	}
 
 	// ===================================================================
-	// 21. THE HELIX -- Twisted glass tower with 3 rotated sections
-	//     Block (7,10)
+	// 5. DUKE ENERGY PLAZA — 629 ft (5,032 UU)
+	//    525 S. Tryon St. Block (12,9) offset
 	// ===================================================================
 	{
-		const FVector Loc = BlockCenter(7, 10) + FVector(0.f, 0.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Helix"));
+		const FVector Loc = BlockCenter(12, 9) + FVector(600.f, 0.f, 0.f);
+		AActor* T = MakeTower(Loc, TEXT("CLT_DukeEnergyPlaza"));
+		if (T)
+		{
+			const float H = 5032.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(480.f, 420.f, H), SteelGray, TEXT("DEP_Main"), 0.1f, 0.35f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 60.f),
+				FVector(500.f, 440.f, 30.f), LightGray, TEXT("DEP_Roof"), 0.3f, 0.3f);
+			AddGlassBands(T, Loc, 480.f, 420.f, H, SkyGlass, BandIdx);
+			AddWindows(T, Loc, 480.f, 420.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// 6. ONE WELLS FARGO CENTER — 588 ft (4,704 UU)
+	//    301 S. College St. Postmodern. Block (13,10)
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(13, 10);
+		AActor* T = MakeTower(Loc, TEXT("CLT_OneWellsFargo"));
+		if (T)
+		{
+			const float H = 4704.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(500.f, 480.f, H), LightConcrete, TEXT("OWF_Main"), 0.05f, 0.55f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Postmodern crown detail
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 40.f),
+				FVector(520.f, 500.f, 20.f), SandStone, TEXT("OWF_Crown"), 0.15f, 0.4f);
+			AddCornerColumns(T, Loc, 500.f, 480.f, H, 25.f, DarkSteel);
+			AddGlassBands(T, Loc, 500.f, 480.f, H, TintedGlass, BandIdx);
+			AddWindows(T, Loc, 500.f, 480.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// 7. THE VUE — 576 ft (4,608 UU)
+	//    Residential, blue glass, 51 floors, stepbacks. Block (11,9)
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(11, 9);
+		AActor* T = MakeTower(Loc, TEXT("CLT_TheVue"));
+		if (T)
+		{
+			const float H = 4608.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(350.f, 320.f, H), CobaltBlue, TEXT("Vue_Main"), 0.15f, 0.08f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Stepback at floor 30 (~3000 UU)
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1500.f),
+				FVector(400.f, 370.f, 3000.f), CobaltBlue * 0.95f, TEXT("Vue_Base"), 0.15f, 0.08f);
+			// White column accents
+			AddCornerColumns(T, Loc, 350.f, 320.f, H, 15.f, CoolWhite);
+			AddWindows(T, Loc, 350.f, 320.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// 8. 300 SOUTH TRYON (Barings) — 463 ft (3,704 UU)
+	//    Cobalt blue glass, sail form, illuminated crown. Block (12,10)
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(12, 10);
+		AActor* T = MakeTower(Loc, TEXT("CLT_300SouthTryon"));
+		if (T)
+		{
+			const float H = 3704.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(450.f, 400.f, H), CobaltBlue, TEXT("300S_Main"), 0.18f, 0.06f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Illuminated crown
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 80.f),
+				FVector(470.f, 420.f, 160.f), CobaltBlue * 1.2f, TEXT("300S_Crown"), 0.3f, 0.1f,
+				FLinearColor(1.5f, 2.0f, 4.0f));
+			AddGlassBands(T, Loc, 450.f, 400.f, H, SkyGlass, BandIdx);
+			AddWindows(T, Loc, 450.f, 400.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// 9. FIFTH THIRD CENTER — 447 ft (3,576 UU)
+	//    201 N. Tryon. Postmodern glass + steel. Block (12,15)
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(12, 15);
+		AActor* T = MakeTower(Loc, TEXT("CLT_FifthThirdCenter"));
+		if (T)
+		{
+			const float H = 3576.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(420.f, 380.f, H), SteelGray, TEXT("53rd_Main"), 0.12f, 0.3f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddGlassBands(T, Loc, 420.f, 380.f, H, TintedGlass, BandIdx);
+			AddWindows(T, Loc, 420.f, 380.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// 10. TWO WELLS FARGO CENTER — 433 ft (3,464 UU)
+	//     S. College St. International modernist. Block (13,11)
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(13, 11);
+		AActor* T = MakeTower(Loc, TEXT("CLT_TwoWellsFargo"));
+		if (T)
+		{
+			const float H = 3464.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(450.f, 400.f, H), WarmConcrete, TEXT("TWF_Main"), 0.05f, 0.55f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddGlassBands(T, Loc, 450.f, 400.f, H, TintedGlass, BandIdx);
+			AddWindows(T, Loc, 450.f, 400.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// 11. 400 SOUTH TRYON — 420 ft (3,360 UU). Block (12,10) offset
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(12, 10) + FVector(500.f, 0.f, 0.f);
+		AActor* T = MakeTower(Loc, TEXT("CLT_400SouthTryon"));
+		if (T)
+		{
+			const float H = 3360.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(400.f, 380.f, H), LightConcrete, TEXT("400S_Main"), 0.05f, 0.5f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddGlassBands(T, Loc, 400.f, 380.f, H, TintedGlass, BandIdx);
+			AddWindows(T, Loc, 400.f, 380.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// 12. CARILLON TOWER — 394 ft (3,152 UU)
+	//     Neo-Gothic, copper bell tower spire. 227 W. Trade. Block (11,12)
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(11, 12);
+		AActor* T = MakeTower(Loc, TEXT("CLT_CarillonTower"));
+		if (T)
+		{
+			const float H = 3152.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(380.f, 350.f, H), SandStone, TEXT("Carillon_Main"), 0.05f, 0.6f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Copper spire crown
+			MakeCylMC(T, FVector(Loc.X, Loc.Y, H + 250.f),
+				FVector(80.f, 80.f, 500.f), CopperAccent, TEXT("Carillon_Spire"), 0.85f, 0.25f);
+			// Cone cap on spire
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 500.f + 100.f),
+				FVector(100.f, 100.f, 200.f), CopperAccent * 1.1f, TEXT("Carillon_SpireTip"), 0.85f, 0.25f);
+			AddWindows(T, Loc, 380.f, 350.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// 13. CHARLOTTE PLAZA — 388 ft (3,104 UU). Block (11,13)
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(11, 13);
+		AActor* T = MakeTower(Loc, TEXT("CLT_CharlottePlaza"));
+		if (T)
+		{
+			const float H = 3104.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(420.f, 400.f, H), CoolWhite, TEXT("ChPl_Main"), 0.08f, 0.4f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddGlassBands(T, Loc, 420.f, 400.f, H, SkyGlass, BandIdx);
+			AddWindows(T, Loc, 420.f, 400.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// 14. ALLY CHARLOTTE CENTER — 378 ft (3,024 UU)
+	//     Precast + glass, illuminated crown. Block (12,7)
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(12, 7);
+		AActor* T = MakeTower(Loc, TEXT("CLT_AllyCharlotteCenter"));
+		if (T)
+		{
+			const float H = 3024.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(430.f, 400.f, H), CoolWhite, TEXT("Ally_Main"), 0.05f, 0.45f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Illuminated polycarbonate crown
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 60.f),
+				FVector(450.f, 420.f, 120.f), CoolWhite, TEXT("Ally_Crown"), 0.1f, 0.2f,
+				FLinearColor(2.0f, 1.5f, 1.0f));
+			AddGlassBands(T, Loc, 430.f, 400.f, H, TintedGlass, BandIdx);
+			AddWindows(T, Loc, 430.f, 400.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// 15. THE WESTIN CHARLOTTE — 350 ft (2,800 UU)
+	//     601 S. College. 700-room hotel. Block (13,8)
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(13, 8);
+		AActor* T = MakeTower(Loc, TEXT("CLT_WestinCharlotte"));
 		if (T)
 		{
 			const float H = 2800.f;
-			const float SecH = 933.f;
-
-			// Section 1: base section (0-933)
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, SecH * 0.5f),
-				FVector(300.f, 300.f, SecH), TintedGlass, TEXT("Helix_Sec1"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Section 2: offset 60 UU (933-1866)
-			MakeCubeMC(T, FVector(Loc.X + 60.f, Loc.Y + 60.f, SecH + SecH * 0.5f),
-				FVector(300.f, 300.f, SecH), TintedGlass * 0.97f, TEXT("Helix_Sec2"));
-
-			// Section 3: offset 120 UU (1866-2800)
-			MakeCubeMC(T, FVector(Loc.X + 120.f, Loc.Y + 120.f, 2.f * SecH + SecH * 0.5f),
-				FVector(300.f, 300.f, SecH), TintedGlass * 0.94f, TEXT("Helix_Sec3"));
-
-			// Steel frame edges per section
-			MakeCubeMC(T, FVector(Loc.X - 150.f, Loc.Y, SecH * 0.5f),
-				FVector(12.f, 300.f, SecH), SteelGray, TEXT("Helix_Frame1L"));
-			MakeCubeMC(T, FVector(Loc.X + 150.f, Loc.Y, SecH * 0.5f),
-				FVector(12.f, 300.f, SecH), SteelGray, TEXT("Helix_Frame1R"));
-			MakeCubeMC(T, FVector(Loc.X + 60.f - 150.f, Loc.Y + 60.f, SecH + SecH * 0.5f),
-				FVector(12.f, 300.f, SecH), SteelGray, TEXT("Helix_Frame2L"));
-			MakeCubeMC(T, FVector(Loc.X + 60.f + 150.f, Loc.Y + 60.f, SecH + SecH * 0.5f),
-				FVector(12.f, 300.f, SecH), SteelGray, TEXT("Helix_Frame2R"));
-			MakeCubeMC(T, FVector(Loc.X + 120.f - 150.f, Loc.Y + 120.f, 2.f * SecH + SecH * 0.5f),
-				FVector(12.f, 300.f, SecH), SteelGray, TEXT("Helix_Frame3L"));
-			MakeCubeMC(T, FVector(Loc.X + 120.f + 150.f, Loc.Y + 120.f, 2.f * SecH + SecH * 0.5f),
-				FVector(12.f, 300.f, SecH), SteelGray, TEXT("Helix_Frame3R"));
-
-			// Crown: flat glass disc on top
-			MakeCylMC(T, FVector(Loc.X + 120.f, Loc.Y + 120.f, H + 15.f),
-				FVector(180.f, 180.f, 30.f), TintedGlass * 1.3f, TEXT("Helix_Crown"));
-
-			AddGlassBands(T, Loc, 300.f, 300.f, H, TintedGlass, BandIdx);
-			AddWindows(T, Loc, 300.f, 300.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 22. THE OBELISK -- Black monolith tapering to a point
-	//     Block (10,10)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(10, 10) + FVector(0.f, 0.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Obelisk"));
-		if (T)
-		{
-			const float TotalH = 9000.f;
-			const float TierH = 2250.f;
-
-			// Tier 1: base (0-2250), 800x700
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, TierH * 0.5f),
-				FVector(800.f, 700.f, TierH), CharcoalGray, TEXT("Obelisk_T1"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Tier 2: (2250-4500), 700x610
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, TierH + TierH * 0.5f),
-				FVector(700.f, 610.f, TierH), CharcoalGray * 0.97f, TEXT("Obelisk_T2"));
-
-			// Tier 3: (4500-6750), 600x520
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2.f * TierH + TierH * 0.5f),
-				FVector(600.f, 520.f, TierH), CharcoalGray * 0.94f, TEXT("Obelisk_T3"));
-
-			// Tier 4: (6750-9000), 500x430
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 3.f * TierH + TierH * 0.5f),
-				FVector(500.f, 430.f, TierH), CharcoalGray * 0.91f, TEXT("Obelisk_T4"));
-
-			// Gold accent trim bands between tiers
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, TierH),
-				FVector(820.f, 720.f, 30.f), GoldAccent, TEXT("Obelisk_Band1"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2.f * TierH),
-				FVector(720.f, 630.f, 30.f), GoldAccent, TEXT("Obelisk_Band2"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 3.f * TierH),
-				FVector(620.f, 540.f, 30.f), GoldAccent, TEXT("Obelisk_Band3"));
-
-			// Pointed crown: narrow cylinder on top
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, TotalH + 150.f),
-				FVector(80.f, 80.f, 300.f), CharcoalGray * 0.85f, TEXT("Obelisk_Point"));
-
-			AddWindows(T, Loc, 800.f, 700.f, TierH, WinIdx);
-			AddWindows(T, FVector(Loc.X, Loc.Y, TierH), 700.f, 610.f, TierH, WinIdx);
-			AddWindows(T, FVector(Loc.X, Loc.Y, 2.f * TierH), 600.f, 520.f, TierH, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 23. HARBOR TOWER -- Nautical glass tower with observation deck
-	//     Block (8,15)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(8, 15) + FVector(0.f, 0.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Harbor"));
-		if (T)
-		{
-			const float H = 2200.f;
-
-			// Main body — short, compact waterfront tower
 			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(350.f, 300.f, H), CoolWhite, TEXT("Harbor_Main"));
+				FVector(450.f, 400.f, H), WarmConcrete, TEXT("Westin_Main"), 0.05f, 0.5f);
 			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddWindows(T, Loc, 450.f, 400.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
 
-			// Blue glass accent band at 60% height
-			const float BandZ = H * 0.6f;
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, BandZ),
-				FVector(370.f, 320.f, 80.f), CrystalBlue, TEXT("Harbor_BlueBand"));
+	// ===================================================================
+	// 16. ASCENT UPTOWN — 338 ft (2,704 UU). Residential. Block (14,14)
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(14, 14);
+		AActor* T = MakeTower(Loc, TEXT("CLT_AscentUptown"));
+		if (T)
+		{
+			const float H = 2704.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(350.f, 320.f, H), CoolWhite, TEXT("Ascent_Main"), 0.05f, 0.45f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddWindows(T, Loc, 350.f, 320.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
 
-			// Observation deck: wider cylinder ring at 80% height
-			const float DeckZ = H * 0.8f;
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, DeckZ),
-				FVector(220.f, 220.f, 30.f), LightGray, TEXT("Harbor_ObsDeck"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, DeckZ + 20.f),
-				FVector(440.f, 440.f, 12.f), LightGray, TEXT("Harbor_DeckPlat"));
+	// ===================================================================
+	// 17. TRADEMARK — 325 ft (2,600 UU). Condos. Block (11,12) offset
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(11, 12) + FVector(-500.f, 0.f, 0.f);
+		AActor* T = MakeTower(Loc, TEXT("CLT_Trademark"));
+		if (T)
+		{
+			const float H = 2600.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(300.f, 280.f, H), SteelGray, TEXT("TM_Main"), 0.08f, 0.35f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddWindows(T, Loc, 300.f, 280.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
 
-			// Lighthouse-style beacon sphere on top
-			MakeSphereMC(T, FVector(Loc.X, Loc.Y, H + 60.f),
-				FVector(70.f, 70.f, 70.f), AntennaRed, TEXT("Harbor_Beacon"));
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, H + 15.f),
-				FVector(30.f, 30.f, 30.f), LightGray, TEXT("Harbor_BeaconBase"));
+	// ===================================================================
+	// 18. AC HOTEL/RESIDENCE INN — 320 ft (2,560 UU). Block (14,12)
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(14, 12);
+		AActor* T = MakeTower(Loc, TEXT("CLT_ACHotel"));
+		if (T)
+		{
+			const float H = 2560.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(300.f, 280.f, H), WarmConcrete, TEXT("AC_Main"), 0.05f, 0.5f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddWindows(T, Loc, 300.f, 280.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
 
-			// Ground floor: glass lobby entrance
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y + 160.f, 150.f),
-				FVector(280.f, 50.f, 300.f), SkyGlass, TEXT("Harbor_Lobby"));
+	// ===================================================================
+	// 19. 101 INDEPENDENCE CENTER — 301 ft (2,408 UU)
+	//     101 N. Tryon. At Trade/Tryon intersection. Block (12,12) NE
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(12, 12) + FVector(300.f, 300.f, 0.f);
+		AActor* T = MakeTower(Loc, TEXT("CLT_101Independence"));
+		if (T)
+		{
+			const float H = 2408.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(380.f, 350.f, H), LightConcrete, TEXT("101I_Main"), 0.05f, 0.5f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddWindows(T, Loc, 380.f, 350.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
 
-			AddGlassBands(T, Loc, 350.f, 300.f, H, CrystalBlue, BandIdx);
+	// ===================================================================
+	// 20. THE AVENUE — ~370 ft (2,960 UU). 36 condos. Block (13,15)
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(13, 15);
+		AActor* T = MakeTower(Loc, TEXT("CLT_TheAvenue"));
+		if (T)
+		{
+			const float H = 2960.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(320.f, 300.f, H), TintedGlass, TEXT("Ave_Main"), 0.12f, 0.1f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddWindows(T, Loc, 320.f, 300.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// 21. DELOITTE TOWER — 290 ft (2,320 UU). Block (12,8) offset
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(12, 8) + FVector(-600.f, 0.f, 0.f);
+		AActor* T = MakeTower(Loc, TEXT("CLT_DeloitteTower"));
+		if (T)
+		{
+			const float H = 2320.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(380.f, 350.f, H), SteelGray, TEXT("Deloitte_Main"), 0.08f, 0.35f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddWindows(T, Loc, 380.f, 350.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// 22. HONEYWELL TOWER — 290 ft (2,320 UU)
+	//     700 S. Mint. Overlooks stadium. Block (9,8)
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(9, 8);
+		AActor* T = MakeTower(Loc, TEXT("CLT_HoneywellTower"));
+		if (T)
+		{
+			const float H = 2320.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(380.f, 360.f, H), CoolWhite, TEXT("Honey_Main"), 0.05f, 0.45f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddWindows(T, Loc, 380.f, 360.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// 23. 112 TRYON PLAZA — 280 ft (2,240 UU)
+	//     Historic 1927. Block (12,12) SE
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(12, 12) + FVector(300.f, -300.f, 0.f);
+		AActor* T = MakeTower(Loc, TEXT("CLT_112TryonPlaza"));
+		if (T)
+		{
+			const float H = 2240.f;
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(350.f, 320.f, H), SandStone, TEXT("112T_Main"), 0.05f, 0.65f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddWindows(T, Loc, 350.f, 320.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// LANDMARK: FIRST PRESBYTERIAN CHURCH — 212 ft steeple (1,696 UU)
+	//     200 W. Trade. Gothic Revival. Block (11,12) south edge
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(11, 12) + FVector(0.f, -400.f, 0.f);
+		AActor* T = MakeTower(Loc, TEXT("CLT_FirstPresbyterianChurch"));
+		if (T)
+		{
+			// Church body
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 300.f),
+				FVector(400.f, 640.f, 600.f), ChurchStone, TEXT("Church_Body"), 0.f, 0.8f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Steeple base
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y + 250.f, 600.f + 250.f),
+				FVector(150.f, 150.f, 500.f), ChurchStone, TEXT("Church_SteepleBase"), 0.f, 0.75f);
+			// Steeple spire (cone approximated by cylinder tapering)
+			MakeCylMC(T, FVector(Loc.X, Loc.Y + 250.f, 1100.f + 300.f),
+				FVector(60.f, 60.f, 600.f), ChurchStone * 0.9f, TEXT("Church_Spire"), 0.f, 0.7f);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// LANDMARK: BANK OF AMERICA STADIUM — blocks (8-10, 5-7)
+	//     800 S. Mint. NFL/MLS. 75,037 seats. ~33 acres.
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(9, 6);
+		AActor* T = MakeTower(Loc, TEXT("CLT_BofA_Stadium"));
+		if (T)
+		{
+			// Stadium bowl — large oval footprint
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 400.f),
+				FVector(2400.f, 1800.f, 800.f), StadiumGray, TEXT("Stadium_Bowl"), 0.05f, 0.7f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Inner field (green)
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 80.f),
+				FVector(1600.f, 900.f, 10.f), FieldGreen, TEXT("Stadium_Field"), 0.f, 0.85f);
+			// Upper deck walls (taller outer rim)
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y + 950.f, 500.f),
+				FVector(2200.f, 100.f, 1000.f), StadiumGray, TEXT("Stadium_WallN"), 0.05f, 0.6f);
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y - 950.f, 500.f),
+				FVector(2200.f, 100.f, 1000.f), StadiumGray, TEXT("Stadium_WallS"), 0.05f, 0.6f);
+			MakeCubeMC(T, FVector(Loc.X + 1250.f, Loc.Y, 500.f),
+				FVector(100.f, 1800.f, 1000.f), StadiumGray, TEXT("Stadium_WallE"), 0.05f, 0.6f);
+			MakeCubeMC(T, FVector(Loc.X - 1250.f, Loc.Y, 500.f),
+				FVector(100.f, 1800.f, 1000.f), StadiumGray, TEXT("Stadium_WallW"), 0.05f, 0.6f);
+			// Entry arches (4 massive arches at cardinal points)
+			for (int32 i = 0; i < 4; ++i)
+			{
+				const float Angle = i * 90.f;
+				const float R = FMath::DegreesToRadians(Angle);
+				const float AX = Loc.X + FMath::Cos(R) * 1300.f;
+				const float AY = Loc.Y + FMath::Sin(R) * 1000.f;
+				FString AN = FString::Printf(TEXT("Stadium_Arch_%d"), i);
+				MakeCylMC(T, FVector(AX, AY, 600.f),
+					FVector(80.f, 80.f, 1200.f), StadiumGray * 0.8f, *AN, 0.1f, 0.5f);
+			}
+			// Panther statues (6 dark cubes at entrances)
+			for (int32 i = 0; i < 6; ++i)
+			{
+				const float Angle = i * 60.f;
+				const float R = FMath::DegreesToRadians(Angle);
+				const float PX = Loc.X + FMath::Cos(R) * 1350.f;
+				const float PY = Loc.Y + FMath::Sin(R) * 1050.f;
+				FString PN = FString::Printf(TEXT("Stadium_Panther_%d"), i);
+				MakeCubeMC(T, FVector(PX, PY, 80.f),
+					FVector(60.f, 30.f, 160.f), PantherBlack, *PN, 0.7f, 0.2f);
+			}
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// LANDMARK: TRUIST FIELD (baseball) — block (9,10)
+	//     324 S. Mint. Charlotte Knights. 10,000 seats.
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(9, 10);
+		AActor* T = MakeTower(Loc, TEXT("CLT_TruistField"));
+		if (T)
+		{
+			// Grandstand (C-shaped seating behind home plate)
+			auto* Body = MakeCubeMC(T, FVector(Loc.X - 200.f, Loc.Y, 200.f),
+				FVector(1200.f, 800.f, 400.f), StadiumGray, TEXT("TField_Grandstand"), 0.05f, 0.65f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Playing field — baseball diamond
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 5.f),
+				FVector(1400.f, 1200.f, 10.f), FieldGreen, TEXT("TField_Outfield"), 0.f, 0.85f);
+			// Infield dirt
+			MakeCubeMC(T, FVector(Loc.X - 200.f, Loc.Y, 6.f),
+				FVector(600.f, 600.f, 8.f), BaseballDirt, TEXT("TField_Infield"), 0.f, 0.9f);
+			// Press box
+			MakeCubeMC(T, FVector(Loc.X - 700.f, Loc.Y, 450.f),
+				FVector(400.f, 300.f, 200.f), DarkSteel, TEXT("TField_PressBox"), 0.15f, 0.3f);
+			// Outfield wall
+			MakeCubeMC(T, FVector(Loc.X + 500.f, Loc.Y, 50.f),
+				FVector(30.f, 1000.f, 100.f), DarkSteel, TEXT("TField_Wall"), 0.1f, 0.5f);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// LANDMARK: SPECTRUM CENTER — blocks (14-15, 12)
+	//     330 E. Trade. Charlotte Hornets. 19,444 seats.
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(14, 12) + FVector(400.f, 0.f, 0.f);
+		AActor* T = MakeTower(Loc, TEXT("CLT_SpectrumCenter"));
+		if (T)
+		{
+			// Main arena body
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 350.f),
+				FVector(1400.f, 1200.f, 700.f), SteelGray, TEXT("Spectrum_Body"), 0.1f, 0.4f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Rounded roof
+			MakeSphereMC(T, FVector(Loc.X, Loc.Y, 700.f),
+				FVector(1300.f, 1100.f, 400.f), DarkSteel, TEXT("Spectrum_Roof"), 0.15f, 0.3f);
+			// Glass entrance facade
+			MakeCubeMC(T, FVector(Loc.X - 750.f, Loc.Y, 350.f),
+				FVector(50.f, 800.f, 700.f), SkyGlass, TEXT("Spectrum_Glass"), 0.1f, 0.05f);
+			// Outdoor plaza
+			MakeCubeMC(T, FVector(Loc.X - 1000.f, Loc.Y, 3.f),
+				FVector(500.f, 1000.f, 6.f), LightGray, TEXT("Spectrum_Plaza"), 0.f, 0.7f);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// LANDMARK: NASCAR HALL OF FAME — block (14,8)
+	//     Racetrack-inspired shape, stainless steel facade.
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(14, 8);
+		AActor* T = MakeTower(Loc, TEXT("CLT_NASCARHallOfFame"));
+		if (T)
+		{
+			// Museum body — sinuous offset cubes
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 250.f),
+				FVector(700.f, 500.f, 500.f), NASCARSteel, TEXT("NASCAR_Main"), 0.65f, 0.15f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Offset curved section
+			MakeCubeMC(T, FVector(Loc.X + 200.f, Loc.Y + 100.f, 200.f),
+				FVector(500.f, 400.f, 400.f), NASCARSteel * 0.95f, TEXT("NASCAR_Wing"), 0.6f, 0.2f);
+			// 110-ft canopy overhang
+			MakeCubeMC(T, FVector(Loc.X - 500.f, Loc.Y, 400.f),
+				FVector(600.f, 500.f, 20.f), NASCARSteel, TEXT("NASCAR_Canopy"), 0.7f, 0.1f);
+			// Associated office tower (19 stories)
+			MakeCubeMC(T, FVector(Loc.X + 500.f, Loc.Y, 760.f),
+				FVector(250.f, 250.f, 1520.f), SteelGray, TEXT("NASCAR_Tower"), 0.1f, 0.35f);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// LANDMARK: ROMARE BEARDEN PARK — block (10,10)
+	//     5.4 acres. Fountain, paths, trees.
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(10, 10);
+		AActor* T = MakeTower(Loc, TEXT("CLT_RomareBearden_Park"));
+		if (T)
+		{
+			// Green lawn
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2.f),
+				FVector(1600.f, 1600.f, 4.f), ParkGreen, TEXT("RB_Lawn"), 0.f, 0.85f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Fountain basin
+			MakeCylMC(T, FVector(Loc.X, Loc.Y, 30.f),
+				FVector(200.f, 200.f, 60.f), LightGray, TEXT("RB_Basin"), 0.1f, 0.5f);
+			// Fountain spout
+			MakeSphereMC(T, FVector(Loc.X, Loc.Y, 80.f),
+				FVector(40.f, 40.f, 40.f), CoolWhite, TEXT("RB_Spout"), 0.1f, 0.3f,
+				FLinearColor(0.3f, 0.5f, 1.0f));
+			// Walking paths (cross shape)
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 3.5f),
+				FVector(1400.f, 80.f, 3.f), LightGray, TEXT("RB_PathEW"), 0.f, 0.75f);
+			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 3.5f),
+				FVector(80.f, 1400.f, 3.f), LightGray, TEXT("RB_PathNS"), 0.f, 0.75f);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// LANDMARK: FIRST WARD PARK — blocks (14-15, 17-18)
+	//     4.6 acres. Circular fountain, green lawn.
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(14, 17) + FVector(400.f, 400.f, 0.f);
+		AActor* T = MakeTower(Loc, TEXT("CLT_FirstWardPark"));
+		if (T)
+		{
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2.f),
+				FVector(2200.f, 2200.f, 4.f), ParkGreen, TEXT("FWP_Lawn"), 0.f, 0.85f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Large circular fountain
+			MakeCylMC(T, FVector(Loc.X, Loc.Y, 20.f),
+				FVector(300.f, 300.f, 40.f), CoolWhite, TEXT("FWP_Fountain"), 0.1f, 0.4f);
+			// White arbor
+			MakeCubeMC(T, FVector(Loc.X + 400.f, Loc.Y, 200.f),
+				FVector(300.f, 20.f, 400.f), CoolWhite, TEXT("FWP_Arbor"), 0.f, 0.5f);
+			MakeCubeMC(T, FVector(Loc.X + 400.f, Loc.Y, 400.f),
+				FVector(300.f, 150.f, 20.f), CoolWhite, TEXT("FWP_ArborTop"), 0.f, 0.5f);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// CHARLOTTE CONVENTION CENTER — blocks (13-14, 8)
+	//     280,000 sf exhibit space. South Uptown.
+	// ===================================================================
+	{
+		const FVector Loc = BlockCenter(13, 8) + FVector(500.f, 0.f, 0.f);
+		AActor* T = MakeTower(Loc, TEXT("CLT_ConventionCenter"));
+		if (T)
+		{
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 200.f),
+				FVector(1800.f, 800.f, 400.f), LightConcrete, TEXT("Conv_Main"), 0.05f, 0.55f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Glass atrium entrance
+			MakeCubeMC(T, FVector(Loc.X - 800.f, Loc.Y, 250.f),
+				FVector(200.f, 600.f, 500.f), SkyGlass, TEXT("Conv_Atrium"), 0.1f, 0.05f);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// ===================================================================
+	// Additional mid-rise context buildings to fill Charlotte Uptown
+	// ===================================================================
+
+	// Charlotte-Mecklenburg Government Center (City Hall) — 14 floors, triangular
+	{
+		const FVector Loc = BlockCenter(15, 12);
+		AActor* T = MakeTower(Loc, TEXT("CLT_GovernmentCenter"));
+		if (T)
+		{
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 560.f),
+				FVector(500.f, 450.f, 1120.f), LightConcrete, TEXT("GovCtr_Main"), 0.05f, 0.5f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			AddWindows(T, Loc, 500.f, 450.f, 1120.f, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// Discovery Place Science — 301 N. Tryon
+	{
+		const FVector Loc = BlockCenter(12, 17);
+		AActor* T = MakeTower(Loc, TEXT("CLT_DiscoveryPlace"));
+		if (T)
+		{
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 200.f),
+				FVector(600.f, 500.f, 400.f), CoolWhite, TEXT("DiscP_Main"), 0.05f, 0.45f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// IMAX dome
+			MakeSphereMC(T, FVector(Loc.X + 200.f, Loc.Y, 400.f),
+				FVector(200.f, 200.f, 200.f), DarkSteel, TEXT("DiscP_Dome"), 0.2f, 0.3f);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// Bechtler Museum of Modern Art — 430 S. Tryon, Levine Center
+	{
+		const FVector Loc = BlockCenter(12, 7) + FVector(-500.f, 0.f, 0.f);
+		AActor* T = MakeTower(Loc, TEXT("CLT_BechtlerMuseum"));
+		if (T)
+		{
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 200.f),
+				FVector(350.f, 300.f, 400.f), SandStone, TEXT("Becht_Main"), 0.05f, 0.7f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			// Cantilevered 4th floor
+			MakeCubeMC(T, FVector(Loc.X - 100.f, Loc.Y, 350.f),
+				FVector(500.f, 320.f, 100.f), SandStone * 0.95f, TEXT("Becht_Cant"), 0.05f, 0.65f);
+			// Support column
+			MakeCylMC(T, FVector(Loc.X - 250.f, Loc.Y, 175.f),
+				FVector(32.f, 32.f, 350.f), LightConcrete, TEXT("Becht_Col"), 0.2f, 0.4f);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// SkyHouse Uptown (two 24-story towers) — 640 N. Church
+	{
+		const FVector Loc = BlockCenter(10, 18);
+		AActor* T = MakeTower(Loc, TEXT("CLT_SkyHouse"));
+		if (T)
+		{
+			const float H = 2080.f; // ~260 ft
+			auto* Body = MakeCubeMC(T, FVector(Loc.X - 200.f, Loc.Y, H * 0.5f),
+				FVector(280.f, 260.f, H), CoolWhite, TEXT("SkyH_TowerA"), 0.05f, 0.4f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
+			MakeCubeMC(T, FVector(Loc.X + 200.f, Loc.Y, H * 0.5f),
+				FVector(280.f, 260.f, H), CoolWhite * 0.98f, TEXT("SkyH_TowerB"), 0.05f, 0.4f);
+			AddWindows(T, FVector(Loc.X - 200.f, Loc.Y, 0.f), 280.f, 260.f, H, WinIdx);
+			AddWindows(T, FVector(Loc.X + 200.f, Loc.Y, 0.f), 280.f, 260.f, H, WinIdx);
+			T->SetRootComponent(Body);
+			SkyCount++;
+		}
+	}
+
+	// JW Marriott (associated with Ally Charlotte Center) — 22 stories
+	{
+		const FVector Loc = BlockCenter(12, 7) + FVector(500.f, 0.f, 0.f);
+		AActor* T = MakeTower(Loc, TEXT("CLT_JWMarriott"));
+		if (T)
+		{
+			const float H = 1760.f; // ~220 ft
+			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
+				FVector(350.f, 300.f, H), WarmConcrete, TEXT("JWM_Main"), 0.05f, 0.5f);
+			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Body->SetCollisionResponseToAllChannels(ECR_Block);
 			AddWindows(T, Loc, 350.f, 300.f, H, WinIdx);
-
 			T->SetRootComponent(Body);
 			SkyCount++;
 		}
 	}
 
-	// ===================================================================
-	// 24. THE PRISM -- Triangular-ish tower with overlapping cubes
-	//     Block (9,14)
-	// ===================================================================
+	// Charlotte Marriott City Center — ~260 ft (2,080 UU), 19 floors
 	{
-		const FVector Loc = BlockCenter(9, 14) + FVector(200.f, 200.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Prism"));
+		const FVector Loc = BlockCenter(13, 12);
+		AActor* T = MakeTower(Loc, TEXT("CLT_MarriottCityCenter"));
 		if (T)
 		{
-			const float H = 5800.f;
-
-			// Primary cube — tall, angular
+			const float H = 2080.f;
 			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(420.f, 420.f, H), SkyGlass, TEXT("Prism_Primary"));
+				FVector(380.f, 350.f, H), WarmConcrete, TEXT("MCC_Main"), 0.05f, 0.55f);
 			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Secondary cube offset 150 UU diagonally
-			MakeCubeMC(T, FVector(Loc.X + 150.f, Loc.Y + 150.f, H * 0.5f),
-				FVector(370.f, 370.f, H), DarkGlass, TEXT("Prism_Secondary"));
-
-			// Steel frame columns on all corners of primary cube
-			AddCornerColumns(T, Loc, 420.f, 420.f, H, 25.f, SteelGray);
-
-			// Steel frame columns on all corners of secondary cube
-			AddCornerColumns(T, FVector(Loc.X + 150.f, Loc.Y + 150.f, 0.f), 370.f, 370.f, H, 25.f, SteelGray);
-
-			// Antenna spire on top
-			MakeCylMC(T, FVector(Loc.X + 75.f, Loc.Y + 75.f, H + 500.f),
-				FVector(15.f, 15.f, 1000.f), SteelGray, TEXT("Prism_Antenna"));
-			MakeSphereMC(T, FVector(Loc.X + 75.f, Loc.Y + 75.f, H + 1010.f),
-				FVector(30.f, 30.f, 30.f), AntennaRed, TEXT("Prism_AntennaTop"));
-
-			AddGlassBands(T, Loc, 420.f, 420.f, H, SkyGlass, BandIdx);
-			AddWindows(T, Loc, 420.f, 420.f, H, WinIdx);
-
+			AddWindows(T, Loc, 380.f, 350.f, H, WinIdx);
 			T->SetRootComponent(Body);
 			SkyCount++;
 		}
 	}
 
-	// ===================================================================
-	// 25. METRO CENTER -- Wide L-shaped tower with skybridge
-	//     Block (7,13)
-	// ===================================================================
+	// Mid-rise office filler buildings to populate empty Uptown blocks
 	{
-		const FVector Loc = BlockCenter(7, 13) + FVector(0.f, 0.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Metro"));
-		if (T)
+		struct FFillerBuilding { int32 bx, by; float H; float W; float D; const TCHAR* Name; };
+		const FFillerBuilding Fillers[] = {
+			// Core Uptown fillers
+			{ 10, 12, 1200.f, 350.f, 320.f, TEXT("CLT_Filler_ChurchTrade") },
+			{ 10, 13, 1000.f, 300.f, 280.f, TEXT("CLT_Filler_Church5th") },
+			{ 10, 14, 1400.f, 380.f, 350.f, TEXT("CLT_Filler_Church6th") },
+			{ 11, 14, 1100.f, 320.f, 300.f, TEXT("CLT_Filler_W5th") },
+			{ 11, 15, 900.f, 300.f, 280.f, TEXT("CLT_Filler_W6th") },
+			{ 13, 13, 1300.f, 350.f, 320.f, TEXT("CLT_Filler_College3rd") },
+			{ 13, 14, 1000.f, 320.f, 300.f, TEXT("CLT_Filler_College5th") },
+			{ 14, 13, 900.f, 300.f, 280.f, TEXT("CLT_Filler_Brevard3rd") },
+			{ 15, 13, 800.f, 280.f, 260.f, TEXT("CLT_Filler_Davidson3rd") },
+			{ 15, 14, 700.f, 260.f, 240.f, TEXT("CLT_Filler_Davidson5th") },
+			{ 11, 16, 800.f, 280.f, 260.f, TEXT("CLT_Filler_W7th") },
+			{ 13, 16, 1000.f, 320.f, 300.f, TEXT("CLT_Filler_College7th") },
+			{ 14, 15, 700.f, 260.f, 250.f, TEXT("CLT_Filler_Brevard5th") },
+			{ 14, 16, 800.f, 280.f, 260.f, TEXT("CLT_Filler_Brevard7th") },
+			{ 10, 11, 900.f, 300.f, 280.f, TEXT("CLT_Filler_ChurchMLK") },
+			{ 11, 11, 1000.f, 320.f, 300.f, TEXT("CLT_Filler_WMLK") },
+			{ 13, 9, 900.f, 300.f, 280.f, TEXT("CLT_Filler_CollegeHill") },
+			{ 11, 10, 800.f, 280.f, 260.f, TEXT("CLT_Filler_W1st") },
+			{ 10, 15, 1200.f, 340.f, 320.f, TEXT("CLT_Filler_Church6thA") },
+			{ 15, 12, 1400.f, 360.f, 340.f, TEXT("CLT_Filler_DavidsonTrade") },
+			// Extended skyline — outer ring towers
+			{  8, 10, 1800.f, 380.f, 350.f, TEXT("CLT_Filler_Ext_SW1") },
+			{  8, 12, 2200.f, 400.f, 380.f, TEXT("CLT_Filler_Ext_W1") },
+			{  8, 14, 1600.f, 360.f, 340.f, TEXT("CLT_Filler_Ext_NW1") },
+			{  9, 10, 2000.f, 380.f, 360.f, TEXT("CLT_Filler_Ext_SW2") },
+			{  9, 14, 1900.f, 370.f, 350.f, TEXT("CLT_Filler_Ext_NW2") },
+			{  9, 16, 1400.f, 340.f, 320.f, TEXT("CLT_Filler_Ext_NW3") },
+			{ 16, 10, 1700.f, 360.f, 340.f, TEXT("CLT_Filler_Ext_SE1") },
+			{ 16, 12, 2100.f, 390.f, 370.f, TEXT("CLT_Filler_Ext_E1") },
+			{ 16, 14, 1500.f, 350.f, 330.f, TEXT("CLT_Filler_Ext_NE1") },
+			{ 17, 11, 1300.f, 320.f, 300.f, TEXT("CLT_Filler_Ext_E2") },
+			{ 17, 13, 1600.f, 350.f, 330.f, TEXT("CLT_Filler_Ext_E3") },
+			{  7, 11, 1200.f, 320.f, 300.f, TEXT("CLT_Filler_Ext_W2") },
+			{  7, 13, 1500.f, 340.f, 320.f, TEXT("CLT_Filler_Ext_W3") },
+			{ 10,  8, 1400.f, 340.f, 320.f, TEXT("CLT_Filler_Ext_S1") },
+			{ 12,  6, 1800.f, 370.f, 350.f, TEXT("CLT_Filler_Ext_S2") },
+			{ 14,  8, 1300.f, 320.f, 300.f, TEXT("CLT_Filler_Ext_S3") },
+			{ 10, 17, 1100.f, 300.f, 280.f, TEXT("CLT_Filler_Ext_N1") },
+			{ 12, 18, 1600.f, 350.f, 330.f, TEXT("CLT_Filler_Ext_N2") },
+			{ 14, 17, 1200.f, 320.f, 300.f, TEXT("CLT_Filler_Ext_N3") },
+			{ 16, 16, 1000.f, 300.f, 280.f, TEXT("CLT_Filler_Ext_NE2") },
+			{  9, 12, 2400.f, 420.f, 400.f, TEXT("CLT_Filler_Ext_CW") },
+			{ 15, 10, 1800.f, 370.f, 350.f, TEXT("CLT_Filler_Ext_CE") },
+		};
+
+		const FLinearColor FillerColors[] = {
+			LightConcrete, SteelGray, CoolWhite, WarmConcrete, SandStone,
+		};
+		const int32 NumFillerColors = UE_ARRAY_COUNT(FillerColors);
+
+		for (int32 fi = 0; fi < (int32)UE_ARRAY_COUNT(Fillers); ++fi)
 		{
-			const float H = 2500.f;
-
-			// Wing A: 650x300 — wide but squat
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(650.f, 300.f, H), LightConcrete, TEXT("Metro_WingA"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Wing B: 300x500, perpendicular
-			MakeCubeMC(T, FVector(Loc.X + 175.f, Loc.Y + 400.f, H * 0.5f),
-				FVector(300.f, 500.f, H), LightConcrete, TEXT("Metro_WingB"));
-
-			// Corner columns in DarkSteel on Wing A
-			AddCornerColumns(T, Loc, 650.f, 300.f, H, 25.f, DarkSteel);
-
-			// Corner columns in DarkSteel on Wing B
-			AddCornerColumns(T, FVector(Loc.X + 175.f, Loc.Y + 400.f, 0.f), 300.f, 500.f, H, 25.f, DarkSteel);
-
-			// Rooftop garden: green platform on Wing A
-			const FLinearColor GardenGreen(0.1f, 0.35f, 0.1f);
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, H + 15.f),
-				FVector(630.f, 280.f, 30.f), GardenGreen, TEXT("Metro_Garden"));
-
-			// Glass skybridge connecting tops of both wings
-			MakeCubeMC(T, FVector(Loc.X + 87.f, Loc.Y + 200.f, H - 80.f),
-				FVector(180.f, 420.f, 70.f), SkyGlass, TEXT("Metro_Skybridge"));
-
-			AddGlassBands(T, Loc, 650.f, 300.f, H, TintedGlass, BandIdx);
-			AddWindows(T, Loc, 650.f, 300.f, H, WinIdx);
-			AddWindows(T, FVector(Loc.X + 175.f, Loc.Y + 400.f, 0.f), 300.f, 500.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	// ===================================================================
-	// 26. THE SPIRE -- Ultra-thin needle tower, tallest in the city
-	//     Block (10,13)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(10, 13) + FVector(400.f, 0.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_Spire"));
-		if (T)
-		{
-			const float H = 10000.f;
-
-			// Main ultra-thin body — tallest tower in the city
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, H * 0.5f),
-				FVector(180.f, 180.f, H), CoolWhite, TEXT("Spire_Main"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Observation sphere at 8500 UU height
-			MakeSphereMC(T, FVector(Loc.X, Loc.Y, 8500.f),
-				FVector(280.f, 280.f, 280.f), DarkGlass, TEXT("Spire_ObsSphere"));
-
-			// Antenna extending 1000 UU above the top
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, H + 500.f),
-				FVector(10.f, 10.f, 1000.f), SteelGray, TEXT("Spire_Antenna"));
-			MakeSphereMC(T, FVector(Loc.X, Loc.Y, H + 1010.f),
-				FVector(22.f, 22.f, 22.f), AntennaRed, TEXT("Spire_AntennaTop"));
-
-			// Reinforcement rings every 1200 UU
-			for (int32 i = 1; i <= 8; ++i)
+			const FFillerBuilding& F = Fillers[fi];
+			const FVector Loc = BlockCenter(F.bx, F.by);
+			AActor* T = MakeTower(Loc, F.Name);
+			if (T)
 			{
-				const float RZ = i * 1200.f;
-				FString RN = FString::Printf(TEXT("Spire_Ring_%d"), i);
-				MakeCylMC(T, FVector(Loc.X, Loc.Y, RZ),
-					FVector(120.f, 120.f, 20.f), LightGray, *RN);
+				const FLinearColor& Col = FillerColors[fi % NumFillerColors];
+				auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, F.H * 0.5f),
+					FVector(F.W, F.D, F.H), Col, TEXT("Fill_Main"), 0.05f, 0.5f);
+				Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+				Body->SetCollisionResponseToAllChannels(ECR_Block);
+				AddWindows(T, Loc, F.W, F.D, F.H, WinIdx);
+				T->SetRootComponent(Body);
+				SkyCount++;
 			}
-
-			// Ground plaza: large flat platform around the base
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 10.f),
-				FVector(700.f, 700.f, 20.f), LightGray, TEXT("Spire_Plaza"));
-
-			AddWindows(T, Loc, 180.f, 180.f, H, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
 		}
 	}
 
-	// ===================================================================
-	// 27. COPPER RIDGE -- Stepped copper tower with Art Nouveau details
-	//     Block (9,10)
-	// ===================================================================
-	{
-		const FVector Loc = BlockCenter(9, 10) + FVector(0.f, 0.f, 0.f);
-		AActor* T = MakeTower(Loc, TEXT("Skyscraper_CopperRidge"));
-		if (T)
-		{
-			const float TotalH = 3200.f;
-
-			// Tier 1: base (0-1000), 600 wide
-			auto* Body = MakeCubeMC(T, FVector(Loc.X, Loc.Y, 500.f),
-				FVector(600.f, 600.f, 1000.f), CopperAccent, TEXT("Copper_T1"));
-			Body->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Body->SetCollisionResponseToAllChannels(ECR_Block);
-
-			// Tier 2: (1000-2000), 460 wide
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1000.f + 500.f),
-				FVector(460.f, 460.f, 1000.f), CopperAccent * 0.97f, TEXT("Copper_T2"));
-
-			// Tier 3: (2000-2700), 340 wide
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2000.f + 350.f),
-				FVector(340.f, 340.f, 700.f), CopperAccent * 0.94f, TEXT("Copper_T3"));
-
-			// Tier 4: (2700-3200), 240 wide
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2700.f + 250.f),
-				FVector(240.f, 240.f, 500.f), CopperAccent * 0.91f, TEXT("Copper_T4"));
-
-			// Gold decorative bands at each setback
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 1000.f),
-				FVector(620.f, 620.f, 25.f), GoldAccent, TEXT("Copper_Band1"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2000.f),
-				FVector(480.f, 480.f, 25.f), GoldAccent, TEXT("Copper_Band2"));
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, 2700.f),
-				FVector(360.f, 360.f, 25.f), GoldAccent, TEXT("Copper_Band3"));
-
-			// Art Nouveau ornamental spheres at each setback corner
-			const float SphR = 30.f;
-			for (int32 tier = 0; tier < 3; ++tier)
-			{
-				const float SZ = (tier == 0) ? 1000.f : (tier == 1) ? 2000.f : 2700.f;
-				const float SW = (tier == 0) ? 600.f : (tier == 1) ? 460.f : 340.f;
-				const float HalfW = SW * 0.5f;
-				FString SA = FString::Printf(TEXT("Copper_Orb_%d_A"), tier);
-				FString SB = FString::Printf(TEXT("Copper_Orb_%d_B"), tier);
-				FString SC = FString::Printf(TEXT("Copper_Orb_%d_C"), tier);
-				FString SD = FString::Printf(TEXT("Copper_Orb_%d_D"), tier);
-				MakeSphereMC(T, FVector(Loc.X - HalfW, Loc.Y - HalfW, SZ + SphR),
-					FVector(SphR * 2.f, SphR * 2.f, SphR * 2.f), GoldAccent, *SA);
-				MakeSphereMC(T, FVector(Loc.X + HalfW, Loc.Y - HalfW, SZ + SphR),
-					FVector(SphR * 2.f, SphR * 2.f, SphR * 2.f), GoldAccent, *SB);
-				MakeSphereMC(T, FVector(Loc.X - HalfW, Loc.Y + HalfW, SZ + SphR),
-					FVector(SphR * 2.f, SphR * 2.f, SphR * 2.f), GoldAccent, *SC);
-				MakeSphereMC(T, FVector(Loc.X + HalfW, Loc.Y + HalfW, SZ + SphR),
-					FVector(SphR * 2.f, SphR * 2.f, SphR * 2.f), GoldAccent, *SD);
-			}
-
-			// Mechanical penthouse on top
-			MakeCubeMC(T, FVector(Loc.X, Loc.Y, TotalH + 60.f),
-				FVector(150.f, 150.f, 120.f), DarkSteel, TEXT("Copper_Mech"));
-			MakeCylMC(T, FVector(Loc.X, Loc.Y, TotalH + 120.f + 50.f),
-				FVector(12.f, 12.f, 100.f), SteelGray, TEXT("Copper_MechVent"));
-
-			AddGlassBands(T, Loc, 600.f, 600.f, 1000.f, GoldAccent, BandIdx);
-			AddWindows(T, Loc, 600.f, 600.f, TotalH, WinIdx);
-
-			T->SetRootComponent(Body);
-			SkyCount++;
-		}
-	}
-
-	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCityGameMode: Spawned %d skyscrapers (%d windows)."), SkyCount, WinIdx);
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Charlotte Uptown: Spawned %d buildings (%d windows)."), SkyCount, WinIdx);
 }
 
 // ---------------------------------------------------------------------------
@@ -7053,7 +6874,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		{
 			MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		}
-		MC->SetBoundsScale(10.f);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		ApplyPBR(MC, Col, Metal, Rough);
 		O->AddInstanceComponent(MC);
@@ -7077,7 +6898,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		{
 			MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		}
-		MC->SetBoundsScale(10.f);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		ApplyPBR(MC, Col, Metal, Rough);
 		O->AddInstanceComponent(MC);
@@ -7101,7 +6922,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		{
 			MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		}
-		MC->SetBoundsScale(10.f);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		ApplyPBR(MC, Col, Metal, Rough);
 		O->AddInstanceComponent(MC);
@@ -7114,29 +6935,31 @@ void UPHCCitySubsystem::SpawnMountainRange()
 	struct FPeakData { float X; float Y; float Height; float RadX; float RadY; };
 
 	const FPeakData Peaks[] = {
-		{ -92000.f, 100000.f, 14500.f, 8000.f, 7000.f },
-		{ -80000.f,  97000.f, 10200.f, 6500.f, 5800.f },
-		{ -68000.f, 102000.f, 16800.f, 9000.f, 8000.f },
-		{ -55000.f,  96000.f, 11500.f, 7000.f, 6200.f },
-		{ -43000.f, 101000.f, 17500.f, 9500.f, 8500.f },
-		{ -31000.f,  98000.f,  8800.f, 6000.f, 5500.f },
-		{ -20000.f, 103000.f, 15200.f, 8500.f, 7500.f },
-		{  -8000.f,  97500.f, 12000.f, 7200.f, 6500.f },
-		{   5000.f, 101500.f, 17000.f, 9200.f, 8200.f },
-		{  17000.f,  96500.f,  9500.f, 6200.f, 5800.f },
-		{  28000.f, 100500.f, 15800.f, 8800.f, 7800.f },
-		{  39000.f,  98500.f,  7200.f, 5500.f, 5000.f },
-		{  50000.f, 102500.f, 13500.f, 7500.f, 6800.f },
-		{  61000.f,  97000.f, 16200.f, 9000.f, 8000.f },
-		{  72000.f, 100000.f, 10800.f, 6800.f, 6200.f },
-		{  82000.f,  96000.f, 14800.f, 8200.f, 7200.f },
-		{  93000.f, 101000.f,  5800.f, 5000.f, 4500.f },
-		{ -85000.f, 108000.f,  6500.f, 5200.f, 4800.f },
-		{ -50000.f, 110000.f,  9000.f, 6500.f, 5500.f },
-		{ -15000.f, 109000.f,  7800.f, 5800.f, 5200.f },
-		{  15000.f, 111000.f, 10500.f, 7000.f, 6000.f },
-		{  48000.f, 108500.f,  8200.f, 6000.f, 5500.f },
-		{  78000.f, 107000.f,  7500.f, 5500.f, 5000.f },
+		// ---- Northern front row — centered at X:-436, Y:81303 ----
+		{ -22436.f, 81303.f, 14500.f, 4800.f, 4200.f },
+		{ -19686.f, 78303.f, 10200.f, 3900.f, 3500.f },
+		{ -16936.f, 83303.f, 16800.f, 5400.f, 4800.f },
+		{ -14186.f, 77303.f, 11500.f, 4200.f, 3700.f },
+		{ -11436.f, 82303.f, 17500.f, 5700.f, 5100.f },
+		{  -8686.f, 79303.f,  8800.f, 3600.f, 3300.f },
+		{  -5936.f, 84303.f, 15200.f, 5100.f, 4500.f },
+		{  -3186.f, 78803.f, 12000.f, 4300.f, 3900.f },
+		{   -436.f, 82803.f, 17000.f, 5500.f, 4900.f },
+		{   2314.f, 77803.f,  9500.f, 3700.f, 3500.f },
+		{   5064.f, 81803.f, 15800.f, 5300.f, 4700.f },
+		{   7814.f, 80303.f,  7200.f, 3300.f, 3000.f },
+		{  10564.f, 83803.f, 13500.f, 4500.f, 4100.f },
+		{  13314.f, 78303.f, 16200.f, 5400.f, 4800.f },
+		{  16064.f, 81303.f, 10800.f, 4100.f, 3700.f },
+		{  18814.f, 79803.f, 14800.f, 4900.f, 4300.f },
+		{  21564.f, 82803.f,  5800.f, 3000.f, 2700.f },
+		// ---- Northern back row ----
+		{ -18436.f, 89303.f,  6500.f, 3100.f, 2900.f },
+		{ -11236.f, 91303.f,  9000.f, 3900.f, 3300.f },
+		{  -4036.f, 90303.f,  7800.f, 3500.f, 3100.f },
+		{   3164.f, 92303.f, 10500.f, 4200.f, 3600.f },
+		{  10364.f, 89803.f,  8200.f, 3600.f, 3300.f },
+		{  17564.f, 88303.f,  7500.f, 3300.f, 3000.f },
 		// ---- Southern front row (pushed back ~30k to clear lake/pirate ship at Y=-95k) ----
 		{ -85000.f, -130000.f, 13500.f, 7500.f, 6500.f },
 		{ -65000.f, -127000.f,  9800.f, 6200.f, 5500.f },
@@ -7655,7 +7478,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 					RockMC->SetWorldScale3D(FVector(RIR / 50.f, RIR / 50.f, RIR * 0.5f / 50.f));
 					RockMC->SetWorldLocation(FVector(RIX, RIY, LakeZ + 8.f));
 					RockMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					RockMC->SetBoundsScale(10.f);
+					RockMC->SetBoundsScale(50.f);
 					RockMC->RegisterComponent();
 					ApplyPBR(RockMC, VolcanicDark, 0.02f, 0.95f);
 					M->AddInstanceComponent(RockMC);
@@ -7733,7 +7556,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 					SmokeMC->SetWorldScale3D(FVector(SmR / 50.f, SmR / 50.f, SmR * 0.6f / 50.f));
 					SmokeMC->SetWorldLocation(FVector(PD.X + SmJX, PD.Y + SmJY, SmZ));
 					SmokeMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					SmokeMC->SetBoundsScale(10.f);
+					SmokeMC->SetBoundsScale(50.f);
 					SmokeMC->RegisterComponent();
 					// Dark ash color with subtle warm emissive from below
 					const float SmEmissive = FMath::Max(0.f, 1.f - Sm * 0.25f);
@@ -7756,7 +7579,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 					BombMC->SetWorldScale3D(FVector(LBR / 50.f));
 					BombMC->SetWorldLocation(FVector(LBX, LBY, LBZ));
 					BombMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					BombMC->SetBoundsScale(10.f);
+					BombMC->SetBoundsScale(50.f);
 					BombMC->RegisterComponent();
 					ApplyPBR(BombMC, LavaBright, 0.1f, 0.15f, LavaEmissive);
 					M->AddInstanceComponent(BombMC);
@@ -7972,13 +7795,13 @@ void UPHCCitySubsystem::SpawnMountainRange()
 	// Visible snowfall (suspended white spheres) and snow ground cover
 	// ================================================================
 	{
-		const float SnowMinX = -95000.f;
-		const float SnowMaxX =  96000.f;
-		const float SnowMinY =  85000.f;  // extends south of peaks for snow field
-		const float SnowMaxY = 115000.f;  // extends north behind peaks
+		const float SnowMinX = -24000.f;
+		const float SnowMaxX =  25000.f;
+		const float SnowMinY =  64000.f;  // aligned with christmas tree area
+		const float SnowMaxY =  80000.f;
 
 		AActor* SnowActor = World->SpawnActor<AActor>(AActor::StaticClass(),
-			FVector(0.f, 100000.f, 0.f), FRotator::ZeroRotator);
+			FVector(-436.f, 81303.f, 0.f), FRotator::ZeroRotator);
 		if (SnowActor)
 		{
 #if WITH_EDITOR
@@ -8001,7 +7824,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				Flake->SetWorldScale3D(FVector(SR / 50.f, SR / 50.f, SR * 0.6f / 50.f)); // slightly flattened
 				Flake->SetWorldLocation(FVector(SX, SY, SZ));
 				Flake->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Flake->SetBoundsScale(10.f);
+				Flake->SetBoundsScale(50.f);
 				Flake->RegisterComponent();
 				// Bright white with slight translucency feel via low roughness
 				const float WhiteVar = CityRandom.FRandRange(0.88f, 0.98f);
@@ -8027,7 +7850,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				SnowPatch->SetWorldLocation(FVector(GX, GY, GH * 0.5f));
 				SnowPatch->SetWorldRotation(FRotator(CityRandom.FRandRange(-3.f, 3.f), GYaw, 0.f));
 				SnowPatch->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				SnowPatch->SetBoundsScale(10.f);
+				SnowPatch->SetBoundsScale(50.f);
 				SnowPatch->RegisterComponent();
 				const bool bFreshSnow = (GA % 3 != 0);
 				ApplyPBR(SnowPatch, bFreshSnow ? SnowFresh : SnowOld, 0.f, 0.55f);
@@ -8057,7 +7880,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 					Drift->SetWorldLocation(FVector(DX, DY, DH * 0.3f));
 					Drift->SetWorldRotation(FRotator(0.f, DYaw, 0.f));
 					Drift->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					Drift->SetBoundsScale(10.f);
+					Drift->SetBoundsScale(50.f);
 					Drift->RegisterComponent();
 					ApplyPBR(Drift, (D % 2 == 0) ? SnowFresh : SnowOld, 0.f, 0.50f);
 					SnowActor->AddInstanceComponent(Drift);
@@ -8078,7 +7901,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				LowFlake->SetWorldScale3D(FVector(CR / 50.f, CR / 50.f, CR * 0.4f / 50.f));
 				LowFlake->SetWorldLocation(FVector(CX, CY, CZ));
 				LowFlake->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				LowFlake->SetBoundsScale(10.f);
+				LowFlake->SetBoundsScale(50.f);
 				LowFlake->RegisterComponent();
 				ApplyPBR(LowFlake, FLinearColor(0.95f, 0.96f, 0.98f), 0.f, 0.35f);
 				SnowActor->AddInstanceComponent(LowFlake);
@@ -8090,24 +7913,24 @@ void UPHCCitySubsystem::SpawnMountainRange()
 	// MAGICAL CHRISTMAS WONDERLAND — expansive area beside snowy mountains
 	// ================================================================
 	{
-		// Greatly expanded Christmas area covering a huge zone south of mountains
-		const float XmasMinX = -95000.f;
-		const float XmasMaxX =  95000.f;
-		const float XmasMinY =  62000.f;
-		const float XmasMaxY =  95000.f;
+		// Christmas area centered at X:-436, Y:81303
+		const float XmasMinX = -24000.f;
+		const float XmasMaxX =  25000.f;
+		const float XmasMinY =  64000.f;
+		const float XmasMaxY =  80000.f;
 
-		// --- MASSIVE SNOW GROUND COVER ---
+		// --- SNOW GROUND COVER ---
 		AActor* SnowGround = World->SpawnActor<AActor>(AActor::StaticClass(),
-			FVector(0.f, 78000.f, 0.f), FRotator::ZeroRotator);
+			FVector(-436.f, 71000.f, 0.f), FRotator::ZeroRotator);
 		if (SnowGround)
 		{
 #if WITH_EDITOR
 			SnowGround->SetActorLabel(TEXT("XmasSnowGround"));
 #endif
-			// Giant snow blanket covering the entire wonderland
+			// Snow blanket covering the christmas wonderland
 			UStaticMeshComponent* SGRoot = MC_Cube(SnowGround,
-				FVector(0.f, 78000.f, -5.f),
-				FVector(2000.f, 400.f, 0.15f),
+				FVector(-436.f, 71000.f, -5.f),
+				FVector(300.f, 200.f, 0.15f),
 				FRotator::ZeroRotator,
 				SnowFresh, 0.50f, 0.f);
 			SnowGround->SetRootComponent(SGRoot);
@@ -8139,7 +7962,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				Drift->SetWorldLocation(FVector(DX, DY, DH * 0.3f));
 				Drift->SetWorldScale3D(FVector(DR / 50.f, DR * CityRandom.FRandRange(0.6f, 1.2f) / 50.f, DH / 50.f));
 				Drift->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Drift->SetBoundsScale(10.f);
+				Drift->SetBoundsScale(50.f);
 				Drift->RegisterComponent();
 				ApplyPBR(Drift, SnowFresh, 0.48f, 0.f);
 				SnowGround->AddInstanceComponent(Drift);
@@ -8147,33 +7970,14 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 
 		// ---- GIANT CHRISTMAS TREES ----
-		// 24 giant trees spread across the expanded area
+		// 5 giant trees spread across the expanded area (reduced from 10)
 		struct FXmasTreeDef { float X; float Y; float Height; };
 		const FXmasTreeDef Trees[] = {
-			{ -90000.f, 70000.f, 9000.f },
-			{ -75000.f, 85000.f, 8000.f },
-			{ -72000.f, 68000.f, 7000.f },
-			{ -55000.f, 78000.f, 10000.f },
-			{ -50000.f, 65000.f, 8500.f },
-			{ -38000.f, 88000.f, 7500.f },
-			{ -30000.f, 72000.f, 11500.f },
-			{ -20000.f, 84000.f, 11000.f },
-			{ -12000.f, 66000.f, 9500.f },
-			{  -5000.f, 90000.f, 9000.f },
-			{   5000.f, 73000.f, 10000.f },
-			{  12000.f, 83000.f, 8500.f },
-			{  20000.f, 67000.f, 12000.f },
-			{  28000.f, 87000.f, 12000.f },
-			{  35000.f, 72000.f, 8000.f },
-			{  45000.f, 81000.f, 9500.f },
-			{  55000.f, 66000.f, 10500.f },
-			{  60000.f, 89000.f, 7000.f },
-			{  68000.f, 74000.f, 9000.f },
-			{  75000.f, 84000.f, 10500.f },
-			{  85000.f, 69000.f, 7500.f },
-			{ -48000.f, 91000.f, 6500.f },
-			{  38000.f, 92000.f, 7500.f },
-			{ -85000.f, 78000.f, 8000.f },
+			{ -12000.f, 76000.f, 10000.f },
+			{   -436.f, 73000.f, 11500.f },
+			{  16000.f, 70000.f, 10000.f },
+			{  23000.f, 66000.f, 12000.f },
+			{ -22000.f, 78000.f, 12000.f },
 		};
 		const int32 NumXmasTrees = UE_ARRAY_COUNT(Trees);
 
@@ -8243,7 +8047,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				StarComp->SetWorldLocation(FVector(TD.X, TD.Y, StarZ));
 				StarComp->SetWorldScale3D(FVector(StarSize / 50.f));
 				StarComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				StarComp->SetBoundsScale(10.f);
+				StarComp->SetBoundsScale(50.f);
 				StarComp->RegisterComponent();
 				TA->AddInstanceComponent(StarComp);
 				// Gold with strong emissive glow
@@ -8286,7 +8090,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				Bulb->SetWorldLocation(FVector(LX, LY, LZ));
 				Bulb->SetWorldScale3D(FVector(BulbSize / 50.f));
 				Bulb->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Bulb->SetBoundsScale(10.f);
+				Bulb->SetBoundsScale(50.f);
 				Bulb->RegisterComponent();
 				TA->AddInstanceComponent(Bulb);
 
@@ -8327,7 +8131,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 					Garl->SetWorldScale3D(FVector(TH * 0.003f / 50.f, SegLen * 0.55f / 50.f, TH * 0.003f / 100.f));
 					Garl->SetWorldRotation(FRotator(90.f, SegYaw, 0.f));
 					Garl->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					Garl->SetBoundsScale(10.f);
+					Garl->SetBoundsScale(50.f);
 					Garl->RegisterComponent();
 					TA->AddInstanceComponent(Garl);
 
@@ -8358,39 +8162,39 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 
 		// ---- SNOWMEN ----
-		// 30 snowmen scattered across the expanded wonderland
+		// 30 snowmen scattered within the christmas tree area
 		struct FSnowmanDef { float X; float Y; float Scale; };
 		const FSnowmanDef Snowmen[] = {
-			{ -90000.f, 72000.f, 1.0f },
-			{ -70000.f, 83000.f, 1.0f },
-			{ -65000.f, 67000.f, 0.9f },
-			{ -60000.f, 86000.f, 0.8f },
-			{ -48000.f, 75000.f, 1.2f },
-			{ -35000.f, 85000.f, 0.9f },
-			{ -28000.f, 65000.f, 1.1f },
-			{ -22000.f, 88000.f, 1.1f },
-			{ -12000.f, 70000.f, 0.7f },
-			{  -3000.f, 82000.f, 1.0f },
-			{   5000.f, 66000.f, 1.3f },
-			{  15000.f, 81000.f, 1.3f },
-			{  22000.f, 69000.f, 0.85f },
-			{  35000.f, 83000.f, 1.0f },
-			{  40000.f, 67000.f, 0.95f },
-			{  50000.f, 86000.f, 0.95f },
-			{  58000.f, 71000.f, 1.1f },
-			{  65000.f, 82000.f, 1.1f },
-			{  75000.f, 68000.f, 0.75f },
-			{  78000.f, 88000.f, 0.75f },
-			{  88000.f, 73000.f, 0.9f },
-			{ -82000.f, 87000.f, 0.9f },
-			{ -55000.f, 69000.f, 0.8f },
-			{ -30000.f, 92000.f, 0.8f },
-			{   8000.f, 91000.f, 1.0f },
-			{  42000.f, 90000.f, 0.85f },
-			{  70000.f, 85000.f, 1.05f },
-			{ -15000.f, 78000.f, 1.15f },
-			{  30000.f, 76000.f, 0.9f },
-			{  82000.f, 80000.f, 1.0f },
+			{ -23000.f, 72000.f, 1.0f },
+			{ -20000.f, 67000.f, 1.0f },
+			{ -18000.f, 76000.f, 0.9f },
+			{ -15000.f, 70000.f, 0.8f },
+			{ -13000.f, 74000.f, 1.2f },
+			{ -10000.f, 66000.f, 0.9f },
+			{  -8000.f, 78000.f, 1.1f },
+			{  -6000.f, 71000.f, 1.1f },
+			{  -4000.f, 68000.f, 0.7f },
+			{  -2000.f, 75000.f, 1.0f },
+			{      0.f, 66000.f, 1.3f },
+			{   1500.f, 73000.f, 1.3f },
+			{   3000.f, 69000.f, 0.85f },
+			{   5000.f, 77000.f, 1.0f },
+			{   7000.f, 65000.f, 0.95f },
+			{   9000.f, 72000.f, 0.95f },
+			{  11000.f, 68000.f, 1.1f },
+			{  13000.f, 76000.f, 1.1f },
+			{  15000.f, 70000.f, 0.75f },
+			{  17000.f, 74000.f, 0.75f },
+			{  19000.f, 67000.f, 0.9f },
+			{  21000.f, 78000.f, 0.9f },
+			{  23000.f, 71000.f, 0.8f },
+			{ -21000.f, 65000.f, 0.8f },
+			{ -16000.f, 79000.f, 1.0f },
+			{ -11000.f, 67000.f, 0.85f },
+			{  -1000.f, 70000.f, 1.05f },
+			{   6000.f, 78000.f, 1.15f },
+			{  14000.f, 65000.f, 0.9f },
+			{  24000.f, 74000.f, 1.0f },
 		};
 		const int32 NumSnowmen = UE_ARRAY_COUNT(Snowmen);
 
@@ -8423,7 +8227,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 			Bottom->SetWorldLocation(FVector(SD.X, SD.Y, BaseSize * 0.8f));
 			Bottom->SetWorldScale3D(FVector(BaseSize / 50.f, BaseSize / 50.f, BaseSize * 0.85f / 50.f));
 			Bottom->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			Bottom->SetBoundsScale(10.f);
+			Bottom->SetBoundsScale(50.f);
 			Bottom->RegisterComponent();
 			ApplyPBR(Bottom, SnowWhite, 0.50f, 0.f);
 			SA->AddInstanceComponent(Bottom);
@@ -8437,7 +8241,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 			Mid->SetWorldLocation(FVector(SD.X, SD.Y, MidZ));
 			Mid->SetWorldScale3D(FVector(MidSize / 50.f, MidSize / 50.f, MidSize * 0.9f / 50.f));
 			Mid->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			Mid->SetBoundsScale(10.f);
+			Mid->SetBoundsScale(50.f);
 			Mid->RegisterComponent();
 			ApplyPBR(Mid, SnowWhite, 0.50f, 0.f);
 			SA->AddInstanceComponent(Mid);
@@ -8450,7 +8254,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 			Head->SetWorldLocation(FVector(SD.X, SD.Y, HeadZ));
 			Head->SetWorldScale3D(FVector(HeadSize / 50.f));
 			Head->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			Head->SetBoundsScale(10.f);
+			Head->SetBoundsScale(50.f);
 			Head->RegisterComponent();
 			ApplyPBR(Head, SnowWhite, 0.48f, 0.f);
 			SA->AddInstanceComponent(Head);
@@ -8473,7 +8277,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				Eye->SetWorldLocation(FVector(EX, EY, EZ));
 				Eye->SetWorldScale3D(FVector(EyeSize / 50.f));
 				Eye->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Eye->SetBoundsScale(10.f);
+				Eye->SetBoundsScale(50.f);
 				Eye->RegisterComponent();
 				ApplyPBR(Eye, CoalBlack, 0.70f, 0.f);
 				SA->AddInstanceComponent(Eye);
@@ -8508,7 +8312,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				Mouth->SetWorldLocation(FVector(MX, MY, MZ));
 				Mouth->SetWorldScale3D(FVector(EyeSize * 0.6f / 50.f));
 				Mouth->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Mouth->SetBoundsScale(10.f);
+				Mouth->SetBoundsScale(50.f);
 				Mouth->RegisterComponent();
 				ApplyPBR(Mouth, CoalBlack, 0.70f, 0.f);
 				SA->AddInstanceComponent(Mouth);
@@ -8593,7 +8397,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				Button->SetWorldLocation(FVector(BX, BY, BtnZ));
 				Button->SetWorldScale3D(FVector(MidSize * 0.06f / 50.f));
 				Button->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Button->SetBoundsScale(10.f);
+				Button->SetBoundsScale(50.f);
 				Button->RegisterComponent();
 				ApplyPBR(Button, CoalBlack, 0.70f, 0.f);
 				SA->AddInstanceComponent(Button);
@@ -8637,7 +8441,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 			OrbMesh->SetWorldLocation(FVector(OX, OY, OZ));
 			OrbMesh->SetWorldScale3D(FVector(OSize / 50.f));
 			OrbMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			OrbMesh->SetBoundsScale(10.f);
+			OrbMesh->SetBoundsScale(50.f);
 			OrbMesh->RegisterComponent();
 			OrbA->AddInstanceComponent(OrbMesh);
 			OrbA->SetRootComponent(OrbMesh);
@@ -8692,7 +8496,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 			Hook->SetWorldLocation(FVector(CCX + CCR * 2.f, CCY, CCH * 0.95f));
 			Hook->SetWorldScale3D(FVector(CCR * 1.5f / 50.f, CCR * 1.5f / 50.f, CCR * 2.f / 50.f));
 			Hook->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			Hook->SetBoundsScale(10.f);
+			Hook->SetBoundsScale(50.f);
 			Hook->RegisterComponent();
 			ApplyPBR(Hook, FLinearColor(0.85f, 0.05f, 0.05f), 0.40f, 0.f);
 			CCA->AddInstanceComponent(Hook);
@@ -8800,65 +8604,10 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				BowComp->SetWorldLocation(FVector(GBX + BowOffset, GBY, GBH + GBSize * 0.12f));
 				BowComp->SetWorldScale3D(FVector(GBSize * 0.18f / 50.f, GBSize * 0.12f / 50.f, GBSize * 0.1f / 50.f));
 				BowComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				BowComp->SetBoundsScale(10.f);
+				BowComp->SetBoundsScale(50.f);
 				BowComp->RegisterComponent();
 				ApplyPBR(BowComp, RibbonColor, 0.35f, 0.3f);
 				GBA->AddInstanceComponent(BowComp);
-			}
-		}
-
-		// ---- AURORA BOREALIS — large emissive planes high in the sky ----
-		{
-			AActor* Aurora = World->SpawnActor<AActor>(AActor::StaticClass(),
-				FVector(0.f, 78000.f, 18000.f), FRotator::ZeroRotator);
-			if (Aurora)
-			{
-#if WITH_EDITOR
-				Aurora->SetActorLabel(TEXT("AuroraBorealis"));
-#endif
-				const FLinearColor AuroraColors[] = {
-					FLinearColor(0.1f, 2.0f, 0.5f),   // green
-					FLinearColor(0.2f, 0.8f, 2.5f),   // cyan-blue
-					FLinearColor(1.5f, 0.3f, 2.0f),   // purple
-					FLinearColor(0.1f, 2.5f, 1.0f),   // bright green
-					FLinearColor(0.5f, 0.2f, 2.5f),   // deep purple
-					FLinearColor(0.1f, 1.5f, 2.0f),   // teal
-				};
-
-				for (int32 A = 0; A < 12; ++A)
-				{
-					const float AX = CityRandom.FRandRange(-80000.f, 80000.f);
-					const float AY = CityRandom.FRandRange(65000.f, 95000.f);
-					const float AZ = CityRandom.FRandRange(14000.f, 22000.f);
-					const float AW = CityRandom.FRandRange(15000.f, 40000.f);
-					const float AH = CityRandom.FRandRange(3000.f, 8000.f);
-
-					FString AN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
-					UStaticMeshComponent* AuroraMesh = NewObject<UStaticMeshComponent>(Aurora, *AN);
-					AuroraMesh->SetStaticMesh(PlaneMesh);
-					AuroraMesh->SetWorldLocation(FVector(AX, AY, AZ));
-					AuroraMesh->SetWorldScale3D(FVector(AW / 100.f, AH / 100.f, 1.f));
-					AuroraMesh->SetWorldRotation(FRotator(CityRandom.FRandRange(60.f, 85.f),
-						CityRandom.FRandRange(-30.f, 30.f), 0.f));
-					AuroraMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					AuroraMesh->SetBoundsScale(10.f);
-					AuroraMesh->RegisterComponent();
-					Aurora->AddInstanceComponent(AuroraMesh);
-					if (A == 0) Aurora->SetRootComponent(AuroraMesh);
-
-					// Use glass material for translucent aurora
-					UMaterial* GlassMat = Cast<UMaterial>(StaticLoadObject(UMaterial::StaticClass(), nullptr,
-						TEXT("/Game/Materials/M_PHCGlass.M_PHCGlass")));
-					if (GlassMat)
-					{
-						UMaterialInstanceDynamic* MI = UMaterialInstanceDynamic::Create(GlassMat, AuroraMesh);
-						const FLinearColor& AC = AuroraColors[A % 6];
-						MI->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(AC.R * 0.3f, AC.G * 0.3f, AC.B * 0.3f));
-						MI->SetScalarParameterValue(TEXT("Opacity"), 0.25f);
-						MI->SetVectorParameterValue(TEXT("EmissiveColor"), AC);
-						AuroraMesh->SetMaterial(0, MI);
-					}
-				}
 			}
 		}
 
@@ -8903,7 +8652,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 					RimSnow->SetWorldScale3D(FVector(PondRadius * 0.15f / 50.f, PondRadius * 0.1f / 50.f, 80.f / 50.f));
 					RimSnow->SetWorldRotation(FRotator(0.f, FMath::RadiansToDegrees(RAngle), 0.f));
 					RimSnow->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					RimSnow->SetBoundsScale(10.f);
+					RimSnow->SetBoundsScale(50.f);
 					RimSnow->RegisterComponent();
 					ApplyPBR(RimSnow, SnowFresh, 0.48f, 0.f);
 					Pond->AddInstanceComponent(RimSnow);
@@ -8940,7 +8689,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 			Sparkle->SetWorldLocation(FVector(SpX, SpY, SpZ));
 			Sparkle->SetWorldScale3D(FVector(SpSize / 50.f));
 			Sparkle->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			Sparkle->SetBoundsScale(10.f);
+			Sparkle->SetBoundsScale(50.f);
 			Sparkle->RegisterComponent();
 			SpA->AddInstanceComponent(Sparkle);
 			SpA->SetRootComponent(Sparkle);
@@ -8988,7 +8737,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 			Globe->SetWorldLocation(FVector(LPX, LPY, LPH + 150.f));
 			Globe->SetWorldScale3D(FVector(250.f / 50.f));
 			Globe->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			Globe->SetBoundsScale(10.f);
+			Globe->SetBoundsScale(50.f);
 			Globe->RegisterComponent();
 			ApplyPBR(Globe, FLinearColor(0.9f, 0.8f, 0.4f), 0.2f, 0.3f);
 			if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(Globe->GetMaterial(0)))
@@ -9015,7 +8764,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 			Wreath->SetWorldLocation(FVector(LPX, LPY, LPH * 0.6f));
 			Wreath->SetWorldScale3D(FVector(200.f / 50.f, 200.f / 50.f, 30.f / 100.f));
 			Wreath->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			Wreath->SetBoundsScale(10.f);
+			Wreath->SetBoundsScale(50.f);
 			Wreath->RegisterComponent();
 			ApplyPBR(Wreath, FLinearColor(0.05f, 0.25f, 0.05f), 0.70f, 0.f);
 			LPA->AddInstanceComponent(Wreath);
@@ -9039,7 +8788,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 			Flake->SetWorldLocation(FVector(SFX, SFY, SFZ));
 			Flake->SetWorldScale3D(FVector(SFSize / 50.f));
 			Flake->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			Flake->SetBoundsScale(10.f);
+			Flake->SetBoundsScale(50.f);
 			Flake->RegisterComponent();
 			ApplyPBR(Flake, FLinearColor(0.96f, 0.97f, 0.99f), 0.50f, 0.f);
 			SFA->AddInstanceComponent(Flake);
@@ -9105,7 +8854,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetWorldLocation(Loc);
 		MC->SetWorldRotation(Rot);
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MC->SetBoundsScale(10.f);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
@@ -9121,7 +8870,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetWorldScale3D(Scale3D);
 		MC->SetWorldLocation(Loc);
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MC->SetBoundsScale(10.f);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
@@ -9137,7 +8886,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetWorldScale3D(Scale3D);
 		MC->SetWorldLocation(Loc);
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MC->SetBoundsScale(10.f);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
@@ -9154,7 +8903,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetWorldLocation(Loc);
 		MC->SetWorldRotation(Rot);
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MC->SetBoundsScale(10.f);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
@@ -9171,7 +8920,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetWorldScale3D(Scale3D);
 		MC->SetWorldLocation(Loc);
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MC->SetBoundsScale(10.f);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		ApplyPBRGlass(MC, GlassMaterial, FLinearColor(0.15f, 0.35f, 0.55f),
 			0.55f, 0.0f, 0.05f);
@@ -9194,7 +8943,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetWorldLocation(Loc);
 		MC->SetWorldRotation(Rot);
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MC->SetBoundsScale(10.f);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		ApplyPBR(MC, Color, 0.f, Roughness);
 		Castle->AddInstanceComponent(MC);
@@ -9229,7 +8978,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetWorldLocation(Loc);
 		MC->SetWorldRotation(Rot);
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MC->SetBoundsScale(10.f);
+		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
 		ApplyPBR(MC, Color, Metallic, Roughness);
 		Castle->AddInstanceComponent(MC);
@@ -10399,7 +10148,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 			BeachMC->SetWorldLocation(Origin + FVector(0.f, 0.f, 1.f));
 			BeachMC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			BeachMC->SetCollisionResponseToAllChannels(ECR_Block);
-			BeachMC->SetBoundsScale(5.f);
+			BeachMC->SetBoundsScale(30.f);
 			BeachMC->RegisterComponent();
 			BeachActor->SetRootComponent(BeachMC);
 			ApplyPBR(BeachMC, FLinearColor(0.82f, 0.76f, 0.58f), 0.f, 0.95f);
@@ -10458,7 +10207,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 			DMC->SetWorldLocation(FVector(DX, DY, DuneH * 0.3f));
 			DMC->SetWorldRotation(FRotator(0.f, DuneYaw, 0.f));
 			DMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			DMC->SetBoundsScale(5.f);
+			DMC->SetBoundsScale(30.f);
 			DMC->RegisterComponent();
 			DA->SetRootComponent(DMC);
 			ApplyPBR(DMC, DuneColor, 0.f, 0.92f);
@@ -10622,7 +10371,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 				WZMC->SetWorldScale3D(FVector(BeachSize / 100.f, BeachSize * 0.15f / 100.f, 1.f));
 				WZMC->SetWorldLocation(Origin + FVector(0.f, HB * 0.85f, 1.5f));
 				WZMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				WZMC->SetBoundsScale(5.f);
+				WZMC->SetBoundsScale(30.f);
 				WZMC->RegisterComponent();
 				WZA->SetRootComponent(WZMC);
 				ApplyPBR(WZMC, SandWet, 0.f, 0.75f); // wet = lower roughness, shinier
@@ -10894,7 +10643,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 		MC->SetWorldLocation(Loc);
 		MC->SetWorldRotation(Rot);
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MC->SetBoundsScale(5.f);
+		MC->SetBoundsScale(30.f);
 		MC->RegisterComponent();
 		A->SetRootComponent(MC);
 		ApplyPBR(MC, Color, Metallic, Roughness);
@@ -10920,7 +10669,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 			WMC->SetWorldScale3D(FVector(300.f, 300.f, 1.f));
 			WMC->SetWorldLocation(LakeCenter + FVector(0.f, 0.f, 5.f));
 			WMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			WMC->SetBoundsScale(5.f);
+			WMC->SetBoundsScale(30.f);
 			WMC->RegisterComponent();
 			WA->SetRootComponent(WMC);
 			if (GlassMaterial)
@@ -11024,7 +10773,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 		C->SetWorldLocation(Loc);
 		C->SetWorldRotation(Rot);
 		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		C->SetBoundsScale(5.f);
+		C->SetBoundsScale(30.f);
 		C->RegisterComponent();
 		ApplyPBR(C, Color, Metallic, Roughness);
 		Ship->AddInstanceComponent(C);
@@ -12060,4 +11809,1591 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 	}
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Spawned lake and pirate ship with %d ship components."), SIdx);
+}
+
+// ---------------------------------------------------------------------------
+// SpawnStreetLabels — Charlotte Uptown street name signs at intersections
+// ---------------------------------------------------------------------------
+void UPHCCitySubsystem::SpawnStreetLabels()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	// Charlotte N-S streets (X-axis road index -> name)
+	struct FStreetName { int32 Road; const TCHAR* Name; };
+	const FStreetName NSStreets[] = {
+		{ 6,  TEXT("Graham St") },
+		{ 7,  TEXT("Cedar St") },
+		{ 8,  TEXT("Pine St") },
+		{ 9,  TEXT("Mint St") },
+		{ 10, TEXT("Church St") },
+		{ 12, TEXT("Tryon St") },
+		{ 13, TEXT("College St") },
+		{ 14, TEXT("Brevard St") },
+		{ 15, TEXT("Davidson St") },
+		{ 16, TEXT("Caldwell St") },
+		{ 17, TEXT("McDowell St") },
+	};
+	const int32 NumNS = UE_ARRAY_COUNT(NSStreets);
+
+	// Charlotte E-W streets (Y-axis road index -> name)
+	const FStreetName EWStreets[] = {
+		{ 6,  TEXT("Morehead St") },
+		{ 7,  TEXT("Brooklyn Village Ave") },
+		{ 8,  TEXT("MLK Jr Blvd") },
+		{ 9,  TEXT("Hill St") },
+		{ 12, TEXT("Trade St") },
+		{ 13, TEXT("3rd St") },
+		{ 14, TEXT("4th St") },
+		{ 15, TEXT("5th St") },
+		{ 16, TEXT("6th St") },
+		{ 17, TEXT("7th St") },
+		{ 18, TEXT("8th St") },
+		{ 19, TEXT("10th St") },
+		{ 20, TEXT("11th St") },
+	};
+	const int32 NumEW = UE_ARRAY_COUNT(EWStreets);
+
+	// Sign visual constants
+	const float PoleHeight = 350.f;
+	const float SignBoardH = 60.f;
+	const float SignBoardW = 280.f;
+	const float SignBoardD = 10.f;
+	const float TextHeight = 32.f;
+	const FLinearColor SignGreen(0.04f, 0.28f, 0.10f);
+	const FLinearColor PoleGray(0.45f, 0.45f, 0.45f);
+
+	int32 SignCount = 0;
+
+	// At each intersection of a named N-S street with a named E-W street, spawn a sign post
+	for (int32 ns = 0; ns < NumNS; ++ns)
+	{
+		for (int32 ew = 0; ew < NumEW; ++ew)
+		{
+			const int32 RoadX = NSStreets[ns].Road;
+			const int32 RoadY = EWStreets[ew].Road;
+
+			// World position of this intersection (road centerline crossing)
+			const float WorldX = FirstRoad + RoadX * RoadSpacing;
+			const float WorldY = FirstRoad + RoadY * RoadSpacing;
+			const FVector IntersectionPos(WorldX, WorldY, 0.f);
+
+			// Offset sign to the NE corner of the intersection (so it doesn't block the road)
+			const FVector SignBase = IntersectionPos + FVector(RoadWidth * 0.5f + 40.f, RoadWidth * 0.5f + 40.f, 0.f);
+
+			AActor* SignActor = World->SpawnActor<AActor>(AActor::StaticClass(), SignBase, FRotator::ZeroRotator);
+			if (!SignActor) continue;
+
+			const FString ActorName = FString::Printf(TEXT("StreetSign_%d_%d"), RoadX, RoadY);
+
+			// --- Pole (thin cylinder) ---
+			UStaticMeshComponent* Pole = NewObject<UStaticMeshComponent>(SignActor, *FString::Printf(TEXT("Pole_%d"), SignCount));
+			Pole->SetStaticMesh(CylinderMesh);
+			Pole->SetWorldLocation(SignBase + FVector(0.f, 0.f, PoleHeight * 0.5f));
+			Pole->SetWorldScale3D(FVector(0.06f, 0.06f, PoleHeight / 100.f));
+			Pole->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Pole->RegisterComponent();
+			SignActor->SetRootComponent(Pole);
+			SignActor->AddInstanceComponent(Pole);
+			ApplyPBR(Pole, PoleGray, 0.7f, 0.35f);
+
+			// --- N-S street sign board (faces Y direction — readable when looking north/south) ---
+			{
+				UStaticMeshComponent* Board = NewObject<UStaticMeshComponent>(SignActor, *FString::Printf(TEXT("BoardNS_%d"), SignCount));
+				Board->SetStaticMesh(CubeMesh);
+				Board->SetWorldLocation(SignBase + FVector(0.f, 0.f, PoleHeight + SignBoardH * 0.5f));
+				Board->SetWorldScale3D(FVector(SignBoardW / 100.f, SignBoardD / 100.f, SignBoardH / 100.f));
+				Board->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Board->RegisterComponent();
+				Board->AttachToComponent(Pole, FAttachmentTransformRules::KeepWorldTransform);
+				SignActor->AddInstanceComponent(Board);
+				ApplyPBR(Board, SignGreen, 0.f, 0.7f);
+
+				// Text for N-S street name
+				UTextRenderComponent* NSText = NewObject<UTextRenderComponent>(SignActor, *FString::Printf(TEXT("TextNS_%d"), SignCount));
+				NSText->SetText(FText::FromString(NSStreets[ns].Name));
+				NSText->SetTextRenderColor(FColor::White);
+				NSText->SetWorldSize(TextHeight);
+				NSText->SetHorizontalAlignment(EHTA_Center);
+				NSText->SetVerticalAlignment(EVRTA_TextCenter);
+				NSText->SetWorldLocation(SignBase + FVector(0.f, -(SignBoardD * 0.5f + 1.f), PoleHeight + SignBoardH * 0.5f));
+				NSText->SetWorldRotation(FRotator(0.f, 180.f, 0.f));
+				NSText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				NSText->RegisterComponent();
+				NSText->AttachToComponent(Pole, FAttachmentTransformRules::KeepWorldTransform);
+				SignActor->AddInstanceComponent(NSText);
+
+				// Back side text (readable from other direction)
+				UTextRenderComponent* NSTextBack = NewObject<UTextRenderComponent>(SignActor, *FString::Printf(TEXT("TextNSB_%d"), SignCount));
+				NSTextBack->SetText(FText::FromString(NSStreets[ns].Name));
+				NSTextBack->SetTextRenderColor(FColor::White);
+				NSTextBack->SetWorldSize(TextHeight);
+				NSTextBack->SetHorizontalAlignment(EHTA_Center);
+				NSTextBack->SetVerticalAlignment(EVRTA_TextCenter);
+				NSTextBack->SetWorldLocation(SignBase + FVector(0.f, SignBoardD * 0.5f + 1.f, PoleHeight + SignBoardH * 0.5f));
+				NSTextBack->SetWorldRotation(FRotator(0.f, 0.f, 0.f));
+				NSTextBack->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				NSTextBack->RegisterComponent();
+				NSTextBack->AttachToComponent(Pole, FAttachmentTransformRules::KeepWorldTransform);
+				SignActor->AddInstanceComponent(NSTextBack);
+			}
+
+			// --- E-W street sign board (faces X direction — readable when looking east/west) ---
+			{
+				UStaticMeshComponent* Board2 = NewObject<UStaticMeshComponent>(SignActor, *FString::Printf(TEXT("BoardEW_%d"), SignCount));
+				Board2->SetStaticMesh(CubeMesh);
+				Board2->SetWorldLocation(SignBase + FVector(0.f, 0.f, PoleHeight + SignBoardH * 1.5f + 10.f));
+				Board2->SetWorldScale3D(FVector(SignBoardD / 100.f, SignBoardW / 100.f, SignBoardH / 100.f));
+				Board2->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Board2->RegisterComponent();
+				Board2->AttachToComponent(Pole, FAttachmentTransformRules::KeepWorldTransform);
+				SignActor->AddInstanceComponent(Board2);
+				ApplyPBR(Board2, SignGreen, 0.f, 0.7f);
+
+				// Text for E-W street name
+				UTextRenderComponent* EWText = NewObject<UTextRenderComponent>(SignActor, *FString::Printf(TEXT("TextEW_%d"), SignCount));
+				EWText->SetText(FText::FromString(EWStreets[ew].Name));
+				EWText->SetTextRenderColor(FColor::White);
+				EWText->SetWorldSize(TextHeight);
+				EWText->SetHorizontalAlignment(EHTA_Center);
+				EWText->SetVerticalAlignment(EVRTA_TextCenter);
+				EWText->SetWorldLocation(SignBase + FVector(-(SignBoardD * 0.5f + 1.f), 0.f, PoleHeight + SignBoardH * 1.5f + 10.f));
+				EWText->SetWorldRotation(FRotator(0.f, 270.f, 0.f));
+				EWText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				EWText->RegisterComponent();
+				EWText->AttachToComponent(Pole, FAttachmentTransformRules::KeepWorldTransform);
+				SignActor->AddInstanceComponent(EWText);
+
+				// Back side text
+				UTextRenderComponent* EWTextBack = NewObject<UTextRenderComponent>(SignActor, *FString::Printf(TEXT("TextEWB_%d"), SignCount));
+				EWTextBack->SetText(FText::FromString(EWStreets[ew].Name));
+				EWTextBack->SetTextRenderColor(FColor::White);
+				EWTextBack->SetWorldSize(TextHeight);
+				EWTextBack->SetHorizontalAlignment(EHTA_Center);
+				EWTextBack->SetVerticalAlignment(EVRTA_TextCenter);
+				EWTextBack->SetWorldLocation(SignBase + FVector(SignBoardD * 0.5f + 1.f, 0.f, PoleHeight + SignBoardH * 1.5f + 10.f));
+				EWTextBack->SetWorldRotation(FRotator(0.f, 90.f, 0.f));
+				EWTextBack->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				EWTextBack->RegisterComponent();
+				EWTextBack->AttachToComponent(Pole, FAttachmentTransformRules::KeepWorldTransform);
+				SignActor->AddInstanceComponent(EWTextBack);
+			}
+
+			++SignCount;
+		}
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Charlotte Uptown: Spawned %d street name signs."), SignCount);
+}
+
+// ---------------------------------------------------------------------------
+// SpawnLightRail — LYNX Blue Line light rail (tracks, stations, train)
+// ---------------------------------------------------------------------------
+void UPHCCitySubsystem::SpawnLightRail()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	// Track alignment: runs N-S between Tryon (road 12) and College (road 13)
+	const float TrackX = FirstRoad + 12.5f * RoadSpacing;
+	const float TrackYStart = FirstRoad + 5.f * RoadSpacing;
+	const float TrackYEnd   = FirstRoad + 21.f * RoadSpacing;
+	const float TrackLength = TrackYEnd - TrackYStart;
+	const float TrackMidY   = (TrackYStart + TrackYEnd) * 0.5f;
+
+	// Colors
+	const FLinearColor RailSteel(0.50f, 0.50f, 0.52f);
+	const FLinearColor TieBrown(0.28f, 0.18f, 0.10f);
+	const FLinearColor BallastGray(0.32f, 0.30f, 0.28f);
+	const FLinearColor PlatformGray(0.58f, 0.56f, 0.52f);
+	const FLinearColor ShelterWhite(0.88f, 0.88f, 0.90f);
+	const FLinearColor LYNXBlue(0.0f, 0.35f, 0.65f);
+	const FLinearColor LYNXTeal(0.0f, 0.55f, 0.50f);
+	const FLinearColor YellowStripe(0.85f, 0.75f, 0.05f);
+	const FLinearColor PoleGray(0.40f, 0.40f, 0.42f);
+	const FLinearColor SignBlue(0.05f, 0.20f, 0.50f);
+
+	int32 CompIdx = 0;
+
+	// ---- Ballast bed (gravel strip under the tracks) ----
+	{
+		AActor* BallastActor = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(TrackX, TrackMidY, 1.f), FRotator::ZeroRotator);
+		if (BallastActor)
+		{
+			UStaticMeshComponent* Ballast = NewObject<UStaticMeshComponent>(BallastActor, TEXT("Ballast"));
+			Ballast->SetStaticMesh(CubeMesh);
+			Ballast->SetWorldLocation(FVector(TrackX, TrackMidY, 1.f));
+			Ballast->SetWorldScale3D(FVector(1.2f, TrackLength / 100.f, 0.04f));
+			Ballast->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Ballast->RegisterComponent();
+			BallastActor->SetRootComponent(Ballast);
+			BallastActor->AddInstanceComponent(Ballast);
+			ApplyPBR(Ballast, BallastGray, 0.f, 0.85f);
+		}
+	}
+
+	// ---- Two steel rails ----
+	const float RailGauge = 40.f; // 5 ft standard gauge
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		const float OffsetX = (Side == 0) ? -RailGauge * 0.5f : RailGauge * 0.5f;
+		AActor* RailActor = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(TrackX + OffsetX, TrackMidY, 3.f), FRotator::ZeroRotator);
+		if (RailActor)
+		{
+			UStaticMeshComponent* Rail = NewObject<UStaticMeshComponent>(RailActor,
+				*FString::Printf(TEXT("Rail_%d"), Side));
+			Rail->SetStaticMesh(CubeMesh);
+			Rail->SetWorldLocation(FVector(TrackX + OffsetX, TrackMidY, 3.f));
+			Rail->SetWorldScale3D(FVector(0.06f, TrackLength / 100.f, 0.04f));
+			Rail->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Rail->RegisterComponent();
+			RailActor->SetRootComponent(Rail);
+			RailActor->AddInstanceComponent(Rail);
+			ApplyPBR(Rail, RailSteel, 0.8f, 0.25f);
+		}
+	}
+
+	// ---- Railroad ties (every 200 UU) ----
+	const int32 NumTies = FMath::FloorToInt32(TrackLength / 200.f);
+	AActor* TieActor = World->SpawnActor<AActor>(AActor::StaticClass(),
+		FVector(TrackX, TrackYStart, 2.f), FRotator::ZeroRotator);
+	if (TieActor)
+	{
+		UStaticMeshComponent* FirstTie = nullptr;
+		for (int32 i = 0; i <= NumTies; ++i)
+		{
+			const float TieY = TrackYStart + i * 200.f;
+			UStaticMeshComponent* Tie = NewObject<UStaticMeshComponent>(TieActor,
+				*FString::Printf(TEXT("Tie_%d"), i));
+			Tie->SetStaticMesh(CubeMesh);
+			Tie->SetWorldLocation(FVector(TrackX, TieY, 2.f));
+			Tie->SetWorldScale3D(FVector(0.80f, 0.06f, 0.03f));
+			Tie->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Tie->RegisterComponent();
+			if (i == 0) { TieActor->SetRootComponent(Tie); FirstTie = Tie; }
+			else { Tie->AttachToComponent(FirstTie, FAttachmentTransformRules::KeepWorldTransform); }
+			TieActor->AddInstanceComponent(Tie);
+			ApplyPBR(Tie, TieBrown, 0.f, 0.85f);
+		}
+	}
+
+	// ---- Overhead catenary wire ----
+	const float WireZ = 500.f;
+	{
+		AActor* WireActor = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(TrackX, TrackMidY, WireZ), FRotator::ZeroRotator);
+		if (WireActor)
+		{
+			// Main wire (thin cylinder running full length, rotated 90 degrees to lie along Y)
+			UStaticMeshComponent* Wire = NewObject<UStaticMeshComponent>(WireActor, TEXT("CatenaryWire"));
+			Wire->SetStaticMesh(CylinderMesh);
+			Wire->SetWorldLocation(FVector(TrackX, TrackMidY, WireZ));
+			Wire->SetWorldRotation(FRotator(90.f, 0.f, 0.f));
+			Wire->SetWorldScale3D(FVector(0.02f, 0.02f, TrackLength / 100.f));
+			Wire->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Wire->RegisterComponent();
+			WireActor->SetRootComponent(Wire);
+			WireActor->AddInstanceComponent(Wire);
+			ApplyPBR(Wire, RailSteel, 0.7f, 0.3f);
+		}
+	}
+
+	// ---- Catenary support poles (every 1400 UU = half a block) ----
+	const int32 NumPoles = FMath::FloorToInt32(TrackLength / 1400.f);
+	for (int32 i = 0; i <= NumPoles; ++i)
+	{
+		const float PoleY = TrackYStart + i * 1400.f;
+		// Offset pole to the side of the track so it doesn't block the train
+		const float PoleX = TrackX + 60.f;
+
+		AActor* PoleActor = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(PoleX, PoleY, 0.f), FRotator::ZeroRotator);
+		if (PoleActor)
+		{
+			// Vertical pole
+			UStaticMeshComponent* Pole = NewObject<UStaticMeshComponent>(PoleActor,
+				*FString::Printf(TEXT("CatPole_%d"), i));
+			Pole->SetStaticMesh(CylinderMesh);
+			Pole->SetWorldLocation(FVector(PoleX, PoleY, WireZ * 0.5f));
+			Pole->SetWorldScale3D(FVector(0.06f, 0.06f, WireZ / 100.f));
+			Pole->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Pole->RegisterComponent();
+			PoleActor->SetRootComponent(Pole);
+			PoleActor->AddInstanceComponent(Pole);
+			ApplyPBR(Pole, PoleGray, 0.6f, 0.4f);
+
+			// Horizontal arm reaching over the track
+			UStaticMeshComponent* Arm = NewObject<UStaticMeshComponent>(PoleActor,
+				*FString::Printf(TEXT("CatArm_%d"), i));
+			Arm->SetStaticMesh(CylinderMesh);
+			Arm->SetWorldLocation(FVector(PoleX - 30.f, PoleY, WireZ - 5.f));
+			Arm->SetWorldRotation(FRotator(0.f, 0.f, 90.f));
+			Arm->SetWorldScale3D(FVector(0.03f, 0.03f, 0.6f));
+			Arm->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Arm->RegisterComponent();
+			Arm->AttachToComponent(Pole, FAttachmentTransformRules::KeepWorldTransform);
+			PoleActor->AddInstanceComponent(Arm);
+			ApplyPBR(Arm, PoleGray, 0.6f, 0.4f);
+		}
+	}
+
+	// ---- Station platforms ----
+	struct FStationInfo { float RoadY; const TCHAR* Name; };
+	const FStationInfo Stations[] = {
+		{ 7.f,  TEXT("Brooklyn Village") },
+		{ 12.f, TEXT("CTC / Gateway") },
+		{ 13.f, TEXT("3rd Street") },
+	};
+
+	for (const FStationInfo& St : Stations)
+	{
+		const float StationY = FirstRoad + St.RoadY * RoadSpacing;
+		// Platform on the east side of the tracks
+		const float PlatX = TrackX + 80.f;
+		const float PlatW = 120.f;
+		const float PlatL = 500.f;
+		const float PlatH = 16.f;
+
+		AActor* StationActor = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(PlatX, StationY, 0.f), FRotator::ZeroRotator);
+		if (!StationActor) continue;
+
+		// Platform slab
+		UStaticMeshComponent* Platform = NewObject<UStaticMeshComponent>(StationActor,
+			*FString::Printf(TEXT("Platform_%s"), St.Name));
+		Platform->SetStaticMesh(CubeMesh);
+		Platform->SetWorldLocation(FVector(PlatX, StationY, PlatH * 0.5f));
+		Platform->SetWorldScale3D(FVector(PlatW / 100.f, PlatL / 100.f, PlatH / 100.f));
+		Platform->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		Platform->SetCollisionResponseToAllChannels(ECR_Block);
+		Platform->RegisterComponent();
+		StationActor->SetRootComponent(Platform);
+		StationActor->AddInstanceComponent(Platform);
+		ApplyPBR(Platform, PlatformGray, 0.f, 0.75f);
+
+		// Yellow safety stripe along track edge
+		UStaticMeshComponent* Stripe = NewObject<UStaticMeshComponent>(StationActor,
+			*FString::Printf(TEXT("Stripe_%s"), St.Name));
+		Stripe->SetStaticMesh(CubeMesh);
+		Stripe->SetWorldLocation(FVector(PlatX - PlatW * 0.5f + 5.f, StationY, PlatH + 0.5f));
+		Stripe->SetWorldScale3D(FVector(0.10f, PlatL / 100.f, 0.02f));
+		Stripe->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Stripe->RegisterComponent();
+		Stripe->AttachToComponent(Platform, FAttachmentTransformRules::KeepWorldTransform);
+		StationActor->AddInstanceComponent(Stripe);
+		ApplyPBR(Stripe, YellowStripe, 0.f, 0.6f);
+
+		// Shelter: 4 poles + roof
+		const float ShelterZ = 280.f;
+		const float ShelterW = 80.f;
+		const float ShelterL = 300.f;
+		const float ShelterRoofThick = 8.f;
+
+		for (int32 p = 0; p < 4; ++p)
+		{
+			const float px = PlatX + ((p % 2 == 0) ? -ShelterW * 0.35f : ShelterW * 0.35f);
+			const float py = StationY + ((p < 2) ? -ShelterL * 0.4f : ShelterL * 0.4f);
+			UStaticMeshComponent* ShelterPole = NewObject<UStaticMeshComponent>(StationActor,
+				*FString::Printf(TEXT("ShelterPole_%s_%d"), St.Name, p));
+			ShelterPole->SetStaticMesh(CylinderMesh);
+			ShelterPole->SetWorldLocation(FVector(px, py, PlatH + ShelterZ * 0.5f));
+			ShelterPole->SetWorldScale3D(FVector(0.04f, 0.04f, ShelterZ / 100.f));
+			ShelterPole->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			ShelterPole->RegisterComponent();
+			ShelterPole->AttachToComponent(Platform, FAttachmentTransformRules::KeepWorldTransform);
+			StationActor->AddInstanceComponent(ShelterPole);
+			ApplyPBR(ShelterPole, PoleGray, 0.7f, 0.3f);
+		}
+
+		// Shelter roof
+		UStaticMeshComponent* Roof = NewObject<UStaticMeshComponent>(StationActor,
+			*FString::Printf(TEXT("ShelterRoof_%s"), St.Name));
+		Roof->SetStaticMesh(CubeMesh);
+		Roof->SetWorldLocation(FVector(PlatX, StationY, PlatH + ShelterZ + ShelterRoofThick * 0.5f));
+		Roof->SetWorldScale3D(FVector((ShelterW + 20.f) / 100.f, (ShelterL + 20.f) / 100.f, ShelterRoofThick / 100.f));
+		Roof->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Roof->RegisterComponent();
+		Roof->AttachToComponent(Platform, FAttachmentTransformRules::KeepWorldTransform);
+		StationActor->AddInstanceComponent(Roof);
+		ApplyPBR(Roof, ShelterWhite, 0.3f, 0.3f);
+
+		// Station name sign
+		UStaticMeshComponent* SignBoard = NewObject<UStaticMeshComponent>(StationActor,
+			*FString::Printf(TEXT("SignBoard_%s"), St.Name));
+		SignBoard->SetStaticMesh(CubeMesh);
+		SignBoard->SetWorldLocation(FVector(PlatX, StationY, PlatH + ShelterZ * 0.6f));
+		SignBoard->SetWorldScale3D(FVector(0.06f, 2.0f, 0.5f));
+		SignBoard->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		SignBoard->RegisterComponent();
+		SignBoard->AttachToComponent(Platform, FAttachmentTransformRules::KeepWorldTransform);
+		StationActor->AddInstanceComponent(SignBoard);
+		ApplyPBR(SignBoard, SignBlue, 0.f, 0.6f);
+
+		// Station name text (both sides)
+		for (int32 ts = 0; ts < 2; ++ts)
+		{
+			UTextRenderComponent* StText = NewObject<UTextRenderComponent>(StationActor,
+				*FString::Printf(TEXT("StName_%s_%d"), St.Name, ts));
+			StText->SetText(FText::FromString(St.Name));
+			StText->SetTextRenderColor(FColor::White);
+			StText->SetWorldSize(28.f);
+			StText->SetHorizontalAlignment(EHTA_Center);
+			StText->SetVerticalAlignment(EVRTA_TextCenter);
+			const float TextOffX = (ts == 0) ? -4.f : 4.f;
+			StText->SetWorldLocation(FVector(PlatX + TextOffX, StationY, PlatH + ShelterZ * 0.6f));
+			StText->SetWorldRotation(FRotator(0.f, (ts == 0) ? 180.f : 0.f, 0.f));
+			StText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			StText->RegisterComponent();
+			StText->AttachToComponent(Platform, FAttachmentTransformRules::KeepWorldTransform);
+			StationActor->AddInstanceComponent(StText);
+		}
+
+		// Bench on platform
+		UStaticMeshComponent* Bench = NewObject<UStaticMeshComponent>(StationActor,
+			*FString::Printf(TEXT("Bench_%s"), St.Name));
+		Bench->SetStaticMesh(CubeMesh);
+		Bench->SetWorldLocation(FVector(PlatX + 30.f, StationY, PlatH + 25.f));
+		Bench->SetWorldScale3D(FVector(0.40f, 1.20f, 0.08f));
+		Bench->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Bench->RegisterComponent();
+		Bench->AttachToComponent(Platform, FAttachmentTransformRules::KeepWorldTransform);
+		StationActor->AddInstanceComponent(Bench);
+		ApplyPBR(Bench, PoleGray, 0.5f, 0.4f);
+
+		++CompIdx;
+	}
+
+	// ---- Light rail vehicle (2-car train) ----
+	{
+		const float CarLength = 760.f;  // 95 ft
+		const float CarWidth  = 72.f;   // 9 ft
+		const float CarHeight = 96.f;   // 12 ft
+		const float CarGap    = 20.f;
+		const float TrainBaseZ = 6.f;   // Sits on top of rails
+
+		LightRailTrainActor = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(TrackX, TrackMidY, 0.f), FRotator::ZeroRotator);
+		if (LightRailTrainActor)
+		{
+			UStaticMeshComponent* RootComp = nullptr;
+
+			for (int32 Car = 0; Car < 2; ++Car)
+			{
+				const float CarOffsetY = (Car == 0) ? -(CarLength * 0.5f + CarGap * 0.5f)
+				                                     : (CarLength * 0.5f + CarGap * 0.5f);
+
+				// Car body
+				UStaticMeshComponent* Body = NewObject<UStaticMeshComponent>(LightRailTrainActor,
+					*FString::Printf(TEXT("CarBody_%d"), Car));
+				Body->SetStaticMesh(CubeMesh);
+				Body->SetRelativeLocation(FVector(0.f, CarOffsetY, TrainBaseZ + CarHeight * 0.5f));
+				Body->SetRelativeScale3D(FVector(CarWidth / 100.f, CarLength / 100.f, CarHeight / 100.f));
+				Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Body->RegisterComponent();
+				if (Car == 0) { LightRailTrainActor->SetRootComponent(Body); RootComp = Body; }
+				else { Body->AttachToComponent(RootComp, FAttachmentTransformRules::KeepRelativeTransform); }
+				LightRailTrainActor->AddInstanceComponent(Body);
+				ApplyPBR(Body, LYNXBlue, 0.6f, 0.3f);
+
+				// Roof (slightly wider, light gray)
+				UStaticMeshComponent* Roof = NewObject<UStaticMeshComponent>(LightRailTrainActor,
+					*FString::Printf(TEXT("CarRoof_%d"), Car));
+				Roof->SetStaticMesh(CubeMesh);
+				Roof->SetRelativeLocation(FVector(0.f, CarOffsetY, TrainBaseZ + CarHeight + 4.f));
+				Roof->SetRelativeScale3D(FVector((CarWidth + 6.f) / 100.f, (CarLength + 4.f) / 100.f, 0.08f));
+				Roof->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Roof->RegisterComponent();
+				Roof->AttachToComponent(RootComp, FAttachmentTransformRules::KeepRelativeTransform);
+				LightRailTrainActor->AddInstanceComponent(Roof);
+				ApplyPBR(Roof, FLinearColor(0.70f, 0.70f, 0.72f), 0.4f, 0.4f);
+
+				// LYNX teal stripe along lower body (both sides)
+				for (int32 s = 0; s < 2; ++s)
+				{
+					const float StripeOffX = (s == 0) ? -(CarWidth * 0.5f + 0.5f) : (CarWidth * 0.5f + 0.5f);
+					UStaticMeshComponent* StripeComp = NewObject<UStaticMeshComponent>(LightRailTrainActor,
+						*FString::Printf(TEXT("CarStripe_%d_%d"), Car, s));
+					StripeComp->SetStaticMesh(CubeMesh);
+					StripeComp->SetRelativeLocation(FVector(StripeOffX, CarOffsetY, TrainBaseZ + 15.f));
+					StripeComp->SetRelativeScale3D(FVector(0.02f, (CarLength - 10.f) / 100.f, 0.12f));
+					StripeComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					StripeComp->RegisterComponent();
+					StripeComp->AttachToComponent(RootComp, FAttachmentTransformRules::KeepRelativeTransform);
+					LightRailTrainActor->AddInstanceComponent(StripeComp);
+					ApplyPBR(StripeComp, LYNXTeal, 0.3f, 0.4f);
+				}
+
+				// Window bands (glass, both sides)
+				for (int32 s = 0; s < 2; ++s)
+				{
+					const float WinOffX = (s == 0) ? -(CarWidth * 0.5f + 0.5f) : (CarWidth * 0.5f + 0.5f);
+					UStaticMeshComponent* WinBand = NewObject<UStaticMeshComponent>(LightRailTrainActor,
+						*FString::Printf(TEXT("CarWin_%d_%d"), Car, s));
+					WinBand->SetStaticMesh(CubeMesh);
+					WinBand->SetRelativeLocation(FVector(WinOffX, CarOffsetY, TrainBaseZ + CarHeight * 0.6f));
+					WinBand->SetRelativeScale3D(FVector(0.02f, (CarLength - 40.f) / 100.f, 0.35f));
+					WinBand->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					WinBand->RegisterComponent();
+					WinBand->AttachToComponent(RootComp, FAttachmentTransformRules::KeepRelativeTransform);
+					LightRailTrainActor->AddInstanceComponent(WinBand);
+					ApplyPBRGlass(WinBand, GlassMaterial, FLinearColor(0.15f, 0.20f, 0.28f), 0.5f, 0.1f, 0.05f);
+				}
+
+				// Headlight (front/rear of each car)
+				for (int32 h = 0; h < 2; ++h)
+				{
+					const float HLOffY = (h == 0) ? -(CarLength * 0.5f + 1.f) : (CarLength * 0.5f + 1.f);
+					UStaticMeshComponent* HL = NewObject<UStaticMeshComponent>(LightRailTrainActor,
+						*FString::Printf(TEXT("HL_%d_%d"), Car, h));
+					HL->SetStaticMesh(CubeMesh);
+					HL->SetRelativeLocation(FVector(0.f, CarOffsetY + HLOffY, TrainBaseZ + CarHeight * 0.7f));
+					HL->SetRelativeScale3D(FVector(0.25f, 0.02f, 0.10f));
+					HL->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					HL->RegisterComponent();
+					HL->AttachToComponent(RootComp, FAttachmentTransformRules::KeepRelativeTransform);
+					LightRailTrainActor->AddInstanceComponent(HL);
+					ApplyPBR(HL, FLinearColor(1.f, 1.f, 0.9f), 0.f, 0.3f, FLinearColor(3.f, 3.f, 2.5f));
+				}
+
+				// Pantograph (thin cylinder reaching up from roof to catenary wire)
+				UStaticMeshComponent* Panto = NewObject<UStaticMeshComponent>(LightRailTrainActor,
+					*FString::Printf(TEXT("Panto_%d"), Car));
+				Panto->SetStaticMesh(CylinderMesh);
+				const float PantoBaseZ = TrainBaseZ + CarHeight + 8.f;
+				const float PantoTopZ = WireZ;
+				const float PantoH = PantoTopZ - PantoBaseZ;
+				Panto->SetRelativeLocation(FVector(0.f, CarOffsetY, PantoBaseZ + PantoH * 0.5f));
+				Panto->SetRelativeScale3D(FVector(0.02f, 0.02f, PantoH / 100.f));
+				Panto->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Panto->RegisterComponent();
+				Panto->AttachToComponent(RootComp, FAttachmentTransformRules::KeepRelativeTransform);
+				LightRailTrainActor->AddInstanceComponent(Panto);
+				ApplyPBR(Panto, PoleGray, 0.7f, 0.3f);
+			}
+
+			// Start train at the beginning of the track
+			LightRailPosition = 0.f;
+			bLightRailForward = true;
+			LightRailTrainActor->SetActorLocation(FVector(TrackX, TrackYStart, 0.f));
+			LightRailTrainActor->SetActorRotation(FRotator(0.f, 90.f, 0.f));
+		}
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Charlotte Uptown: Spawned LYNX Blue Line light rail with %d stations."), CompIdx);
+}
+
+// ---------------------------------------------------------------------------
+// SpawnLangtree — Langtree Lake Norman apartment complex (peninsula area)
+// ---------------------------------------------------------------------------
+void UPHCCitySubsystem::SpawnLangtree()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	// -----------------------------------------------------------------------
+	// Langtree Lake Norman — 380-acre mixed-use "Downtown Lake Norman"
+	// Mooresville NC, off I-77 Exit 31 on eastern shore of Lake Norman.
+	// Lake is WEST, I-77 is EAST. Langtree Road connects from the highway.
+	// -----------------------------------------------------------------------
+	const FVector ComplexCenter(85000.f, 70000.f, 0.f);
+	constexpr float FT = 80.f; // UU per foot — scaled up for immersion
+
+	// 6 building color palettes — earth tone fiber-cement / HardiPlank / brick
+	struct FBldgPalette
+	{
+		FLinearColor Facade;       // Upper floor siding
+		FLinearColor BrickAccent;  // Ground floor brick/stone
+		FLinearColor Trim;         // Window frames, railings
+		FLinearColor Roof;         // Parapet
+		FLinearColor Awning1;
+		FLinearColor Awning2;
+	};
+	const FBldgPalette Palettes[6] = {
+		// Bldg 119: Warm tan HardiPlank + red brick base + burgundy awnings
+		{ {0.78f,0.72f,0.62f}, {0.52f,0.28f,0.18f}, {0.20f,0.18f,0.14f}, {0.22f,0.22f,0.24f}, {0.48f,0.08f,0.12f}, {0.42f,0.06f,0.10f} },
+		// Bldg 120: Cream siding + brown brick + dark teal awnings
+		{ {0.84f,0.80f,0.72f}, {0.44f,0.30f,0.20f}, {0.18f,0.16f,0.14f}, {0.20f,0.20f,0.22f}, {0.06f,0.30f,0.35f}, {0.05f,0.26f,0.30f} },
+		// Bldg 130: Warm gray siding + tan stone + olive awnings
+		{ {0.68f,0.66f,0.62f}, {0.58f,0.52f,0.42f}, {0.16f,0.15f,0.12f}, {0.24f,0.24f,0.22f}, {0.30f,0.34f,0.14f}, {0.26f,0.30f,0.12f} },
+		// Bldg 138: Khaki siding + brick partial + navy awnings
+		{ {0.72f,0.68f,0.58f}, {0.50f,0.32f,0.22f}, {0.14f,0.14f,0.16f}, {0.22f,0.20f,0.20f}, {0.08f,0.10f,0.30f}, {0.06f,0.08f,0.26f} },
+		// Bldg 143: Light beige siding + gray stone + copper awnings
+		{ {0.82f,0.78f,0.70f}, {0.48f,0.46f,0.42f}, {0.18f,0.16f,0.12f}, {0.20f,0.20f,0.22f}, {0.62f,0.34f,0.10f}, {0.55f,0.30f,0.08f} },
+		// Bldg 150: Warm white siding + red-brown brick + forest green awnings
+		{ {0.86f,0.84f,0.78f}, {0.48f,0.26f,0.16f}, {0.16f,0.14f,0.10f}, {0.24f,0.22f,0.20f}, {0.08f,0.28f,0.12f}, {0.06f,0.24f,0.10f} },
+	};
+
+	// Shared colors
+	const FLinearColor ConcreteGray(0.62f, 0.60f, 0.56f);
+	const FLinearColor StoneGray(0.55f, 0.52f, 0.48f);
+	const FLinearColor DarkTrim(0.18f, 0.16f, 0.14f);
+	const FLinearColor RoofCharcoal(0.22f, 0.22f, 0.24f);
+	const FLinearColor PoolBlue(0.15f, 0.45f, 0.70f);
+	const FLinearColor CabanaWhite(0.92f, 0.90f, 0.88f);
+	const FLinearColor LawnGreen(0.12f, 0.40f, 0.10f);
+	const FLinearColor WoodBrown(0.38f, 0.26f, 0.14f);
+	const FLinearColor AsphaltDark(0.08f, 0.08f, 0.09f);
+	const FLinearColor SidewalkTan(0.70f, 0.66f, 0.58f);
+
+	// Real Langtree business names (ground floor tenants)
+	const TCHAR* LangtreeShops[] = {
+		TEXT("TABLE 31"), TEXT("THE HIDDEN BIN"), TEXT("STARBUCKS"),
+		TEXT("TWO SCOOPS"), TEXT("NOVANTA 90"), TEXT("SUN UP CAFE"),
+		TEXT("KILTED BUFFALO"), TEXT("PHO ME"), TEXT("METRO DELI"),
+		TEXT("ORCHID SPA"), TEXT("MOYERS"), TEXT("GOLD LEAF CIGARS"),
+		TEXT("COOL RENEWAL"), TEXT("VINYASA YOGA"), TEXT("HAMPTONS"),
+		TEXT("BACCHUS"), TEXT("R GREGORY"), TEXT("SPECTRUM EYE"),
+		TEXT("EDWARD JONES"), TEXT("ROOST REALTY"), TEXT("SWEETHEART BAKE"),
+		TEXT("BETH & CO"), TEXT("MI AMICHE"), TEXT("SCRATCH KITCHEN"),
+	};
+	int32 ShopIdx = 0;
+
+	int32 CompCount = 0;
+
+	// Helper: spawn a simple PBR cube component on an actor
+	auto MakeCube = [&](AActor* Owner, USceneComponent* Root, const FVector& Loc,
+		const FVector& Size, const FLinearColor& Color, const TCHAR* Name,
+		float Metallic = 0.f, float Roughness = 0.5f, bool bCollision = false) -> UStaticMeshComponent*
+	{
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, Name);
+		MC->SetStaticMesh(CubeMesh);
+		MC->SetWorldLocation(Loc);
+		MC->SetWorldScale3D(Size / 100.f);
+		MC->SetCollisionEnabled(bCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+		if (bCollision) MC->SetCollisionResponseToAllChannels(ECR_Block);
+		MC->RegisterComponent();
+		if (Root) MC->AttachToComponent(Root, FAttachmentTransformRules::KeepWorldTransform);
+		else Owner->SetRootComponent(MC);
+		Owner->AddInstanceComponent(MC);
+		ApplyPBR(MC, Color, Metallic, Roughness);
+		++CompCount;
+		return MC;
+	};
+
+	auto MakeCyl = [&](AActor* Owner, USceneComponent* Root, const FVector& Loc,
+		const FVector& Size, const FLinearColor& Color, const TCHAR* Name,
+		float Metallic = 0.f, float Roughness = 0.5f) -> UStaticMeshComponent*
+	{
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, Name);
+		MC->SetStaticMesh(CylinderMesh);
+		MC->SetWorldLocation(Loc);
+		MC->SetWorldScale3D(Size / 100.f);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->RegisterComponent();
+		if (Root) MC->AttachToComponent(Root, FAttachmentTransformRules::KeepWorldTransform);
+		else Owner->SetRootComponent(MC);
+		Owner->AddInstanceComponent(MC);
+		ApplyPBR(MC, Color, Metallic, Roughness);
+		++CompCount;
+		return MC;
+	};
+
+	// ========================================================================
+	// 6 APARTMENT BUILDINGS (4-story mid-rise, ~180x60x48 ft each)
+	// Along Landings Drive, 3 per side, ground floor retail with real tenants
+	// Lake-facing balconies on the west side
+	// ========================================================================
+	const float AptW = 180.f * FT; // length along Landings Dr (Y)
+	const float AptD = 60.f * FT;  // depth (X)
+	const float AptH = 48.f * FT;  // 4 stories total
+	const float GndH = 14.f * FT;  // tall ground floor retail
+	const float UpperH = AptH - GndH; // 3 residential floors
+	const float AptSpacingY = 220.f * FT;
+	const float RowSpacingX = 90.f * FT; // half-width of Landings Drive gap
+	const int32 ShopsPerBldg = 4; // 4 shops per building
+	const float ShopBayW = AptW / (float)ShopsPerBldg;
+
+	// Building positions: West row faces east, East row faces west
+	struct FAptPos { float OffX; float OffY; int32 Front; };
+	const FAptPos AptPos[] = {
+		{ -RowSpacingX, -AptSpacingY,  1 }, // 119 Landings Dr (west)
+		{ -RowSpacingX,  0.f,          1 }, // 130 Landings Dr (west)
+		{ -RowSpacingX,  AptSpacingY,  1 }, // 143 Landings Dr (west)
+		{  RowSpacingX, -AptSpacingY, -1 }, // 120 Landings Dr (east)
+		{  RowSpacingX,  0.f,         -1 }, // 138 Landings Dr (east)
+		{  RowSpacingX,  AptSpacingY, -1 }, // 150 Landings Dr (east)
+	};
+
+	for (int32 b = 0; b < 6; ++b)
+	{
+		const FBldgPalette& P = Palettes[b];
+		const FVector BC = ComplexCenter + FVector(AptPos[b].OffX, AptPos[b].OffY, 0.f);
+		const int32 Fr = AptPos[b].Front;
+		AActor* BA = World->SpawnActor<AActor>(AActor::StaticClass(), BC, FRotator::ZeroRotator);
+		if (!BA) continue;
+
+		// Ground floor — brick/stone base (with collision)
+		UStaticMeshComponent* GF = MakeCube(BA, nullptr,
+			BC + FVector(0.f, 0.f, GndH * 0.5f),
+			FVector(AptD, AptW, GndH), P.BrickAccent,
+			*FString::Printf(TEXT("GF_%d"), b), 0.f, 0.8f, true);
+
+		// ---- Walkable shop fronts ----
+		for (int32 sh = 0; sh < ShopsPerBldg; ++sh)
+		{
+			const float ShY = BC.Y - AptW * 0.5f + ShopBayW * 0.5f + sh * ShopBayW;
+			const float FrX = BC.X + Fr * (AptD * 0.5f);
+
+			// Divider pillar between shops
+			if (sh > 0)
+			{
+				MakeCyl(BA, GF,
+					FVector(FrX + Fr * 0.5f, BC.Y - AptW * 0.5f + sh * ShopBayW, GndH * 0.5f),
+					FVector(1.2f * FT, 1.2f * FT, GndH), P.Trim,
+					*FString::Printf(TEXT("Dv_%d_%d"), b, sh), 0.5f, 0.4f);
+			}
+
+			// Glass storefront — NO COLLISION (walkable)
+			{
+				UStaticMeshComponent* SG = NewObject<UStaticMeshComponent>(BA,
+					*FString::Printf(TEXT("SF_%d_%d"), b, sh));
+				SG->SetStaticMesh(CubeMesh);
+				SG->SetWorldLocation(FVector(FrX + Fr * 1.f, ShY, GndH * 0.52f));
+				SG->SetWorldScale3D(FVector(0.02f, (ShopBayW - 4.f * FT) / 100.f, (GndH * 0.72f) / 100.f));
+				SG->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				SG->RegisterComponent();
+				SG->AttachToComponent(GF, FAttachmentTransformRules::KeepWorldTransform);
+				BA->AddInstanceComponent(SG);
+				ApplyPBRGlass(SG, GlassMaterial, FLinearColor(0.12f, 0.15f, 0.20f), 0.5f, 0.1f, 0.05f);
+				++CompCount;
+			}
+
+			// Interior floor (walkable)
+			MakeCube(BA, GF,
+				FVector(BC.X + Fr * (AptD * 0.2f), ShY, 1.f),
+				FVector(AptD * 0.4f, ShopBayW - 2.f * FT, 0.5f * FT),
+				FLinearColor(0.50f, 0.44f, 0.38f),
+				*FString::Printf(TEXT("SFl_%d_%d"), b, sh), 0.f, 0.65f, true);
+
+			// Back wall
+			MakeCube(BA, GF,
+				FVector(BC.X - Fr * (AptD * 0.5f - 1.5f * FT), ShY, GndH * 0.5f),
+				FVector(0.5f * FT, ShopBayW - 2.f * FT, GndH * 0.85f),
+				FLinearColor(0.88f, 0.85f, 0.80f),
+				*FString::Printf(TEXT("SBk_%d_%d"), b, sh), 0.f, 0.7f);
+
+			// Side walls
+			for (int32 sw = 0; sw < 2; ++sw)
+			{
+				const float SWY = ShY + (sw == 0 ? -(ShopBayW * 0.5f - 0.5f * FT) : (ShopBayW * 0.5f - 0.5f * FT));
+				MakeCube(BA, GF,
+					FVector(BC.X + Fr * (AptD * 0.2f), SWY, GndH * 0.5f),
+					FVector(AptD * 0.4f, 0.5f * FT, GndH * 0.85f),
+					FLinearColor(0.85f, 0.83f, 0.78f),
+					*FString::Printf(TEXT("SW_%d_%d_%d"), b, sh, sw), 0.f, 0.7f);
+			}
+
+			// Ceiling
+			MakeCube(BA, GF,
+				FVector(BC.X + Fr * (AptD * 0.2f), ShY, GndH - 0.5f * FT),
+				FVector(AptD * 0.4f, ShopBayW - 2.f * FT, 0.3f * FT),
+				FLinearColor(0.92f, 0.90f, 0.87f),
+				*FString::Printf(TEXT("SC_%d_%d"), b, sh), 0.f, 0.7f);
+
+			// Awning (alternating colors from palette)
+			const FLinearColor& Aw = (sh % 2 == 0) ? P.Awning1 : P.Awning2;
+			MakeCube(BA, GF,
+				FVector(FrX + Fr * 4.f * FT, ShY, GndH * 0.9f),
+				FVector(8.f * FT, ShopBayW - 1.f * FT, 0.5f * FT), Aw,
+				*FString::Printf(TEXT("Aw_%d_%d"), b, sh), 0.f, 0.6f);
+
+			// Shop name sign (real Langtree tenants)
+			const TCHAR* SN = LangtreeShops[ShopIdx % 24];
+			++ShopIdx;
+			UTextRenderComponent* SS = NewObject<UTextRenderComponent>(BA,
+				*FString::Printf(TEXT("SSg_%d_%d"), b, sh));
+			SS->SetText(FText::FromString(SN));
+			SS->SetTextRenderColor(FColor::White);
+			SS->SetWorldSize(2.5f * FT);
+			SS->SetHorizontalAlignment(EHTA_Center);
+			SS->SetVerticalAlignment(EVRTA_TextCenter);
+			SS->SetWorldLocation(FVector(FrX + Fr * 4.2f * FT, ShY, GndH * 0.78f));
+			SS->SetWorldRotation(FRotator(0.f, (Fr > 0) ? 180.f : 0.f, 0.f));
+			SS->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			SS->RegisterComponent();
+			SS->AttachToComponent(GF, FAttachmentTransformRules::KeepWorldTransform);
+			BA->AddInstanceComponent(SS);
+			++CompCount;
+
+			// Counter inside shop
+			MakeCube(BA, GF,
+				FVector(BC.X, ShY, 2.f * FT),
+				FVector(8.f * FT, ShopBayW * 0.5f, 3.5f * FT), WoodBrown,
+				*FString::Printf(TEXT("Ct_%d_%d"), b, sh), 0.f, 0.7f);
+		}
+
+		// ---- Upper 3 residential floors — HardiPlank siding ----
+		MakeCube(BA, GF,
+			BC + FVector(0.f, 0.f, GndH + UpperH * 0.5f),
+			FVector(AptD - 4.f, AptW, UpperH), P.Facade,
+			*FString::Printf(TEXT("Up_%d"), b), 0.f, 0.7f);
+
+		// ---- Individual windows per floor ----
+		const float FlH = UpperH / 3.f;
+		const int32 WPF = 10; // windows per floor per side
+		const float WSp = AptW / (float)(WPF + 1);
+		for (int32 fl = 0; fl < 3; ++fl)
+		{
+			const float FlZ = GndH + fl * FlH + FlH * 0.55f;
+			for (int32 si = 0; si < 2; ++si)
+			{
+				const float WX = BC.X + ((si == 0) ? -(AptD * 0.5f + 0.5f) : (AptD * 0.5f + 0.5f));
+				for (int32 w = 0; w < WPF; ++w)
+				{
+					const float WY = BC.Y - AptW * 0.5f + WSp * (w + 1);
+					UStaticMeshComponent* WC = NewObject<UStaticMeshComponent>(BA,
+						*FString::Printf(TEXT("W_%d_%d_%d_%d"), b, fl, si, w));
+					WC->SetStaticMesh(CubeMesh);
+					WC->SetWorldLocation(FVector(WX, WY, FlZ));
+					WC->SetWorldScale3D(FVector(0.02f, (4.f * FT) / 100.f, (5.f * FT) / 100.f));
+					WC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					WC->RegisterComponent();
+					WC->AttachToComponent(GF, FAttachmentTransformRules::KeepWorldTransform);
+					BA->AddInstanceComponent(WC);
+					ApplyPBRGlass(WC, GlassMaterial, FLinearColor(0.14f, 0.18f, 0.24f), 0.45f, 0.1f, 0.05f);
+					++CompCount;
+				}
+			}
+		}
+
+		// ---- Balconies on lake side (west = -X) ----
+		for (int32 fl = 0; fl < 3; ++fl)
+		{
+			const float FlZ = GndH + fl * FlH + 4.f;
+			for (int32 bl = 0; bl < 5; ++bl)
+			{
+				const float BY = BC.Y - AptW * 0.4f + bl * (AptW * 0.8f / 4.f);
+				const float BX = BC.X - (AptD * 0.5f + 4.f * FT);
+				MakeCube(BA, GF, FVector(BX, BY, FlZ),
+					FVector(7.f * FT, 12.f * FT, 0.5f * FT), ConcreteGray,
+					*FString::Printf(TEXT("Bl_%d_%d_%d"), b, fl, bl), 0.f, 0.7f);
+				MakeCube(BA, GF, FVector(BX - 3.f * FT, BY, FlZ + 2.5f * FT),
+					FVector(0.3f * FT, 12.f * FT, 3.5f * FT), P.Trim,
+					*FString::Printf(TEXT("BR_%d_%d_%d"), b, fl, bl), 0.7f, 0.3f);
+			}
+		}
+
+		// ---- Parapet ----
+		MakeCube(BA, GF, BC + FVector(0.f, 0.f, AptH + 0.5f * FT),
+			FVector(AptD + 2.f * FT, AptW + 2.f * FT, 1.f * FT), P.Roof,
+			*FString::Printf(TEXT("Rf_%d"), b), 0.2f, 0.5f);
+
+		// ---- Trim stripe ----
+		MakeCube(BA, GF, BC + FVector(0.f, 0.f, GndH + 0.25f * FT),
+			FVector(AptD + 1.f * FT, AptW + 1.f * FT, 0.5f * FT), P.Trim,
+			*FString::Printf(TEXT("Tr_%d"), b), 0.5f, 0.4f);
+
+		// ---- Corner pilasters ----
+		for (int32 c = 0; c < 4; ++c)
+		{
+			const float cx = (c % 2 == 0) ? -AptD * 0.5f : AptD * 0.5f;
+			const float cy = (c < 2) ? -AptW * 0.5f : AptW * 0.5f;
+			MakeCyl(BA, GF, BC + FVector(cx, cy, AptH * 0.5f),
+				FVector(1.5f * FT, 1.5f * FT, AptH), P.Trim,
+				*FString::Printf(TEXT("Pl_%d_%d"), b, c), 0.3f, 0.5f);
+		}
+	}
+
+	// ========================================================================
+	// LANDINGS DRIVE — main N-S street through town center
+	// ========================================================================
+	{
+		AActor* RdA = World->SpawnActor<AActor>(AActor::StaticClass(), ComplexCenter, FRotator::ZeroRotator);
+		if (RdA)
+		{
+			// Landings Drive roadway (between the two rows)
+			UStaticMeshComponent* LandingsDr = MakeCube(RdA, nullptr,
+				ComplexCenter + FVector(0.f, 0.f, 1.f),
+				FVector(50.f * FT, 700.f * FT, 0.3f * FT), AsphaltDark,
+				TEXT("LandingsDr"), 0.f, 0.85f, true);
+
+			// Sidewalks on both sides
+			for (int32 s = 0; s < 2; ++s)
+			{
+				const float SwX = (s == 0) ? -(30.f * FT) : (30.f * FT);
+				MakeCube(RdA, LandingsDr,
+					ComplexCenter + FVector(SwX, 0.f, 2.f),
+					FVector(14.f * FT, 700.f * FT, 0.3f * FT), SidewalkTan,
+					*FString::Printf(TEXT("LandingSW_%d"), s), 0.f, 0.7f, true);
+			}
+
+			// Street sign
+			UTextRenderComponent* LDSign = NewObject<UTextRenderComponent>(RdA, TEXT("LandingsDrSign"));
+			LDSign->SetText(FText::FromString(TEXT("LANDINGS DR")));
+			LDSign->SetTextRenderColor(FColor::White);
+			LDSign->SetWorldSize(2.f * FT);
+			LDSign->SetHorizontalAlignment(EHTA_Center);
+			LDSign->SetWorldLocation(ComplexCenter + FVector(0.f, -340.f * FT, 12.f * FT));
+			LDSign->SetWorldRotation(FRotator(0.f, 180.f, 0.f));
+			LDSign->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			LDSign->RegisterComponent();
+			LDSign->AttachToComponent(LandingsDr, FAttachmentTransformRules::KeepWorldTransform);
+			RdA->AddInstanceComponent(LDSign);
+			++CompCount;
+
+			// Street sign pole
+			MakeCyl(RdA, LandingsDr,
+				ComplexCenter + FVector(0.f, -340.f * FT, 6.f * FT),
+				FVector(0.3f * FT, 0.3f * FT, 12.f * FT), DarkTrim,
+				TEXT("LDSignPole"), 0.5f, 0.4f);
+
+			// Langtree Road E-W connector to I-77
+			MakeCube(RdA, LandingsDr,
+				ComplexCenter + FVector(250.f * FT, -300.f * FT, 1.f),
+				FVector(500.f * FT, 40.f * FT, 0.3f * FT), AsphaltDark,
+				TEXT("LangtreeRd"), 0.f, 0.85f, true);
+
+			// Langtree Village Drive (south of center, E-W)
+			MakeCube(RdA, LandingsDr,
+				ComplexCenter + FVector(0.f, 320.f * FT, 1.f),
+				FVector(400.f * FT, 35.f * FT, 0.3f * FT), AsphaltDark,
+				TEXT("VillageDr"), 0.f, 0.85f, true);
+
+			// Village View Drive (further south, E-W)
+			MakeCube(RdA, LandingsDr,
+				ComplexCenter + FVector(-80.f * FT, 450.f * FT, 1.f),
+				FVector(300.f * FT, 30.f * FT, 0.3f * FT), AsphaltDark,
+				TEXT("VillageViewDr"), 0.f, 0.85f, true);
+
+			// Walkway to pool/clubhouse (west)
+			MakeCube(RdA, LandingsDr,
+				ComplexCenter + FVector(-130.f * FT, 20.f * FT, 2.f),
+				FVector(220.f * FT, 14.f * FT, 0.3f * FT), SidewalkTan,
+				TEXT("PoolWalk"), 0.f, 0.7f, true);
+
+			// Langtree Campus Drive (southernmost, to office campus)
+			MakeCube(RdA, LandingsDr,
+				ComplexCenter + FVector(-150.f * FT, 580.f * FT, 1.f),
+				FVector(350.f * FT, 30.f * FT, 0.3f * FT), AsphaltDark,
+				TEXT("CampusDr"), 0.f, 0.85f, true);
+		}
+	}
+
+	// ========================================================================
+	// OFFICE BUILDINGS — Regus/Novant Health (106 Langtree Village Rd)
+	// 3-story, along Langtree Village Drive, south of apartments
+	// ========================================================================
+	for (int32 o = 0; o < 2; ++o)
+	{
+		const FVector OP = ComplexCenter + FVector((o == 0) ? -80.f * FT : 120.f * FT, 370.f * FT, 0.f);
+		AActor* OA = World->SpawnActor<AActor>(AActor::StaticClass(), OP, FRotator::ZeroRotator);
+		if (!OA) continue;
+
+		const float OW = 90.f * FT, OD = 70.f * FT, OH = 42.f * FT;
+		UStaticMeshComponent* OB = MakeCube(OA, nullptr,
+			OP + FVector(0.f, 0.f, OH * 0.5f),
+			FVector(OW, OD, OH), FLinearColor(0.72f, 0.70f, 0.66f),
+			*FString::Printf(TEXT("Off_%d"), o), 0.f, 0.55f, true);
+
+		// Glass curtain walls (all 4 sides, per floor)
+		const float OFH = 14.f * FT;
+		for (int32 fl = 0; fl < 3; ++fl)
+		{
+			const float FlZ = fl * OFH + OFH * 0.6f;
+			for (int32 f = 0; f < 4; ++f)
+			{
+				float fx = 0.f, fy = 0.f; FVector sc;
+				if (f < 2) { fx = (f == 0) ? -(OW * 0.5f + 1.f) : (OW * 0.5f + 1.f); sc = FVector(0.02f, (OD - 4.f * FT) / 100.f, (8.f * FT) / 100.f); }
+				else { fy = (f == 2) ? -(OD * 0.5f + 1.f) : (OD * 0.5f + 1.f); sc = FVector((OW - 4.f * FT) / 100.f, 0.02f, (8.f * FT) / 100.f); }
+				UStaticMeshComponent* OG = NewObject<UStaticMeshComponent>(OA, *FString::Printf(TEXT("OG_%d_%d_%d"), o, fl, f));
+				OG->SetStaticMesh(CubeMesh);
+				OG->SetWorldLocation(OP + FVector(fx, fy, FlZ));
+				OG->SetWorldScale3D(sc);
+				OG->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				OG->RegisterComponent();
+				OG->AttachToComponent(OB, FAttachmentTransformRules::KeepWorldTransform);
+				OA->AddInstanceComponent(OG);
+				ApplyPBRGlass(OG, GlassMaterial, FLinearColor(0.12f, 0.16f, 0.22f), 0.45f, 0.1f, 0.05f);
+				++CompCount;
+			}
+		}
+
+		// Roof
+		MakeCube(OA, OB, OP + FVector(0.f, 0.f, OH + 1.f * FT),
+			FVector(OW + 2.f * FT, OD + 2.f * FT, 1.f * FT), RoofCharcoal,
+			*FString::Printf(TEXT("ORf_%d"), o), 0.2f, 0.5f);
+
+		// Building label
+		const TCHAR* OffNames[] = { TEXT("REGUS"), TEXT("NOVANT HEALTH") };
+		UTextRenderComponent* OTxt = NewObject<UTextRenderComponent>(OA, *FString::Printf(TEXT("OTx_%d"), o));
+		OTxt->SetText(FText::FromString(OffNames[o]));
+		OTxt->SetTextRenderColor(FColor::White);
+		OTxt->SetWorldSize(2.f * FT);
+		OTxt->SetHorizontalAlignment(EHTA_Center);
+		OTxt->SetWorldLocation(OP + FVector(-(OW * 0.5f + 1.f), 0.f, OH * 0.85f));
+		OTxt->SetWorldRotation(FRotator(0.f, 180.f, 0.f));
+		OTxt->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		OTxt->RegisterComponent();
+		OTxt->AttachToComponent(OB, FAttachmentTransformRules::KeepWorldTransform);
+		OA->AddInstanceComponent(OTxt);
+		++CompCount;
+	}
+
+	// ========================================================================
+	// CORVID TECHNOLOGIES — 4-story glass lakefront office (153 Campus Dr)
+	// SunGuard SNR 43 reflective blue glass, modern corporate
+	// ========================================================================
+	{
+		const FVector CorvidPos = ComplexCenter + FVector(-200.f * FT, 560.f * FT, 0.f);
+		AActor* CA = World->SpawnActor<AActor>(AActor::StaticClass(), CorvidPos, FRotator::ZeroRotator);
+		if (CA)
+		{
+			const float CW = 120.f * FT, CD = 80.f * FT, CH = 56.f * FT;
+			UStaticMeshComponent* CB = MakeCube(CA, nullptr,
+				CorvidPos + FVector(0.f, 0.f, CH * 0.5f),
+				FVector(CW, CD, CH), FLinearColor(0.25f, 0.28f, 0.32f),
+				TEXT("CorvidBody"), 0.2f, 0.4f, true);
+
+			// Full glass curtain wall (reflective blue) — all 4 sides
+			for (int32 f = 0; f < 4; ++f)
+			{
+				float fx = 0.f, fy = 0.f; FVector sc;
+				if (f < 2) { fx = (f == 0) ? -(CW * 0.5f + 1.f) : (CW * 0.5f + 1.f); sc = FVector(0.02f, (CD - 2.f * FT) / 100.f, (CH * 0.85f) / 100.f); }
+				else { fy = (f == 2) ? -(CD * 0.5f + 1.f) : (CD * 0.5f + 1.f); sc = FVector((CW - 2.f * FT) / 100.f, 0.02f, (CH * 0.85f) / 100.f); }
+				UStaticMeshComponent* CG = NewObject<UStaticMeshComponent>(CA, *FString::Printf(TEXT("CvG_%d"), f));
+				CG->SetStaticMesh(CubeMesh);
+				CG->SetWorldLocation(CorvidPos + FVector(fx, fy, CH * 0.5f));
+				CG->SetWorldScale3D(sc);
+				CG->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				CG->RegisterComponent();
+				CG->AttachToComponent(CB, FAttachmentTransformRules::KeepWorldTransform);
+				CA->AddInstanceComponent(CG);
+				// CrystalBlue reflective tint
+				ApplyPBRGlass(CG, GlassMaterial, FLinearColor(0.08f, 0.18f, 0.35f), 0.55f, 0.4f, 0.08f);
+				++CompCount;
+			}
+
+			// Flat modern roof
+			MakeCube(CA, CB, CorvidPos + FVector(0.f, 0.f, CH + 0.5f * FT),
+				FVector(CW + 1.f * FT, CD + 1.f * FT, 0.5f * FT), FLinearColor(0.20f, 0.20f, 0.22f),
+				TEXT("CorvidRoof"), 0.3f, 0.4f);
+
+			// CORVID TECHNOLOGIES sign
+			UTextRenderComponent* CVT = NewObject<UTextRenderComponent>(CA, TEXT("CorvidSign"));
+			CVT->SetText(FText::FromString(TEXT("CORVID\nTECHNOLOGIES")));
+			CVT->SetTextRenderColor(FColor::White);
+			CVT->SetWorldSize(3.f * FT);
+			CVT->SetHorizontalAlignment(EHTA_Center);
+			CVT->SetWorldLocation(CorvidPos + FVector(-(CW * 0.5f + 2.f), 0.f, CH * 0.7f));
+			CVT->SetWorldRotation(FRotator(0.f, 180.f, 0.f));
+			CVT->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			CVT->RegisterComponent();
+			CVT->AttachToComponent(CB, FAttachmentTransformRules::KeepWorldTransform);
+			CA->AddInstanceComponent(CVT);
+			++CompCount;
+
+			// Outdoor patio with fire pit (west side, lake-facing)
+			MakeCube(CA, CB,
+				CorvidPos + FVector(-(CW * 0.5f + 30.f * FT), 0.f, 0.5f),
+				FVector(40.f * FT, 50.f * FT, 0.5f * FT), ConcreteGray,
+				TEXT("CorvidPatio"), 0.f, 0.7f, true);
+			// Fire pit (cylinder)
+			MakeCyl(CA, CB,
+				CorvidPos + FVector(-(CW * 0.5f + 30.f * FT), 0.f, 2.f * FT),
+				FVector(3.f * FT, 3.f * FT, 2.5f * FT), StoneGray,
+				TEXT("FirePit"), 0.f, 0.7f);
+		}
+	}
+
+	// ========================================================================
+	// GREAT OUTDOORS STAGE — outdoor concert venue
+	// Central gathering area between apartment rows
+	// ========================================================================
+	{
+		const FVector StagePos = ComplexCenter + FVector(0.f, -80.f * FT, 0.f);
+		AActor* StgA = World->SpawnActor<AActor>(AActor::StaticClass(), StagePos, FRotator::ZeroRotator);
+		if (StgA)
+		{
+			// Stage platform (raised 3 ft)
+			UStaticMeshComponent* StgPlat = MakeCube(StgA, nullptr,
+				StagePos + FVector(0.f, 0.f, 1.5f * FT),
+				FVector(40.f * FT, 60.f * FT, 3.f * FT), FLinearColor(0.30f, 0.28f, 0.25f),
+				TEXT("StagePlat"), 0.f, 0.6f, true);
+
+			// Stage roof/canopy
+			MakeCube(StgA, StgPlat,
+				StagePos + FVector(0.f, 0.f, 18.f * FT),
+				FVector(45.f * FT, 65.f * FT, 0.5f * FT), DarkTrim,
+				TEXT("StageRoof"), 0.3f, 0.4f);
+
+			// 4 support columns
+			for (int32 col = 0; col < 4; ++col)
+			{
+				const float cx = (col % 2 == 0) ? -18.f * FT : 18.f * FT;
+				const float cy = (col < 2) ? -28.f * FT : 28.f * FT;
+				MakeCyl(StgA, StgPlat,
+					StagePos + FVector(cx, cy, 9.f * FT),
+					FVector(0.8f * FT, 0.8f * FT, 18.f * FT), DarkTrim,
+					*FString::Printf(TEXT("StgCol_%d"), col), 0.5f, 0.3f);
+			}
+
+			// Lawn area in front of stage
+			MakeCube(StgA, StgPlat,
+				StagePos + FVector(50.f * FT, 0.f, 0.5f),
+				FVector(60.f * FT, 80.f * FT, 0.5f), LawnGreen,
+				TEXT("StageLawn"), 0.f, 0.9f);
+
+			// "GREAT OUTDOORS STAGE" sign
+			UTextRenderComponent* StgSign = NewObject<UTextRenderComponent>(StgA, TEXT("StageSign"));
+			StgSign->SetText(FText::FromString(TEXT("GREAT OUTDOORS STAGE")));
+			StgSign->SetTextRenderColor(FColor::White);
+			StgSign->SetWorldSize(1.5f * FT);
+			StgSign->SetHorizontalAlignment(EHTA_Center);
+			StgSign->SetWorldLocation(StagePos + FVector(0.f, 32.f * FT, 15.f * FT));
+			StgSign->SetWorldRotation(FRotator(0.f, 180.f, 0.f));
+			StgSign->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			StgSign->RegisterComponent();
+			StgSign->AttachToComponent(StgPlat, FAttachmentTransformRules::KeepWorldTransform);
+			StgA->AddInstanceComponent(StgSign);
+			++CompCount;
+		}
+	}
+
+	// ========================================================================
+	// CLUBHOUSE + FITNESS CENTER — lakefront, west of apartments
+	// ========================================================================
+	{
+		const FVector ClubPos = ComplexCenter + FVector(-200.f * FT, -20.f * FT, 0.f);
+		AActor* ClA = World->SpawnActor<AActor>(AActor::StaticClass(), ClubPos, FRotator::ZeroRotator);
+		if (ClA)
+		{
+			const float CW = 100.f * FT, CD = 80.f * FT, CH = 16.f * FT;
+			UStaticMeshComponent* ClB = MakeCube(ClA, nullptr,
+				ClubPos + FVector(0.f, 0.f, CH * 0.5f),
+				FVector(CW, CD, CH), FLinearColor(0.75f, 0.72f, 0.66f),
+				TEXT("ClubBody"), 0.f, 0.6f, true);
+
+			// Large lake-facing windows
+			{
+				UStaticMeshComponent* CG = NewObject<UStaticMeshComponent>(ClA, TEXT("ClubGlass"));
+				CG->SetStaticMesh(CubeMesh);
+				CG->SetWorldLocation(ClubPos + FVector(-(CW * 0.5f + 1.f), 0.f, CH * 0.55f));
+				CG->SetWorldScale3D(FVector(0.02f, (CD - 8.f * FT) / 100.f, (CH * 0.7f) / 100.f));
+				CG->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				CG->RegisterComponent();
+				CG->AttachToComponent(ClB, FAttachmentTransformRules::KeepWorldTransform);
+				ClA->AddInstanceComponent(CG);
+				ApplyPBRGlass(CG, GlassMaterial, FLinearColor(0.10f, 0.14f, 0.20f), 0.5f, 0.1f, 0.05f);
+				++CompCount;
+			}
+
+			// Entrance overhang
+			MakeCube(ClA, ClB, ClubPos + FVector(CW * 0.5f + 5.f * FT, 0.f, CH * 0.8f),
+				FVector(12.f * FT, 40.f * FT, 0.8f * FT), RoofCharcoal, TEXT("ClubOverhang"), 0.2f, 0.5f);
+
+			// Roof
+			MakeCube(ClA, ClB, ClubPos + FVector(0.f, 0.f, CH + 0.5f * FT),
+				FVector(CW + 2.f * FT, CD + 2.f * FT, 0.8f * FT), RoofCharcoal, TEXT("ClubRoof"), 0.2f, 0.5f);
+
+			// "CLUBHOUSE" sign
+			UTextRenderComponent* ClSign = NewObject<UTextRenderComponent>(ClA, TEXT("ClubSign"));
+			ClSign->SetText(FText::FromString(TEXT("LANGTREE CLUBHOUSE")));
+			ClSign->SetTextRenderColor(FColor::White);
+			ClSign->SetWorldSize(2.f * FT);
+			ClSign->SetHorizontalAlignment(EHTA_Center);
+			ClSign->SetWorldLocation(ClubPos + FVector(CW * 0.5f + 1.f, 0.f, CH * 0.75f));
+			ClSign->SetWorldRotation(FRotator(0.f, 180.f, 0.f));
+			ClSign->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			ClSign->RegisterComponent();
+			ClSign->AttachToComponent(ClB, FAttachmentTransformRules::KeepWorldTransform);
+			ClA->AddInstanceComponent(ClSign);
+			++CompCount;
+		}
+	}
+
+	// ========================================================================
+	// SALTWATER POOL — resort-style, lakefront, with cabanas & grill
+	// ========================================================================
+	{
+		const FVector PoolC = ComplexCenter + FVector(-260.f * FT, 60.f * FT, 0.f);
+		AActor* PA = World->SpawnActor<AActor>(AActor::StaticClass(), PoolC, FRotator::ZeroRotator);
+		if (PA)
+		{
+			UStaticMeshComponent* PDk = MakeCube(PA, nullptr,
+				PoolC + FVector(0.f, 0.f, 0.5f * FT),
+				FVector(100.f * FT, 80.f * FT, 1.f * FT), ConcreteGray,
+				TEXT("PoolDeck"), 0.f, 0.7f, true);
+
+			// Pool basin
+			MakeCube(PA, PDk, PoolC + FVector(0.f, 0.f, -2.f * FT),
+				FVector(60.f * FT, 30.f * FT, 5.f * FT), FLinearColor(0.08f, 0.25f, 0.45f),
+				TEXT("PoolBasin"), 0.f, 0.4f);
+
+			// Water surface
+			{
+				UStaticMeshComponent* PW = NewObject<UStaticMeshComponent>(PA, TEXT("PoolWater"));
+				PW->SetStaticMesh(PlaneMesh);
+				PW->SetWorldLocation(PoolC + FVector(0.f, 0.f, 0.3f * FT));
+				PW->SetWorldScale3D(FVector(60.f * FT / 100.f, 30.f * FT / 100.f, 1.f));
+				PW->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				PW->RegisterComponent();
+				PW->AttachToComponent(PDk, FAttachmentTransformRules::KeepWorldTransform);
+				PA->AddInstanceComponent(PW);
+				ApplyPBRGlass(PW, GlassMaterial, PoolBlue, 0.75f, 0.f, 0.02f);
+				++CompCount;
+			}
+
+			// 4 cabanas
+			for (int32 c = 0; c < 4; ++c)
+			{
+				const float CY = -25.f * FT + c * 18.f * FT;
+				const FVector CP = PoolC + FVector(38.f * FT, CY, 0.f);
+				for (int32 p = 0; p < 4; ++p)
+				{
+					const float px = (p % 2 == 0) ? -3.5f * FT : 3.5f * FT;
+					const float py = (p < 2) ? -3.5f * FT : 3.5f * FT;
+					MakeCyl(PA, PDk, CP + FVector(px, py, 4.f * FT),
+						FVector(0.3f * FT, 0.3f * FT, 8.f * FT), WoodBrown,
+						*FString::Printf(TEXT("CbP_%d_%d"), c, p), 0.f, 0.7f);
+				}
+				MakeCube(PA, PDk, CP + FVector(0.f, 0.f, 8.f * FT),
+					FVector(9.f * FT, 9.f * FT, 0.5f * FT), CabanaWhite,
+					*FString::Printf(TEXT("CbT_%d"), c), 0.f, 0.8f);
+			}
+
+			// Grill station
+			MakeCube(PA, PDk, PoolC + FVector(-35.f * FT, -30.f * FT, 3.f * FT),
+				FVector(6.f * FT, 4.f * FT, 6.f * FT), FLinearColor(0.30f, 0.30f, 0.32f),
+				TEXT("GrillStn"), 0.6f, 0.4f);
+
+			// Outdoor fireplace
+			MakeCube(PA, PDk, PoolC + FVector(-35.f * FT, 30.f * FT, 3.5f * FT),
+				FVector(5.f * FT, 5.f * FT, 7.f * FT), StoneGray,
+				TEXT("PoolFire"), 0.f, 0.7f);
+		}
+	}
+
+	// ========================================================================
+	// BOARDWALK — extends from pool area west and south down to Lake Norman
+	// Wooden walkway with railings, benches, and lampposts
+	// ========================================================================
+	{
+		const FVector BWStart = ComplexCenter + FVector(-260.f * FT, 60.f * FT, 0.f); // at pool
+		AActor* BWA = World->SpawnActor<AActor>(AActor::StaticClass(), BWStart, FRotator::ZeroRotator);
+		if (BWA)
+		{
+			// Main boardwalk heading west from pool toward lake
+			UStaticMeshComponent* BWRoot = MakeCube(BWA, nullptr,
+				BWStart + FVector(-80.f * FT, 0.f, 1.5f * FT),
+				FVector(120.f * FT, 12.f * FT, 1.f * FT), WoodBrown,
+				TEXT("BWMain"), 0.f, 0.75f, true);
+
+			// Boardwalk turns south along the lakefront
+			MakeCube(BWA, BWRoot,
+				BWStart + FVector(-140.f * FT, 100.f * FT, 1.5f * FT),
+				FVector(12.f * FT, 200.f * FT, 1.f * FT), WoodBrown,
+				TEXT("BWSouth"), 0.f, 0.75f, true);
+
+			// Corner connector piece
+			MakeCube(BWA, BWRoot,
+				BWStart + FVector(-140.f * FT, 0.f, 1.5f * FT),
+				FVector(14.f * FT, 14.f * FT, 1.f * FT), WoodBrown,
+				TEXT("BWCorner"), 0.f, 0.75f, true);
+
+			// Boardwalk continues further south to a lookout
+			MakeCube(BWA, BWRoot,
+				BWStart + FVector(-140.f * FT, 260.f * FT, 1.5f * FT),
+				FVector(12.f * FT, 120.f * FT, 1.f * FT), WoodBrown,
+				TEXT("BWSouth2"), 0.f, 0.75f, true);
+
+			// Lakeside lookout platform (wider section at the end)
+			MakeCube(BWA, BWRoot,
+				BWStart + FVector(-140.f * FT, 340.f * FT, 1.5f * FT),
+				FVector(30.f * FT, 30.f * FT, 1.f * FT), WoodBrown,
+				TEXT("BWLookout"), 0.f, 0.75f, true);
+
+			// Railings on both sides of main E-W section
+			for (int32 s = 0; s < 2; ++s)
+			{
+				const float RY = (s == 0) ? -6.f * FT : 6.f * FT;
+				MakeCube(BWA, BWRoot,
+					BWStart + FVector(-80.f * FT, RY, 4.f * FT),
+					FVector(120.f * FT, 0.3f * FT, 3.f * FT), DarkTrim,
+					*FString::Printf(TEXT("BWR_EW_%d"), s), 0.5f, 0.4f);
+			}
+
+			// Railings on N-S sections (lake side = west, inner side = east)
+			for (int32 s = 0; s < 2; ++s)
+			{
+				const float RX = (s == 0) ? -146.f * FT : -134.f * FT;
+				MakeCube(BWA, BWRoot,
+					BWStart + FVector(RX, 180.f * FT, 4.f * FT),
+					FVector(0.3f * FT, 360.f * FT, 3.f * FT), DarkTrim,
+					*FString::Printf(TEXT("BWR_NS_%d"), s), 0.5f, 0.4f);
+			}
+
+			// Lookout railing (3 sides)
+			for (int32 r = 0; r < 3; ++r)
+			{
+				float rx = 0.f, ry = 0.f; FVector rsc;
+				if (r == 0) { ry = 355.f * FT; rsc = FVector(30.f * FT, 0.3f * FT, 3.f * FT); } // south
+				else if (r == 1) { rx = -155.f * FT; ry = 340.f * FT; rsc = FVector(0.3f * FT, 30.f * FT, 3.f * FT); } // west
+				else { rx = -125.f * FT; ry = 340.f * FT; rsc = FVector(0.3f * FT, 30.f * FT, 3.f * FT); } // east
+				MakeCube(BWA, BWRoot,
+					BWStart + FVector(rx, ry, 4.f * FT),
+					rsc, DarkTrim,
+					*FString::Printf(TEXT("BWR_LO_%d"), r), 0.5f, 0.4f);
+			}
+
+			// Benches along the boardwalk (every ~60 ft)
+			for (int32 bn = 0; bn < 6; ++bn)
+			{
+				const float BY = 20.f * FT + bn * 55.f * FT;
+				// Seat
+				MakeCube(BWA, BWRoot,
+					BWStart + FVector(-136.f * FT, BY, 2.5f * FT),
+					FVector(5.f * FT, 4.f * FT, 1.f * FT), WoodBrown,
+					*FString::Printf(TEXT("BWBnch_%d"), bn), 0.f, 0.7f);
+				// Backrest
+				MakeCube(BWA, BWRoot,
+					BWStart + FVector(-138.f * FT, BY, 4.f * FT),
+					FVector(0.5f * FT, 4.f * FT, 2.5f * FT), WoodBrown,
+					*FString::Printf(TEXT("BWBkR_%d"), bn), 0.f, 0.7f);
+			}
+
+			// Lampposts along boardwalk (every ~80 ft)
+			for (int32 lp = 0; lp < 5; ++lp)
+			{
+				const float LY = 10.f * FT + lp * 70.f * FT;
+				MakeCyl(BWA, BWRoot,
+					BWStart + FVector(-144.f * FT, LY, 6.f * FT),
+					FVector(0.3f * FT, 0.3f * FT, 12.f * FT), DarkTrim,
+					*FString::Printf(TEXT("BWLmp_%d"), lp), 0.5f, 0.4f);
+				// Lamp head
+				UStaticMeshComponent* LH = NewObject<UStaticMeshComponent>(BWA,
+					*FString::Printf(TEXT("BWLmH_%d"), lp));
+				LH->SetStaticMesh(SphereMesh);
+				LH->SetWorldLocation(BWStart + FVector(-144.f * FT, LY, 12.5f * FT));
+				LH->SetWorldScale3D(FVector(1.2f * FT, 1.2f * FT, 1.2f * FT) / 100.f);
+				LH->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				LH->RegisterComponent();
+				LH->AttachToComponent(BWRoot, FAttachmentTransformRules::KeepWorldTransform);
+				BWA->AddInstanceComponent(LH);
+				ApplyPBR(LH, FLinearColor(0.95f, 0.85f, 0.55f), 0.f, 0.3f);
+				++CompCount;
+			}
+		}
+	}
+
+	// ========================================================================
+	// LAKE NORMAN — large body of water to the west of the complex
+	// Eastern shore runs along the boardwalk and pool area
+	// ========================================================================
+	{
+		const FVector LakeCenter = ComplexCenter + FVector(-450.f * FT, 120.f * FT, 0.f);
+		AActor* LakeA = World->SpawnActor<AActor>(AActor::StaticClass(), LakeCenter, FRotator::ZeroRotator);
+		if (LakeA)
+		{
+			// Lake water surface (large translucent plane)
+			UStaticMeshComponent* LakeWater = NewObject<UStaticMeshComponent>(LakeA, TEXT("LakeNorman"));
+			LakeWater->SetStaticMesh(PlaneMesh);
+			LakeWater->SetWorldLocation(LakeCenter + FVector(0.f, 0.f, -4.f));
+			LakeWater->SetWorldScale3D(FVector(600.f * FT / 100.f, 800.f * FT / 100.f, 1.f));
+			LakeWater->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			LakeWater->RegisterComponent();
+			LakeA->SetRootComponent(LakeWater);
+			LakeA->AddInstanceComponent(LakeWater);
+			ApplyPBRGlass(LakeWater, GlassMaterial, FLinearColor(0.04f, 0.12f, 0.22f), 0.8f, 0.f, 0.05f);
+			++CompCount;
+
+			// Lake bed (dark bottom visible through water)
+			UStaticMeshComponent* LakeBed = NewObject<UStaticMeshComponent>(LakeA, TEXT("LakeBed"));
+			LakeBed->SetStaticMesh(CubeMesh);
+			LakeBed->SetWorldLocation(LakeCenter + FVector(0.f, 0.f, -10.f * FT));
+			LakeBed->SetWorldScale3D(FVector(600.f * FT / 100.f, 800.f * FT / 100.f, 0.1f));
+			LakeBed->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			LakeBed->RegisterComponent();
+			LakeBed->AttachToComponent(LakeWater, FAttachmentTransformRules::KeepWorldTransform);
+			LakeA->AddInstanceComponent(LakeBed);
+			ApplyPBR(LakeBed, FLinearColor(0.06f, 0.10f, 0.14f), 0.f, 0.9f);
+			++CompCount;
+
+			// Shoreline bank — sloped earth between grass and water
+			// West edge of the shore (closest to buildings)
+			MakeCube(LakeA, LakeWater,
+				ComplexCenter + FVector(-280.f * FT, 120.f * FT, -2.f),
+				FVector(30.f * FT, 700.f * FT, 2.f * FT), FLinearColor(0.35f, 0.30f, 0.20f),
+				TEXT("ShoreBankE"), 0.f, 0.85f);
+
+			// Sandy beach strip along shore
+			MakeCube(LakeA, LakeWater,
+				ComplexCenter + FVector(-310.f * FT, 120.f * FT, -1.f),
+				FVector(25.f * FT, 700.f * FT, 0.5f * FT), FLinearColor(0.72f, 0.66f, 0.50f),
+				TEXT("ShoreBeach"), 0.f, 0.8f, true);
+		}
+	}
+
+	// ========================================================================
+	// PARKING DECK — covered, east of apartments, controlled access
+	// ========================================================================
+	{
+		const FVector PkP = ComplexCenter + FVector(160.f * FT, 0.f, 0.f);
+		AActor* PkA = World->SpawnActor<AActor>(AActor::StaticClass(), PkP, FRotator::ZeroRotator);
+		if (PkA)
+		{
+			const float PW = 150.f * FT, PD = 80.f * FT, PH = 24.f * FT;
+			UStaticMeshComponent* PkB = MakeCube(PkA, nullptr,
+				PkP + FVector(0.f, 0.f, PH * 0.5f),
+				FVector(PW, PD, PH), ConcreteGray,
+				TEXT("ParkDeck"), 0.f, 0.75f, true);
+
+			// Dark recesses on long sides
+			for (int32 s = 0; s < 2; ++s)
+			{
+				const float SO = (s == 0) ? -(PD * 0.5f + 1.f) : (PD * 0.5f + 1.f);
+				for (int32 lv = 0; lv < 2; ++lv)
+				{
+					MakeCube(PkA, PkB,
+						PkP + FVector(0.f, SO, 4.f * FT + lv * 12.f * FT),
+						FVector(PW - 10.f * FT, 0.3f * FT, 9.f * FT), FLinearColor(0.03f, 0.03f, 0.04f),
+						*FString::Printf(TEXT("PkO_%d_%d"), s, lv), 0.f, 0.9f);
+				}
+			}
+
+			MakeCube(PkA, PkB, PkP + FVector(0.f, 0.f, PH + 0.5f * FT),
+				FVector(PW + 1.f * FT, PD + 1.f * FT, 0.5f * FT), FLinearColor(0.35f, 0.35f, 0.37f),
+				TEXT("ParkRoof"), 0.2f, 0.5f);
+		}
+	}
+
+	// ========================================================================
+	// DOG PARK — fenced, north of apartments
+	// ========================================================================
+	{
+		const FVector DPP = ComplexCenter + FVector(60.f * FT, -280.f * FT, 0.f);
+		AActor* DA = World->SpawnActor<AActor>(AActor::StaticClass(), DPP, FRotator::ZeroRotator);
+		if (DA)
+		{
+			const float DW = 80.f * FT, DD = 60.f * FT;
+			UStaticMeshComponent* DL = MakeCube(DA, nullptr,
+				DPP + FVector(0.f, 0.f, 0.5f),
+				FVector(DW, DD, 1.f), LawnGreen, TEXT("DogLawn"), 0.f, 0.9f);
+
+			const float FH = 4.f * FT;
+			int32 FI = 0;
+			for (int32 side = 0; side < 4; ++side)
+			{
+				const int32 Cnt = (side < 2) ? 8 : 6;
+				for (int32 i = 0; i <= Cnt; ++i)
+				{
+					float fx = 0.f, fy = 0.f;
+					if (side == 0) { fx = -DW * 0.5f; fy = -DD * 0.5f + i * (DD / Cnt); }
+					else if (side == 1) { fx = DW * 0.5f; fy = -DD * 0.5f + i * (DD / Cnt); }
+					else if (side == 2) { fy = -DD * 0.5f; fx = -DW * 0.5f + i * (DW / Cnt); }
+					else { fy = DD * 0.5f; fx = -DW * 0.5f + i * (DW / Cnt); }
+					MakeCyl(DA, DL, DPP + FVector(fx, fy, FH * 0.5f),
+						FVector(0.15f * FT, 0.15f * FT, FH), DarkTrim,
+						*FString::Printf(TEXT("Fn_%d"), FI++), 0.5f, 0.4f);
+				}
+			}
+			for (int32 side = 0; side < 4; ++side)
+			{
+				for (int32 lv = 0; lv < 2; ++lv)
+				{
+					float fx = 0.f, fy = 0.f; FVector sc;
+					const float RZ = 1.5f * FT + lv * 2.f * FT;
+					if (side == 0) { fx = -DW * 0.5f; sc = FVector(0.02f, DD / 100.f, 0.02f); }
+					else if (side == 1) { fx = DW * 0.5f; sc = FVector(0.02f, DD / 100.f, 0.02f); }
+					else if (side == 2) { fy = -DD * 0.5f; sc = FVector(DW / 100.f, 0.02f, 0.02f); }
+					else { fy = DD * 0.5f; sc = FVector(DW / 100.f, 0.02f, 0.02f); }
+					MakeCube(DA, DL, DPP + FVector(fx, fy, RZ),
+						sc * 100.f, DarkTrim,
+						*FString::Printf(TEXT("FR_%d_%d"), side, lv), 0.5f, 0.4f);
+				}
+			}
+		}
+	}
+
+	// ========================================================================
+	// LANDSCAPING — trees along streets and around amenities
+	// ========================================================================
+	{
+		// Trees along Landings Drive
+		for (int32 t = 0; t < 14; ++t)
+		{
+			const float TY = ComplexCenter.Y - 320.f * FT + t * 48.f * FT;
+			SpawnPalmTree(FVector(ComplexCenter.X - 38.f * FT, TY, 0.f), 55.f, false);
+			SpawnPalmTree(FVector(ComplexCenter.X + 38.f * FT, TY, 0.f), 50.f, false);
+		}
+		// Trees around pool
+		for (int32 t = 0; t < 6; ++t)
+		{
+			const float A = t * (360.f / 6.f);
+			const float R = FMath::DegreesToRadians(A);
+			SpawnPalmTree(FVector(
+				ComplexCenter.X - 260.f * FT + FMath::Cos(R) * 60.f * FT,
+				ComplexCenter.Y + 60.f * FT + FMath::Sin(R) * 50.f * FT,
+				0.f), 65.f, false);
+		}
+		// Trees along lakefront
+		for (int32 t = 0; t < 10; ++t)
+		{
+			const float TY = ComplexCenter.Y - 250.f * FT + t * 65.f * FT;
+			SpawnPalmTree(FVector(ComplexCenter.X - 340.f * FT, TY, 0.f), 70.f, true);
+		}
+		// Trees along Langtree Village Drive
+		for (int32 t = 0; t < 6; ++t)
+		{
+			const float TX = ComplexCenter.X - 100.f * FT + t * 60.f * FT;
+			SpawnPalmTree(FVector(TX, ComplexCenter.Y + 340.f * FT, 0.f), 50.f, false);
+		}
+	}
+
+	// ========================================================================
+	// "LANGTREE LAKE NORMAN" ENTRANCE SIGN — stone monument at Langtree Rd
+	// ========================================================================
+	{
+		const FVector SP = ComplexCenter + FVector(450.f * FT, -300.f * FT, 0.f);
+		AActor* SA = World->SpawnActor<AActor>(AActor::StaticClass(), SP, FRotator::ZeroRotator);
+		if (SA)
+		{
+			UStaticMeshComponent* SB = MakeCube(SA, nullptr,
+				SP + FVector(0.f, 0.f, 4.f * FT),
+				FVector(4.f * FT, 50.f * FT, 8.f * FT), StoneGray,
+				TEXT("EntSign"), 0.f, 0.7f);
+
+			for (int32 face = 0; face < 2; ++face)
+			{
+				UTextRenderComponent* ST = NewObject<UTextRenderComponent>(SA,
+					*FString::Printf(TEXT("LTTxt_%d"), face));
+				ST->SetText(FText::FromString(TEXT("LANGTREE\nLAKE NORMAN")));
+				ST->SetTextRenderColor(FColor::White);
+				ST->SetWorldSize(3.f * FT);
+				ST->SetHorizontalAlignment(EHTA_Center);
+				ST->SetVerticalAlignment(EVRTA_TextCenter);
+				ST->SetWorldLocation(SP + FVector((face == 0) ? -2.1f * FT : 2.1f * FT, 0.f, 4.5f * FT));
+				ST->SetWorldRotation(FRotator(0.f, (face == 0) ? 180.f : 0.f, 0.f));
+				ST->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				ST->RegisterComponent();
+				ST->AttachToComponent(SB, FAttachmentTransformRules::KeepWorldTransform);
+				SA->AddInstanceComponent(ST);
+				++CompCount;
+			}
+		}
+	}
+
+	// ========================================================================
+	// GROUND SLAB — walkable surface under entire development
+	// ========================================================================
+	{
+		AActor* GA = World->SpawnActor<AActor>(AActor::StaticClass(), ComplexCenter, FRotator::ZeroRotator);
+		if (GA)
+		{
+			UStaticMeshComponent* GS = NewObject<UStaticMeshComponent>(GA, TEXT("LangtreeGround"));
+			GS->SetStaticMesh(CubeMesh);
+			GS->SetWorldLocation(ComplexCenter + FVector(-50.f * FT, 120.f * FT, -1.f));
+			GS->SetWorldScale3D(FVector(900.f * FT / 100.f, 900.f * FT / 100.f, 0.02f));
+			GS->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			GS->SetCollisionResponseToAllChannels(ECR_Block);
+			GS->RegisterComponent();
+			GA->SetRootComponent(GS);
+			GA->AddInstanceComponent(GS);
+			ApplyPBR(GS, FLinearColor(0.28f, 0.38f, 0.18f), 0.f, 0.9f);
+			++CompCount;
+		}
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Langtree Lake Norman: Spawned complex with %d components."), CompCount);
 }

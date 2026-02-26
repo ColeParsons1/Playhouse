@@ -462,13 +462,15 @@ void APHCTankPawn::BeginPlay()
 		MantletMesh, ToolStowageMesh
 	};
 
-	// Inflate bounds for mobile frustum culling
-	VehicleCollision->SetBoundsScale(10.f);
+	// Prevent all forms of culling — parent bounds + massive scale + no distance cull + no occlusion
+	VehicleCollision->SetBoundsScale(200.f);
 	TArray<UStaticMeshComponent*> AllMeshes;
 	GetComponents<UStaticMeshComponent>(AllMeshes);
 	for (UStaticMeshComponent* MC : AllMeshes)
 	{
-		MC->SetBoundsScale(10.f);
+		MC->bUseAttachParentBound = true;
+		MC->SetBoundsScale(200.f);
+		MC->bNeverDistanceCull = true;
 	}
 }
 

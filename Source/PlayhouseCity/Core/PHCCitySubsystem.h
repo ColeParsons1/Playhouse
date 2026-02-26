@@ -68,6 +68,9 @@ private:
 	void SpawnMountainRange();
 	void SpawnSandCastle();
 	void SpawnLakeAndPirateShip();
+	void SpawnStreetLabels();
+	void SpawnLightRail();
+	void SpawnLangtree();
 
 	/** Spawn a single building with optional window lights. */
 	void SpawnBuilding(const FVector& Location, const FVector& Size,
@@ -149,15 +152,46 @@ private:
 	float WindowToggleTimer = 0.f;
 	float SkyRecaptureTimer = 0.f;
 
-	/** Giant crab NPC — night only. */
-	UPROPERTY(Transient) TObjectPtr<AActor> GiantCrabActor;
-	TArray<TObjectPtr<USceneComponent>> CrabHipJoints;
-	TArray<TObjectPtr<USceneComponent>> CrabKneeJoints;
-	TArray<FRotator> CrabHipBaseRot;
-	TArray<FRotator> CrabKneeBaseRot;
-	FVector CrabRoamTarget = FVector::ZeroVector;
-	float CrabAnimTime = 0.f;
-	bool bCrabVisible = false;
+public:
+	/** NPC enemies — always visible, chase the player. */
+	static constexpr int32 NumGiantCrabs = 30;
+
+	struct FCrabData
+	{
+		TObjectPtr<AActor> Actor;
+		TArray<TObjectPtr<USceneComponent>> HipJoints;
+		TArray<FRotator> HipBaseRot;
+		TArray<TObjectPtr<USceneComponent>> KneeJoints;
+		TArray<FRotator> KneeBaseRot;
+		float AnimTime = 0.f;
+		bool bVisible = false;
+		float Health = 100.f;
+		float ContactCooldown = 0.f;
+		float DamageFlashTimer = 0.f;
+		FVector SpawnPosition = FVector::ZeroVector;
+	};
+
+	FCrabData Crabs[NumGiantCrabs];
+	bool bCrabsNightVisible = false;
+
+	/** Respawn a killed NPC at its original spawn point (if night is active). */
+	void RespawnCrab(int32 Index);
+
+private:
+
+	static bool IsInCrabForbiddenZone(const FVector& P)
+	{
+		// Safe zone 1: Sand castle area (around 95000, 30000)
+		if (FVector::Dist2D(P, FVector(95000.f, 30000.f, 0.f)) < 20000.f) return true;
+		// Safe zone 2: Underground airport (X 90000-210000, Y -20000 to 80000)
+		if (P.X > 90000.f && P.X < 210000.f && P.Y > -20000.f && P.Y < 80000.f) return true;
+		return false;
+	}
+
+	/** LYNX Blue Line light rail. */
+	UPROPERTY(Transient) TObjectPtr<AActor> LightRailTrainActor;
+	float LightRailPosition = 0.f;
+	bool bLightRailForward = true;
 
 	/** Cloud layer actors for parallax drift. */
 	UPROPERTY(Transient) TObjectPtr<AActor> CloudLayerActor;

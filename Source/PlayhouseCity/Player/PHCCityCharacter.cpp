@@ -19,9 +19,11 @@
 #include "InputModifiers.h"
 #include "Engine/LocalPlayer.h"
 #include "Core/PHCPlayerController.h"
+#include "Core/PHCCitySubsystem.h"
 #include "Vehicle/PHCMissileProjectile.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 
 // ---------------------------------------------------------------------------
 // Constructor — Fortnite-quality character from basic shapes
@@ -92,6 +94,9 @@ APHCCityCharacter::APHCCityCharacter()
 		C->SetGenerateOverlapEvents(false);
 		C->SetSimulatePhysics(false);
 		C->CastShadow = false;
+		C->bUseAttachParentBound = true;
+		C->SetBoundsScale(200.f);
+		C->bNeverDistanceCull = true;
 		return C;
 	};
 
@@ -256,6 +261,13 @@ APHCCityCharacter::APHCCityCharacter()
 	BazookaScopeMesh      = MakeCyl(TEXT("BazookaScope"),      FVector(0.f, 26.f, 80.f), 2.5f, 18.f);
 	BazookaMuzzleMesh     = MakeSph(TEXT("BazookaMuzzle"),     FVector(0.f, 26.f, 120.f), 8.f);
 
+	// ================================================================
+	//  DAGGER WEAPON — short handle + blade + cross-guard
+	// ================================================================
+	DaggerHandleMesh = MakeCyl(TEXT("DaggerHandle"), FVector(0.f, 26.f, 10.f), 1.2f, 14.f);
+	DaggerBladeMesh  = MakeCube(TEXT("DaggerBlade"),  FVector(0.f, 26.f, 30.f), FVector(2.f, 1.2f, 18.f));
+	DaggerGuardMesh  = MakeCube(TEXT("DaggerGuard"),  FVector(0.f, 26.f, 18.f), FVector(8.f, 1.5f, 2.f));
+
 	// Enable shadows on major body parts for visual depth and grounding
 	auto Shadow = [](UStaticMeshComponent* C) { if (C) C->CastShadow = true; };
 	Shadow(HeadMesh); Shadow(JawMesh); Shadow(NeckMesh);
@@ -269,8 +281,8 @@ APHCCityCharacter::APHCCityCharacter()
 	Shadow(LeftFootMesh); Shadow(RightFootMesh);
 	Shadow(ScytheHandleMesh); Shadow(ScytheBladeMesh);
 
-	// Inflate bounds to prevent frustum-culling on mobile
-	CharacterCollision->SetBoundsScale(10.f);
+	// Massive bounds to prevent any form of culling on mobile
+	CharacterCollision->SetBoundsScale(200.f);
 }
 
 // ---------------------------------------------------------------------------
@@ -572,6 +584,14 @@ void APHCCityCharacter::BeginPlay()
 			BazookaMuzzleMesh->SetMaterial(0, MuzMID);
 		}
 	}
+
+	// Dagger materials — crimson-tinted steel blade, dark leather handle
+	const FLinearColor DaggerSteel(0.72f, 0.12f, 0.08f);   // crimson steel
+	const FLinearColor DaggerHandle(0.08f, 0.06f, 0.04f);  // dark leather
+	const FLinearColor DaggerGuard(0.60f, 0.58f, 0.50f);   // brushed brass
+	ApplyColor(DaggerBladeMesh,  DaggerSteel,  0.18f, 0.90f);
+	ApplyColor(DaggerHandleMesh, DaggerHandle, 0.80f, 0.0f);
+	ApplyColor(DaggerGuardMesh,  DaggerGuard,  0.25f, 0.70f);
 
 	// Mark as grounded immediately — ground plane has no collision.
 	bHasBeenGrounded = true;
@@ -1096,6 +1116,53 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		HairFollow(HairSideLMesh, FVector(-2.f, -13.f, 4.f));
 		HairFollow(HairSideRMesh, FVector(-2.f,  13.f, 4.f));
 
+		// ---- Dagger: held in right hand, stab animation ----
+		if (DaggerHandleMesh && DaggerBladeMesh && DaggerGuardMesh)
+		{
+			const bool bShowDagger = (CurrentWeaponType == 4);
+			DaggerHandleMesh->SetVisibility(bShowDagger);
+			DaggerBladeMesh->SetVisibility(bShowDagger);
+			DaggerGuardMesh->SetVisibility(bShowDagger);
+
+			if (bShowDagger)
+			{
+				const FVector RHand = RightHandMesh
+					? RightHandMesh->GetRelativeLocation()
+					: FVector(0.f, 26.f, 6.f);
+
+				// Hold angle: blade points upward by default
+				float HoldPitch = -15.f;
+
+				// Stab thrust animation
+				if (DaggerStabTimer > 0.f)
+				{
+					DaggerStabTimer -= DeltaTime;
+					const float MaxStabTime = 0.25f;
+					float Progress = 1.f - FMath::Max(DaggerStabTimer, 0.f) / MaxStabTime;
+					Progress = FMath::InterpEaseOut(0.f, 1.f, Progress, 3.f);
+					// Forward thrust: pitch rotates blade forward (reversed)
+					HoldPitch = FMath::Lerp(-15.f, -140.f, Progress);
+				}
+
+				const FRotator HRot(HoldPitch, 0.f, 0.f);
+
+				// Handle below hand
+				const FVector HandleOff = HRot.RotateVector(FVector(0.f, 0.f, 7.f));
+				DaggerHandleMesh->SetRelativeLocation(RHand + HandleOff);
+				DaggerHandleMesh->SetRelativeRotation(HRot);
+
+				// Blade above hand
+				const FVector BladeOff = HRot.RotateVector(FVector(0.f, 0.f, 22.f));
+				DaggerBladeMesh->SetRelativeLocation(RHand + BladeOff);
+				DaggerBladeMesh->SetRelativeRotation(HRot);
+
+				// Cross-guard at grip/blade junction
+				const FVector GuardOff = HRot.RotateVector(FVector(0.f, 0.f, 14.f));
+				DaggerGuardMesh->SetRelativeLocation(RHand + GuardOff);
+				DaggerGuardMesh->SetRelativeRotation(HRot);
+			}
+		}
+
 		// ---- Scythe: follows right hand, swing animation ----
 		if (ScytheHandleMesh && ScytheBladeMesh && ScytheBladeEdgeMesh)
 		{
@@ -1120,7 +1187,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 					const float MaxSwingTime = 0.45f;
 					float Progress = 1.f - FMath::Max(ScytheSwingTimer, 0.f) / MaxSwingTime;
 					Progress = FMath::InterpEaseOut(0.f, 1.f, Progress, 2.f);
-					HoldPitch = FMath::Lerp(-15.f, 220.f, Progress);
+					HoldPitch = FMath::Lerp(-15.f, -250.f, Progress);
 				}
 
 				const FRotator HRot(HoldPitch, 0.f, 0.f);
@@ -1203,7 +1270,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 					MinigunFireTimer -= DeltaTime;
 					if (MinigunFireTimer <= 0.f)
 					{
-						MinigunFireTimer = 0.06f; // ~16 rounds/sec
+						MinigunFireTimer = 0.05f; // 20 rounds/sec (matches Dune Buggy)
 						FireWeapon();
 					}
 				}
@@ -1372,186 +1439,194 @@ void APHCCityCharacter::FireWeapon()
 	UWorld* World = GetWorld();
 	if (!World) return;
 
+	const FRotator SpawnRot = GetActorRotation();
+	const FVector AimDir = GetActorForwardVector();
 	const FVector SpawnLoc = GetActorLocation()
-		+ GetActorForwardVector() * 120.f
+		+ AimDir * 120.f
 		+ FVector(0.f, 0.f, 20.f);
-	const FRotator SpawnRot = GetControlRotation();
 
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	if (CurrentWeaponType == 0) // Minigun
+	if (CurrentWeaponType == 0) // Minigun — identical to Dune Buggy gun
 	{
-		// Random spread for minigun spray
-		const float SpreadDeg = 2.5f;
-		FRotator SpreadRot = SpawnRot;
-		SpreadRot.Yaw   += FMath::RandRange(-SpreadDeg, SpreadDeg);
-		SpreadRot.Pitch += FMath::RandRange(-SpreadDeg, SpreadDeg);
-
 		APHCMissileProjectile* Bullet = World->SpawnActor<APHCMissileProjectile>(
-			APHCMissileProjectile::StaticClass(), SpawnLoc, SpreadRot, SP);
+			APHCMissileProjectile::StaticClass(), SpawnLoc, SpawnRot, SP);
 		if (Bullet)
 		{
-			Bullet->Speed = 25000.f;
-			Bullet->SetLifeSpan(0.8f);
-			if (Bullet->ProjectileMesh)
+			Bullet->OwnerVehicle = this;
+		}
+	}
+	else if (CurrentWeaponType == 1) // RPG — identical to Tank cannon
+	{
+		if (BazookaFireTimer > 0.f) return;
+		BazookaFireTimer = 2.0f; // 2s cooldown (matches Tank)
+
+		const FVector MuzzleLoc = GetActorLocation()
+			+ GetActorForwardVector() * 120.f
+			+ FVector(0.f, 0.f, 40.f);
+		const FRotator MuzzleRot(0.f, GetActorRotation().Yaw, 0.f);
+		const FVector Dir = MuzzleRot.Vector();
+
+		APHCMissileProjectile* Proj = World->SpawnActor<APHCMissileProjectile>(
+			APHCMissileProjectile::StaticClass(), MuzzleLoc, MuzzleRot, SP);
+		if (Proj)
+		{
+			Proj->OwnerVehicle = this;
+			Proj->Tags.Add(FName("RPGRocket"));
+			Proj->bIsRPGRocket = true;
+			Proj->bUseManualGravity = true;
+			Proj->ManualVelocity = Dir * 15000.f;
+			Proj->ManualGravityScale = 0.3f;
+
+			// Smoke trail so the flight path is visible
+			Proj->TrailDotScale = 0.8f;
+			Proj->TrailDotLifespan = 2.5f;
+			Proj->TrailDotInterval = 0.02f;
+			Proj->TrailDotRandomSpread = 20.f;
+			Proj->StartTrail(FLinearColor(0.5f, 0.5f, 0.45f));
+		}
+	}
+	else if (CurrentWeaponType == 2) // Sword — 50 damage per hit (2 hits to kill)
+	{
+		const FVector MyLoc = GetActorLocation();
+		const FVector Forward = GetActorForwardVector();
+		const float SwingRange = 600.f;
+		const float SwordDamage = 50.f;
+
+		UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			AActor* A = *It;
+			if (!A || A->IsHidden() || !A->ActorHasTag(FName("GiantCrab"))) continue;
+
+			const FVector CrabLoc = A->GetActorLocation();
+			if (FVector::Dist2D(MyLoc, CrabLoc) > SwingRange) continue;
+
+			const FVector ToCrab = (CrabLoc - MyLoc).GetSafeNormal2D();
+			if (FVector::DotProduct(Forward.GetSafeNormal2D(), ToCrab) < -0.2f) continue;
+
+			// Find matching crab in subsystem and apply damage
+			if (CitySub)
 			{
-				Bullet->ProjectileMesh->SetRelativeScale3D(FVector(0.6f, 0.08f, 0.08f));
-				// Neon purple glow on the round itself
-				UMaterial* BulletMat = LoadObject<UMaterial>(nullptr,
-					TEXT("/Game/Materials/M_PHCColor.M_PHCColor"));
-				if (BulletMat)
+				for (int32 CI = 0; CI < UPHCCitySubsystem::NumGiantCrabs; ++CI)
 				{
-					UMaterialInstanceDynamic* BMID = UMaterialInstanceDynamic::Create(BulletMat, Bullet);
-					if (BMID)
+					if (CitySub->Crabs[CI].Actor == A)
 					{
-						BMID->SetVectorParameterValue(TEXT("BaseColor"),
-							FLinearColor(0.4f, 0.0f, 0.8f));
-						BMID->SetVectorParameterValue(TEXT("EmissiveColor"),
-							FLinearColor(3.f, 0.2f, 6.f));
-						BMID->SetScalarParameterValue(TEXT("Metallic"), 0.8f);
-						BMID->SetScalarParameterValue(TEXT("Roughness"), 0.1f);
-						Bullet->ProjectileMesh->SetMaterial(0, BMID);
+						CitySub->Crabs[CI].Health -= SwordDamage;
+						CitySub->Crabs[CI].DamageFlashTimer = 0.2f;
+						if (CitySub->Crabs[CI].Health <= 0.f)
+						{
+							CrabKills++;
+							APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
+								APHCMissileProjectile::StaticClass(), CrabLoc, FRotator::ZeroRotator);
+							if (TempProj) { TempProj->SpawnExplosion(CrabLoc); TempProj->Destroy(); }
+							CitySub->RespawnCrab(CI);
+						}
+						break;
 					}
 				}
 			}
-			Bullet->StartTrail(FLinearColor(0.6f, 0.1f, 1.f)); // neon purple trail
+			break; // Hit one crab per swing
 		}
 	}
-	else if (CurrentWeaponType == 1) // RPG (Bazooka) — GTA V style
+	else if (CurrentWeaponType == 3) // Scythe — 34 damage per hit (3 hits to kill)
 	{
-		if (BazookaFireTimer > 0.f) return; // ~2s reload (GTA V animation-driven)
-		BazookaFireTimer = 2.0f;
-		BazookaMuzzleFlashTimer = 0.1f;
-
-		// Camera shake on fire (GTA V has moderate recoil shake)
-		CameraShakeTimer = 0.35f;
-		CameraShakeIntensity = 6.f;
-
-		APHCMissileProjectile* Rocket = World->SpawnActor<APHCMissileProjectile>(
-			APHCMissileProjectile::StaticClass(), SpawnLoc, SpawnRot, SP);
-		if (Rocket)
-		{
-			// GTA V RPG: 60 m/s = 6,000 UU/s, straight line, 5s lifespan (300m range)
-			Rocket->Speed = 6000.f;
-			Rocket->bUseManualGravity = false;  // GTA V: no gravity drop
-			Rocket->SetLifeSpan(5.f);           // GTA V: self-detonates at 5s
-			Rocket->bIsRPGRocket = true;        // enables collision + explosion
-
-			// Visible rocket with orange-yellow rear flame (GTA V style)
-			if (Rocket->ProjectileMesh)
-			{
-				// Slightly larger projectile — visible warhead
-				Rocket->ProjectileMesh->SetRelativeScale3D(FVector(2.5f, 0.25f, 0.25f));
-
-				UMaterial* RocketMat = LoadObject<UMaterial>(nullptr,
-					TEXT("/Game/Materials/M_PHCColor.M_PHCColor"));
-				if (RocketMat)
-				{
-					UMaterialInstanceDynamic* RMID = UMaterialInstanceDynamic::Create(
-						(UMaterialInterface*)RocketMat, Rocket);
-					if (RMID)
-					{
-						RMID->SetVectorParameterValue(TEXT("BaseColor"),
-							FLinearColor(0.35f, 0.35f, 0.30f));   // dark olive warhead
-						RMID->SetVectorParameterValue(TEXT("EmissiveColor"),
-							FLinearColor(6.f, 3.f, 0.5f));        // orange-yellow rear flame glow
-						RMID->SetScalarParameterValue(TEXT("Metallic"), 0.6f);
-						RMID->SetScalarParameterValue(TEXT("Roughness"), 0.3f);
-						Rocket->ProjectileMesh->SetMaterial(0, RMID);
-					}
-				}
-			}
-
-			// GTA V smoke trail: white-gray, thick, persistent, rises
-			Rocket->TrailDotScale = 0.35f;       // thick smoke puffs
-			Rocket->TrailDotLifespan = 2.5f;     // lingers several seconds
-			Rocket->TrailDotInterval = 0.02f;    // dense trail
-			Rocket->TrailDotRandomSpread = 15.f; // organic smoke spread
-			Rocket->StartTrail(FLinearColor(0.65f, 0.65f, 0.60f)); // white-gray smoke
-		}
-
-		// Backblast — brief exhaust puff behind the character
-		{
-			const FVector BackLoc = GetActorLocation()
-				- GetActorForwardVector() * 80.f
-				+ FVector(0.f, 0.f, 30.f);
-
-			UStaticMesh* SphMesh = LoadObject<UStaticMesh>(nullptr,
-				TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-			if (SphMesh && World)
-			{
-				FActorSpawnParameters BackSP;
-				BackSP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-				AActor* BackBlast = World->SpawnActor<AActor>(
-					AActor::StaticClass(), BackLoc, FRotator::ZeroRotator, BackSP);
-				if (BackBlast)
-				{
-					BackBlast->SetReplicates(false);
-					BackBlast->SetLifeSpan(0.6f);
-					UStaticMeshComponent* BM = NewObject<UStaticMeshComponent>(
-						BackBlast, UStaticMeshComponent::StaticClass(), TEXT("BackblastMesh"));
-					BM->SetStaticMesh(SphMesh);
-					BM->SetRelativeScale3D(FVector(1.2f));
-					BM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					BM->CastShadow = false;
-					BackBlast->SetRootComponent(BM);
-					BM->RegisterComponent();
-
-					UMaterialInstanceDynamic* BMat = UMaterialInstanceDynamic::Create(
-						BM->GetMaterial(0), BackBlast);
-					if (BMat)
-					{
-						BMat->SetVectorParameterValue(TEXT("BaseColor"),
-							FLinearColor(0.5f, 0.5f, 0.45f));
-						BMat->SetVectorParameterValue(TEXT("EmissiveColor"),
-							FLinearColor(2.f, 1.f, 0.3f));
-						BM->SetMaterial(0, BMat);
-					}
-				}
-			}
-		}
-	}
-	else if (CurrentWeaponType == 2) // Sword
-	{
-		const FVector SweepStart = GetActorLocation() + FVector(0.f, 0.f, 20.f);
-		const FVector SweepEnd = SweepStart + GetActorForwardVector() * 250.f;
-		FCollisionQueryParams Params;
-		Params.AddIgnoredActor(this);
-
-		TArray<FHitResult> Hits;
-		World->SweepMultiByChannel(Hits, SweepStart, SweepEnd, FQuat::Identity,
-			ECC_Pawn, FCollisionShape::MakeSphere(60.f), Params);
-
-		for (const FHitResult& Hit : Hits)
-		{
-			if (Hit.GetActor())
-			{
-				UE_LOG(LogPlayhouseCity, Log, TEXT("Sword hit: %s"), *Hit.GetActor()->GetName());
-			}
-		}
-	}
-	else if (CurrentWeaponType == 3) // Scythe
-	{
-		// Start swing animation
 		ScytheSwingTimer = 0.45f;
 
-		// Wide melee sweep (longer range than sword)
-		const FVector SweepStart = GetActorLocation() + FVector(0.f, 0.f, 20.f);
-		const FVector SweepEnd = SweepStart + GetActorForwardVector() * 300.f;
-		FCollisionQueryParams Params;
-		Params.AddIgnoredActor(this);
+		const FVector MyLoc = GetActorLocation();
+		const FVector Forward = GetActorForwardVector();
+		const float SwingRange = 800.f;
+		const float ScytheDamage = 34.f;
 
-		TArray<FHitResult> Hits;
-		World->SweepMultiByChannel(Hits, SweepStart, SweepEnd, FQuat::Identity,
-			ECC_Pawn, FCollisionShape::MakeSphere(90.f), Params);
+		UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
 
-		for (const FHitResult& Hit : Hits)
+		for (TActorIterator<AActor> It(World); It; ++It)
 		{
-			if (Hit.GetActor())
+			AActor* A = *It;
+			if (!A || A->IsHidden() || !A->ActorHasTag(FName("GiantCrab"))) continue;
+
+			const FVector CrabLoc = A->GetActorLocation();
+			if (FVector::Dist2D(MyLoc, CrabLoc) > SwingRange) continue;
+
+			const FVector ToCrab = (CrabLoc - MyLoc).GetSafeNormal2D();
+			if (FVector::DotProduct(Forward.GetSafeNormal2D(), ToCrab) < -0.2f) continue;
+
+			if (CitySub)
 			{
-				UE_LOG(LogPlayhouseCity, Log, TEXT("Scythe hit: %s"), *Hit.GetActor()->GetName());
+				for (int32 CI = 0; CI < UPHCCitySubsystem::NumGiantCrabs; ++CI)
+				{
+					if (CitySub->Crabs[CI].Actor == A)
+					{
+						CitySub->Crabs[CI].Health -= ScytheDamage;
+						CitySub->Crabs[CI].DamageFlashTimer = 0.2f;
+						if (CitySub->Crabs[CI].Health <= 0.f)
+						{
+							CrabKills++;
+							APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
+								APHCMissileProjectile::StaticClass(), CrabLoc, FRotator::ZeroRotator);
+							if (TempProj) { TempProj->SpawnExplosion(CrabLoc); TempProj->Destroy(); }
+							CitySub->RespawnCrab(CI);
+						}
+						break;
+					}
+				}
 			}
+			break; // Hit one crab per swing
+		}
+	}
+	else if (CurrentWeaponType == 4) // Dagger — 1-hit kill on crabs
+	{
+		// Start stab animation
+		DaggerStabTimer = 0.25f;
+
+		// Crabs have NoCollision, so sweep won't find them.
+		// Instead, iterate all actors with "GiantCrab" tag within melee range.
+		const FVector MyLoc = GetActorLocation();
+		const FVector Forward = GetActorForwardVector();
+		const float StabRange = 800.f; // generous melee range for dagger
+
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			AActor* A = *It;
+			if (!A || A->IsHidden() || !A->ActorHasTag(FName("GiantCrab"))) continue;
+
+			const FVector CrabLoc = A->GetActorLocation();
+			const float Dist2D = FVector::Dist2D(MyLoc, CrabLoc);
+			if (Dist2D > StabRange) continue;
+
+			// Check that the crab is roughly in front of the player (120 degree cone)
+			const FVector ToCrab = (CrabLoc - MyLoc).GetSafeNormal2D();
+			if (FVector::DotProduct(Forward.GetSafeNormal2D(), ToCrab) < 0.0f) continue;
+
+			// 1-hit kill: explode and respawn at origin
+			CrabKills++;
+
+			APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
+				APHCMissileProjectile::StaticClass(), CrabLoc, FRotator::ZeroRotator);
+			if (TempProj)
+			{
+				TempProj->SpawnExplosion(CrabLoc);
+				TempProj->Destroy();
+			}
+
+			// Find in subsystem and respawn
+			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+			if (CitySub)
+			{
+				for (int32 CI = 0; CI < UPHCCitySubsystem::NumGiantCrabs; ++CI)
+				{
+					if (CitySub->Crabs[CI].Actor == A)
+					{
+						CitySub->Crabs[CI].Health = 0.f;
+						CitySub->RespawnCrab(CI);
+						break;
+					}
+				}
+			}
+
+			break; // Kill one crab per stab
 		}
 	}
 }

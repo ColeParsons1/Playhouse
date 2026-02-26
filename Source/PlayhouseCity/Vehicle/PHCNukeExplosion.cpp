@@ -32,7 +32,7 @@ APHCNukeExplosion::APHCNukeExplosion()
 		M->SetRelativeScale3D(FVector(Scale));
 		M->SetRelativeLocation(Loc);
 		M->SetVisibility(false);
-		M->SetBoundsScale(10.f);
+		M->SetBoundsScale(50.f);
 		return M;
 	};
 
@@ -45,7 +45,7 @@ APHCNukeExplosion::APHCNukeExplosion()
 		M->SetRelativeScale3D(Scale);
 		M->SetRelativeLocation(Loc);
 		M->SetVisibility(false);
-		M->SetBoundsScale(10.f);
+		M->SetBoundsScale(50.f);
 		return M;
 	};
 
@@ -147,7 +147,7 @@ void APHCNukeExplosion::BeginPlay()
 		E->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		E->SetRelativeScale3D(FVector(FMath::RandRange(0.15f, 0.4f)));
 		E->SetRelativeLocation(FVector(0.f, 0.f, 50.f));
-		E->SetBoundsScale(10.f);
+		E->SetBoundsScale(50.f);
 		E->RegisterComponent();
 
 		UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(

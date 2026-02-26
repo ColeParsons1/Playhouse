@@ -179,6 +179,14 @@ public:
 	void EquipJetpack();
 	void UnequipJetpack();
 
+	// -- Dagger weapon mesh ---------------------------------------------------
+
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> DaggerHandleMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> DaggerBladeMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> DaggerGuardMesh;
+
+	float DaggerStabTimer = 0.f;  // >0 = currently stabbing
+
 	// -- Scythe weapon mesh ---------------------------------------------------
 
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> ScytheHandleMesh;
@@ -200,6 +208,17 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BazookaGripMesh;
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BazookaScopeMesh;
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BazookaMuzzleMesh;
+
+	// -- Health ---------------------------------------------------------------
+	float Health = 100.f;
+	float MaxHealth = 100.f;
+
+	// -- Kill / Death tracking ------------------------------------------------
+	int32 CrabKills = 0;
+	int32 Deaths = 0;
+
+	/** >0 = screen should flash red (set by subsystem on crab contact). */
+	float DamageFlashTimer = 0.f;
 
 	// -- Weapon state ---------------------------------------------------------
 

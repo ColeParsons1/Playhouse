@@ -9,6 +9,7 @@
 class USphereComponent;
 class UStaticMeshComponent;
 class UProjectileMovementComponent;
+class UMaterial;
 
 /**
  * Missile projectile fired from the dune buggy's launcher.
@@ -78,14 +79,19 @@ private:
 
 	// -- Trail system --
 	bool bHasTrail = false;
+	bool bVelocityInitialized = false;
 	FLinearColor TrailColor;
 	float TrailTimer = 0.f;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterial> CachedColorMat;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMesh> TrailSphereMesh;
 
 	void SpawnTrailDot();
 
+public:
 	/** Spawn GTA V-style explosion at given location. */
 	void SpawnExplosion(const FVector& Location);
 };

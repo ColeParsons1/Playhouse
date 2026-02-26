@@ -244,14 +244,15 @@ APHCVehiclePawn::APHCVehiclePawn()
 	VehicleCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	VehicleCamera->bUsePawnControlRotation = false;
 
-	// Inflate bounds on ALL components to prevent frustum-culling on mobile
-	// (missing bounds on some components caused parts to vanish near geometry)
-	VehicleCollision->SetBoundsScale(10.f);
+	// Prevent all forms of culling — parent bounds + massive scale + no distance cull + no occlusion
+	VehicleCollision->SetBoundsScale(200.f);
 	TArray<UStaticMeshComponent*> AllMeshes;
 	GetComponents<UStaticMeshComponent>(AllMeshes);
 	for (UStaticMeshComponent* MC : AllMeshes)
 	{
-		MC->SetBoundsScale(10.f);
+		MC->bUseAttachParentBound = true;
+		MC->SetBoundsScale(200.f);
+		MC->bNeverDistanceCull = true;
 	}
 }
 

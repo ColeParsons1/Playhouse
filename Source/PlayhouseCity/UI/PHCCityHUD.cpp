@@ -22,6 +22,7 @@
 #include "Components/Button.h"
 #include "Components/Border.h"
 #include "Components/Spacer.h"
+#include "Components/SizeBox.h"
 #include "Blueprint/WidgetTree.h"
 #include "Misc/Paths.h"
 #include "Core/PHCCitySubsystem.h"
@@ -125,6 +126,86 @@ bool UPHCCityHUD::Initialize()
 			LocationText->SetFont(LocFont);
 			LocationText->SetColorAndOpacity(FSlateColor(FLinearColor(0.8f, 1.f, 0.8f)));
 			LocBar->SetContent(LocationText);
+		}
+
+		// ============================================================
+		//  HEALTH BAR — right of the location monitor, same style/size
+		// ============================================================
+		{
+			const FSlateFontInfo HPFont = FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 12);
+
+			// Outer background (dark, same style as location bar)
+			HealthBarBG = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("HealthBarBG"));
+			HealthBarBG->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.55f));
+			HealthBarBG->SetPadding(FMargin(4.f, 4.f, 4.f, 4.f));
+
+			UCanvasPanelSlot* HPBGS = RootCanvas->AddChildToCanvas(HealthBarBG);
+			HPBGS->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f)); // top-center
+			HPBGS->SetAlignment(FVector2D(0.f, 0.f)); // left-aligned from anchor
+			HPBGS->SetOffsets(FMargin(130.f, 10.f, 160.f, 26.f)); // right of LocationBar
+			HPBGS->SetAutoSize(false);
+
+			// Inner fill bar (green = healthy)
+			HealthBarFill = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("HealthBarFill"));
+			HealthBarFill->SetBrushColor(FLinearColor(0.1f, 0.75f, 0.15f, 0.9f));
+			HealthBarFill->SetPadding(FMargin(0.f));
+
+			// Size box to control the fill width
+			USizeBox* HPSizeBox = WidgetTree->ConstructWidget<USizeBox>(
+				USizeBox::StaticClass(), TEXT("HPSizeBox"));
+			HPSizeBox->SetWidthOverride(152.f); // full width at 100% hp
+			HPSizeBox->SetHeightOverride(18.f);
+			HPSizeBox->AddChild(HealthBarFill);
+
+			// HP text overlay
+			HealthText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("HealthText"));
+			HealthText->SetText(FText::FromString(TEXT("100")));
+			HealthText->SetFont(HPFont);
+			HealthText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			HealthText->SetJustification(ETextJustify::Center);
+
+			// Overlay to stack fill bar + text
+			UOverlay* HPOverlay = WidgetTree->ConstructWidget<UOverlay>(
+				UOverlay::StaticClass(), TEXT("HPOverlay"));
+			UOverlaySlot* FillSlot = HPOverlay->AddChildToOverlay(HPSizeBox);
+			FillSlot->SetHorizontalAlignment(HAlign_Left);
+			FillSlot->SetVerticalAlignment(VAlign_Fill);
+			UOverlaySlot* TextSlot = HPOverlay->AddChildToOverlay(HealthText);
+			TextSlot->SetHorizontalAlignment(HAlign_Center);
+			TextSlot->SetVerticalAlignment(VAlign_Center);
+
+			HealthBarBG->SetContent(HPOverlay);
+		}
+
+		// ============================================================
+		//  K/D DISPLAY — right of the health bar, same style
+		// ============================================================
+		{
+			const FSlateFontInfo KDFont = FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 11);
+
+			KDDisplayBG = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("KDDisplayBG"));
+			KDDisplayBG->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.55f));
+			KDDisplayBG->SetPadding(FMargin(8.f, 4.f, 8.f, 4.f));
+
+			UCanvasPanelSlot* KDS = RootCanvas->AddChildToCanvas(KDDisplayBG);
+			KDS->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f)); // top-center
+			KDS->SetAlignment(FVector2D(0.f, 0.f));
+			KDS->SetOffsets(FMargin(300.f, 10.f, 120.f, 26.f)); // right of health bar
+			KDS->SetAutoSize(false);
+
+			KDText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("KDText"));
+			KDText->SetText(FText::FromString(TEXT("K:0  D:0")));
+			KDText->SetFont(KDFont);
+			KDText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			KDText->SetJustification(ETextJustify::Center);
+			KDDisplayBG->SetContent(KDText);
 		}
 
 		// ============================================================
@@ -813,6 +894,34 @@ bool UPHCCityHUD::Initialize()
 		ScytheSlot->SetVerticalAlignment(VAlign_Center);
 		ScytheSlot->SetHorizontalAlignment(HAlign_Center);
 
+		USpacer* WepSpacer4 = WidgetTree->ConstructWidget<USpacer>(
+			USpacer::StaticClass(), TEXT("WepBtnSpacer4"));
+		WepSpacer4->SetSize(FVector2D(20.f, 0.f));
+		WepHBox->AddChildToHorizontalBox(WepSpacer4);
+
+		// -- Dagger button (crimson red — 1-hit kill) --
+		SelectDaggerBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectDaggerBtn"));
+		{
+			FButtonStyle Style = SelectDaggerBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.70f, 0.05f, 0.05f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.10f, 0.10f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.50f, 0.03f, 0.03f, 1.0f));
+			SelectDaggerBtn->SetStyle(Style);
+		}
+		UTextBlock* DaggerLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("DaggerSelectLabel"));
+		DaggerLabel->SetText(FText::FromString(TEXT("Dagger")));
+		DaggerLabel->SetFont(BtnFont);
+		DaggerLabel->SetColorAndOpacity(FSlateColor(White));
+		DaggerLabel->SetJustification(ETextJustify::Center);
+		SelectDaggerBtn->AddChild(DaggerLabel);
+
+		UHorizontalBoxSlot* DaggerSlot = WepHBox->AddChildToHorizontalBox(SelectDaggerBtn);
+		DaggerSlot->SetPadding(FMargin(8.f));
+		DaggerSlot->SetVerticalAlignment(VAlign_Center);
+		DaggerSlot->SetHorizontalAlignment(HAlign_Center);
+
 		WeaponSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
@@ -1156,6 +1265,19 @@ bool UPHCCityHUD::Initialize()
 		JoinOverlay->SetVisibility(ESlateVisibility::Collapsed);
 		EnteredIP = TEXT("GAME_SERVER_IP");
 
+		// ============================================================
+		//  DAMAGE FLASH — full-screen translucent red overlay
+		// ============================================================
+		DamageFlashOverlay = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("DamageFlashOverlay"));
+		DamageFlashOverlay->SetBrushColor(FLinearColor(0.85f, 0.05f, 0.05f, 0.0f));
+		DamageFlashOverlay->SetPadding(FMargin(0.f));
+
+		UCanvasPanelSlot* FlashSlot = RootCanvas->AddChildToCanvas(DamageFlashOverlay);
+		FlashSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f)); // stretch full screen
+		FlashSlot->SetOffsets(FMargin(0.f));
+		DamageFlashOverlay->SetVisibility(ESlateVisibility::HitTestInvisible);
+
 		UE_LOG(LogPlayhouseCity, Log, TEXT("UPHCCityHUD: Widget tree built programmatically."));
 	}
 
@@ -1254,6 +1376,10 @@ void UPHCCityHUD::NativeConstruct()
 	if (SelectScytheBtn)
 	{
 		SelectScytheBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectScythe);
+	}
+	if (SelectDaggerBtn)
+	{
+		SelectDaggerBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectDagger);
 	}
 	if (WeaponFireButton)
 	{
@@ -1382,6 +1508,76 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 						SpeedMPH, Mode, Loc.X, Loc.Y, Loc.Z)));
 			}
 		}
+	}
+
+	// Update health bar
+	if (HealthBarFill && HealthText)
+	{
+		float HP = 100.f;
+		float MaxHP = 100.f;
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+			{
+				HP = Char->Health;
+				MaxHP = Char->MaxHealth;
+			}
+		}
+		const float Pct = FMath::Clamp(HP / MaxHP, 0.f, 1.f);
+
+		// Resize fill bar width (152 = full width)
+		if (USizeBox* SB = Cast<USizeBox>(HealthBarFill->GetParent()))
+			SB->SetWidthOverride(152.f * Pct);
+
+		// Color: green > yellow > red
+		FLinearColor BarColor;
+		if (Pct > 0.5f)
+			BarColor = FMath::Lerp(FLinearColor(1.f, 0.9f, 0.f), FLinearColor(0.1f, 0.75f, 0.15f), (Pct - 0.5f) * 2.f);
+		else
+			BarColor = FMath::Lerp(FLinearColor(0.85f, 0.1f, 0.1f), FLinearColor(1.f, 0.9f, 0.f), Pct * 2.f);
+		BarColor.A = 0.9f;
+		HealthBarFill->SetBrushColor(BarColor);
+
+		HealthText->SetText(FText::FromString(
+			FString::Printf(TEXT("%d"), FMath::RoundToInt(HP))));
+	}
+
+	// Update damage flash overlay
+	if (DamageFlashOverlay)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+			{
+				if (Char->DamageFlashTimer > 0.f)
+				{
+					Char->DamageFlashTimer -= InDeltaTime;
+					const float Alpha = FMath::Clamp(Char->DamageFlashTimer / 0.3f, 0.f, 1.f) * 0.45f;
+					DamageFlashOverlay->SetBrushColor(FLinearColor(0.85f, 0.05f, 0.05f, Alpha));
+				}
+				else
+				{
+					DamageFlashOverlay->SetBrushColor(FLinearColor(0.85f, 0.05f, 0.05f, 0.0f));
+				}
+			}
+		}
+	}
+
+	// Update K/D display
+	if (KDText)
+	{
+		int32 Kills = 0;
+		int32 Ds = 0;
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+			{
+				Kills = Char->CrabKills;
+				Ds = Char->Deaths;
+			}
+		}
+		KDText->SetText(FText::FromString(
+			FString::Printf(TEXT("K:%d  D:%d"), Kills, Ds)));
 	}
 
 	// Update player count display
@@ -2178,6 +2374,23 @@ void UPHCCityHUD::OnSelectScythe()
 	}
 
 	if (WeaponFireLabel) WeaponFireLabel->SetText(FText::FromString(TEXT("Swing")));
+	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
+}
+
+void UPHCCityHUD::OnSelectDagger()
+{
+	HideWeaponSelection();
+	EquippedWeaponType = 4;
+
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->CurrentWeaponType = 4;
+		}
+	}
+
+	if (WeaponFireLabel) WeaponFireLabel->SetText(FText::FromString(TEXT("Stab")));
 	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
 }
 

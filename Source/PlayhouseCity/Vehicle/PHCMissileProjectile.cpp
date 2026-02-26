@@ -10,6 +10,7 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
+#include "EngineUtils.h"
 
 APHCMissileProjectile::APHCMissileProjectile()
 {
@@ -23,6 +24,8 @@ APHCMissileProjectile::APHCMissileProjectile()
 	CollisionSphere->InitSphereRadius(10.f);
 	CollisionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	CollisionSphere->SetSimulatePhysics(false);
+	CollisionSphere->SetBoundsScale(200.f);
+	CollisionSphere->bNeverDistanceCull = true;
 	SetRootComponent(CollisionSphere);
 
 	// Single elongated cube — lightweight bullet/tracer round
@@ -30,7 +33,9 @@ APHCMissileProjectile::APHCMissileProjectile()
 	ProjectileMesh->SetupAttachment(CollisionSphere);
 	ProjectileMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ProjectileMesh->SetRelativeScale3D(FVector(2.0f, 0.20f, 0.20f));
-	ProjectileMesh->SetBoundsScale(5.f);
+	ProjectileMesh->SetBoundsScale(200.f);
+	ProjectileMesh->bNeverDistanceCull = true;
+	ProjectileMesh->SetCastShadow(false);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(
 		TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -48,14 +53,17 @@ void APHCMissileProjectile::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Store flight velocity from spawn rotation
-	ManualVelocity = GetActorForwardVector() * Speed;
+	// Cache M_PHCColor for trail dots and fallback material
+	CachedColorMat = LoadObject<UMaterial>(nullptr,
+		TEXT("/Game/Materials/M_PHCColor.M_PHCColor"));
 
-	// Bright emissive material — visible without point lights (performance-friendly)
-	if (ProjectileMesh && ProjectileMesh->GetStaticMesh())
+	// Velocity is deferred to first Tick so callers can set Speed after SpawnActor
+	bVelocityInitialized = false;
+
+	// Bright emissive material using M_PHCColor (not default engine mat)
+	if (ProjectileMesh && CachedColorMat)
 	{
-		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(
-			ProjectileMesh->GetMaterial(0), this);
+		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(CachedColorMat, this);
 		if (Mat)
 		{
 			Mat->SetVectorParameterValue(TEXT("BaseColor"),
@@ -129,6 +137,17 @@ void APHCMissileProjectile::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// Deferred velocity init — runs on first Tick after callers have set Speed.
+	// Skip if caller already set ManualVelocity directly (e.g. tank cannon, RPG).
+	if (!bVelocityInitialized)
+	{
+		bVelocityInitialized = true;
+		if (ManualVelocity.IsNearlyZero())
+		{
+			ManualVelocity = GetActorForwardVector() * Speed;
+		}
+	}
+
 	// Manual gravity (for bombs)
 	if (bUseManualGravity)
 	{
@@ -138,30 +157,16 @@ void APHCMissileProjectile::Tick(float DeltaTime)
 	const FVector PrevLoc = GetActorLocation();
 	const FVector StepDelta = ManualVelocity * DeltaTime;
 
-	// RPG collision detection via line trace ahead
-	if (bIsRPGRocket)
-	{
-		UWorld* World = GetWorld();
-		if (World)
-		{
-			FCollisionQueryParams Params;
-			Params.AddIgnoredActor(this);
-			if (OwnerVehicle) Params.AddIgnoredActor(OwnerVehicle);
-
-			FHitResult Hit;
-			if (World->LineTraceSingleByChannel(Hit, PrevLoc, PrevLoc + StepDelta,
-				ECC_WorldStatic, Params))
-			{
-				// Impact — explode at hit point
-				SpawnExplosion(Hit.ImpactPoint);
-				Destroy();
-				return;
-			}
-		}
-	}
-
 	// Move forward — simple SetActorLocation, no sweep, no PMC overhead
 	SetActorLocation(PrevLoc + StepDelta);
+
+	// RPG: explode on ground impact
+	if (bIsRPGRocket && GetActorLocation().Z <= 5.f)
+	{
+		SpawnExplosion(GetActorLocation());
+		Destroy();
+		return;
+	}
 
 	// Altitude detonation (for gravity bombs hitting ground)
 	if (DetonateAtAltitude >= 0.f && GetActorLocation().Z <= DetonateAtAltitude)
@@ -220,16 +225,22 @@ void APHCMissileProjectile::SpawnTrailDot()
 	Mesh->SetStaticMesh(TrailSphereMesh);
 	Mesh->SetRelativeScale3D(FVector(TrailDotScale));
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Mesh->SetBoundsScale(200.f);
+	Mesh->bNeverDistanceCull = true;
+	Mesh->SetCastShadow(false);
 	Dot->SetRootComponent(Mesh);
 	Mesh->RegisterComponent();
 
-	UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(
-		Mesh->GetMaterial(0), Dot);
-	if (Mat)
+	if (CachedColorMat)
 	{
-		Mat->SetVectorParameterValue(TEXT("BaseColor"), TrailColor);
-		Mat->SetVectorParameterValue(TEXT("EmissiveColor"), TrailColor);
-		Mesh->SetMaterial(0, Mat);
+		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(CachedColorMat, Dot);
+		if (Mat)
+		{
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), TrailColor);
+			Mat->SetVectorParameterValue(TEXT("EmissiveColor"), TrailColor);
+			Mat->SetScalarParameterValue(TEXT("Roughness"), 0.9f);
+			Mesh->SetMaterial(0, Mat);
+		}
 	}
 }
 

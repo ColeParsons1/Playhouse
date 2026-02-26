@@ -121,10 +121,10 @@ public:
 	// -- Vehicle tuning ----------------------------------------------------
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Vehicle")
-	float MaxSpeed = 7200.f;
+	float MaxSpeed = 8375.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Vehicle")
-	float Acceleration = 3800.f;
+	float Acceleration = 5500.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Vehicle")
 	float BrakeDeceleration = 5000.f;

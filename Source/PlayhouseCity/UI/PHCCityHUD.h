@@ -155,6 +155,9 @@ protected:
 	TObjectPtr<UButton> SelectScytheBtn;
 
 	UPROPERTY()
+	TObjectPtr<UButton> SelectDaggerBtn;
+
+	UPROPERTY()
 	TObjectPtr<UButton> WeaponFireButton;
 
 	UPROPERTY()
@@ -238,8 +241,29 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UTextBlock> LocationText;
 
+	// -- Health bar (right of location monitor) --------------------------------
+	UPROPERTY()
+	TObjectPtr<UBorder> HealthBarBG;
+
+	UPROPERTY()
+	TObjectPtr<UBorder> HealthBarFill;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> HealthText;
+
 	UPROPERTY()
 	TObjectPtr<UTextBlock> IPInputText;
+
+	// -- Kill/Death ratio display (right of health bar) ----------------------
+	UPROPERTY()
+	TObjectPtr<UBorder> KDDisplayBG;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> KDText;
+
+	// -- Damage flash overlay (full-screen translucent red) -------------------
+	UPROPERTY()
+	TObjectPtr<UBorder> DamageFlashOverlay;
 
 	/** The IP address string being entered by the user. */
 	FString EnteredIP;
@@ -326,6 +350,9 @@ private:
 
 	UFUNCTION()
 	void OnSelectScythe();
+
+	UFUNCTION()
+	void OnSelectDagger();
 
 	UFUNCTION()
 	void OnWeaponFirePressed();
