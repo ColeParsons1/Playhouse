@@ -81,6 +81,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UButton> GuestButton;
 
+	/** Sign In with Apple button. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UButton> AppleSignInButton;
+
 	/** Toggles the view between login and register modes. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UButton> ToggleButton;
@@ -113,6 +117,9 @@ protected:
 
 	UFUNCTION()
 	void OnGuestClicked();
+
+	UFUNCTION()
+	void OnAppleSignInClicked();
 
 	UFUNCTION()
 	void OnToggleClicked();

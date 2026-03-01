@@ -17,6 +17,8 @@ class APHCDuneBuggyPawn;
 class APHCRaptorPawn;
 class APHCCityCharacter;
 class APHCTankPawn;
+class APHCDirtBikePawn;
+class APHCBlackbirdPawn;
 
 /**
  * Top-level player controller for the PlayhouseCity lobby.
@@ -130,6 +132,9 @@ public:
 	/** Client RPC: update local HUD after server possession change (exiting vehicle). */
 	UFUNCTION(Client, Reliable)
 	void ClientOnVehicleExited();
+
+	/** Returns the currently active top-level widget (e.g. CityHUD). */
+	UUserWidget* GetActiveWidget() const { return ActiveWidget; }
 
 protected:
 	virtual void BeginPlay() override;

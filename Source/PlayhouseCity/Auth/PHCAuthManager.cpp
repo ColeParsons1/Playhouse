@@ -87,6 +87,291 @@ void UPHCAuthManager::ClearPlayerId()
 }
 
 // ===========================================================================
+// Apple Sign In
+// ===========================================================================
+
+#if PLATFORM_IOS
+#import <AuthenticationServices/AuthenticationServices.h>
+
+// Weak reference container for bridging ObjC delegate -> UObject.
+static TWeakObjectPtr<UPHCAuthManager> GAppleAuthManagerRef;
+
+@interface PHCAppleSignInDelegate : NSObject <ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding>
+@end
+
+@implementation PHCAppleSignInDelegate
+
+- (ASPresentationAnchor)presentationAnchorForAuthorizationController:(ASAuthorizationController *)controller
+{
+	return [UIApplication sharedApplication].keyWindow;
+}
+
+- (void)authorizationController:(ASAuthorizationController *)controller
+   didCompleteWithAuthorization:(ASAuthorization *)authorization
+{
+	ASAuthorizationAppleIDCredential *credential = (ASAuthorizationAppleIDCredential *)authorization.credential;
+
+	// Identity token (JWT).
+	NSData *tokenData = credential.identityToken;
+	NSString *tokenStr = tokenData ? [[NSString alloc] initWithData:tokenData encoding:NSUTF8StringEncoding] : @"";
+
+	// User identifier (stable across sign-ins).
+	NSString *userIdStr = credential.user ? credential.user : @"";
+
+	// Full name (only provided on FIRST sign-in).
+	NSString *fullNameStr = @"";
+	if (credential.fullName)
+	{
+		NSPersonNameComponentsFormatter *fmt = [[NSPersonNameComponentsFormatter alloc] init];
+		fmt.style = NSPersonNameComponentsFormatterStyleDefault;
+		fullNameStr = [fmt stringFromPersonNameComponents:credential.fullName];
+		if (!fullNameStr) fullNameStr = @"";
+	}
+
+	// Email (only provided on FIRST sign-in).
+	NSString *emailStr = credential.email ? credential.email : @"";
+
+	// Convert to FStrings and dispatch to game thread.
+	FString Token(tokenStr);
+	FString UserId(userIdStr);
+	FString FullName(fullNameStr);
+	FString Email(emailStr);
+
+	AsyncTask(ENamedThreads::GameThread, [Token, UserId, FullName, Email]()
+	{
+		if (GAppleAuthManagerRef.IsValid())
+		{
+			GAppleAuthManagerRef->OnAppleSignInComplete(Token, UserId, FullName, Email);
+		}
+	});
+}
+
+- (void)authorizationController:(ASAuthorizationController *)controller
+           didCompleteWithError:(NSError *)error
+{
+	FString ErrorMessage = FString(error.localizedDescription);
+
+	AsyncTask(ENamedThreads::GameThread, [ErrorMessage]()
+	{
+		if (GAppleAuthManagerRef.IsValid())
+		{
+			GAppleAuthManagerRef->OnAppleSignInFailed(ErrorMessage);
+		}
+	});
+}
+
+@end
+
+// Keep the delegate alive for the duration of the auth flow.
+static PHCAppleSignInDelegate* GAppleDelegate = nil;
+
+#endif // PLATFORM_IOS
+
+void UPHCAuthManager::AppleSignIn()
+{
+	if (!GameInstance)
+	{
+		BroadcastResult(false, TEXT("GameInstance not set."));
+		return;
+	}
+
+	if (bRequestInFlight)
+	{
+		return;
+	}
+
+#if PLATFORM_IOS
+	bRequestInFlight = true;
+
+	GAppleAuthManagerRef = this;
+
+	dispatch_async(dispatch_get_main_queue(), ^{
+		ASAuthorizationAppleIDProvider *provider = [[ASAuthorizationAppleIDProvider alloc] init];
+		ASAuthorizationAppleIDRequest *request = [provider createRequest];
+		request.requestedScopes = @[ASAuthorizationScopeFullName, ASAuthorizationScopeEmail];
+
+		GAppleDelegate = [[PHCAppleSignInDelegate alloc] init];
+
+		ASAuthorizationController *authController = [[ASAuthorizationController alloc]
+			initWithAuthorizationRequests:@[request]];
+		authController.delegate = GAppleDelegate;
+		authController.presentationContextProvider = GAppleDelegate;
+		[authController performRequests];
+	});
+#else
+	// Non-iOS: fall back to guest login for desktop testing.
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCAuthManager::AppleSignIn -- Not on iOS, falling back to GuestLogin."));
+	GuestLogin();
+#endif
+}
+
+void UPHCAuthManager::OnAppleSignInFailed(const FString& ErrorMessage)
+{
+	bRequestInFlight = false;
+	BroadcastResult(false, ErrorMessage);
+}
+
+void UPHCAuthManager::OnAppleSignInComplete(const FString& IdentityToken, const FString& UserIdentifier,
+	const FString& FullName, const FString& Email)
+{
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCAuthManager::OnAppleSignInComplete -- UserId: %s, Name: %s, Email: %s"),
+		*UserIdentifier, *FullName, *Email);
+
+	// Store the user identifier so we can persist it after backend success.
+	PendingAppleUserId = UserIdentifier;
+
+	// POST to the backend.
+	TSharedPtr<FJsonObject> JsonBody = MakeShared<FJsonObject>();
+	JsonBody->SetStringField(TEXT("apple_user_id"), UserIdentifier);
+	JsonBody->SetStringField(TEXT("identity_token"), IdentityToken);
+	if (!FullName.IsEmpty())
+	{
+		JsonBody->SetStringField(TEXT("full_name"), FullName);
+	}
+	if (!Email.IsEmpty())
+	{
+		JsonBody->SetStringField(TEXT("email"), Email);
+	}
+
+	FString BodyString;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&BodyString);
+	FJsonSerializer::Serialize(JsonBody.ToSharedRef(), Writer);
+
+	const FString Url = GameInstance->ServerBaseUrl / TEXT("api/players/apple-login/");
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetURL(Url);
+	Request->SetVerb(TEXT("POST"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetContentAsString(BodyString);
+	Request->OnProcessRequestComplete().BindUObject(this, &UPHCAuthManager::HandleAppleAuthResponse);
+	Request->ProcessRequest();
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCAuthManager::OnAppleSignInComplete -- POST %s"), *Url);
+}
+
+bool UPHCAuthManager::AutoLoginWithApple()
+{
+	if (!GameInstance)
+	{
+		return false;
+	}
+
+	const FString StoredUserId = LoadAppleUserId();
+	if (StoredUserId.IsEmpty())
+	{
+		return false;
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCAuthManager::AutoLoginWithApple -- Found stored Apple user ID, attempting auto-login."));
+
+	bRequestInFlight = true;
+	PendingAppleUserId = StoredUserId;
+
+	TSharedPtr<FJsonObject> JsonBody = MakeShared<FJsonObject>();
+	JsonBody->SetStringField(TEXT("apple_user_id"), StoredUserId);
+
+	FString BodyString;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&BodyString);
+	FJsonSerializer::Serialize(JsonBody.ToSharedRef(), Writer);
+
+	const FString Url = GameInstance->ServerBaseUrl / TEXT("api/players/apple-login/");
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetURL(Url);
+	Request->SetVerb(TEXT("POST"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetContentAsString(BodyString);
+	Request->OnProcessRequestComplete().BindUObject(this, &UPHCAuthManager::HandleAppleAuthResponse);
+	Request->ProcessRequest();
+
+	return true;
+}
+
+void UPHCAuthManager::HandleAppleAuthResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bConnectedSuccessfully)
+{
+	bRequestInFlight = false;
+
+	if (!bConnectedSuccessfully || !Response.IsValid())
+	{
+		BroadcastResult(false, TEXT("Could not reach the server. Please check your connection."));
+		return;
+	}
+
+	const int32 Code = Response->GetResponseCode();
+	const FString Body = Response->GetContentAsString();
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCAuthManager::HandleAppleAuthResponse -- HTTP %d, Body: %.200s"), Code, *Body);
+
+	TSharedPtr<FJsonObject> JsonObject;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Body);
+	const bool bParsed = FJsonSerializer::Deserialize(Reader, JsonObject);
+
+	if (!bParsed || !JsonObject.IsValid())
+	{
+		BroadcastResult(false, FString::Printf(TEXT("Server returned invalid response (HTTP %d)."), Code));
+		return;
+	}
+
+	bool bSuccess = false;
+	if (JsonObject->TryGetBoolField(TEXT("success"), bSuccess) && bSuccess)
+	{
+		if (ParseAndApplyPlayer(JsonObject))
+		{
+			// Persist the Apple user ID for future auto-login.
+			if (!PendingAppleUserId.IsEmpty())
+			{
+				SaveAppleUserId(PendingAppleUserId);
+			}
+			BroadcastResult(true, FString());
+			return;
+		}
+		BroadcastResult(false, TEXT("Server response missing player data."));
+		return;
+	}
+
+	// Error path.
+	FString ErrorMessage = FString::Printf(TEXT("Request failed (HTTP %d)."), Code);
+	FString ServerMsg;
+	if (JsonObject->TryGetStringField(TEXT("error"), ServerMsg))
+	{
+		ErrorMessage = ServerMsg;
+	}
+	else if (JsonObject->TryGetStringField(TEXT("message"), ServerMsg))
+	{
+		ErrorMessage = ServerMsg;
+	}
+
+	BroadcastResult(false, ErrorMessage);
+}
+
+// ===========================================================================
+// Apple user ID persistence
+// ===========================================================================
+
+void UPHCAuthManager::SaveAppleUserId(const FString& UserId)
+{
+	const FString FilePath = FPaths::ProjectSavedDir() / TEXT("Auth") / TEXT("apple_user_id.dat");
+	const FString Directory = FPaths::GetPath(FilePath);
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	if (!PlatformFile.DirectoryExists(*Directory))
+	{
+		PlatformFile.CreateDirectoryTree(*Directory);
+	}
+	FFileHelper::SaveStringToFile(UserId, *FilePath);
+}
+
+FString UPHCAuthManager::LoadAppleUserId() const
+{
+	FString Content;
+	const FString FilePath = FPaths::ProjectSavedDir() / TEXT("Auth") / TEXT("apple_user_id.dat");
+	if (FFileHelper::LoadFileToString(Content, *FilePath))
+	{
+		Content.TrimStartAndEndInline();
+		return Content;
+	}
+	return FString();
+}
+
+// ===========================================================================
 // Authentication flows
 // ===========================================================================
 

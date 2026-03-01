@@ -26,6 +26,15 @@
 #include "Vehicle/PHCMissileProjectile.h"
 #include "Player/PHCCityCharacter.h"
 #include "EngineUtils.h"
+#include "Engine/Texture2D.h"
+#include "TextureResource.h"
+#include "ProceduralMeshComponent.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "Vehicle/PHCBlackbirdPawn.h"
+#include "Core/PHCPlayerController.h"
+#include "Core/PHCGameInstance.h"
+#include "Economy/PHCEconomyManager.h"
+#include "UI/PHCCityHUD.h"
 
 // ---------------------------------------------------------------------------
 // Centralized city-grid constants (used across multiple Spawn* functions).
@@ -41,7 +50,8 @@ static constexpr float FirstRoad = -(NumRoads - 1) * RoadSpacing * 0.5f; // ~-33
 
 static void ApplyPBR(UStaticMeshComponent* MC, const FLinearColor& Color,
 	float Metallic = 0.f, float Roughness = 0.5f,
-	const FLinearColor& Emissive = FLinearColor::Black)
+	const FLinearColor& Emissive = FLinearColor::Black,
+	UTexture2D* NormalMap = nullptr, UTexture2D* RoughnessMap = nullptr)
 {
 	if (!MC) return;
 	UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
@@ -53,6 +63,10 @@ static void ApplyPBR(UStaticMeshComponent* MC, const FLinearColor& Color,
 		Mat->SetScalarParameterValue(TEXT("Roughness"), Roughness);
 	if (Emissive != FLinearColor::Black)
 		Mat->SetVectorParameterValue(TEXT("EmissiveColor"), Emissive);
+	if (NormalMap)
+		Mat->SetTextureParameterValue(TEXT("NormalMap"), NormalMap);
+	if (RoughnessMap)
+		Mat->SetTextureParameterValue(TEXT("RoughnessMap"), RoughnessMap);
 	MC->SetMaterial(0, Mat);
 }
 
@@ -97,6 +111,14 @@ void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 
 	CityRandom.Initialize(42);
 	DetailRandom.Initialize(137);
+
+	// Enhanced shadow console variables
+	static IConsoleVariable* ShadowMaxRes = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shadow.MaxResolution"));
+	if (ShadowMaxRes) ShadowMaxRes->Set(1024);
+	static IConsoleVariable* ShadowCSMCascades = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shadow.CSM.MaxCascades"));
+	if (ShadowCSMCascades) ShadowCSMCascades->Set(3);
+	static IConsoleVariable* ContactShadows = IConsoleManager::Get().FindConsoleVariable(TEXT("r.ContactShadows"));
+	if (ContactShadows) ContactShadows->Set(1);
 
 	CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
 	PlaneMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane"));
@@ -231,6 +253,9 @@ void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		GEngine->bEnableOnScreenDebugMessages = false;
 	}
 
+	// Generate procedural normal & roughness textures before city spawn
+	GenerateProceduralTextures();
+
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCityGameMode::BeginPlay -- Spawning city."));
 	SpawnCityEnvironment();
 }
@@ -356,8 +381,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		FogComp->SetDirectionalInscatteringExponent(8.f);
 		FogComp->SetDirectionalInscatteringStartDistance(5000.f);
 		const FLinearColor NeutralFog(0.6f, 0.6f, 0.7f);
-		const FLinearColor WarmHaze(1.0f, 0.7f, 0.3f);
-		const FLinearColor NightFog(0.02f, 0.005f, 0.03f);
+		const FLinearColor WarmHaze(1.2f, 0.8f, 0.35f);   // richer golden haze
+		const FLinearColor NightFog(0.015f, 0.005f, 0.04f); // deep purple-black
 		FLinearColor InscatterColor = FMath::Lerp(NeutralFog, WarmHaze, DawnDusk);
 		InscatterColor = FMath::Lerp(InscatterColor, NightFog, NightFactor);
 		FogComp->SetFogInscatteringColor(InscatterColor);
@@ -398,9 +423,9 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		}
 		else
 		{
-			// Night: realistic dark desaturated blue
-			TargetGain = FVector4(0.38f, 0.42f, 0.50f, 1.0f);
-			TargetOffset = FVector4(-0.015f, -0.01f, 0.005f, 0.0f);
+			// Night: darker desaturated blue
+			TargetGain = FVector4(0.28f, 0.31f, 0.38f, 1.0f);
+			TargetOffset = FVector4(-0.02f, -0.015f, 0.003f, 0.0f);
 		}
 		// Smooth interpolation to target
 		PP.ColorGain = FMath::Lerp(PP.ColorGain, TargetGain, FMath::Min(1.f, DeltaTime * 2.f));
@@ -428,7 +453,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 					PC->GetPawn()->GetClass()->GetName().Contains(TEXT("Vehicle")));
 			}
 		}
-		const float TargetFstop = bDriving ? 4.0f : 22.0f;
+		const float TargetFstop = 22.0f; // keep sharp always (DOF disabled for mobile perf)
 		PP.DepthOfFieldFstop = FMath::FInterpTo(PP.DepthOfFieldFstop, TargetFstop, DeltaTime, 3.f);
 	}
 
@@ -495,21 +520,37 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		OceanActor->SetActorLocation(OceanLoc);
 	}
 
+	// ---- Grass streaming (update instances around player) ----
+	{
+		UWorld* GrassWorld = GetWorld();
+		if (GrassWorld && GrassHISMs.Num() > 0)
+		{
+			APawn* LocalPawn = GrassWorld->GetFirstPlayerController() ?
+				GrassWorld->GetFirstPlayerController()->GetPawn() : nullptr;
+			if (LocalPawn)
+			{
+				UpdateGrassInstances(LocalPawn->GetActorLocation());
+			}
+		}
+	}
+
 	// ---- Wet roads at night (dew/humidity effect) ----
 	if (RoadMaterials.Num() > 0)
 	{
 		const float NightFactor = FMath::Max(0.f, -SunSine);
-		const float TargetWetness = NightFactor * 0.4f; // up to 40% wetness at midnight
+		const float TargetWetness = NightFactor * 0.5f; // up to 50% wetness at midnight
 		if (FMath::Abs(TargetWetness - GlobalWetness) > 0.02f)
 		{
 			GlobalWetness = FMath::FInterpTo(GlobalWetness, TargetWetness, DeltaTime, 0.5f);
-			const float WetRoughness = FMath::Lerp(0.85f, 0.15f, GlobalWetness);
-			const float DarkenFactor = FMath::Lerp(1.0f, 0.6f, GlobalWetness);
+			const float WetRoughness = FMath::Lerp(0.85f, 0.08f, GlobalWetness);
+			const float DarkenFactor = FMath::Lerp(1.0f, 0.5f, GlobalWetness);
+			const float WetMetallic = GlobalWetness * 0.15f; // specular reflections
 			for (auto& RoadMat : RoadMaterials)
 			{
 				if (RoadMat)
 				{
 					RoadMat->SetScalarParameterValue(TEXT("Roughness"), WetRoughness);
+					RoadMat->SetScalarParameterValue(TEXT("Metallic"), WetMetallic);
 					RoadMat->SetVectorParameterValue(TEXT("BaseColor"),
 						FLinearColor(0.015f * DarkenFactor, 0.015f * DarkenFactor, 0.018f * DarkenFactor));
 				}
@@ -593,22 +634,45 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		if (bShouldShowCrabs != bCrabsNightVisible)
 		{
 			bCrabsNightVisible = bShouldShowCrabs;
-			for (int32 CI = 0; CI < NumGiantCrabs; ++CI)
+			if (bShouldShowCrabs)
 			{
-				if (Crabs[CI].Actor)
+				// Night starting — fresh wave
+				CrabsAlive = NumGiantCrabs;
+				WaveRestTimer = -1.f;
+				for (int32 CI = 0; CI < NumGiantCrabs; ++CI)
 				{
-					if (bShouldShowCrabs)
+					if (Crabs[CI].Actor) RespawnCrab(CI);
+				}
+			}
+			else
+			{
+				// Day starting — kill all, hide them
+				for (int32 CI = 0; CI < NumGiantCrabs; ++CI)
+				{
+					if (Crabs[CI].Actor)
 					{
-						// Night starting — respawn all at original positions
-						RespawnCrab(CI);
-					}
-					else
-					{
-						// Day starting — kill all, hide them
 						Crabs[CI].Actor->SetActorHiddenInGame(true);
 						Crabs[CI].bVisible = false;
 						Crabs[CI].Health = 0.f;
 					}
+				}
+				CrabsAlive = 0;
+				WaveRestTimer = -1.f;
+			}
+		}
+
+		// Wave rest timer — after all NPCs killed, rest then respawn a new wave
+		if (WaveRestTimer >= 0.f && bCrabsNightVisible)
+		{
+			WaveRestTimer -= DeltaTime;
+			if (WaveRestTimer <= 0.f)
+			{
+				// Rest period over — respawn all NPCs for the next wave
+				WaveRestTimer = -1.f;
+				CrabsAlive = NumGiantCrabs;
+				for (int32 CI = 0; CI < NumGiantCrabs; ++CI)
+				{
+					RespawnCrab(CI);
 				}
 			}
 		}
@@ -623,7 +687,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 
 		if (bCrabsNightVisible)
 		{
-		const float CrabSpeed = 2380.f;
+		const float CrabSpeed = 2094.f;
 		const float GaitFreq = 4.0f;
 		const float MinPlayerDist = 1200.f; // get very close before orbiting
 		const float PaceRadius = 800.f;     // tight orbit around the player
@@ -676,30 +740,19 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 					FMath::RInterpTo(CurRot, DesiredRot, DeltaTime, 4.0f));
 			}
 
-			// --- Damage flash (briefly turn all meshes dark red) ---
-			if (CD.DamageFlashTimer > 0.f)
+			// --- Damage flash (briefly flash the glow light bright white) ---
+			if (CD.DamageFlashTimer > 0.f && CD.GlowLight)
 			{
 				CD.DamageFlashTimer -= DeltaTime;
-				const bool bFlashOn = (CD.DamageFlashTimer > 0.f);
-				const FLinearColor FlashEmissive = bFlashOn
-					? FLinearColor(4.f, 0.2f, 0.1f) : FLinearColor(0.f, 0.f, 0.f);
-
-				TArray<UStaticMeshComponent*> MeshComps;
-				CD.Actor->GetComponents<UStaticMeshComponent>(MeshComps);
-				for (UStaticMeshComponent* MC : MeshComps)
+				if (CD.DamageFlashTimer > 0.f)
 				{
-					if (UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(MC->GetMaterial(0)))
-					{
-						if (bFlashOn)
-						{
-							MID->SetVectorParameterValue(TEXT("EmissiveColor"), FlashEmissive);
-						}
-						else
-						{
-							// Reset to original (no emissive)
-							MID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.f, 0.f, 0.f));
-						}
-					}
+					CD.GlowLight->SetIntensity(25000.f);
+					CD.GlowLight->SetLightColor(FLinearColor(1.0f, 0.4f, 0.3f));
+				}
+				else
+				{
+					CD.GlowLight->SetIntensity(CD.GlowBaseIntensity);
+					CD.GlowLight->SetLightColor(FColor(255, 160, 30));
 				}
 			}
 
@@ -759,13 +812,22 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 
 					if (Crabs[CI].Health <= 0.f)
 					{
-						// NPC killed — explode and respawn at origin
+						// NPC killed — explode and stay dead until next wave
 						Proj->SpawnExplosion(CLoc);
 						if (PlayerChar)
 						{
 							PlayerChar->CrabKills++;
 						}
-						RespawnCrab(CI);
+						Crabs[CI].Actor->SetActorHiddenInGame(true);
+						Crabs[CI].bVisible = false;
+						CrabsAlive--;
+
+						// All NPCs eliminated — start rest period
+						if (CrabsAlive <= 0)
+						{
+							WaveRestTimer = WaveRestDuration;
+							CrabsAlive = 0;
+						}
 					}
 
 					Proj->Destroy();
@@ -1095,12 +1157,787 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			}
 		}
 	}
+
+	// ---- Gold Coin Spin / Pickup / Respawn ----
+	{
+		// Get pawn location (works for both character and vehicle)
+		FVector PawnLoc = FVector::ZeroVector;
+		bool bHasPawn = false;
+		if (World)
+		{
+			if (APlayerController* PC = World->GetFirstPlayerController())
+			{
+				if (APawn* Pawn = PC->GetPawn())
+				{
+					PawnLoc = Pawn->GetActorLocation();
+					bHasPawn = true;
+				}
+			}
+		}
+
+		for (int32 CI = 0; CI < NumGoldCoins; ++CI)
+		{
+			FGoldCoinData& GC = GoldCoins[CI];
+			if (!GC.Actor) continue;
+
+			// --- Spin animation (always, even during pickup anim) ---
+			GC.SpinAngle += DeltaTime * 90.f;
+			if (GC.SpinAngle >= 360.f) GC.SpinAngle -= 360.f;
+
+			// --- Pickup animation in progress ---
+			if (GC.PickupAnimTimer >= 0.f)
+			{
+				GC.PickupAnimTimer += DeltaTime;
+				const float AnimDuration = 0.4f;
+				const float Alpha = FMath::Clamp(GC.PickupAnimTimer / AnimDuration, 0.f, 1.f);
+				const float Scale = FMath::Lerp(1.f, 0.f, Alpha);
+
+				GC.Actor->SetActorScale3D(FVector(7.f * Scale, 7.f * Scale, 0.7f * Scale));
+				GC.Actor->SetActorLocation(FVector(GC.CurrentPos.X, GC.CurrentPos.Y,
+					GC.CurrentPos.Z + Alpha * 100.f));
+				GC.Actor->SetActorRotation(FRotator(90.f, GC.SpinAngle, 0.f));
+
+				if (GC.PickupAnimTimer >= AnimDuration)
+				{
+					GC.Actor->SetActorHiddenInGame(true);
+					GC.PickupAnimTimer = -1.f;
+					GC.RespawnTimer = 10.f;
+				}
+				continue;
+			}
+
+			// --- Respawn timer ---
+			if (GC.RespawnTimer >= 0.f)
+			{
+				GC.RespawnTimer -= DeltaTime;
+				if (GC.RespawnTimer <= 0.f)
+				{
+					// Respawn at mirrored position
+					const float MX = -GC.OriginalSpawnPos.X;
+					const float MY = -GC.OriginalSpawnPos.Y;
+					const bool bSkyCoin = GC.OriginalSpawnPos.Z > 5000.f;
+					const float MZ = bSkyCoin ? GC.OriginalSpawnPos.Z : GetTerrainHeight(MX, MY) + 600.f;
+					GC.CurrentPos = FVector(MX, MY, MZ);
+					GC.OriginalSpawnPos = GC.CurrentPos; // update for next mirror
+					GC.Actor->SetActorLocation(GC.CurrentPos);
+					GC.Actor->SetActorScale3D(FVector(7.f, 7.f, 0.7f));
+					GC.Actor->SetActorHiddenInGame(false);
+					GC.RespawnTimer = -1.f;
+				}
+				continue;
+			}
+
+			// --- Active coin: rotate and check pickup ---
+			GC.Actor->SetActorRotation(FRotator(90.f, GC.SpinAngle, 0.f));
+
+			if (bHasPawn && FVector::Dist2D(PawnLoc, GC.CurrentPos) < 800.f)
+			{
+				// Start pickup animation
+				GC.PickupAnimTimer = 0.f;
+
+				// Award coins
+				if (World)
+				{
+					if (UPHCGameInstance* GI = Cast<UPHCGameInstance>(World->GetGameInstance()))
+					{
+						if (UPHCEconomyManager* Econ = GI->GetEconomyManager())
+						{
+							Econ->EarnCoins(5, TEXT("GoldCoinPickup"));
+						}
+
+						// Update HUD
+						if (APlayerController* PC = World->GetFirstPlayerController())
+						{
+							APHCPlayerController* PHC_PC = Cast<APHCPlayerController>(PC);
+							if (PHC_PC && PHC_PC->GetActiveWidget())
+							{
+								if (UPHCCityHUD* CityHUD = Cast<UPHCCityHUD>(PHC_PC->GetActiveWidget()))
+								{
+									if (UPHCEconomyManager* Econ2 = GI->GetEconomyManager())
+									{
+										CityHUD->UpdateCurrencyDisplay(Econ2->GetCoins(), Econ2->GetGems());
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Procedural Normal & Roughness Textures
+// ---------------------------------------------------------------------------
+
+UTexture2D* UPHCCitySubsystem::CreateProceduralTexture(int32 W, int32 H,
+	const TFunction<FColor(int32,int32)>& PixelFunc, bool bNormalMap)
+{
+	UTexture2D* Tex = UTexture2D::CreateTransient(W, H, PF_B8G8R8A8);
+	if (!Tex) return nullptr;
+
+	Tex->SRGB = !bNormalMap;
+	if (bNormalMap)
+	{
+		Tex->CompressionSettings = TC_Normalmap;
+	}
+	Tex->Filter = TF_Bilinear;
+	Tex->AddressX = TA_Wrap;
+	Tex->AddressY = TA_Wrap;
+
+	FTexture2DMipMap& Mip = Tex->GetPlatformData()->Mips[0];
+	void* Data = Mip.BulkData.Lock(LOCK_READ_WRITE);
+	FColor* Pixels = static_cast<FColor*>(Data);
+
+	for (int32 Y = 0; Y < H; ++Y)
+	{
+		for (int32 X = 0; X < W; ++X)
+		{
+			Pixels[Y * W + X] = PixelFunc(X, Y);
+		}
+	}
+
+	Mip.BulkData.Unlock();
+	Tex->UpdateResource();
+	return Tex;
+}
+
+void UPHCCitySubsystem::GenerateProceduralTextures()
+{
+	// Simple hash for deterministic noise (fast, no external deps)
+	auto Hash = [](int32 X, int32 Y, int32 Seed) -> float
+	{
+		int32 N = X * 374761393 + Y * 668265263 + Seed * 1274126177;
+		N = (N ^ (N >> 13)) * 1274126177;
+		N = N ^ (N >> 16);
+		return (float)(N & 0x7FFFFFFF) / (float)0x7FFFFFFF; // 0..1
+	};
+
+	// Pack a tangent-space normal (Nx,Ny,Nz) into a color
+	auto PackNormal = [](float Nx, float Ny, float Nz) -> FColor
+	{
+		return FColor(
+			FMath::Clamp((int32)((Nx * 0.5f + 0.5f) * 255.f), 0, 255),
+			FMath::Clamp((int32)((Ny * 0.5f + 0.5f) * 255.f), 0, 255),
+			FMath::Clamp((int32)((Nz * 0.5f + 0.5f) * 255.f), 0, 255),
+			255
+		);
+	};
+
+	constexpr int32 TexSize = 256;
+
+	// ---- Grass Normal Map ----
+	GrassNormalMap = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+	{
+		// Per-4x4 cluster blade tilt
+		int32 CX = X / 4, CY = Y / 4;
+		float Tilt = Hash(CX, CY, 1) * 0.4f - 0.2f;
+		float TiltY = Hash(CX, CY, 2) * 0.4f - 0.2f;
+		// Fine noise per pixel
+		float Fn = Hash(X, Y, 3) * 0.1f - 0.05f;
+		float Nx = Tilt + Fn;
+		float Ny = TiltY + Fn;
+		float Nz = FMath::Sqrt(FMath::Max(0.f, 1.f - Nx*Nx - Ny*Ny));
+		return PackNormal(Nx, Ny, Nz);
+	}, true);
+
+	// ---- Brick Normal Map ----
+	BrickNormalMap = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+	{
+		// 64x32 brick pattern with 3px mortar grooves
+		int32 Row = Y / 32;
+		int32 OffsetX = (Row & 1) ? 32 : 0; // stagger
+		int32 BX = (X + OffsetX) % 64;
+		int32 BY = Y % 32;
+		bool bMortar = (BX < 3 || BY < 3);
+		if (bMortar)
+		{
+			// Recessed mortar
+			return PackNormal(0.f, 0.f, 1.f);
+		}
+		// Brick face — subtle raised bumps
+		float Bump = Hash(X, Y, 10) * 0.08f - 0.04f;
+		float Nx = Bump + ((BX == 3) ? 0.3f : (BX == 63) ? -0.3f : 0.f);
+		float Ny = Bump + ((BY == 3) ? 0.3f : (BY == 31) ? -0.3f : 0.f);
+		float Nz = FMath::Sqrt(FMath::Max(0.f, 1.f - Nx*Nx - Ny*Ny));
+		return PackNormal(Nx, Ny, Nz);
+	}, true);
+
+	// ---- Concrete Normal Map ----
+	ConcreteNormalMap = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+	{
+		// Subtle surface variation + occasional crack lines
+		float Base = Hash(X, Y, 20) * 0.06f - 0.03f;
+		// Large-scale undulation
+		float LX = FMath::Sin((float)X * 0.05f) * 0.02f;
+		float LY = FMath::Cos((float)Y * 0.05f) * 0.02f;
+		float Nx = Base + LX;
+		float Ny = Base + LY;
+		float Nz = FMath::Sqrt(FMath::Max(0.f, 1.f - Nx*Nx - Ny*Ny));
+		return PackNormal(Nx, Ny, Nz);
+	}, true);
+
+	// ---- Asphalt Normal Map ----
+	AsphaltNormalMap = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+	{
+		// Multi-frequency hash noise (coarse + fine aggregate)
+		float Coarse = Hash(X / 3, Y / 3, 30) * 0.15f - 0.075f;
+		float Fine = Hash(X, Y, 31) * 0.08f - 0.04f;
+		float Nx = Coarse + Fine;
+		float Ny = Hash(X / 3, Y / 3, 32) * 0.15f - 0.075f + Hash(X, Y, 33) * 0.08f - 0.04f;
+		float Nz = FMath::Sqrt(FMath::Max(0.f, 1.f - Nx*Nx - Ny*Ny));
+		return PackNormal(Nx, Ny, Nz);
+	}, true);
+
+	// ---- Sand Normal Map ----
+	SandNormalMap = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+	{
+		// Per-pixel grain bumps + wind ripple sine pattern (~40px wavelength)
+		float Grain = Hash(X, Y, 40) * 0.12f - 0.06f;
+		float Ripple = FMath::Sin((float)X * 0.157f) * 0.08f; // ~40px wavelength
+		float Nx = Grain + FMath::Cos((float)X * 0.157f) * 0.08f;
+		float Ny = Grain;
+		float Nz = FMath::Sqrt(FMath::Max(0.f, 1.f - Nx*Nx - Ny*Ny));
+		(void)Ripple; // used via derivative in Nx
+		return PackNormal(Nx, Ny, Nz);
+	}, true);
+
+	// ---- Grass Roughness Map ----
+	GrassRoughnessMap = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+	{
+		// 0.80 - 0.95
+		float R = 0.80f + Hash(X, Y, 50) * 0.15f;
+		uint8 V = FMath::Clamp((int32)(R * 255.f), 0, 255);
+		return FColor(V, V, V, 255);
+	}, false);
+
+	// ---- Brick Roughness Map ----
+	BrickRoughnessMap = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+	{
+		int32 Row = Y / 32;
+		int32 OffsetX = (Row & 1) ? 32 : 0;
+		int32 BX = (X + OffsetX) % 64;
+		int32 BY = Y % 32;
+		bool bMortar = (BX < 3 || BY < 3);
+		float R = bMortar ? (0.70f + Hash(X, Y, 60) * 0.10f) : (0.85f + Hash(X, Y, 61) * 0.10f);
+		uint8 V = FMath::Clamp((int32)(R * 255.f), 0, 255);
+		return FColor(V, V, V, 255);
+	}, false);
+
+	// ---- Concrete Roughness Map ----
+	ConcreteRoughnessMap = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+	{
+		float R = 0.70f + Hash(X, Y, 70) * 0.20f;
+		uint8 V = FMath::Clamp((int32)(R * 255.f), 0, 255);
+		return FColor(V, V, V, 255);
+	}, false);
+
+	// ---- Asphalt Roughness Map ----
+	AsphaltRoughnessMap = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+	{
+		float R = 0.75f + Hash(X / 2, Y / 2, 80) * 0.15f + Hash(X, Y, 81) * 0.08f;
+		R = FMath::Clamp(R, 0.f, 1.f);
+		uint8 V = FMath::Clamp((int32)(R * 255.f), 0, 255);
+		return FColor(V, V, V, 255);
+	}, false);
+
+	// ---- Sand Roughness Map ----
+	SandRoughnessMap = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+	{
+		float R = 0.82f + Hash(X, Y, 90) * 0.12f;
+		uint8 V = FMath::Clamp((int32)(R * 255.f), 0, 255);
+		return FColor(V, V, V, 255);
+	}, false);
+
+	// ---- Flat Normal Map (default, points straight up) ----
+	FlatNormalMap = CreateProceduralTexture(4, 4, [&](int32 X, int32 Y) -> FColor
+	{
+		return FColor(128, 128, 255, 255); // (0,0,1) in tangent space
+	}, true);
+
+	// ---- White Roughness Map (default, full roughness scalar passthrough) ----
+	WhiteRoughnessMap = CreateProceduralTexture(4, 4, [&](int32 X, int32 Y) -> FColor
+	{
+		return FColor(255, 255, 255, 255);
+	}, false);
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Generated %d procedural textures"), 12);
+}
+
+// ---------------------------------------------------------------------------
+// Perlin Noise 2D — classic gradient noise for terrain generation
+// ---------------------------------------------------------------------------
+
+// Static gradient table for Perlin noise
+static const FVector2D PerlinGradients[] = {
+	{1,0},{-1,0},{0,1},{0,-1},{1,1},{-1,1},{1,-1},{-1,-1},
+	{0.7071f,0.7071f},{-0.7071f,0.7071f},{0.7071f,-0.7071f},{-0.7071f,-0.7071f},
+	{1,0},{0,1},{-1,0},{0,-1}
+};
+static const int32 PerlinPerm[] = {
+	151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,
+	142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,
+	203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,
+	74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,
+	105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,
+	187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,
+	64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,
+	47,16,58,17,182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,
+	153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,
+	112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,
+	145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,
+	50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,
+	66,215,61,156,180
+};
+
+float UPHCCitySubsystem::PerlinNoise2D(float X, float Y)
+{
+	auto Fade = [](float T) { return T * T * T * (T * (T * 6.f - 15.f) + 10.f); };
+	auto Perm = [](int32 I) { return PerlinPerm[I & 255]; };
+
+	int32 Xi = FMath::FloorToInt(X) & 255;
+	int32 Yi = FMath::FloorToInt(Y) & 255;
+	float Xf = X - FMath::FloorToFloat(X);
+	float Yf = Y - FMath::FloorToFloat(Y);
+
+	float U = Fade(Xf);
+	float V = Fade(Yf);
+
+	int32 AA = Perm(Perm(Xi) + Yi) & 15;
+	int32 AB = Perm(Perm(Xi) + Yi + 1) & 15;
+	int32 BA = Perm(Perm(Xi + 1) + Yi) & 15;
+	int32 BB = Perm(Perm(Xi + 1) + Yi + 1) & 15;
+
+	float D00 = FVector2D::DotProduct(PerlinGradients[AA], FVector2D(Xf, Yf));
+	float D10 = FVector2D::DotProduct(PerlinGradients[BA], FVector2D(Xf - 1.f, Yf));
+	float D01 = FVector2D::DotProduct(PerlinGradients[AB], FVector2D(Xf, Yf - 1.f));
+	float D11 = FVector2D::DotProduct(PerlinGradients[BB], FVector2D(Xf - 1.f, Yf - 1.f));
+
+	float X1 = FMath::Lerp(D00, D10, U);
+	float X2 = FMath::Lerp(D01, D11, U);
+	return FMath::Lerp(X1, X2, V);
+}
+
+float UPHCCitySubsystem::GetTerrainHeight(float X, float Y) const
+{
+	// City bounds: flat at Z=0
+	const float CityEdge = 36000.f;
+	const float TransitionWidth = 8000.f;
+
+	float AbsX = FMath::Abs(X);
+	float AbsY = FMath::Abs(Y);
+	float MaxDist = FMath::Max(AbsX, AbsY);
+
+	if (MaxDist < CityEdge)
+		return 0.f;
+
+	// Smooth transition factor: 0 at CityEdge, 1 at CityEdge+TransitionWidth
+	float Alpha = FMath::Clamp((MaxDist - CityEdge) / TransitionWidth, 0.f, 1.f);
+	Alpha = Alpha * Alpha * (3.f - 2.f * Alpha); // smoothstep
+
+	// Multi-octave Perlin noise
+	float N = 0.f;
+	N += PerlinNoise2D(X * 0.00004f, Y * 0.00004f) * 1500.f;  // large hills
+	N += PerlinNoise2D(X * 0.00015f, Y * 0.00015f) * 400.f;    // medium bumps
+	N += PerlinNoise2D(X * 0.0006f, Y * 0.0006f) * 80.f;       // small detail
+
+	float Result = N * Alpha;
+
+	// Motocross park area: replace surrounding terrain with natural
+	// rolling hills tuned for dirt bike riding (modest, realistic jumps).
+	const float ParkCX = -120000.f;
+	const float ParkCY = 20000.f;
+	const float ParkHalfX = 55000.f;
+	const float ParkHalfY = 55000.f;
+	const float ParkTransition = 8000.f;
+	float ParkDistX = FMath::Max(0.f, FMath::Abs(X - ParkCX) - ParkHalfX);
+	float ParkDistY = FMath::Max(0.f, FMath::Abs(Y - ParkCY) - ParkHalfY);
+	float ParkDist = FMath::Sqrt(ParkDistX * ParkDistX + ParkDistY * ParkDistY);
+	if (ParkDist < ParkTransition)
+	{
+		// Park-specific terrain: offset coords so noise is uncorrelated with surroundings
+		const float PX = X + 500000.f;
+		const float PY = Y + 500000.f;
+		float ParkH = 0.f;
+		ParkH += PerlinNoise2D(PX * 0.00008f, PY * 0.00008f) * 400.f;  // gentle rolling hills
+		ParkH += PerlinNoise2D(PX * 0.0003f,  PY * 0.0003f)  * 150.f;  // medium undulation
+		ParkH += PerlinNoise2D(PX * 0.001f,   PY * 0.001f)   * 40.f;   // surface texture
+		ParkH = FMath::Max(ParkH, 0.f); // floor at Z=0, no valleys below ground
+
+		float ParkAlpha = ParkDist / ParkTransition;
+		ParkAlpha = ParkAlpha * ParkAlpha * (3.f - 2.f * ParkAlpha); // smoothstep
+		// Blend: inside park = ParkH, outside = Result (surrounding terrain)
+		Result = FMath::Lerp(ParkH, Result, ParkAlpha);
+	}
+
+	return Result;
+}
+
+// ---------------------------------------------------------------------------
+// Procedural Terrain Grid (replaces flat ground plane)
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::SpawnTerrainGrid()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	TerrainActor = World->SpawnActor<AActor>(AActor::StaticClass(),
+		FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TerrainActor) return;
+#if WITH_EDITOR
+	TerrainActor->SetActorLabel(TEXT("ProceduralTerrain"));
+#endif
+
+	const float ChunkSize = 10000.f;
+	const float HalfWorld = 150000.f; // how far out to generate terrain
+	int32 ChunkIdx = 0;
+
+	for (float CX = -HalfWorld; CX < HalfWorld; CX += ChunkSize)
+	{
+		for (float CY = -HalfWorld; CY < HalfWorld; CY += ChunkSize)
+		{
+			const float CenterDist = FMath::Sqrt(CX * CX + CY * CY);
+
+			// LOD based on distance from center
+			int32 GridRes;
+			if (CenterDist < 50000.f)
+				GridRes = 16;
+			else if (CenterDist < 100000.f)
+				GridRes = 8;
+			else
+				GridRes = 4;
+
+			// Boost resolution for motocross park chunks so terrain features
+			// are smooth enough for natural dirt bike riding
+			const bool bInPark = (CX > -180000.f && CX + ChunkSize < -60000.f &&
+				CY > -40000.f && CY + ChunkSize < 80000.f);
+			if (bInPark) GridRes = FMath::Max(GridRes, 20);
+
+			const float Step = ChunkSize / (float)GridRes;
+
+			TArray<FVector> Vertices;
+			TArray<int32> Triangles;
+			TArray<FVector2D> UVs;
+			TArray<FVector> Normals;
+			TArray<FColor> Colors;
+
+			Vertices.Reserve((GridRes + 1) * (GridRes + 1));
+			UVs.Reserve((GridRes + 1) * (GridRes + 1));
+			Normals.Reserve((GridRes + 1) * (GridRes + 1));
+
+			for (int32 Y = 0; Y <= GridRes; ++Y)
+			{
+				for (int32 X = 0; X <= GridRes; ++X)
+				{
+					float WX = CX + X * Step;
+					float WY = CY + Y * Step;
+					float WZ = GetTerrainHeight(WX, WY);
+					Vertices.Add(FVector(WX, WY, WZ));
+					UVs.Add(FVector2D(WX / 1000.f, WY / 1000.f)); // tile every 1000 UU
+					Normals.Add(FVector(0.f, 0.f, 1.f)); // approximate; could compute from neighbors
+				}
+			}
+
+			// Compute better normals from height differences
+			for (int32 Y = 0; Y <= GridRes; ++Y)
+			{
+				for (int32 X = 0; X <= GridRes; ++X)
+				{
+					float WX = CX + X * Step;
+					float WY = CY + Y * Step;
+					float Hc = GetTerrainHeight(WX, WY);
+					float Hx = GetTerrainHeight(WX + Step, WY);
+					float Hy = GetTerrainHeight(WX, WY + Step);
+					FVector Dx(Step, 0.f, Hx - Hc);
+					FVector Dy(0.f, Step, Hy - Hc);
+					FVector N = FVector::CrossProduct(Dx, Dy).GetSafeNormal();
+					if (N.Z < 0.f) N = -N;
+					Normals[Y * (GridRes + 1) + X] = N;
+				}
+			}
+
+			Triangles.Reserve(GridRes * GridRes * 6);
+			for (int32 Y = 0; Y < GridRes; ++Y)
+			{
+				for (int32 X = 0; X < GridRes; ++X)
+				{
+					int32 I0 = Y * (GridRes + 1) + X;
+					int32 I1 = I0 + 1;
+					int32 I2 = I0 + (GridRes + 1);
+					int32 I3 = I2 + 1;
+					Triangles.Add(I0); Triangles.Add(I2); Triangles.Add(I1);
+					Triangles.Add(I1); Triangles.Add(I2); Triangles.Add(I3);
+				}
+			}
+
+			FString CompName = FString::Printf(TEXT("TerrainChunk_%d"), ChunkIdx++);
+			UProceduralMeshComponent* PMC = NewObject<UProceduralMeshComponent>(TerrainActor, *CompName);
+			// Enable collision on all chunks so character can walk on terrain everywhere
+			PMC->CreateMeshSection(0, Vertices, Triangles, Normals, UVs, Colors, TArray<FProcMeshTangent>(), true);
+			PMC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			PMC->SetCollisionObjectType(ECC_WorldStatic);
+			PMC->SetCollisionResponseToAllChannels(ECR_Block);
+			PMC->RegisterComponent();
+			TerrainActor->AddInstanceComponent(PMC);
+
+			// Apply grass material with normal maps
+			UMaterialInstanceDynamic* Mat = nullptr;
+			if (ColorMaterial)
+			{
+				Mat = UMaterialInstanceDynamic::Create(ColorMaterial, PMC);
+				if (Mat)
+				{
+					// Blend grass color slightly based on height
+					float AvgH = GetTerrainHeight(CX + ChunkSize * 0.5f, CY + ChunkSize * 0.5f);
+					float HFactor = FMath::Clamp(FMath::Abs(AvgH) / 1500.f, 0.f, 1.f);
+					FLinearColor TerrainColor = FMath::Lerp(
+						FLinearColor(0.12f, 0.18f, 0.08f),   // flat grass
+						FLinearColor(0.15f, 0.14f, 0.10f),   // hillside brown-green
+						HFactor
+					);
+					Mat->SetVectorParameterValue(TEXT("BaseColor"), TerrainColor);
+					Mat->SetScalarParameterValue(TEXT("Roughness"), 0.9f);
+					if (GrassNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), GrassNormalMap);
+					if (GrassRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), GrassRoughnessMap);
+					PMC->SetMaterial(0, Mat);
+				}
+			}
+		}
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Generated procedural terrain with %d chunks"), ChunkIdx);
+}
+
+// ---------------------------------------------------------------------------
+// Grass & Foliage Instancing (HISM)
+// ---------------------------------------------------------------------------
+
+bool UPHCCitySubsystem::IsOnRoadOrSidewalk(float X, float Y) const
+{
+	// Check against the 25x25 road grid
+	for (int32 Ri = 0; Ri < NumRoads; ++Ri)
+	{
+		const float RoadCenter = FirstRoad + Ri * RoadSpacing;
+		const float HalfRoad = RoadWidth * 0.5f + SidewalkWidth;
+		// X-aligned road
+		if (FMath::Abs(Y - RoadCenter) < HalfRoad &&
+			X > FirstRoad - 500.f && X < FirstRoad + (NumRoads - 1) * RoadSpacing + 500.f)
+			return true;
+		// Y-aligned road
+		if (FMath::Abs(X - RoadCenter) < HalfRoad &&
+			Y > FirstRoad - 500.f && Y < FirstRoad + (NumRoads - 1) * RoadSpacing + 500.f)
+			return true;
+	}
+	return false;
+}
+
+// ---------------------------------------------------------------------------
+// Gold Coins
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::SpawnGoldCoins()
+{
+	UWorld* W = GetWorld();
+	if (!W || !CylinderMesh || !ColorMaterial) return;
+
+	// First 2 coins near spawn so player sees them immediately
+	const FVector NearSpawnPositions[2] = {
+		{ 1500.f,     0.f, 0.f},
+		{-1500.f,     0.f, 0.f},
+	};
+
+	// Last 4 coins high in the sky — reachable only by jet
+	const FVector SkyCoinPositions[4] = {
+		{     0.f,      0.f, 8000.f},
+		{ 15000.f,  15000.f, 10000.f},
+		{-15000.f,  20000.f, 9000.f},
+		{ 20000.f, -10000.f, 11000.f},
+	};
+
+	for (int32 CI = 0; CI < NumGoldCoins; ++CI)
+	{
+		FGoldCoinData& GC = GoldCoins[CI];
+
+		float X, Y, Z;
+		if (CI < 2)
+		{
+			// Near-spawn coins at known positions
+			X = NearSpawnPositions[CI].X;
+			Y = NearSpawnPositions[CI].Y;
+			Z = GetTerrainHeight(X, Y) + 600.f;
+		}
+		else if (CI >= 10)
+		{
+			// Sky coins — high altitude, jet-only
+			const FVector& SP = SkyCoinPositions[CI - 10];
+			X = SP.X;
+			Y = SP.Y;
+			Z = SP.Z;
+		}
+		else
+		{
+			// Scattered across the entire playable map (city, outskirts, hills, beach)
+			X = CityRandom.FRandRange(-80000.f, 80000.f);
+			Y = CityRandom.FRandRange(-80000.f, 80000.f);
+			Z = GetTerrainHeight(X, Y) + 600.f;
+		}
+		const FVector SpawnPos(X, Y, Z);
+
+		GC.OriginalSpawnPos = SpawnPos;
+		GC.CurrentPos = SpawnPos;
+
+		AActor* CoinActor = W->SpawnActor<AActor>(AActor::StaticClass(),
+			SpawnPos, FRotator(90.f, 0.f, 0.f));
+		if (!CoinActor) continue;
+		GC.Actor = CoinActor;
+
+#if WITH_EDITOR
+		CoinActor->SetActorLabel(*FString::Printf(TEXT("GoldCoin_%d"), CI));
+#endif
+
+		// Mesh as root component (same pattern as ramps/launch pads)
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(CoinActor,
+			*FString::Printf(TEXT("CoinMesh_%d"), CI));
+		MC->SetStaticMesh(CylinderMesh);
+		MC->SetMaterial(0, ColorMaterial);
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->bNeverDistanceCull = true;
+		MC->SetWorldLocation(SpawnPos);
+		MC->SetWorldScale3D(FVector(7.f, 7.f, 0.7f));
+		MC->RegisterComponent();
+		CoinActor->SetRootComponent(MC);
+
+		// Lava color — matches volcano eruption lava pools
+		ApplyPBR(MC,
+			FLinearColor(1.0f, 0.35f, 0.02f),    // BaseColor: bright molten lava
+			0.1f,                                  // Metallic
+			0.2f,                                  // Roughness
+			FLinearColor(12.f, 3.f, 0.3f));        // Emissive: lava glow
+
+		// Lava underglow point light
+		UPointLightComponent* GlowLight = NewObject<UPointLightComponent>(CoinActor,
+			*FString::Printf(TEXT("CoinGlow_%d"), CI));
+		GlowLight->SetWorldLocation(SpawnPos + FVector(0.f, 0.f, -80.f));
+		GlowLight->SetLightColor(FLinearColor(1.0f, 0.35f, 0.02f));
+		GlowLight->SetIntensity(12000.f);
+		GlowLight->SetAttenuationRadius(1500.f);
+		GlowLight->SetCastShadows(false);
+		GlowLight->MaxDrawDistance = 10000.f;
+		GlowLight->AttachToComponent(MC, FAttachmentTransformRules::KeepWorldTransform);
+		GlowLight->RegisterComponent();
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnGoldCoins -- Spawned %d gold coins."), NumGoldCoins);
+}
+
+void UPHCCitySubsystem::SpawnGrassSystem()
+{
+	UWorld* World = GetWorld();
+	if (!World || !CubeMesh) return;
+
+	GrassActor = World->SpawnActor<AActor>(AActor::StaticClass(),
+		FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!GrassActor) return;
+#if WITH_EDITOR
+	GrassActor->SetActorLabel(TEXT("GrassInstances"));
+#endif
+
+	// 4 grass color variants
+	const FLinearColor GrassColors[] = {
+		FLinearColor(0.08f, 0.16f, 0.04f),  // dark green
+		FLinearColor(0.12f, 0.22f, 0.06f),  // medium green
+		FLinearColor(0.18f, 0.28f, 0.10f),  // light green
+		FLinearColor(0.20f, 0.18f, 0.08f),  // dry/yellow patch
+	};
+
+	GrassHISMs.Empty();
+	for (int32 Gi = 0; Gi < 4; ++Gi)
+	{
+		FString HName = FString::Printf(TEXT("GrassHISM_%d"), Gi);
+		UHierarchicalInstancedStaticMeshComponent* HISM =
+			NewObject<UHierarchicalInstancedStaticMeshComponent>(GrassActor, *HName);
+		HISM->SetStaticMesh(CubeMesh);
+		HISM->SetCastShadow(false);
+		HISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+		// Cull distance for performance
+		HISM->SetCullDistances(0.f, 10000.f);
+
+		HISM->RegisterComponent();
+		GrassActor->AddInstanceComponent(HISM);
+
+		// Apply grass-colored material
+		if (ColorMaterial)
+		{
+			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, HISM);
+			if (Mat)
+			{
+				Mat->SetVectorParameterValue(TEXT("BaseColor"), GrassColors[Gi]);
+				Mat->SetScalarParameterValue(TEXT("Roughness"), 0.85f);
+				HISM->SetMaterial(0, Mat);
+			}
+		}
+
+		GrassHISMs.Add(HISM);
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Grass instancing system created with 4 HISM components"));
+}
+
+void UPHCCitySubsystem::UpdateGrassInstances(const FVector& PlayerLoc)
+{
+	if (GrassHISMs.Num() < 4) return;
+
+	// Only update when player moves >2000 UU from last update
+	if (FVector::Dist2D(PlayerLoc, LastGrassUpdateLocation) < 2000.f)
+		return;
+	LastGrassUpdateLocation = PlayerLoc;
+
+	// Clear all instances
+	for (auto& HISM : GrassHISMs)
+	{
+		if (HISM) HISM->ClearInstances();
+	}
+
+	// Scatter 4000 grass blades around player
+	const float Radius = 15000.f;
+	const int32 TotalBlades = 4000;
+	FRandomStream GrassRand(FMath::FloorToInt(PlayerLoc.X * 0.01f) * 1000 + FMath::FloorToInt(PlayerLoc.Y * 0.01f));
+
+	for (int32 Bi = 0; Bi < TotalBlades; ++Bi)
+	{
+		float Angle = GrassRand.FRandRange(0.f, 2.f * PI);
+		float Dist = GrassRand.FRandRange(500.f, Radius);
+		float GX = PlayerLoc.X + FMath::Cos(Angle) * Dist;
+		float GY = PlayerLoc.Y + FMath::Sin(Angle) * Dist;
+
+		// Skip roads and sidewalks
+		if (IsOnRoadOrSidewalk(GX, GY))
+			continue;
+
+		float GZ = GetTerrainHeight(GX, GY);
+		float Yaw = GrassRand.FRandRange(0.f, 360.f);
+		float Pitch = GrassRand.FRandRange(-5.f, 5.f);
+		float BladeH = GrassRand.FRandRange(8.f, 20.f);
+
+		FTransform BladeT;
+		BladeT.SetLocation(FVector(GX, GY, GZ + BladeH * 0.5f));
+		BladeT.SetRotation(FRotator(Pitch, Yaw, 0.f).Quaternion());
+		BladeT.SetScale3D(FVector(0.015f, 0.005f, BladeH / 100.f)); // thin blade
+
+		int32 Variant = Bi % 4;
+		if (GrassHISMs[Variant])
+			GrassHISMs[Variant]->AddInstance(BladeT);
+	}
 }
 
 // ---------------------------------------------------------------------------
 void UPHCCitySubsystem::SpawnCityEnvironment()
 {
-	SpawnGround();
+	SpawnTerrainGrid();
+	SpawnGround(); // flat ground slabs for city center collision
 	SpawnOceanAndBeach();
 	SpawnSkyAndLighting();
 	SpawnCityGrid();
@@ -1109,10 +1946,11 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	// SpawnStreetLabels();  // removed per user request
 	SpawnLightRail();
 	SpawnLangtree();
-	SpawnStreetLights();
+	// SpawnStreetLights();  // removed for mobile battery/thermal perf
 	SpawnRamps();
 	SpawnOutskirts();
-	SpawnHills();
+	// SpawnHills();        // removed — spherical terrain
+	SpawnDirtBikePark();
 	SpawnStarfield();
 	SpawnCloudLayer();
 	SpawnMountainRange();
@@ -1120,6 +1958,8 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnLakeAndPirateShip();
 	SpawnUndergroundCavern();
 	SpawnGiantCrab();
+	SpawnGoldCoins();
+	SpawnGrassSystem();
 }
 
 // ---------------------------------------------------------------------------
@@ -1159,7 +1999,14 @@ void UPHCCitySubsystem::SpawnGround()
 		MC->RegisterComponent();
 		GA->SetRootComponent(MC);
 		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
-		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), GrassColor); Mat->SetScalarParameterValue(TEXT("Roughness"), 0.9f); MC->SetMaterial(0, Mat); }
+		if (Mat)
+		{
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), GrassColor);
+			Mat->SetScalarParameterValue(TEXT("Roughness"), 0.9f);
+			if (GrassNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), GrassNormalMap);
+			if (GrassRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), GrassRoughnessMap);
+			MC->SetMaterial(0, Mat);
+		}
 		GA->AddInstanceComponent(MC);
 	};
 
@@ -1225,7 +2072,14 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 		else
 		{
 			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
-			if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); Mat->SetScalarParameterValue(TEXT("Roughness"), bIsWater ? 0.02f : 0.85f); MC->SetMaterial(0, Mat); }
+			if (Mat)
+			{
+				Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
+				Mat->SetScalarParameterValue(TEXT("Roughness"), bIsWater ? 0.02f : 0.85f);
+				if (!bIsWater && SandNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), SandNormalMap);
+				if (!bIsWater && SandRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), SandRoughnessMap);
+				MC->SetMaterial(0, Mat);
+			}
 		}
 		WA->AddInstanceComponent(MC);
 	};
@@ -1369,6 +2223,11 @@ void UPHCCitySubsystem::SpawnSkyAndLighting()
 			SunLightComp->BloomScale = 1.2f;
 			SunLightComp->BloomThreshold = 0.5f;
 
+			// ---- Enhanced Shadows ----
+			SunLightComp->DynamicShadowCascades = 3;
+			SunLightComp->CascadeDistributionExponent = 2.5f;
+			SunLightComp->ContactShadowLength = 0.02f;
+
 			SunLightComp->RegisterComponent();
 			SunActor->SetRootComponent(SunLightComp);
 			SunActor->AddInstanceComponent(SunLightComp);
@@ -1423,14 +2282,18 @@ void UPHCCitySubsystem::SpawnSkyAndLighting()
 #endif
 			FogComp = NewObject<UExponentialHeightFogComponent>(
 				FogActor, TEXT("HeightFog"));
-			FogComp->SetFogDensity(0.0008f);
+			FogComp->SetFogDensity(0.0012f);
 			FogComp->SetFogHeightFalloff(0.08f);
-			FogComp->SetFogMaxOpacity(0.45f);
-			FogComp->SetStartDistance(15000.f);
+			FogComp->SetFogMaxOpacity(0.50f);
+			FogComp->SetStartDistance(10000.f);
 			FogComp->SetVolumetricFog(true);
 			FogComp->SetVolumetricFogScatteringDistribution(0.2f);
 			FogComp->SetVolumetricFogExtinctionScale(1.0f);
 			FogComp->SetVolumetricFogDistance(20000.f);
+			// Warm directional inscattering for golden dawn/dusk haze
+			FogComp->SetDirectionalInscatteringColor(FLinearColor(0.8f, 0.6f, 0.3f));
+			FogComp->SetDirectionalInscatteringExponent(10.f);
+			FogComp->SetDirectionalInscatteringStartDistance(8000.f);
 			FogComp->RegisterComponent();
 			FogActor->SetRootComponent(FogComp);
 			FogActor->AddInstanceComponent(FogComp);
@@ -1478,11 +2341,11 @@ void UPHCCitySubsystem::SpawnSkyAndLighting()
 			PP.bOverride_BloomThreshold = true;
 			PP.BloomThreshold = 1.0f;
 
-			// Ambient Occlusion
+			// Ambient Occlusion (tighter, stronger for grounded look)
 			PP.bOverride_AmbientOcclusionIntensity = true;
-			PP.AmbientOcclusionIntensity = 0.5f;
+			PP.AmbientOcclusionIntensity = 0.65f;
 			PP.bOverride_AmbientOcclusionRadius = true;
-			PP.AmbientOcclusionRadius = 200.f;
+			PP.AmbientOcclusionRadius = 150.f;
 
 			// Vignette
 			PP.bOverride_VignetteIntensity = true;
@@ -1516,19 +2379,19 @@ void UPHCCitySubsystem::SpawnSkyAndLighting()
 			PP.bOverride_FilmWhiteClip = true;
 			PP.FilmWhiteClip = 0.04f;
 
-			// ---- Chromatic Aberration (subtle lens fringing) ----
+			// ---- Chromatic Aberration (disabled for mobile perf) ----
 			PP.bOverride_SceneFringeIntensity = true;
-			PP.SceneFringeIntensity = 0.4f;
+			PP.SceneFringeIntensity = 0.f;
 
-			// ---- Film Grain (cinematic texture) ----
+			// ---- Film Grain (disabled for mobile perf) ----
 			PP.bOverride_FilmGrainIntensity = true;
-			PP.FilmGrainIntensity = 0.06f;
+			PP.FilmGrainIntensity = 0.f;
 
-			// ---- Depth of Field (cinematic background blur) ----
+			// ---- Depth of Field (disabled for mobile perf) ----
 			PP.bOverride_DepthOfFieldFocalDistance = true;
 			PP.DepthOfFieldFocalDistance = 3000.f;
 			PP.bOverride_DepthOfFieldFstop = true;
-			PP.DepthOfFieldFstop = 22.f; // Sharp by default, f/4 when driving
+			PP.DepthOfFieldFstop = 22.f;
 			PP.bOverride_DepthOfFieldSensorWidth = true;
 			PP.DepthOfFieldSensorWidth = 24.576f; // APS-C sensor
 
@@ -2215,7 +3078,14 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 	Body->RegisterComponent();
 	House->SetRootComponent(Body);
 	UMaterialInstanceDynamic* BodyMat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
-	if (BodyMat) { BodyMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor); BodyMat->SetScalarParameterValue(TEXT("Roughness"), 0.92f); Body->SetMaterial(0, BodyMat); }
+	if (BodyMat)
+	{
+		BodyMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor);
+		BodyMat->SetScalarParameterValue(TEXT("Roughness"), 0.92f);
+		if (BrickNormalMap) BodyMat->SetTextureParameterValue(TEXT("NormalMap"), BrickNormalMap);
+		if (BrickRoughnessMap) BodyMat->SetTextureParameterValue(TEXT("RoughnessMap"), BrickRoughnessMap);
+		Body->SetMaterial(0, BodyMat);
+	}
 	House->AddInstanceComponent(Body);
 
 	// ---- Brick corner pilasters (rounded cylinders soften sharp corners) ----
@@ -2238,6 +3108,36 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 			UMaterialInstanceDynamic* PilMat = UMaterialInstanceDynamic::Create(Pil->GetMaterial(0), Pil);
 			if (PilMat) { PilMat->SetVectorParameterValue(TEXT("BaseColor"), PilColor); PilMat->SetScalarParameterValue(TEXT("Roughness"), 0.90f); Pil->SetMaterial(0, PilMat); }
 			House->AddInstanceComponent(Pil);
+		}
+	}
+
+	// ---- Foundation baseboard (dark strip at building base) ----
+	{
+		const float BaseH = 20.f;
+		const FLinearColor BaseBoardColor = WallColor * 0.6f;
+		const FVector BaseboardLocs[] = {
+			FVector(Loc.X, Loc.Y + D * 0.5f + 1.f, BaseH * 0.5f),
+			FVector(Loc.X, Loc.Y - D * 0.5f - 1.f, BaseH * 0.5f),
+			FVector(Loc.X + W * 0.5f + 1.f, Loc.Y, BaseH * 0.5f),
+			FVector(Loc.X - W * 0.5f - 1.f, Loc.Y, BaseH * 0.5f),
+		};
+		const FVector BaseboardScales[] = {
+			FVector(W / 100.f, 4.f / 100.f, BaseH / 100.f),
+			FVector(W / 100.f, 4.f / 100.f, BaseH / 100.f),
+			FVector(4.f / 100.f, D / 100.f, BaseH / 100.f),
+			FVector(4.f / 100.f, D / 100.f, BaseH / 100.f),
+		};
+		for (int32 Bi = 0; Bi < 4; ++Bi)
+		{
+			FString BName = FString::Printf(TEXT("HouseBase_%d"), Bi);
+			UStaticMeshComponent* Base = NewObject<UStaticMeshComponent>(House, *BName);
+			Base->SetStaticMesh(CubeMesh);
+			Base->SetWorldScale3D(BaseboardScales[Bi]);
+			Base->SetWorldLocation(BaseboardLocs[Bi]);
+			Base->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Base->RegisterComponent();
+			ApplyPBR(Base, BaseBoardColor, 0.f, 0.8f);
+			House->AddInstanceComponent(Base);
 		}
 	}
 
@@ -2319,6 +3219,33 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 					NightWindowLitColors.Add(WarmColors[CityRandom.RandRange(0, 3)]);
 					NightWindowLitStates.Add(CityRandom.FRand() < 0.7f);
 				}
+
+				// Window frame (white trim around ~30% of windows)
+				if (DetailRandom.FRand() < 0.30f)
+				{
+					const float FrameT = 4.f; // frame thickness
+					const FLinearColor FrameCol(0.85f, 0.85f, 0.82f);
+					// Top strip
+					FString FName = FString::Printf(TEXT("WF_%d_T"), WIdx - 1);
+					UStaticMeshComponent* FTop = NewObject<UStaticMeshComponent>(House, *FName);
+					FTop->SetStaticMesh(CubeMesh);
+					FTop->SetWorldScale3D(FVector((WinW + FrameT * 2.f) / 100.f, 4.f / 100.f, FrameT / 100.f));
+					FTop->SetWorldLocation(FVector(WX, FaceY, FloorZ + WinH * 0.5f + FrameT * 0.5f));
+					FTop->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					FTop->RegisterComponent();
+					ApplyPBR(FTop, FrameCol, 0.f, 0.7f);
+					House->AddInstanceComponent(FTop);
+					// Bottom strip
+					FName = FString::Printf(TEXT("WF_%d_B"), WIdx - 1);
+					UStaticMeshComponent* FBot = NewObject<UStaticMeshComponent>(House, *FName);
+					FBot->SetStaticMesh(CubeMesh);
+					FBot->SetWorldScale3D(FVector((WinW + FrameT * 2.f) / 100.f, 5.f / 100.f, FrameT / 100.f));
+					FBot->SetWorldLocation(FVector(WX, FaceY, FloorZ - WinH * 0.5f - FrameT * 0.5f));
+					FBot->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					FBot->RegisterComponent();
+					ApplyPBR(FBot, FrameCol, 0.f, 0.7f);
+					House->AddInstanceComponent(FBot);
+				}
 			}
 		}
 	}
@@ -2334,6 +3261,46 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 		UMaterialInstanceDynamic* DMat = UMaterialInstanceDynamic::Create(Door->GetMaterial(0), Door);
 		if (DMat) { DMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.18f, 0.12f, 0.06f)); DMat->SetScalarParameterValue(TEXT("Roughness"), 0.7f); Door->SetMaterial(0, DMat); }
 		House->AddInstanceComponent(Door);
+
+		// Door frame (dark wood trim around door)
+		{
+			const float DoorW = 55.f;
+			const float DoorH = 120.f;
+			const float DoorZ = 60.f;
+			const float FrameT = 5.f;
+			const float DoorFaceY = Loc.Y + D * 0.5f + 3.5f;
+			const FLinearColor DoorFrameCol(0.14f, 0.09f, 0.04f);
+
+			// Left jamb
+			UStaticMeshComponent* LJamb = NewObject<UStaticMeshComponent>(House, TEXT("DoorFrame_L"));
+			LJamb->SetStaticMesh(CubeMesh);
+			LJamb->SetWorldScale3D(FVector(FrameT / 100.f, 4.f / 100.f, DoorH / 100.f));
+			LJamb->SetWorldLocation(FVector(Loc.X - DoorW * 0.5f - FrameT * 0.5f, DoorFaceY, DoorZ));
+			LJamb->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			LJamb->RegisterComponent();
+			ApplyPBR(LJamb, DoorFrameCol, 0.f, 0.65f);
+			House->AddInstanceComponent(LJamb);
+
+			// Right jamb
+			UStaticMeshComponent* RJamb = NewObject<UStaticMeshComponent>(House, TEXT("DoorFrame_R"));
+			RJamb->SetStaticMesh(CubeMesh);
+			RJamb->SetWorldScale3D(FVector(FrameT / 100.f, 4.f / 100.f, DoorH / 100.f));
+			RJamb->SetWorldLocation(FVector(Loc.X + DoorW * 0.5f + FrameT * 0.5f, DoorFaceY, DoorZ));
+			RJamb->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			RJamb->RegisterComponent();
+			ApplyPBR(RJamb, DoorFrameCol, 0.f, 0.65f);
+			House->AddInstanceComponent(RJamb);
+
+			// Header
+			UStaticMeshComponent* Header = NewObject<UStaticMeshComponent>(House, TEXT("DoorFrame_H"));
+			Header->SetStaticMesh(CubeMesh);
+			Header->SetWorldScale3D(FVector((DoorW + FrameT * 2.f) / 100.f, 4.f / 100.f, FrameT / 100.f));
+			Header->SetWorldLocation(FVector(Loc.X, DoorFaceY, DoorZ + DoorH * 0.5f + FrameT * 0.5f));
+			Header->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Header->RegisterComponent();
+			ApplyPBR(Header, DoorFrameCol, 0.f, 0.65f);
+			House->AddInstanceComponent(Header);
+		}
 
 		// Doorway arch (half-cylinder above door)
 		if (CylinderMesh)
@@ -2360,7 +3327,14 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 		Lawn->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Lawn->RegisterComponent();
 		UMaterialInstanceDynamic* LMat = UMaterialInstanceDynamic::Create(Lawn->GetMaterial(0), Lawn);
-		if (LMat) { LMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.15f, 0.35f, 0.08f)); LMat->SetScalarParameterValue(TEXT("Roughness"), 0.9f); Lawn->SetMaterial(0, LMat); }
+		if (LMat)
+		{
+			LMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.15f, 0.35f, 0.08f));
+			LMat->SetScalarParameterValue(TEXT("Roughness"), 0.9f);
+			if (GrassNormalMap) LMat->SetTextureParameterValue(TEXT("NormalMap"), GrassNormalMap);
+			if (GrassRoughnessMap) LMat->SetTextureParameterValue(TEXT("RoughnessMap"), GrassRoughnessMap);
+			Lawn->SetMaterial(0, LMat);
+		}
 		House->AddInstanceComponent(Lawn);
 	}
 
@@ -2526,7 +3500,14 @@ void UPHCCitySubsystem::SpawnShop(const FVector& Loc, float W, float D, int32 St
 	Body->RegisterComponent();
 	Shop->SetRootComponent(Body);
 	UMaterialInstanceDynamic* BodyMat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
-	if (BodyMat) { BodyMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor); BodyMat->SetScalarParameterValue(TEXT("Roughness"), 0.55f); Body->SetMaterial(0, BodyMat); }
+	if (BodyMat)
+	{
+		BodyMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor);
+		BodyMat->SetScalarParameterValue(TEXT("Roughness"), 0.55f);
+		if (ConcreteNormalMap) BodyMat->SetTextureParameterValue(TEXT("NormalMap"), ConcreteNormalMap);
+		if (ConcreteRoughnessMap) BodyMat->SetTextureParameterValue(TEXT("RoughnessMap"), ConcreteRoughnessMap);
+		Body->SetMaterial(0, BodyMat);
+	}
 	Shop->AddInstanceComponent(Body);
 
 	// ---- Front face corner trim (decorative vertical cylinders) ----
@@ -3060,7 +4041,13 @@ void UPHCCitySubsystem::SpawnParkBlock(const FVector& ParkCenter, float ParkSize
 	Grass->RegisterComponent();
 	Park->SetRootComponent(Grass);
 	UMaterialInstanceDynamic* GrassMat = UMaterialInstanceDynamic::Create(Grass->GetMaterial(0), Grass);
-	if (GrassMat) { GrassMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.15f, 0.30f, 0.10f)); Grass->SetMaterial(0, GrassMat); }
+	if (GrassMat)
+	{
+		GrassMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.15f, 0.30f, 0.10f));
+		if (GrassNormalMap) GrassMat->SetTextureParameterValue(TEXT("NormalMap"), GrassNormalMap);
+		if (GrassRoughnessMap) GrassMat->SetTextureParameterValue(TEXT("RoughnessMap"), GrassRoughnessMap);
+		Grass->SetMaterial(0, GrassMat);
+	}
 	Park->AddInstanceComponent(Grass);
 
 	// Walking paths (cross-shaped)
@@ -3234,6 +4221,8 @@ void UPHCCitySubsystem::SpawnBuilding(const FVector& Location, const FVector& Si
 	{
 		Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
 		Mat->SetScalarParameterValue(TEXT("Roughness"), 0.55f);
+		if (ConcreteNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), ConcreteNormalMap);
+		if (ConcreteRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), ConcreteRoughnessMap);
 		MC->SetMaterial(0, Mat);
 	}
 	Building->AddInstanceComponent(MC);
@@ -3583,6 +4572,8 @@ void UPHCCitySubsystem::SpawnRoadStrip(const FVector& Center, float LengthX, flo
 		// Black asphalt road surface.
 		Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.015f, 0.015f, 0.018f));
 		Mat->SetScalarParameterValue(TEXT("Roughness"), 0.85f);
+		if (AsphaltNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), AsphaltNormalMap);
+		if (AsphaltRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), AsphaltRoughnessMap);
 		MC->SetMaterial(0, Mat);
 		RoadMaterials.Add(Mat); // Store for wet road effect in Tick()
 	}
@@ -3638,6 +4629,39 @@ void UPHCCitySubsystem::SpawnRoadStrip(const FVector& Center, float LengthX, flo
 		SpawnLine(FVector(Center.X - RoadWid * 0.5f + 50.f, Center.Y, LineZ), WhiteLine, WhiteEmissive);
 		SpawnLine(FVector(Center.X + RoadWid * 0.5f - 50.f, Center.Y, LineZ), WhiteLine, WhiteEmissive);
 	}
+
+	// ---- Road curbs (raised edges at road boundary) ----
+	const float CurbH = 8.f;
+	const float CurbW = 12.f;
+	const float CurbZ = 2.f + CurbH * 0.5f; // top of road + half curb
+	const FLinearColor CurbColor(0.50f, 0.48f, 0.44f); // light concrete
+
+	auto SpawnCurb = [&](const FVector& CurbLoc, const FVector& CurbScale)
+	{
+		UStaticMeshComponent* Curb = NewObject<UStaticMeshComponent>(Road);
+		Curb->SetStaticMesh(CubeMesh);
+		Curb->SetWorldScale3D(CurbScale);
+		Curb->SetWorldLocation(CurbLoc);
+		Curb->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Curb->RegisterComponent();
+		ApplyPBR(Curb, CurbColor, 0.f, 0.75f, FLinearColor::Black, ConcreteNormalMap, ConcreteRoughnessMap);
+		Road->AddInstanceComponent(Curb);
+	};
+
+	if (bAlongX)
+	{
+		SpawnCurb(FVector(Center.X, Center.Y - RoadWid * 0.5f, CurbZ),
+			FVector(RoadLen / 100.f, CurbW / 100.f, CurbH / 100.f));
+		SpawnCurb(FVector(Center.X, Center.Y + RoadWid * 0.5f, CurbZ),
+			FVector(RoadLen / 100.f, CurbW / 100.f, CurbH / 100.f));
+	}
+	else
+	{
+		SpawnCurb(FVector(Center.X - RoadWid * 0.5f, Center.Y, CurbZ),
+			FVector(CurbW / 100.f, RoadLen / 100.f, CurbH / 100.f));
+		SpawnCurb(FVector(Center.X + RoadWid * 0.5f, Center.Y, CurbZ),
+			FVector(CurbW / 100.f, RoadLen / 100.f, CurbH / 100.f));
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -3677,6 +4701,8 @@ void UPHCCitySubsystem::SpawnSidewalk(const FVector& Center, float LengthX, floa
 		// Concrete sidewalk.
 		Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.40f, 0.38f, 0.35f));
 		Mat->SetScalarParameterValue(TEXT("Roughness"), 0.75f);
+		if (ConcreteNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), ConcreteNormalMap);
+		if (ConcreteRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), ConcreteRoughnessMap);
 		MC->SetMaterial(0, Mat);
 	}
 	Walk->AddInstanceComponent(MC);
@@ -3765,7 +4791,8 @@ void UPHCCitySubsystem::SpawnStreetLight(const FVector& Location)
 	SL->SetOuterConeAngle(55.f);
 	SL->SetInnerConeAngle(30.f);
 	SL->SetLightColor(FColor(255, 200, 120)); // warm sodium
-	SL->SetCastShadows(false); // Performance: no shadows from street lights
+	SL->SetCastShadows(false);
+	SL->MaxDrawDistance = 8000.f;  // only render when player is nearby
 	SL->RegisterComponent();
 	LampActor->AddInstanceComponent(SL);
 }
@@ -4193,12 +5220,18 @@ void UPHCCitySubsystem::SpawnOutskirts()
 	};
 	for (const auto& B : Buildings)
 	{
+		// Skip buildings inside the motocross park area
+		if (B.X > -175000.f && B.X < -65000.f && B.Y > -35000.f && B.Y < 75000.f)
+			continue;
 		SpawnBuilding(FVector(B.X, B.Y, 0.f), FVector(B.W * 0.5f, B.D * 0.5f, B.H), B.Color, false);
 	}
 
 	// ---- Building Driveways (short road from highway to each building) ----
 	for (const auto& B : Buildings)
 	{
+		// Skip driveways for buildings inside the motocross park area
+		if (B.X > -175000.f && B.X < -65000.f && B.Y > -35000.f && B.Y < 75000.f)
+			continue;
 		const float HwyEdgeY = (B.Y > 0.f) ? HwyHalfW : -HwyHalfW;
 		const float DrivewayLen = FMath::Abs(B.Y - HwyEdgeY);
 		const float DrivewayCenterY = (HwyEdgeY + B.Y) * 0.5f;
@@ -4246,7 +5279,13 @@ void UPHCCitySubsystem::SpawnHills()
 		MC->RegisterComponent();
 		Hill->SetRootComponent(MC);
 		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
-		if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); MC->SetMaterial(0, Mat); }
+		if (Mat)
+		{
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
+			if (GrassNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), GrassNormalMap);
+			if (GrassRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), GrassRoughnessMap);
+			MC->SetMaterial(0, Mat);
+		}
 		Hill->AddInstanceComponent(MC);
 
 		if (bCollision)
@@ -4370,6 +5409,90 @@ void UPHCCitySubsystem::SpawnHills()
 	SpawnHill(FVector( 68000.f, -15000.f, 0.f), 3200.f, 2600.f, 380.f, DryGrass, TEXT("Hill_IS6"));
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Spawned 77 hills — city perimeter, transition zones, eastern coastal, inner scatter, highway corridor, and backdrop mountains."));
+}
+
+// ---------------------------------------------------------------------------
+// Motocross Dirt Bike Park — rolling hills designed for jumping
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::SpawnDirtBikePark()
+{
+	UWorld* World = GetWorld();
+	if (!World || !CubeMesh) return;
+
+	// Park center: X = -120000, Y = 20000
+	// Terrain is generated by GetTerrainHeight() with park-specific Perlin noise.
+	// No ramp geometry needed — the ProceduralMeshComponent terrain provides
+	// natural rolling hills for the dirt bike to ride over.
+	const float CX = -120000.f;
+	const float CY = 20000.f;
+
+	// ================================================================
+	// ENTRANCE ARCH — visible landmark so the player can find the park
+	// ================================================================
+	{
+		AActor* Arch = World->SpawnActor<AActor>(AActor::StaticClass(),
+			FVector(CX, CY - 28000.f, 0.f), FRotator::ZeroRotator);
+		if (Arch)
+		{
+#if WITH_EDITOR
+			Arch->SetActorLabel(TEXT("MX_Entrance"));
+#endif
+			auto AP = [&](UStaticMesh* Mesh, const FVector& Pos, const FVector& Scale,
+				const FLinearColor& Color, float Met, float Rough)
+			{
+				UStaticMeshComponent* C = NewObject<UStaticMeshComponent>(Arch);
+				C->SetStaticMesh(Mesh);
+				C->SetWorldLocation(Pos);
+				C->SetWorldScale3D(Scale / 100.f);
+				C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				C->SetCastShadow(false);
+				C->RegisterComponent();
+				UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(C->GetMaterial(0), C);
+				if (M)
+				{
+					M->SetVectorParameterValue(TEXT("BaseColor"), Color);
+					M->SetScalarParameterValue(TEXT("Metallic"), Met);
+					M->SetScalarParameterValue(TEXT("Roughness"), Rough);
+					C->SetMaterial(0, M);
+				}
+				Arch->AddInstanceComponent(C);
+				if (!Arch->GetRootComponent()) Arch->SetRootComponent(C);
+				else C->SetupAttachment(Arch->GetRootComponent());
+				return C;
+			};
+
+			const FLinearColor ArchColor(0.35f, 0.25f, 0.12f);  // Rustic wood brown
+			const FLinearColor SignRed(0.65f, 0.10f, 0.05f);
+
+			// Left pillar
+			AP(CubeMesh, FVector(CX - 2500.f, CY - 28000.f, 400.f),
+				FVector(300.f, 300.f, 800.f), ArchColor, 0.0f, 0.85f);
+			// Right pillar
+			AP(CubeMesh, FVector(CX + 2500.f, CY - 28000.f, 400.f),
+				FVector(300.f, 300.f, 800.f), ArchColor, 0.0f, 0.85f);
+			// Crossbeam
+			AP(CubeMesh, FVector(CX, CY - 28000.f, 850.f),
+				FVector(5500.f, 250.f, 200.f), ArchColor, 0.0f, 0.85f);
+			// Sign board
+			AP(CubeMesh, FVector(CX, CY - 28000.f, 1050.f),
+				FVector(4000.f, 30.f, 300.f), SignRed, 0.1f, 0.7f);
+
+			// Sign text
+			UTextRenderComponent* SignText = NewObject<UTextRenderComponent>(Arch);
+			SignText->SetText(FText::FromString(TEXT("MOTOCROSS PARK")));
+			SignText->SetWorldSize(180.f);
+			SignText->SetWorldLocation(FVector(CX, CY - 28015.f, 1050.f));
+			SignText->SetWorldRotation(FRotator(0.f, 180.f, 0.f));
+			SignText->SetTextRenderColor(FColor(255, 255, 240));
+			SignText->SetHorizontalAlignment(EHorizTextAligment::EHTA_Center);
+			SignText->RegisterComponent();
+			Arch->AddInstanceComponent(SignText);
+		}
+	}
+
+	UE_LOG(LogPlayhouseCity, Log,
+		TEXT("PHCCitySubsystem: Motocross dirt bike park spawned — natural terrain hills via GetTerrainHeight() + entrance arch."));
 }
 
 // ---------------------------------------------------------------------------
@@ -4884,13 +6007,12 @@ void UPHCCitySubsystem::SpawnUndergroundCavern()
 		// Airliners on runway 2
 		{ FVector(140000.f, Rwy2Y, AirportZ + 100.f),  0.f,   FLinearColor(0.90f, 0.90f, 0.92f), FLinearColor(0.10f, 0.25f, 0.65f), 1.8f },
 		{ FVector(170000.f, Rwy2Y, AirportZ + 100.f), 180.f,  FLinearColor(0.90f, 0.90f, 0.92f), FLinearColor(0.65f, 0.15f, 0.15f), 1.8f },
-		// In hangars
+		// In hangars (hangar 2 reserved for real SR-71 Blackbird pawn)
 		{ FVector(HangarX, 5000.f,  AirportZ + 100.f),  90.f, FLinearColor(0.90f, 0.88f, 0.80f), DarkGold, 1.0f },
-		{ FVector(HangarX, 25000.f, AirportZ + 100.f),  90.f, FLinearColor(0.02f, 0.02f, 0.04f), FLinearColor(0.60f, 0.60f, 0.65f), 1.2f },
 		{ FVector(HangarX, 48000.f, AirportZ + 100.f),  90.f, FLinearColor(0.85f, 0.85f, 0.88f), Gold, 1.0f },
 	};
 
-	for (int32 j = 0; j < 7; ++j)
+	for (int32 j = 0; j < 6; ++j)
 	{
 		const FJetDef& JD = Jets[j];
 		AActor* JA = World->SpawnActor<AActor>(AActor::StaticClass(), JD.Pos, FRotator(0.f, JD.Yaw, 0.f));
@@ -5012,6 +6134,24 @@ void UPHCCitySubsystem::SpawnUndergroundCavern()
 			BrushedSteel, 0.25f, 0.70f);
 	}
 
+	// ================================================================
+	// SPAWN SR-71 BLACKBIRD in hangar 2 (discoverable by proximity + E key)
+	// ================================================================
+	{
+		FActorSpawnParameters BSP;
+		BSP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		const FVector BBLoc(HangarX, 25000.f, AirportZ + 100.f);
+		const FRotator BBRot(0.f, 90.f, 0.f);
+		AirportBlackbird = World->SpawnActor<APHCBlackbirdPawn>(
+			APHCBlackbirdPawn::StaticClass(), BBLoc, BBRot, BSP);
+		if (AirportBlackbird)
+		{
+			AirportBlackbird->SetBodyColor(FLinearColor(0.83f, 0.68f, 0.22f));
+			AirportBlackbird->bIsOccupied = false;
+			AirportBlackbird->CurrentSpeed = 0.f;
+		}
+	}
+
 	UE_LOG(LogPlayhouseCity, Log,
 		TEXT("PHCCitySubsystem: Underground luxury airport spawned (%d components)."), Idx);
 }
@@ -5034,15 +6174,11 @@ void UPHCCitySubsystem::RespawnCrab(int32 Index)
 	CD.Actor->SetActorHiddenInGame(!bCrabsNightVisible);
 	CD.bVisible = bCrabsNightVisible;
 
-	// Reset any emissive flash on meshes
-	TArray<UStaticMeshComponent*> MeshComps;
-	CD.Actor->GetComponents<UStaticMeshComponent>(MeshComps);
-	for (UStaticMeshComponent* MC : MeshComps)
+	// Reset glow light to normal
+	if (CD.GlowLight)
 	{
-		if (UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(MC->GetMaterial(0)))
-		{
-			MID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.f, 0.f, 0.f));
-		}
+		CD.GlowLight->SetIntensity(CD.GlowBaseIntensity);
+		CD.GlowLight->SetLightColor(FColor(255, 160, 30));
 	}
 }
 
@@ -5237,7 +6373,21 @@ void UPHCCitySubsystem::SpawnGiantCrab()
 			CrabActor->AddInstanceComponent(PL);
 		};
 
-		AddGlow(FVector(0, 0, 500), 4000.f, 3500.f, FColor(255, 160, 30));
+		// Main glow light — store reference for damage flash
+		{
+			auto* PL = NewObject<UPointLightComponent>(CrabActor,
+				*FString::Printf(TEXT("CR_%d"), GCIdx++));
+			PL->SetRelativeLocation(FVector(0, 0, 500));
+			PL->SetIntensity(4000.f);
+			PL->SetAttenuationRadius(3500.f);
+			PL->SetLightColor(FColor(255, 160, 30));
+			PL->SetCastShadows(false);
+			PL->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+			PL->RegisterComponent();
+			CrabActor->AddInstanceComponent(PL);
+			CD.GlowLight = PL;
+			CD.GlowBaseIntensity = 4000.f;
+		}
 
 		// Start hidden — revealed at night
 		CrabActor->SetActorHiddenInGame(true);
@@ -7973,9 +9123,6 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		// 5 giant trees spread across the expanded area (reduced from 10)
 		struct FXmasTreeDef { float X; float Y; float Height; };
 		const FXmasTreeDef Trees[] = {
-			{ -12000.f, 76000.f, 10000.f },
-			{   -436.f, 73000.f, 11500.f },
-			{  16000.f, 70000.f, 10000.f },
 			{  23000.f, 66000.f, 12000.f },
 			{ -22000.f, 78000.f, 12000.f },
 		};
@@ -8037,36 +9184,36 @@ void UPHCCitySubsystem::SpawnMountainRange()
 					TierCol, 0.80f, 0.f);
 			}
 
-			// C. STAR ON TOP — bright golden sphere with strong emissive
+			// C. GOLD COIN ON TOP — lava-colored spinning coin (matches collectible coins)
 			{
 				const float StarZ = TrunkH + TH * 0.92f;
-				const float StarSize = TH * 0.06f;
 				FString SN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
-				UStaticMeshComponent* StarComp = NewObject<UStaticMeshComponent>(TA, *SN);
-				StarComp->SetStaticMesh(SphereMesh);
-				StarComp->SetWorldLocation(FVector(TD.X, TD.Y, StarZ));
-				StarComp->SetWorldScale3D(FVector(StarSize / 50.f));
-				StarComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				StarComp->SetBoundsScale(50.f);
-				StarComp->RegisterComponent();
-				TA->AddInstanceComponent(StarComp);
-				// Gold with strong emissive glow
-				ApplyPBR(StarComp, StarGold, 0.8f, 0.3f);
-				if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(StarComp->GetMaterial(0)))
-				{
-					MI->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(8.0f, 6.5f, 1.0f));
-				}
+				UStaticMeshComponent* CoinComp = NewObject<UStaticMeshComponent>(TA, *SN);
+				CoinComp->SetStaticMesh(CylinderMesh);
+				CoinComp->SetMaterial(0, ColorMaterial);
+				CoinComp->SetWorldLocation(FVector(TD.X, TD.Y, StarZ));
+				CoinComp->SetWorldScale3D(FVector(7.f, 7.f, 0.7f));
+				CoinComp->SetWorldRotation(FRotator(90.f, 0.f, 0.f));
+				CoinComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				CoinComp->bNeverDistanceCull = true;
+				CoinComp->SetBoundsScale(50.f);
+				CoinComp->RegisterComponent();
+				TA->AddInstanceComponent(CoinComp);
+				ApplyPBR(CoinComp,
+					FLinearColor(1.0f, 0.35f, 0.02f), 0.1f, 0.2f,
+					FLinearColor(12.f, 3.f, 0.3f));
 
-				// Point light at star
+				// Lava underglow light
 				FString LN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
-				UPointLightComponent* StarLight = NewObject<UPointLightComponent>(TA, *LN);
-				StarLight->SetWorldLocation(FVector(TD.X, TD.Y, StarZ));
-				StarLight->SetIntensity(15000.f);
-				StarLight->SetAttenuationRadius(TH * 1.5f);
-				StarLight->SetLightColor(FColor(255, 220, 80));
-				StarLight->SetCastShadows(false);
-				StarLight->RegisterComponent();
-				TA->AddInstanceComponent(StarLight);
+				UPointLightComponent* CoinLight = NewObject<UPointLightComponent>(TA, *LN);
+				CoinLight->SetWorldLocation(FVector(TD.X, TD.Y, StarZ - 80.f));
+				CoinLight->SetIntensity(12000.f);
+				CoinLight->SetAttenuationRadius(1500.f);
+				CoinLight->SetLightColor(FLinearColor(1.0f, 0.35f, 0.02f));
+				CoinLight->SetCastShadows(false);
+				CoinLight->MaxDrawDistance = 10000.f;
+				CoinLight->RegisterComponent();
+				TA->AddInstanceComponent(CoinLight);
 			}
 
 			// D. CHRISTMAS LIGHTS — glowing ornament spheres spiraling around tree
@@ -12400,42 +13547,42 @@ void UPHCCitySubsystem::SpawnLangtree()
 	const FVector ComplexCenter(85000.f, 70000.f, 0.f);
 	constexpr float FT = 80.f; // UU per foot — scaled up for immersion
 
-	// 6 building color palettes — earth tone fiber-cement / HardiPlank / brick
+	// 6 building color palettes — sand fort tones (warm tan / golden / dry earth)
 	struct FBldgPalette
 	{
-		FLinearColor Facade;       // Upper floor siding
-		FLinearColor BrickAccent;  // Ground floor brick/stone
-		FLinearColor Trim;         // Window frames, railings
-		FLinearColor Roof;         // Parapet
-		FLinearColor Awning1;
-		FLinearColor Awning2;
+		FLinearColor Facade;       // Upper wall sand
+		FLinearColor BrickAccent;  // Base/foundation sand (slightly darker)
+		FLinearColor Trim;         // Decorative band sand
+		FLinearColor Roof;         // Battlement/merlon sand
+		FLinearColor Awning1;      // Overhang sand
+		FLinearColor Awning2;      // Overhang sand (variation)
 	};
 	const FBldgPalette Palettes[6] = {
-		// Bldg 119: Warm tan HardiPlank + red brick base + burgundy awnings
-		{ {0.78f,0.72f,0.62f}, {0.52f,0.28f,0.18f}, {0.20f,0.18f,0.14f}, {0.22f,0.22f,0.24f}, {0.48f,0.08f,0.12f}, {0.42f,0.06f,0.10f} },
-		// Bldg 120: Cream siding + brown brick + dark teal awnings
-		{ {0.84f,0.80f,0.72f}, {0.44f,0.30f,0.20f}, {0.18f,0.16f,0.14f}, {0.20f,0.20f,0.22f}, {0.06f,0.30f,0.35f}, {0.05f,0.26f,0.30f} },
-		// Bldg 130: Warm gray siding + tan stone + olive awnings
-		{ {0.68f,0.66f,0.62f}, {0.58f,0.52f,0.42f}, {0.16f,0.15f,0.12f}, {0.24f,0.24f,0.22f}, {0.30f,0.34f,0.14f}, {0.26f,0.30f,0.12f} },
-		// Bldg 138: Khaki siding + brick partial + navy awnings
-		{ {0.72f,0.68f,0.58f}, {0.50f,0.32f,0.22f}, {0.14f,0.14f,0.16f}, {0.22f,0.20f,0.20f}, {0.08f,0.10f,0.30f}, {0.06f,0.08f,0.26f} },
-		// Bldg 143: Light beige siding + gray stone + copper awnings
-		{ {0.82f,0.78f,0.70f}, {0.48f,0.46f,0.42f}, {0.18f,0.16f,0.12f}, {0.20f,0.20f,0.22f}, {0.62f,0.34f,0.10f}, {0.55f,0.30f,0.08f} },
-		// Bldg 150: Warm white siding + red-brown brick + forest green awnings
-		{ {0.86f,0.84f,0.78f}, {0.48f,0.26f,0.16f}, {0.16f,0.14f,0.10f}, {0.24f,0.22f,0.20f}, {0.08f,0.28f,0.12f}, {0.06f,0.24f,0.10f} },
+		// Warm golden sand
+		{ {0.88f,0.78f,0.55f}, {0.80f,0.70f,0.48f}, {0.84f,0.74f,0.52f}, {0.86f,0.76f,0.54f}, {0.82f,0.72f,0.50f}, {0.80f,0.70f,0.48f} },
+		// Light cream sand
+		{ {0.92f,0.82f,0.58f}, {0.84f,0.74f,0.52f}, {0.88f,0.78f,0.55f}, {0.90f,0.80f,0.56f}, {0.86f,0.76f,0.54f}, {0.84f,0.74f,0.52f} },
+		// Desert tan sand
+		{ {0.85f,0.75f,0.52f}, {0.78f,0.68f,0.46f}, {0.82f,0.72f,0.50f}, {0.84f,0.74f,0.52f}, {0.80f,0.70f,0.48f}, {0.78f,0.68f,0.46f} },
+		// Amber sand
+		{ {0.90f,0.78f,0.52f}, {0.82f,0.70f,0.46f}, {0.86f,0.74f,0.50f}, {0.88f,0.76f,0.52f}, {0.84f,0.72f,0.48f}, {0.82f,0.70f,0.46f} },
+		// Pale dune sand
+		{ {0.93f,0.84f,0.62f}, {0.86f,0.76f,0.54f}, {0.90f,0.80f,0.58f}, {0.92f,0.82f,0.60f}, {0.88f,0.78f,0.56f}, {0.86f,0.76f,0.54f} },
+		// Warm earth sand
+		{ {0.86f,0.76f,0.52f}, {0.80f,0.70f,0.48f}, {0.84f,0.74f,0.50f}, {0.86f,0.76f,0.52f}, {0.82f,0.72f,0.48f}, {0.80f,0.70f,0.46f} },
 	};
 
-	// Shared colors
-	const FLinearColor ConcreteGray(0.62f, 0.60f, 0.56f);
-	const FLinearColor StoneGray(0.55f, 0.52f, 0.48f);
-	const FLinearColor DarkTrim(0.18f, 0.16f, 0.14f);
-	const FLinearColor RoofCharcoal(0.22f, 0.22f, 0.24f);
-	const FLinearColor PoolBlue(0.15f, 0.45f, 0.70f);
-	const FLinearColor CabanaWhite(0.92f, 0.90f, 0.88f);
-	const FLinearColor LawnGreen(0.12f, 0.40f, 0.10f);
-	const FLinearColor WoodBrown(0.38f, 0.26f, 0.14f);
-	const FLinearColor AsphaltDark(0.08f, 0.08f, 0.09f);
-	const FLinearColor SidewalkTan(0.70f, 0.66f, 0.58f);
+	// Shared colors — sand fort tones
+	const FLinearColor ConcreteGray(0.82f, 0.72f, 0.52f);  // sand walkway
+	const FLinearColor StoneGray(0.75f, 0.65f, 0.45f);     // darker sand
+	const FLinearColor DarkTrim(0.72f, 0.62f, 0.42f);      // shadow sand
+	const FLinearColor RoofCharcoal(0.84f, 0.74f, 0.52f);  // battlement sand
+	const FLinearColor PoolBlue(0.15f, 0.45f, 0.70f);      // keep pool blue
+	const FLinearColor CabanaWhite(0.90f, 0.82f, 0.62f);   // sand cabana
+	const FLinearColor LawnGreen(0.84f, 0.76f, 0.56f);     // sandy ground
+	const FLinearColor WoodBrown(0.76f, 0.66f, 0.44f);     // driftwood sand
+	const FLinearColor AsphaltDark(0.74f, 0.64f, 0.44f);   // sandy path
+	const FLinearColor SidewalkTan(0.86f, 0.78f, 0.58f);   // light sand
 
 	// Real Langtree business names (ground floor tenants)
 	const TCHAR* LangtreeShops[] = {
@@ -12455,7 +13602,7 @@ void UPHCCitySubsystem::SpawnLangtree()
 	// Helper: spawn a simple PBR cube component on an actor
 	auto MakeCube = [&](AActor* Owner, USceneComponent* Root, const FVector& Loc,
 		const FVector& Size, const FLinearColor& Color, const TCHAR* Name,
-		float Metallic = 0.f, float Roughness = 0.5f, bool bCollision = false) -> UStaticMeshComponent*
+		float Metallic = 0.f, float Roughness = 0.92f, bool bCollision = false) -> UStaticMeshComponent*
 	{
 		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, Name);
 		MC->SetStaticMesh(CubeMesh);
@@ -12474,7 +13621,7 @@ void UPHCCitySubsystem::SpawnLangtree()
 
 	auto MakeCyl = [&](AActor* Owner, USceneComponent* Root, const FVector& Loc,
 		const FVector& Size, const FLinearColor& Color, const TCHAR* Name,
-		float Metallic = 0.f, float Roughness = 0.5f) -> UStaticMeshComponent*
+		float Metallic = 0.f, float Roughness = 0.92f) -> UStaticMeshComponent*
 	{
 		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Owner, Name);
 		MC->SetStaticMesh(CylinderMesh);
@@ -12491,16 +13638,17 @@ void UPHCCitySubsystem::SpawnLangtree()
 	};
 
 	// ========================================================================
-	// 6 APARTMENT BUILDINGS (4-story mid-rise, ~180x60x48 ft each)
+	// 6 APARTMENT BUILDINGS (8-story mid-rise, ~180x60x92 ft each)
 	// Along Landings Drive, 3 per side, ground floor retail with real tenants
 	// Lake-facing balconies on the west side
 	// ========================================================================
 	const float AptW = 180.f * FT; // length along Landings Dr (Y)
 	const float AptD = 60.f * FT;  // depth (X)
-	const float AptH = 48.f * FT;  // 4 stories total
 	const float GndH = 14.f * FT;  // tall ground floor retail
-	const float UpperH = AptH - GndH; // 3 residential floors
-	const float AptSpacingY = 220.f * FT;
+	const float UpperFloorH = 11.f * FT; // each residential floor
+	const float UpperH = 7.f * UpperFloorH; // 7 residential floors
+	const float AptH = GndH + UpperH;  // 8 stories total
+	const float AptSpacingY = AptW; // no gap — buildings touch end-to-end
 	const float RowSpacingX = 90.f * FT; // half-width of Landings Drive gap
 	const int32 ShopsPerBldg = 4; // 4 shops per building
 	const float ShopBayW = AptW / (float)ShopsPerBldg;
@@ -12556,7 +13704,7 @@ void UPHCCitySubsystem::SpawnLangtree()
 				SG->RegisterComponent();
 				SG->AttachToComponent(GF, FAttachmentTransformRules::KeepWorldTransform);
 				BA->AddInstanceComponent(SG);
-				ApplyPBRGlass(SG, GlassMaterial, FLinearColor(0.12f, 0.15f, 0.20f), 0.5f, 0.1f, 0.05f);
+				ApplyPBR(SG, FLinearColor(0.08f, 0.06f, 0.04f), 0.f, 0.95f); // dark arched doorway
 				++CompCount;
 			}
 
@@ -12624,17 +13772,17 @@ void UPHCCitySubsystem::SpawnLangtree()
 				*FString::Printf(TEXT("Ct_%d_%d"), b, sh), 0.f, 0.7f);
 		}
 
-		// ---- Upper 3 residential floors — HardiPlank siding ----
+		// ---- Upper 7 residential floors — HardiPlank siding ----
 		MakeCube(BA, GF,
 			BC + FVector(0.f, 0.f, GndH + UpperH * 0.5f),
 			FVector(AptD - 4.f, AptW, UpperH), P.Facade,
 			*FString::Printf(TEXT("Up_%d"), b), 0.f, 0.7f);
 
 		// ---- Individual windows per floor ----
-		const float FlH = UpperH / 3.f;
+		const float FlH = UpperFloorH;
 		const int32 WPF = 10; // windows per floor per side
 		const float WSp = AptW / (float)(WPF + 1);
-		for (int32 fl = 0; fl < 3; ++fl)
+		for (int32 fl = 0; fl < 7; ++fl)
 		{
 			const float FlZ = GndH + fl * FlH + FlH * 0.55f;
 			for (int32 si = 0; si < 2; ++si)
@@ -12652,14 +13800,14 @@ void UPHCCitySubsystem::SpawnLangtree()
 					WC->RegisterComponent();
 					WC->AttachToComponent(GF, FAttachmentTransformRules::KeepWorldTransform);
 					BA->AddInstanceComponent(WC);
-					ApplyPBRGlass(WC, GlassMaterial, FLinearColor(0.14f, 0.18f, 0.24f), 0.45f, 0.1f, 0.05f);
+					ApplyPBR(WC, FLinearColor(0.06f, 0.05f, 0.04f), 0.f, 0.95f); // dark recessed arrow slit
 					++CompCount;
 				}
 			}
 		}
 
 		// ---- Balconies on lake side (west = -X) ----
-		for (int32 fl = 0; fl < 3; ++fl)
+		for (int32 fl = 0; fl < 7; ++fl)
 		{
 			const float FlZ = GndH + fl * FlH + 4.f;
 			for (int32 bl = 0; bl < 5; ++bl)
@@ -12670,29 +13818,238 @@ void UPHCCitySubsystem::SpawnLangtree()
 					FVector(7.f * FT, 12.f * FT, 0.5f * FT), ConcreteGray,
 					*FString::Printf(TEXT("Bl_%d_%d_%d"), b, fl, bl), 0.f, 0.7f);
 				MakeCube(BA, GF, FVector(BX - 3.f * FT, BY, FlZ + 2.5f * FT),
-					FVector(0.3f * FT, 12.f * FT, 3.5f * FT), P.Trim,
-					*FString::Printf(TEXT("BR_%d_%d_%d"), b, fl, bl), 0.7f, 0.3f);
+					FVector(1.f * FT, 12.f * FT, 4.f * FT), P.Trim,
+					*FString::Printf(TEXT("BR_%d_%d_%d"), b, fl, bl), 0.f, 0.92f);
 			}
 		}
 
-		// ---- Parapet ----
-		MakeCube(BA, GF, BC + FVector(0.f, 0.f, AptH + 0.5f * FT),
-			FVector(AptD + 2.f * FT, AptW + 2.f * FT, 1.f * FT), P.Roof,
-			*FString::Printf(TEXT("Rf_%d"), b), 0.2f, 0.5f);
+		// ---- Crenellated battlement (sand fort) ----
+		// Base battlement wall (continuous)
+		MakeCube(BA, GF, BC + FVector(0.f, 0.f, AptH + 1.5f * FT),
+			FVector(AptD + 2.f * FT, AptW + 2.f * FT, 3.f * FT), P.Facade,
+			*FString::Printf(TEXT("BtW_%d"), b), 0.f, 0.92f);
+		// Merlons along the two long sides
+		{
+			const float MerlonW = 6.f * FT;
+			const float MerlonGap = 4.f * FT;
+			const float MerlonPitch = MerlonW + MerlonGap;
+			const float MerlonH = 3.f * FT;
+			const float MerlonTopZ = AptH + 3.f * FT + MerlonH * 0.5f;
+			const int32 NM = FMath::Max(1, (int32)(AptW / MerlonPitch));
+			for (int32 si = 0; si < 2; ++si)
+			{
+				const float MX = BC.X + ((si == 0) ? -(AptD * 0.5f) : (AptD * 0.5f));
+				for (int32 m = 0; m < NM; ++m)
+				{
+					const float MY = BC.Y - AptW * 0.5f + MerlonPitch * 0.5f + m * MerlonPitch;
+					MakeCube(BA, GF, FVector(MX, MY, MerlonTopZ),
+						FVector(3.f * FT, MerlonW, MerlonH), P.Roof,
+						*FString::Printf(TEXT("M_%d_%d_%d"), b, si, m), 0.f, 0.92f);
+				}
+			}
+		}
 
 		// ---- Trim stripe ----
 		MakeCube(BA, GF, BC + FVector(0.f, 0.f, GndH + 0.25f * FT),
 			FVector(AptD + 1.f * FT, AptW + 1.f * FT, 0.5f * FT), P.Trim,
-			*FString::Printf(TEXT("Tr_%d"), b), 0.5f, 0.4f);
+			*FString::Printf(TEXT("Tr_%d"), b), 0.f, 0.92f);
 
-		// ---- Corner pilasters ----
+		// ---- Corner turrets (sand fort towers with cone caps) ----
 		for (int32 c = 0; c < 4; ++c)
 		{
 			const float cx = (c % 2 == 0) ? -AptD * 0.5f : AptD * 0.5f;
 			const float cy = (c < 2) ? -AptW * 0.5f : AptW * 0.5f;
-			MakeCyl(BA, GF, BC + FVector(cx, cy, AptH * 0.5f),
-				FVector(1.5f * FT, 1.5f * FT, AptH), P.Trim,
-				*FString::Printf(TEXT("Pl_%d_%d"), b, c), 0.3f, 0.5f);
+			const float TowerH = AptH + 8.f * FT;
+			// Tower cylinder
+			MakeCyl(BA, GF, BC + FVector(cx, cy, TowerH * 0.5f),
+				FVector(5.f * FT, 5.f * FT, TowerH), P.Facade,
+				*FString::Printf(TEXT("Tw_%d_%d"), b, c), 0.f, 0.92f);
+			// Cone cap
+			{
+				UStaticMeshComponent* Cap = NewObject<UStaticMeshComponent>(BA,
+					*FString::Printf(TEXT("TwC_%d_%d"), b, c));
+				Cap->SetStaticMesh(ConeMesh);
+				Cap->SetWorldLocation(BC + FVector(cx, cy, TowerH + 4.f * FT));
+				Cap->SetWorldScale3D(FVector(8.f * FT / 100.f, 8.f * FT / 100.f, 8.f * FT / 100.f));
+				Cap->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Cap->RegisterComponent();
+				Cap->AttachToComponent(GF, FAttachmentTransformRules::KeepWorldTransform);
+				BA->AddInstanceComponent(Cap);
+				ApplyPBR(Cap, P.Roof, 0.f, 0.92f);
+				++CompCount;
+			}
+			// Small battlement ring at tower top
+			MakeCyl(BA, GF, BC + FVector(cx, cy, TowerH + 0.5f * FT),
+				FVector(6.f * FT, 6.f * FT, 1.5f * FT), P.Trim,
+				*FString::Printf(TEXT("TwR_%d_%d"), b, c), 0.f, 0.92f);
+		}
+	}
+
+	// ========================================================================
+	// SKY BRIDGES — enclosed glass walkways connecting west and east rows
+	// 3 bridges at each building center, spanning Landings Drive at 4th floor
+	// ========================================================================
+	{
+		const float BridgeFloorZ = GndH + 3.f * UpperFloorH;
+		const float BridgeH = UpperFloorH;
+		const float BridgeW = 20.f * FT;
+		const float WestFace = -RowSpacingX + AptD * 0.5f;
+		const float EastFace = RowSpacingX - AptD * 0.5f;
+		const float BridgeLen = EastFace - WestFace;
+		const float BridgeCX = (WestFace + EastFace) * 0.5f;
+
+		for (int32 br = 0; br < 3; ++br)
+		{
+			const float BY = (br - 1) * AptSpacingY;
+			const FVector BrC = ComplexCenter + FVector(BridgeCX, BY, BridgeFloorZ);
+
+			AActor* BrA = World->SpawnActor<AActor>(AActor::StaticClass(), BrC, FRotator::ZeroRotator);
+			if (!BrA) continue;
+
+			// Floor slab (walkable)
+			UStaticMeshComponent* BrFloor = MakeCube(BrA, nullptr,
+				BrC + FVector(0.f, 0.f, 0.5f * FT),
+				FVector(BridgeLen, BridgeW, 1.f * FT), ConcreteGray,
+				*FString::Printf(TEXT("SBFlr_%d"), br), 0.f, 0.7f, true);
+
+			// Ceiling
+			MakeCube(BrA, BrFloor,
+				BrC + FVector(0.f, 0.f, BridgeH),
+				FVector(BridgeLen, BridgeW, 0.5f * FT), RoofCharcoal,
+				*FString::Printf(TEXT("SBCeil_%d"), br), 0.2f, 0.5f);
+
+			// Sand fort corridor walls (north + south)
+			for (int32 gs = 0; gs < 2; ++gs)
+			{
+				const float SideY = (gs == 0) ? -BridgeW * 0.5f : BridgeW * 0.5f;
+				MakeCube(BrA, BrFloor,
+					BrC + FVector(0.f, SideY, BridgeH * 0.5f),
+					FVector(BridgeLen, 1.f * FT, BridgeH - 1.f * FT), Palettes[0].Facade,
+					*FString::Printf(TEXT("SBWl_%d_%d"), br, gs), 0.f, 0.92f);
+			}
+		}
+	}
+
+	// ========================================================================
+	// CONNECTORS — link south apartment ends to office buildings
+	// Enclosed corridors from each row's south building to the nearby office
+	// ========================================================================
+	{
+		// South apartment ends at Y = AptSpacingY + AptW/2
+		const float SouthAptEndY = AptSpacingY + AptW * 0.5f;
+
+		// Office positions (from their spawn code below)
+		const float Off0Y = 370.f * FT;
+		const float Off1Y = 370.f * FT;
+		const float Off0X = -80.f * FT;
+		const float Off1X = 120.f * FT;
+		const float OffD = 70.f * FT;
+
+		// Office 0 (west) — connect to west apartment row
+		{
+			const float ConnStartY = SouthAptEndY;
+			const float ConnEndY = Off0Y - OffD * 0.5f;
+			const float ConnLen = ConnEndY - ConnStartY;
+			if (ConnLen > 0.f)
+			{
+				const float ConnCY = (ConnStartY + ConnEndY) * 0.5f;
+				const float ConnX = -RowSpacingX;
+				const float ConnZ = GndH + 2.f * UpperFloorH;
+				const FVector CC1 = ComplexCenter + FVector(ConnX, ConnCY, ConnZ);
+
+				AActor* CnA = World->SpawnActor<AActor>(AActor::StaticClass(), CC1, FRotator::ZeroRotator);
+				if (CnA)
+				{
+					UStaticMeshComponent* CnRoot = MakeCube(CnA, nullptr,
+						CC1 + FVector(0.f, 0.f, 0.5f * FT),
+						FVector(AptD, ConnLen, 1.f * FT), ConcreteGray,
+						TEXT("Cn0Flr"), 0.f, 0.7f, true);
+					MakeCube(CnA, CnRoot,
+						CC1 + FVector(0.f, 0.f, UpperFloorH),
+						FVector(AptD, ConnLen, 0.5f * FT), RoofCharcoal,
+						TEXT("Cn0Ceil"), 0.2f, 0.5f);
+					// Facade walls
+					for (int32 ws = 0; ws < 2; ++ws)
+					{
+						const float WX = (ws == 0) ? -AptD * 0.5f : AptD * 0.5f;
+						MakeCube(CnA, CnRoot,
+							CC1 + FVector(WX, 0.f, UpperFloorH * 0.5f),
+							FVector(0.5f * FT, ConnLen, UpperFloorH), Palettes[2].Facade,
+							*FString::Printf(TEXT("Cn0W_%d"), ws), 0.f, 0.7f);
+					}
+				}
+			}
+		}
+
+		// Office 1 (east) — connect to east apartment row
+		{
+			const float ConnStartY = SouthAptEndY;
+			const float ConnEndY = Off1Y - OffD * 0.5f;
+			const float ConnLen = ConnEndY - ConnStartY;
+			if (ConnLen > 0.f)
+			{
+				const float ConnCY = (ConnStartY + ConnEndY) * 0.5f;
+				const float ConnX = RowSpacingX;
+				const float ConnZ = GndH + 2.f * UpperFloorH;
+				const FVector CC2 = ComplexCenter + FVector(ConnX, ConnCY, ConnZ);
+
+				AActor* CnA = World->SpawnActor<AActor>(AActor::StaticClass(), CC2, FRotator::ZeroRotator);
+				if (CnA)
+				{
+					UStaticMeshComponent* CnRoot = MakeCube(CnA, nullptr,
+						CC2 + FVector(0.f, 0.f, 0.5f * FT),
+						FVector(AptD, ConnLen, 1.f * FT), ConcreteGray,
+						TEXT("Cn1Flr"), 0.f, 0.7f, true);
+					MakeCube(CnA, CnRoot,
+						CC2 + FVector(0.f, 0.f, UpperFloorH),
+						FVector(AptD, ConnLen, 0.5f * FT), RoofCharcoal,
+						TEXT("Cn1Ceil"), 0.2f, 0.5f);
+					for (int32 ws = 0; ws < 2; ++ws)
+					{
+						const float WX = (ws == 0) ? -AptD * 0.5f : AptD * 0.5f;
+						MakeCube(CnA, CnRoot,
+							CC2 + FVector(WX, 0.f, UpperFloorH * 0.5f),
+							FVector(0.5f * FT, ConnLen, UpperFloorH), Palettes[5].Facade,
+							*FString::Printf(TEXT("Cn1W_%d"), ws), 0.f, 0.7f);
+					}
+				}
+			}
+		}
+
+		// Bridge between the two offices
+		{
+			const float OffBridgeLen = Off1X - Off0X;
+			const float OffBridgeCX = (Off0X + Off1X) * 0.5f;
+			const float OffBridgeZ = 56.f * FT; // mid-height of 7-story offices
+			const FVector OBC = ComplexCenter + FVector(OffBridgeCX, Off0Y, OffBridgeZ);
+
+			AActor* OBA = World->SpawnActor<AActor>(AActor::StaticClass(), OBC, FRotator::ZeroRotator);
+			if (OBA)
+			{
+				UStaticMeshComponent* OBFlr = MakeCube(OBA, nullptr,
+					OBC + FVector(0.f, 0.f, 0.5f * FT),
+					FVector(OffBridgeLen, 20.f * FT, 1.f * FT), ConcreteGray,
+					TEXT("OBFlr"), 0.f, 0.7f, true);
+				MakeCube(OBA, OBFlr,
+					OBC + FVector(0.f, 0.f, 14.f * FT),
+					FVector(OffBridgeLen, 20.f * FT, 0.5f * FT), RoofCharcoal,
+					TEXT("OBCeil"), 0.2f, 0.5f);
+				for (int32 gs = 0; gs < 2; ++gs)
+				{
+					const float SideY = (gs == 0) ? -10.f * FT : 10.f * FT;
+					UStaticMeshComponent* GW = NewObject<UStaticMeshComponent>(OBA,
+						*FString::Printf(TEXT("OBGl_%d"), gs));
+					GW->SetStaticMesh(CubeMesh);
+					GW->SetWorldLocation(OBC + FVector(0.f, SideY, 7.f * FT));
+					GW->SetWorldScale3D(FVector(OffBridgeLen / 100.f, 0.02f, (12.f * FT) / 100.f));
+					GW->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					GW->RegisterComponent();
+					GW->AttachToComponent(OBFlr, FAttachmentTransformRules::KeepWorldTransform);
+					OBA->AddInstanceComponent(GW);
+					ApplyPBR(GW, FLinearColor(0.86f, 0.76f, 0.54f), 0.f, 0.92f); // sand corridor wall
+					++CompCount;
+				}
+			}
 		}
 	}
 
@@ -12773,7 +14130,7 @@ void UPHCCitySubsystem::SpawnLangtree()
 
 	// ========================================================================
 	// OFFICE BUILDINGS — Regus/Novant Health (106 Langtree Village Rd)
-	// 3-story, along Langtree Village Drive, south of apartments
+	// 7-story, along Langtree Village Drive, south of apartments
 	// ========================================================================
 	for (int32 o = 0; o < 2; ++o)
 	{
@@ -12781,15 +14138,15 @@ void UPHCCitySubsystem::SpawnLangtree()
 		AActor* OA = World->SpawnActor<AActor>(AActor::StaticClass(), OP, FRotator::ZeroRotator);
 		if (!OA) continue;
 
-		const float OW = 90.f * FT, OD = 70.f * FT, OH = 42.f * FT;
+		const float OW = 90.f * FT, OD = 70.f * FT, OH = 98.f * FT;
 		UStaticMeshComponent* OB = MakeCube(OA, nullptr,
 			OP + FVector(0.f, 0.f, OH * 0.5f),
-			FVector(OW, OD, OH), FLinearColor(0.72f, 0.70f, 0.66f),
-			*FString::Printf(TEXT("Off_%d"), o), 0.f, 0.55f, true);
+			FVector(OW, OD, OH), FLinearColor(0.86f, 0.76f, 0.54f),
+			*FString::Printf(TEXT("Off_%d"), o), 0.f, 0.92f, true);
 
 		// Glass curtain walls (all 4 sides, per floor)
 		const float OFH = 14.f * FT;
-		for (int32 fl = 0; fl < 3; ++fl)
+		for (int32 fl = 0; fl < 7; ++fl)
 		{
 			const float FlZ = fl * OFH + OFH * 0.6f;
 			for (int32 f = 0; f < 4; ++f)
@@ -12805,7 +14162,7 @@ void UPHCCitySubsystem::SpawnLangtree()
 				OG->RegisterComponent();
 				OG->AttachToComponent(OB, FAttachmentTransformRules::KeepWorldTransform);
 				OA->AddInstanceComponent(OG);
-				ApplyPBRGlass(OG, GlassMaterial, FLinearColor(0.12f, 0.16f, 0.22f), 0.45f, 0.1f, 0.05f);
+				ApplyPBR(OG, FLinearColor(0.06f, 0.05f, 0.04f), 0.f, 0.95f); // dark recessed window
 				++CompCount;
 			}
 		}
@@ -12832,7 +14189,7 @@ void UPHCCitySubsystem::SpawnLangtree()
 	}
 
 	// ========================================================================
-	// CORVID TECHNOLOGIES — 4-story glass lakefront office (153 Campus Dr)
+	// CORVID TECHNOLOGIES — 8-story glass lakefront office (153 Campus Dr)
 	// SunGuard SNR 43 reflective blue glass, modern corporate
 	// ========================================================================
 	{
@@ -12840,11 +14197,11 @@ void UPHCCitySubsystem::SpawnLangtree()
 		AActor* CA = World->SpawnActor<AActor>(AActor::StaticClass(), CorvidPos, FRotator::ZeroRotator);
 		if (CA)
 		{
-			const float CW = 120.f * FT, CD = 80.f * FT, CH = 56.f * FT;
+			const float CW = 120.f * FT, CD = 80.f * FT, CH = 112.f * FT;
 			UStaticMeshComponent* CB = MakeCube(CA, nullptr,
 				CorvidPos + FVector(0.f, 0.f, CH * 0.5f),
-				FVector(CW, CD, CH), FLinearColor(0.25f, 0.28f, 0.32f),
-				TEXT("CorvidBody"), 0.2f, 0.4f, true);
+				FVector(CW, CD, CH), FLinearColor(0.88f, 0.78f, 0.56f),
+				TEXT("CorvidBody"), 0.f, 0.92f, true);
 
 			// Full glass curtain wall (reflective blue) — all 4 sides
 			for (int32 f = 0; f < 4; ++f)
@@ -12860,15 +14217,15 @@ void UPHCCitySubsystem::SpawnLangtree()
 				CG->RegisterComponent();
 				CG->AttachToComponent(CB, FAttachmentTransformRules::KeepWorldTransform);
 				CA->AddInstanceComponent(CG);
-				// CrystalBlue reflective tint
-				ApplyPBRGlass(CG, GlassMaterial, FLinearColor(0.08f, 0.18f, 0.35f), 0.55f, 0.4f, 0.08f);
+				// Dark recessed window opening
+				ApplyPBR(CG, FLinearColor(0.06f, 0.05f, 0.04f), 0.f, 0.95f);
 				++CompCount;
 			}
 
 			// Flat modern roof
 			MakeCube(CA, CB, CorvidPos + FVector(0.f, 0.f, CH + 0.5f * FT),
-				FVector(CW + 1.f * FT, CD + 1.f * FT, 0.5f * FT), FLinearColor(0.20f, 0.20f, 0.22f),
-				TEXT("CorvidRoof"), 0.3f, 0.4f);
+				FVector(CW + 1.f * FT, CD + 1.f * FT, 0.5f * FT), FLinearColor(0.84f, 0.74f, 0.52f),
+				TEXT("CorvidRoof"), 0.f, 0.92f);
 
 			// CORVID TECHNOLOGIES sign
 			UTextRenderComponent* CVT = NewObject<UTextRenderComponent>(CA, TEXT("CorvidSign"));
@@ -12959,11 +14316,11 @@ void UPHCCitySubsystem::SpawnLangtree()
 		AActor* ClA = World->SpawnActor<AActor>(AActor::StaticClass(), ClubPos, FRotator::ZeroRotator);
 		if (ClA)
 		{
-			const float CW = 100.f * FT, CD = 80.f * FT, CH = 16.f * FT;
+			const float CW = 100.f * FT, CD = 80.f * FT, CH = 60.f * FT;
 			UStaticMeshComponent* ClB = MakeCube(ClA, nullptr,
 				ClubPos + FVector(0.f, 0.f, CH * 0.5f),
-				FVector(CW, CD, CH), FLinearColor(0.75f, 0.72f, 0.66f),
-				TEXT("ClubBody"), 0.f, 0.6f, true);
+				FVector(CW, CD, CH), FLinearColor(0.86f, 0.76f, 0.54f),
+				TEXT("ClubBody"), 0.f, 0.92f, true);
 
 			// Large lake-facing windows
 			{
@@ -12975,7 +14332,7 @@ void UPHCCitySubsystem::SpawnLangtree()
 				CG->RegisterComponent();
 				CG->AttachToComponent(ClB, FAttachmentTransformRules::KeepWorldTransform);
 				ClA->AddInstanceComponent(CG);
-				ApplyPBRGlass(CG, GlassMaterial, FLinearColor(0.10f, 0.14f, 0.20f), 0.5f, 0.1f, 0.05f);
+				ApplyPBR(CG, FLinearColor(0.06f, 0.05f, 0.04f), 0.f, 0.95f); // dark recessed opening
 				++CompCount;
 			}
 
@@ -13390,10 +14747,80 @@ void UPHCCitySubsystem::SpawnLangtree()
 			GS->RegisterComponent();
 			GA->SetRootComponent(GS);
 			GA->AddInstanceComponent(GS);
-			ApplyPBR(GS, FLinearColor(0.28f, 0.38f, 0.18f), 0.f, 0.9f);
+			ApplyPBR(GS, FLinearColor(0.82f, 0.74f, 0.54f), 0.f, 0.92f); // sand ground
 			++CompCount;
 		}
 	}
 
-	UE_LOG(LogPlayhouseCity, Log, TEXT("Langtree Lake Norman: Spawned complex with %d components."), CompCount);
+	// ========================================================================
+	// WARM AMBIENT LIGHTING — torch-like point lights for night glow
+	// Positioned at tower tops and along the base of the fort walls
+	// ========================================================================
+	{
+		AActor* LightActor = World->SpawnActor<AActor>(AActor::StaticClass(), ComplexCenter, FRotator::ZeroRotator);
+		if (LightActor)
+		{
+			USceneComponent* LRoot = NewObject<USceneComponent>(LightActor, TEXT("LTLightRoot"));
+			LRoot->RegisterComponent();
+			LightActor->SetRootComponent(LRoot);
+
+			const FColor WarmTorch(255, 170, 60);  // warm amber/orange
+			const float TorchIntensity = 4000.f;
+			const float TorchRadius = 12000.f;
+
+			// Tower-top lights — 4 outer corners of each row
+			struct FTorchPos { float X; float Y; float Z; };
+			const float TowerTopZ = AptH + 10.f * FT;
+			const FTorchPos TorchPositions[] = {
+				// West row — north end (b=0) NW + SW corners
+				{ -RowSpacingX - AptD * 0.5f, -AptSpacingY - AptW * 0.5f, TowerTopZ },
+				{ -RowSpacingX - AptD * 0.5f,  AptSpacingY + AptW * 0.5f, TowerTopZ },
+				// West row — east face, mid-building (b=1) for cross-illumination
+				{ -RowSpacingX + AptD * 0.5f, 0.f, TowerTopZ },
+				// East row — north end (b=3) NE + SE corners
+				{  RowSpacingX + AptD * 0.5f, -AptSpacingY - AptW * 0.5f, TowerTopZ },
+				{  RowSpacingX + AptD * 0.5f,  AptSpacingY + AptW * 0.5f, TowerTopZ },
+				// East row — west face, mid-building (b=4) for cross-illumination
+				{  RowSpacingX - AptD * 0.5f, 0.f, TowerTopZ },
+				// Ground-level warm uplights at the fort entrance (north)
+				{ 0.f, -AptSpacingY - AptW * 0.5f - 10.f * FT, 8.f * FT },
+				// Ground-level warm uplight at south end
+				{ 0.f,  AptSpacingY + AptW * 0.5f + 10.f * FT, 8.f * FT },
+			};
+
+			for (int32 t = 0; t < 8; ++t)
+			{
+				const FVector TPos = ComplexCenter + FVector(TorchPositions[t].X, TorchPositions[t].Y, TorchPositions[t].Z);
+				UPointLightComponent* PL = NewObject<UPointLightComponent>(LightActor,
+					*FString::Printf(TEXT("FortTorch_%d"), t));
+				PL->SetWorldLocation(TPos);
+				PL->SetLightColor(WarmTorch);
+				PL->SetIntensity(TorchIntensity);
+				PL->SetAttenuationRadius(TorchRadius);
+				PL->SetCastShadows(false);
+				PL->RegisterComponent();
+				PL->AttachToComponent(LRoot, FAttachmentTransformRules::KeepWorldTransform);
+				LightActor->AddInstanceComponent(PL);
+
+				// Visible torch flame sphere (small glowing orange ball)
+				UStaticMeshComponent* Flame = NewObject<UStaticMeshComponent>(LightActor,
+					*FString::Printf(TEXT("Flame_%d"), t));
+				Flame->SetStaticMesh(SphereMesh);
+				Flame->SetWorldLocation(TPos);
+				Flame->SetWorldScale3D(FVector(0.015f, 0.015f, 0.02f));
+				Flame->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Flame->RegisterComponent();
+				Flame->AttachToComponent(LRoot, FAttachmentTransformRules::KeepWorldTransform);
+				LightActor->AddInstanceComponent(Flame);
+				UMaterialInstanceDynamic* FlameMat = UMaterialInstanceDynamic::Create(ColorMaterial, Flame);
+				FlameMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(1.0f, 0.6f, 0.15f));
+				FlameMat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(3.0f, 1.5f, 0.3f));
+				FlameMat->SetScalarParameterValue(TEXT("Roughness"), 0.1f);
+				Flame->SetMaterial(0, FlameMat);
+				CompCount += 2;
+			}
+		}
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Langtree Lake Norman: Spawned sand fort complex with %d components."), CompCount);
 }

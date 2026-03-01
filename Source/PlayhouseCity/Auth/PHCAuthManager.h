@@ -61,6 +61,14 @@ public:
 	// Authentication flows
 	// ----------------------------------------------------------------
 
+	/** Sign In with Apple (iOS). On non-iOS, falls back to GuestLogin. */
+	UFUNCTION(BlueprintCallable, Category = "PHC|Auth")
+	void AppleSignIn();
+
+	/** Try auto-login using a stored Apple user ID. Returns true if attempt was started. */
+	UFUNCTION(BlueprintCallable, Category = "PHC|Auth")
+	bool AutoLoginWithApple();
+
 	/** Standard email + password login. */
 	UFUNCTION(BlueprintCallable, Category = "PHC|Auth")
 	void Login(const FString& Email, const FString& Password);
@@ -85,6 +93,13 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "PHC|Auth")
 	FOnAuthResult OnAuthResult;
 
+	/** Called from the ObjC delegate when Apple Sign In completes (on game thread). */
+	void OnAppleSignInComplete(const FString& IdentityToken, const FString& UserIdentifier,
+		const FString& FullName, const FString& Email);
+
+	/** Called from the ObjC delegate when Apple Sign In fails. */
+	void OnAppleSignInFailed(const FString& ErrorMessage);
+
 private:
 	// ----------------------------------------------------------------
 	// Internal helpers
@@ -96,11 +111,20 @@ private:
 	/** Common handler for login and register HTTP responses. */
 	void HandleAuthResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bConnectedSuccessfully);
 
+	/** Handler for Apple Sign In backend response -- also persists Apple user ID. */
+	void HandleAppleAuthResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bConnectedSuccessfully);
+
 	/** Parse the player object from a JSON response and apply login. */
 	bool ParseAndApplyPlayer(const TSharedPtr<class FJsonObject>& JsonObject);
 
 	/** Broadcasts the auth result on the game thread. */
 	void BroadcastResult(bool bSuccess, const FString& ErrorMessage);
+
+	/** Persists the Apple user identifier for auto-login. */
+	void SaveAppleUserId(const FString& UserId);
+
+	/** Returns the stored Apple user identifier, or empty if none. */
+	FString LoadAppleUserId() const;
 
 	// ----------------------------------------------------------------
 	// State
@@ -111,4 +135,7 @@ private:
 
 	/** True while an auth request is in-flight. */
 	bool bRequestInFlight = false;
+
+	/** The Apple user identifier from the most recent sign-in attempt (used in backend POST). */
+	FString PendingAppleUserId;
 };

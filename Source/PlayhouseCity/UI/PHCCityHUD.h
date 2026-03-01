@@ -16,6 +16,8 @@ class APHCVehiclePawn;
 class APHCDuneBuggyPawn;
 class APHCRaptorPawn;
 class APHCTankPawn;
+class APHCDirtBikePawn;
+class APHCBlackbirdPawn;
 
 /**
  * Lightweight HUD overlay for the PlayhouseCity 3D open world.
@@ -72,6 +74,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UButton> CarButton;
+
+	UPROPERTY()
+	TObjectPtr<UButton> EnterVehicleButton;
 
 	// Jump/Sprint/Interact buttons removed — mobile uses touch panels only.
 
@@ -217,6 +222,9 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UButton> SelectTankBtn;
 
+	UPROPERTY()
+	TObjectPtr<UButton> SelectDirtBikeBtn;
+
 	// -- Multiplayer UI -------------------------------------------------------
 
 	UPROPERTY()
@@ -236,6 +244,10 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> PlayerCountText;
+
+	/** Signed-in username display at top-left of location monitor. */
+	UPROPERTY()
+	TObjectPtr<UTextBlock> UsernameText;
 
 	/** Live coordinate display at top of screen. */
 	UPROPERTY()
@@ -270,6 +282,7 @@ protected:
 
 	bool bDrivingMode = false;
 	bool bFireHeld = false;
+	bool bEnterTouchActive = false;
 
 	// Speed tracking for speedometer
 	FVector PrevPawnLocation = FVector::ZeroVector;
@@ -291,6 +304,9 @@ private:
 
 	UFUNCTION()
 	void OnCarButtonClicked();
+
+	UFUNCTION()
+	void OnEnterVehicleClicked();
 
 	// Jump/Sprint/Interact button callbacks removed.
 
@@ -317,6 +333,9 @@ private:
 
 	UFUNCTION()
 	void OnSelectTank();
+
+	UFUNCTION()
+	void OnSelectDirtBike();
 
 	UFUNCTION()
 	void OnDropBombClicked();

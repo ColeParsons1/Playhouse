@@ -8,11 +8,14 @@
 
 class UMaterial;
 class UMaterialInstanceDynamic;
+class UHierarchicalInstancedStaticMeshComponent;
 class UDirectionalLightComponent;
 class USkyLightComponent;
 class UExponentialHeightFogComponent;
 class USpotLightComponent;
+class UPointLightComponent;
 class APostProcessVolume;
+class APHCBlackbirdPawn;
 
 /** City district types for zone-based procedural generation. */
 enum class ECityDistrict : uint8
@@ -42,6 +45,9 @@ class PLAYHOUSECITY_API UPHCCitySubsystem : public UTickableWorldSubsystem
 public:
 	// -- USubsystem interface -------------------------------------------------
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
+
+	/** SR-71 Blackbird spawned in the underground airport hangar. */
+	UPROPERTY(Transient) TObjectPtr<APHCBlackbirdPawn> AirportBlackbird;
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
@@ -71,6 +77,11 @@ private:
 	void SpawnStreetLabels();
 	void SpawnLightRail();
 	void SpawnLangtree();
+	void SpawnTerrainGrid();
+	void SpawnGrassSystem();
+	void SpawnDirtBikePark();
+	void SpawnGoldCoins();
+	void UpdateGrassInstances(const FVector& PlayerLoc);
 
 	/** Spawn a single building with optional window lights. */
 	void SpawnBuilding(const FVector& Location, const FVector& Size,
@@ -119,6 +130,23 @@ private:
 
 	/** Translucent glass/water material with BaseColor, Opacity, Metallic, Roughness, EmissiveColor. */
 	UPROPERTY(Transient) TObjectPtr<UMaterial> GlassMaterial;
+
+	// -- Procedural normal/roughness map textures (generated at startup) ------
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> GrassNormalMap;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> BrickNormalMap;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> ConcreteNormalMap;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> AsphaltNormalMap;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> SandNormalMap;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> GrassRoughnessMap;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> BrickRoughnessMap;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> ConcreteRoughnessMap;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> AsphaltRoughnessMap;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> SandRoughnessMap;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> FlatNormalMap;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> WhiteRoughnessMap;
+
+	void GenerateProceduralTextures();
+	UTexture2D* CreateProceduralTexture(int32 W, int32 H, const TFunction<FColor(int32,int32)>& PixelFunc, bool bNormalMap = false);
 
 	/** Cached lighting components for day/night cycle. */
 	UPROPERTY(Transient) TObjectPtr<UDirectionalLightComponent> SunLightComp;
@@ -169,13 +197,33 @@ public:
 		float ContactCooldown = 0.f;
 		float DamageFlashTimer = 0.f;
 		FVector SpawnPosition = FVector::ZeroVector;
+		TObjectPtr<UPointLightComponent> GlowLight;
+		float GlowBaseIntensity = 4000.f;
 	};
 
 	FCrabData Crabs[NumGiantCrabs];
 	bool bCrabsNightVisible = false;
+	int32 CrabsAlive = NumGiantCrabs;
+	float WaveRestTimer = -1.f;  // >=0 means resting between waves
+	static constexpr float WaveRestDuration = 60.f; // 60 second rest after clearing all NPCs
 
 	/** Respawn a killed NPC at its original spawn point (if night is active). */
 	void RespawnCrab(int32 Index);
+
+	/** Collectible gold coins scattered across the map. */
+	static constexpr int32 NumGoldCoins = 14;
+
+	struct FGoldCoinData
+	{
+		TObjectPtr<AActor> Actor;
+		FVector OriginalSpawnPos = FVector::ZeroVector;
+		FVector CurrentPos = FVector::ZeroVector;
+		float SpinAngle = 0.f;
+		float RespawnTimer = -1.f;       // <0 = active, >=0 = waiting to respawn
+		float PickupAnimTimer = -1.f;    // >=0 = shrinking animation active
+	};
+
+	FGoldCoinData GoldCoins[NumGoldCoins];
 
 private:
 
@@ -229,6 +277,24 @@ private:
 	float MeteorSpawnTimer = 0.f;
 	UPROPERTY(Transient) TArray<TObjectPtr<AActor>> ActiveMeteors;
 	TArray<FVector> MeteorVelocities;
+
+	/** Procedural terrain actor. */
+	UPROPERTY(Transient) TObjectPtr<AActor> TerrainActor;
+
+	/** Grass instancing system (4 HISM color variants). */
+	UPROPERTY(Transient) TObjectPtr<AActor> GrassActor;
+	UPROPERTY(Transient) TArray<TObjectPtr<UHierarchicalInstancedStaticMeshComponent>> GrassHISMs;
+	FVector LastGrassUpdateLocation = FVector(1e9f, 1e9f, 0.f);
+	bool IsOnRoadOrSidewalk(float X, float Y) const;
+
+public:
+	/** Get terrain height at world XY. Flat inside city, undulating outside. */
+	float GetTerrainHeight(float X, float Y) const;
+
+private:
+
+	/** Simple 2D Perlin noise. */
+	static float PerlinNoise2D(float X, float Y);
 
 	/** Deterministic random stream for city generation. */
 	FRandomStream CityRandom;

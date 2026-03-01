@@ -20,6 +20,7 @@
 #include "Engine/LocalPlayer.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/World.h"
+#include "Core/PHCCitySubsystem.h"
 #include "Vehicle/PHCMissileProjectile.h"
 #include "Components/SphereComponent.h"
 
@@ -517,12 +518,36 @@ void APHCDuneBuggyPawn::Tick(float DeltaTime)
 		if (WheelRR) WheelRR->SetRelativeRotation(RearRot);
 	}
 
-	// ---- Movement ----
+	// ---- Movement (with wall collision line trace) ----
 	if (FMath::Abs(CurrentSpeed) > 1.f)
 	{
 		const FVector Forward = GetActorForwardVector();
 		const FVector Delta = Forward * CurrentSpeed * DeltaTime;
-		AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), false);
+		const FVector Pos = GetActorLocation();
+		const float MoveLen = FVector(Delta.X, Delta.Y, 0.f).Size();
+		const FVector MoveNorm = FVector(Delta.X, Delta.Y, 0.f).GetSafeNormal();
+
+		// Line trace well above vehicle to detect building walls (not terrain slopes)
+		const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 200.f);
+		const FVector TraceEnd = TraceStart + MoveNorm * (MoveLen + 60.f);
+		FCollisionQueryParams WallParams;
+		WallParams.AddIgnoredActor(this);
+		FHitResult WallHit;
+
+		bool bBlocked = GetWorld()->LineTraceSingleByChannel(
+			WallHit, TraceStart, TraceEnd, ECC_WorldStatic, WallParams);
+
+		if (bBlocked && !WallHit.bStartPenetrating && WallHit.Distance < MoveLen + 40.f)
+		{
+			const float SafeDist = FMath::Max(0.f, WallHit.Distance - 40.f);
+			if (SafeDist > 1.f)
+				AddActorWorldOffset(MoveNorm * FMath::Min(SafeDist, MoveLen), false);
+			CurrentSpeed *= 0.1f;
+		}
+		else
+		{
+			AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), false);
+		}
 	}
 
 	// ---- Ground following (downward trace to ride slopes, ramps, ocean floor) ----
@@ -605,6 +630,19 @@ void APHCDuneBuggyPawn::Tick(float DeltaTime)
 			SetActorRotation(Rot);
 		}
 		bWasGrounded = bFoundSurface;
+		// Terrain height supplement — ensure vehicle rides terrain hills
+		if (UPHCCitySubsystem* CitySub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
+		{
+			const FVector CurPos = GetActorLocation();
+			const float TerrainZ = CitySub->GetTerrainHeight(CurPos.X, CurPos.Y) + FootOffset;
+			if (CurPos.Z < TerrainZ - 2.f)
+			{
+				const float NewZ = FMath::FInterpTo(CurPos.Z, TerrainZ, DeltaTime, 12.f);
+				SetActorLocation(FVector(CurPos.X, CurPos.Y, NewZ));
+				VerticalVelocity = 0.f;
+				bHasBeenGrounded = true;
+			}
+		}
 		} // end else (not in tunnel/airport)
 	}
 

@@ -10,6 +10,8 @@
 #include "Vehicle/PHCDuneBuggyPawn.h"
 #include "Vehicle/PHCRaptorPawn.h"
 #include "Vehicle/PHCTankPawn.h"
+#include "Vehicle/PHCDirtBikePawn.h"
+#include "Vehicle/PHCBlackbirdPawn.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "PlayhouseCity.h"
@@ -26,6 +28,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Misc/Paths.h"
 #include "Core/PHCCitySubsystem.h"
+#include "Core/PHCCityGameMode.h"
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -129,6 +132,26 @@ bool UPHCCityHUD::Initialize()
 		}
 
 		// ============================================================
+		//  USERNAME — left of the location monitor
+		// ============================================================
+		{
+			const FSlateFontInfo UserFont = FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 10);
+
+			UsernameText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("UsernameText"));
+			UsernameText->SetText(FText::GetEmpty());
+			UsernameText->SetFont(UserFont);
+			UsernameText->SetColorAndOpacity(FSlateColor(FLinearColor(0.8f, 0.8f, 0.8f, 0.8f)));
+
+			UCanvasPanelSlot* UserSlot = RootCanvas->AddChildToCanvas(UsernameText);
+			UserSlot->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f)); // top-center anchor
+			UserSlot->SetAlignment(FVector2D(1.f, 0.f)); // right-align to anchor position
+			UserSlot->SetOffsets(FMargin(-10.f, 14.f, 0.f, 0.f)); // 10px left of center
+			UserSlot->SetAutoSize(true);
+		}
+
+		// ============================================================
 		//  HEALTH BAR — right of the location monitor, same style/size
 		// ============================================================
 		{
@@ -144,7 +167,7 @@ bool UPHCCityHUD::Initialize()
 			UCanvasPanelSlot* HPBGS = RootCanvas->AddChildToCanvas(HealthBarBG);
 			HPBGS->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f)); // top-center
 			HPBGS->SetAlignment(FVector2D(0.f, 0.f)); // left-aligned from anchor
-			HPBGS->SetOffsets(FMargin(130.f, 10.f, 160.f, 26.f)); // right of LocationBar
+			HPBGS->SetOffsets(FMargin(260.f, 10.f, 160.f, 26.f)); // right of LocationBar
 			HPBGS->SetAutoSize(false);
 
 			// Inner fill bar (green = healthy)
@@ -196,7 +219,7 @@ bool UPHCCityHUD::Initialize()
 			UCanvasPanelSlot* KDS = RootCanvas->AddChildToCanvas(KDDisplayBG);
 			KDS->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f)); // top-center
 			KDS->SetAlignment(FVector2D(0.f, 0.f));
-			KDS->SetOffsets(FMargin(300.f, 10.f, 120.f, 26.f)); // right of health bar
+			KDS->SetOffsets(FMargin(430.f, 10.f, 120.f, 26.f)); // right of health bar
 			KDS->SetAutoSize(false);
 
 			KDText = WidgetTree->ConstructWidget<UTextBlock>(
@@ -339,7 +362,7 @@ bool UPHCCityHUD::Initialize()
 
 		UTextBlock* CarLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("CarLabel"));
-		CarLabel->SetText(FText::FromString(TEXT("Car")));
+		CarLabel->SetText(FText::FromString(TEXT("Vehicle")));
 		CarLabel->SetFont(BtnFont);
 		CarLabel->SetColorAndOpacity(FSlateColor(White));
 		CarLabel->SetJustification(ETextJustify::Center);
@@ -349,6 +372,36 @@ bool UPHCCityHUD::Initialize()
 		CarBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f)); // top-left
 		CarBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
 		CarBtnSlot->SetOffsets(FMargin(80.f, 64.f, 80.f, 40.f));
+
+		// ============================================================
+		//  CENTER-BOTTOM: "ENTER VEHICLE" button — large, bright green
+		// ============================================================
+		EnterVehicleButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("EnterVehicleButton"));
+
+		FButtonStyle EnterBtnStyle = EnterVehicleButton->GetStyle();
+		EnterBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.10f, 0.65f, 0.20f, 0.92f));
+		EnterBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.15f, 0.75f, 0.25f, 0.95f));
+		EnterBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.07f, 0.50f, 0.15f, 1.0f));
+		EnterVehicleButton->SetStyle(EnterBtnStyle);
+
+		const FSlateFontInfo EnterFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 20);
+		UTextBlock* EnterLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("EnterLabel"));
+		EnterLabel->SetText(FText::FromString(TEXT("ENTER VEHICLE")));
+		EnterLabel->SetFont(EnterFont);
+		EnterLabel->SetColorAndOpacity(FSlateColor(White));
+		EnterLabel->SetJustification(ETextJustify::Center);
+		EnterVehicleButton->AddChild(EnterLabel);
+
+		UCanvasPanelSlot* EnterBtnSlot = RootCanvas->AddChildToCanvas(EnterVehicleButton);
+		EnterBtnSlot->SetAnchors(FAnchors(0.5f, 1.f, 0.5f, 1.f)); // bottom-center
+		EnterBtnSlot->SetAlignment(FVector2D(0.5f, 1.f));
+		EnterBtnSlot->SetOffsets(FMargin(0.f, -120.f, 200.f, 55.f));
+
+		// Start hidden — proximity detection in NativeTick will show it
+		EnterVehicleButton->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
 		//  TOP-LEFT (below Car): "Weapons" button
@@ -464,10 +517,13 @@ bool UPHCCityHUD::Initialize()
 			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 18);
 
 		// Move panel (left 45%, bottom 50%)
+		// SelfHitTestInvisible so touches pass through to buttons underneath
+		// (touch input is handled via raw GetInputTouchState in NativeTick)
 		WalkMovePanel = WidgetTree->ConstructWidget<UBorder>(
 			UBorder::StaticClass(), TEXT("WalkMovePanel"));
 		WalkMovePanel->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
 		WalkMovePanel->SetPadding(FMargin(0.f));
+		WalkMovePanel->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
 		WalkMoveLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("WalkMoveLabel"));
@@ -484,10 +540,12 @@ bool UPHCCityHUD::Initialize()
 		}
 
 		// Look panel (right 55%, bottom 50%)
+		// SelfHitTestInvisible so touches pass through to buttons underneath
 		WalkLookPanel = WidgetTree->ConstructWidget<UBorder>(
 			UBorder::StaticClass(), TEXT("WalkLookPanel"));
 		WalkLookPanel->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
 		WalkLookPanel->SetPadding(FMargin(0.f));
+		WalkLookPanel->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
 		WalkLookLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("WalkLookLabel"));
@@ -761,6 +819,29 @@ bool UPHCCityHUD::Initialize()
 		TankSlot->SetVerticalAlignment(VAlign_Center);
 		TankSlot->SetHorizontalAlignment(HAlign_Center);
 
+		// -- Dirt Bike button (red/orange) --
+		SelectDirtBikeBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectDirtBikeBtn"));
+		{
+			FButtonStyle Style = SelectDirtBikeBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.60f, 0.10f, 0.04f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.75f, 0.15f, 0.06f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.45f, 0.07f, 0.03f, 1.0f));
+			SelectDirtBikeBtn->SetStyle(Style);
+		}
+		UTextBlock* DirtBikeLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("DirtBikeSelectLabel"));
+		DirtBikeLabel->SetText(FText::FromString(TEXT("Dirt Bike")));
+		DirtBikeLabel->SetFont(BtnFont);
+		DirtBikeLabel->SetColorAndOpacity(FSlateColor(White));
+		DirtBikeLabel->SetJustification(ETextJustify::Center);
+		SelectDirtBikeBtn->AddChild(DirtBikeLabel);
+
+		UHorizontalBoxSlot* BikeSlot = SelectHBox->AddChildToHorizontalBox(SelectDirtBikeBtn);
+		BikeSlot->SetPadding(FMargin(8.f));
+		BikeSlot->SetVerticalAlignment(VAlign_Center);
+		BikeSlot->SetHorizontalAlignment(HAlign_Center);
+
 		VehicleSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
@@ -911,7 +992,7 @@ bool UPHCCityHUD::Initialize()
 		}
 		UTextBlock* DaggerLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("DaggerSelectLabel"));
-		DaggerLabel->SetText(FText::FromString(TEXT("Dagger")));
+		DaggerLabel->SetText(FText::FromString(TEXT("1-Hit Dagger")));
 		DaggerLabel->SetFont(BtnFont);
 		DaggerLabel->SetColorAndOpacity(FSlateColor(White));
 		DaggerLabel->SetJustification(ETextJustify::Center);
@@ -1292,6 +1373,16 @@ void UPHCCityHUD::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	// Set the username from the logged-in profile.
+	if (UsernameText)
+	{
+		UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(this);
+		if (GI && !GI->LocalPlayerProfile.Username.IsEmpty())
+		{
+			UsernameText->SetText(FText::FromString(GI->LocalPlayerProfile.Username));
+		}
+	}
+
 	if (MenuButton)
 	{
 		MenuButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnMenuButtonClicked);
@@ -1299,6 +1390,10 @@ void UPHCCityHUD::NativeConstruct()
 	if (CarButton)
 	{
 		CarButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnCarButtonClicked);
+	}
+	if (EnterVehicleButton)
+	{
+		EnterVehicleButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnEnterVehicleClicked);
 	}
 	if (SelectAventadorBtn)
 	{
@@ -1319,6 +1414,10 @@ void UPHCCityHUD::NativeConstruct()
 	if (SelectTankBtn)
 	{
 		SelectTankBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectTank);
+	}
+	if (SelectDirtBikeBtn)
+	{
+		SelectDirtBikeBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectDirtBike);
 	}
 	if (FireButton)
 	{
@@ -1501,11 +1600,22 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 				// Convert UU/s to mph (1 UU = 1 cm; 1 cm/s = 0.02237 mph)
 				const float SpeedMPH = SmoothedSpeed * 0.02237f;
-				const TCHAR* Mode = bDrivingMode ? TEXT("DRIVING") : TEXT("WALKING");
+
+				// Compass direction from pawn yaw
+				const float Yaw = FMath::Fmod(P->GetActorRotation().Yaw + 360.f, 360.f);
+				const TCHAR* Dir;
+				if (Yaw >= 337.5f || Yaw < 22.5f)        Dir = TEXT("N");
+				else if (Yaw < 67.5f)                     Dir = TEXT("NE");
+				else if (Yaw < 112.5f)                    Dir = TEXT("E");
+				else if (Yaw < 157.5f)                    Dir = TEXT("SE");
+				else if (Yaw < 202.5f)                    Dir = TEXT("S");
+				else if (Yaw < 247.5f)                    Dir = TEXT("SW");
+				else if (Yaw < 292.5f)                    Dir = TEXT("W");
+				else                                      Dir = TEXT("NW");
 
 				LocationText->SetText(FText::FromString(
 					FString::Printf(TEXT("%.1f mph  %s  |  X: %.0f  Y: %.0f  Z: %.0f"),
-						SpeedMPH, Mode, Loc.X, Loc.Y, Loc.Z)));
+						SpeedMPH, Dir, Loc.X, Loc.Y, Loc.Z)));
 			}
 		}
 	}
@@ -1594,6 +1704,47 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		}
 	}
 
+	// -- Proximity-based "ENTER VEHICLE" button visibility --
+	if (EnterVehicleButton && !bDrivingMode)
+	{
+		bool bNearVehicle = false;
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			if (APawn* P = PC->GetPawn())
+			{
+				constexpr float ShowRange = 2000.f;
+				const FVector Loc = P->GetActorLocation();
+
+				// Check SpawnedVehicles from game mode
+				if (APHCCityGameMode* CityGM = Cast<APHCCityGameMode>(GetWorld()->GetAuthGameMode()))
+				{
+					for (APHCVehiclePawn* V : CityGM->SpawnedVehicles)
+					{
+						if (V && !V->bIsOccupied && FVector::Dist(Loc, V->GetActorLocation()) < ShowRange)
+						{
+							bNearVehicle = true;
+							break;
+						}
+					}
+				}
+
+				// Also check the Blackbird
+				if (!bNearVehicle)
+				{
+					if (UPHCCitySubsystem* Sub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
+					{
+						APHCBlackbirdPawn* BB = Sub->AirportBlackbird;
+						if (BB && !BB->bIsOccupied && FVector::Dist(Loc, BB->GetActorLocation()) < ShowRange)
+						{
+							bNearVehicle = true;
+						}
+					}
+				}
+			}
+		}
+		EnterVehicleButton->SetVisibility(bNearVehicle ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+
 #if PLATFORM_IOS || PLATFORM_ANDROID
 	do {
 		APlayerController* PC = GetOwningPlayer();
@@ -1678,12 +1829,26 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 				T->TurretYawInput = NewPitch;
 				if (!T->HasAuthority()) { T->ServerSetSteering(NewSteering); T->ServerSetThrottle(NewThrottle); T->ServerSetTurretYaw(NewPitch); }
 			}
+			else if (APHCDirtBikePawn* DB = Cast<APHCDirtBikePawn>(DrivenVehicle))
+			{
+				DB->SteeringInput = NewSteering;
+				DB->ThrottleInput = NewThrottle;
+				if (!DB->HasAuthority()) { DB->ServerSetSteering(NewSteering); DB->ServerSetThrottle(NewThrottle); }
+			}
+			else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(DrivenVehicle))
+			{
+				BB->SteeringInput = NewSteering;
+				BB->ThrottleInput = NewThrottle;
+				BB->PitchInput = NewPitch;
+				if (!BB->HasAuthority()) { BB->ServerSetSteering(NewSteering); BB->ServerSetThrottle(NewThrottle); BB->ServerSetPitch(NewPitch); }
+			}
 
 			if (bFireTouched)
 			{
 				if (APHCDuneBuggyPawn* Buggy = Cast<APHCDuneBuggyPawn>(DrivenVehicle)) { Buggy->FireMissile(); }
 				else if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle)) { Raptor->FireRocket(); }
 				else if (APHCTankPawn* Tank = Cast<APHCTankPawn>(DrivenVehicle)) { Tank->FireCannon(); }
+				else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(DrivenVehicle)) { BB->FireRocket(); }
 			}
 		}
 		else
@@ -1702,12 +1867,19 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			const float LookSensitivity = 0.15f;
 			const float ButtonZoneY = VPHeight * 0.25f; // top 25% reserved for buttons
 
+			// Enter Vehicle button area (bottom-center, 200x55 px, 120px above bottom)
+			const float EnterBtnLeft  = ScreenMidX - 100.f;
+			const float EnterBtnRight = ScreenMidX + 100.f;
+			const float EnterBtnTop   = VPHeight - 175.f;
+			const float EnterBtnBot   = VPHeight - 120.f;
+
 			float MoveX = 0.f;
 			float MoveY = 0.f;
 			float LookDeltaX = 0.f;
 			float LookDeltaY = 0.f;
 			bool bMoveFingStillDown = false;
 			bool bLookFingStillDown = false;
+			bool bEnterTouched = false;
 
 			for (int32 i = 0; i < 5; ++i)
 			{
@@ -1725,6 +1897,16 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 				// Skip top 25% of screen where HUD buttons live
 				if (TouchY < ButtonZoneY) { continue; }
+
+				// Skip touches on the Enter Vehicle button area
+				if (EnterVehicleButton &&
+					EnterVehicleButton->GetVisibility() == ESlateVisibility::Visible &&
+					TouchX >= EnterBtnLeft && TouchX <= EnterBtnRight &&
+					TouchY >= EnterBtnTop && TouchY <= EnterBtnBot)
+				{
+					bEnterTouched = true;
+					continue;
+				}
 
 				const FVector2D TouchPos(TouchX, TouchY);
 
@@ -1785,6 +1967,16 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			Char->TouchLookX = LookDeltaX;
 			Char->TouchLookY = LookDeltaY;
 			Char->bHUDTouchActive = (WalkMoveFingerIdx >= 0 || WalkLookFingerIdx >= 0);
+
+			// Handle Enter Vehicle tap (fire on release to avoid repeated triggers)
+			if (bEnterTouched && !bEnterTouchActive)
+			{
+				if (APHCPlayerController* PCC = Cast<APHCPlayerController>(PC))
+				{
+					PCC->EnterNearestVehicle();
+				}
+			}
+			bEnterTouchActive = bEnterTouched;
 		}
 	} while (false);
 #endif
@@ -1803,6 +1995,10 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		else if (APHCTankPawn* Tank = Cast<APHCTankPawn>(DrivenVehicle))
 		{
 			Tank->FireCannon();
+		}
+		else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(DrivenVehicle))
+		{
+			BB->FireRocket();
 		}
 	}
 }
@@ -1823,19 +2019,21 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 	if (FireButton)
 	{
 		const bool bShowFire = bDriving &&
-			(Cast<APHCDuneBuggyPawn>(Vehicle) != nullptr || Cast<APHCRaptorPawn>(Vehicle) != nullptr || Cast<APHCTankPawn>(Vehicle) != nullptr);
+			(Cast<APHCDuneBuggyPawn>(Vehicle) != nullptr || Cast<APHCRaptorPawn>(Vehicle) != nullptr || Cast<APHCTankPawn>(Vehicle) != nullptr || Cast<APHCBlackbirdPawn>(Vehicle) != nullptr);
 		FireButton->SetVisibility(bShowFire ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 
-	// Show drop bomb button only for raptor.
+	// Show drop bomb button for raptor and blackbird.
 	if (DropBombButton)
 	{
-		const bool bShowDrop = bDriving && Cast<APHCRaptorPawn>(Vehicle) != nullptr;
+		const bool bShowDrop = bDriving && (Cast<APHCRaptorPawn>(Vehicle) != nullptr || Cast<APHCBlackbirdPawn>(Vehicle) != nullptr);
 		DropBombButton->SetVisibility(bShowDrop ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 
 	// Toggle on-foot controls.
 	if (CarButton) { CarButton->SetVisibility(WalkVis); }
+	// EnterVehicleButton visibility is handled by proximity check in NativeTick
+	if (EnterVehicleButton && bDriving) { EnterVehicleButton->SetVisibility(ESlateVisibility::Collapsed); }
 	if (WeaponsButton) { WeaponsButton->SetVisibility(WalkVis); }
 	if (WeaponFireButton)
 	{
@@ -1853,8 +2051,13 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 	if (JoinButton) { JoinButton->SetVisibility(WalkVis); }
 #if PLATFORM_IOS || PLATFORM_ANDROID
 	// Jump/Sprint/Interact buttons removed.
-	if (WalkMovePanel) { WalkMovePanel->SetVisibility(WalkVis); }
-	if (WalkLookPanel) { WalkLookPanel->SetVisibility(WalkVis); }
+	// Use SelfHitTestInvisible (not Visible) so touches pass through to buttons underneath.
+	// Touch input is handled via raw GetInputTouchState in NativeTick, not UMG events.
+	{
+		const ESlateVisibility WalkPanelVis = bDriving ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible;
+		if (WalkMovePanel) { WalkMovePanel->SetVisibility(WalkPanelVis); }
+		if (WalkLookPanel) { WalkLookPanel->SetVisibility(WalkPanelVis); }
+	}
 
 	// Toggle driving controls.
 	if (SteeringPanel) { SteeringPanel->SetVisibility(DriveVis); }
@@ -1887,6 +2090,17 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 			R->ThrottleInput = 0.f;
 			R->SteeringInput = 0.f;
 			R->PitchInput = 0.f;
+		}
+		else if (APHCDirtBikePawn* DB = Cast<APHCDirtBikePawn>(Vehicle))
+		{
+			DB->ThrottleInput = 0.f;
+			DB->SteeringInput = 0.f;
+		}
+		else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(Vehicle))
+		{
+			BB->ThrottleInput = 0.f;
+			BB->SteeringInput = 0.f;
+			BB->PitchInput = 0.f;
 		}
 	}
 
@@ -2009,6 +2223,14 @@ void UPHCCityHUD::OnCarButtonClicked()
 	ShowVehicleSelection();
 }
 
+void UPHCCityHUD::OnEnterVehicleClicked()
+{
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		PC->EnterNearestVehicle();
+	}
+}
+
 void UPHCCityHUD::ShowVehicleSelection()
 {
 	if (VehicleSelectOverlay)
@@ -2081,11 +2303,25 @@ void UPHCCityHUD::OnSelectTank()
 	}
 }
 
+void UPHCCityHUD::OnSelectDirtBike()
+{
+	HideVehicleSelection();
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		PC->SpawnAndEnterVehicle(4);
+		SetDrivingMode(true, PC->GetPawn());
+	}
+}
+
 void UPHCCityHUD::OnDropBombClicked()
 {
 	if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle))
 	{
 		Raptor->DropBomb();
+	}
+	else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(DrivenVehicle))
+	{
+		BB->DropBomb();
 	}
 }
 

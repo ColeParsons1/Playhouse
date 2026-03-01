@@ -37,10 +37,13 @@
 #include "Games/Cornhole/CornholeGameMode.h"
 #include "Games/CelDamage/CelDamageGameMode.h"
 #include "Games/Simulator/SimulatorGameMode.h"
+#include "Core/PHCCitySubsystem.h"
 #include "Vehicle/PHCVehiclePawn.h"
 #include "Vehicle/PHCDuneBuggyPawn.h"
 #include "Vehicle/PHCRaptorPawn.h"
 #include "Vehicle/PHCTankPawn.h"
+#include "Vehicle/PHCDirtBikePawn.h"
+#include "Vehicle/PHCBlackbirdPawn.h"
 #include "Player/PHCCityCharacter.h"
 #include "Core/PHCCityGameMode.h"
 #include "EnhancedInputSubsystems.h"
@@ -97,16 +100,16 @@ void APHCPlayerController::BeginPlay()
 		}
 		else
 		{
-			// Auto guest-login so we go straight to the main HUD for testing.
-			UE_LOG(LogPlayhouseCity, Log, TEXT("PHCPlayerController -- Not logged in, auto guest login."));
+			// Try auto-login with stored Apple credentials.
 			UPHCAuthManager* AuthManager = GI->GetAuthManager();
-			if (AuthManager)
+			if (AuthManager && AuthManager->AutoLoginWithApple())
 			{
-				AuthManager->GuestLogin();
+				UE_LOG(LogPlayhouseCity, Log, TEXT("PHCPlayerController -- Attempting auto-login with stored Apple credentials."));
 			}
 			else
 			{
-				ShowMainHUD();
+				UE_LOG(LogPlayhouseCity, Log, TEXT("PHCPlayerController -- No stored credentials, showing auth screen."));
+				ShowAuthScreen();
 			}
 		}
 	}
@@ -437,14 +440,14 @@ void APHCPlayerController::EnterNearestVehicle()
 	APHCCityCharacter* Character = Cast<APHCCityCharacter>(GetPawn());
 	if (!Character) return;
 
-	// Find nearest vehicle within range.
-	constexpr float EnterRange = 500.f;
+	// Find nearest vehicle within range (APHCVehiclePawn or APHCBlackbirdPawn).
+	constexpr float EnterRange = 2000.f;
 	const FVector CharLoc = Character->GetActorLocation();
 
-	APHCVehiclePawn* NearestVehicle = nullptr;
+	APawn* NearestPawn = nullptr;
 	float NearestDist = EnterRange;
 
-	// Get vehicles from the city game mode.
+	// Scan VehiclePawn array from game mode.
 	if (APHCCityGameMode* CityGM = Cast<APHCCityGameMode>(GetWorld()->GetAuthGameMode()))
 	{
 		for (APHCVehiclePawn* Vehicle : CityGM->SpawnedVehicles)
@@ -455,23 +458,38 @@ void APHCPlayerController::EnterNearestVehicle()
 			if (Dist < NearestDist)
 			{
 				NearestDist = Dist;
-				NearestVehicle = Vehicle;
+				NearestPawn = Vehicle;
 			}
 		}
 	}
 
-	if (!NearestVehicle)
+	// Also check the SR-71 Blackbird in the underground airport.
+	if (UPHCCitySubsystem* CitySub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
+	{
+		APHCBlackbirdPawn* BB = CitySub->AirportBlackbird;
+		if (BB && !BB->bIsOccupied)
+		{
+			const float Dist = FVector::Dist(CharLoc, BB->GetActorLocation());
+			if (Dist < NearestDist)
+			{
+				NearestDist = Dist;
+				NearestPawn = BB;
+			}
+		}
+	}
+
+	if (!NearestPawn)
 	{
 		UE_LOG(LogPlayhouseCity, Log, TEXT("PHCPlayerController::EnterNearestVehicle -- No vehicle in range."));
 		return;
 	}
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCPlayerController::EnterNearestVehicle -- Entering vehicle at %s"),
-		*NearestVehicle->GetActorLocation().ToString());
+		*NearestPawn->GetActorLocation().ToString());
 
 	// Save character reference and hide it.
 	SavedCharacterPawn = Character;
-	CurrentVehicle = Cast<APawn>(NearestVehicle);
+	CurrentVehicle = NearestPawn;
 
 	// Remove character's mapping context.
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
@@ -483,21 +501,39 @@ void APHCPlayerController::EnterNearestVehicle()
 		}
 	}
 
-	// Hide character.
-	Character->SetActorHiddenInGame(true);
+	// Hide character (dirt bike keeps it visible as rider).
 	Character->SetActorEnableCollision(false);
+	const bool bIsDirtBike = Cast<APHCDirtBikePawn>(NearestPawn) != nullptr;
+	Character->SetActorHiddenInGame(!bIsDirtBike);
 
-	// Possess the vehicle.
-	NearestVehicle->bIsOccupied = true;
-	NearestVehicle->CurrentSpeed = 0.f;
-	NearestVehicle->SetHeadlightsEnabled(true);
+	// Vehicle-specific entry setup.
+	if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(NearestPawn))
+	{
+		V->bIsOccupied = true;
+		V->CurrentSpeed = 0.f;
+		V->SetHeadlightsEnabled(true);
+	}
+	else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(NearestPawn))
+	{
+		BB->bIsOccupied = true;
+		BB->CurrentSpeed = 0.f;
+	}
+
 	UnPossess();
-	Possess(NearestVehicle);
+	Possess(NearestPawn);
+
+	// Dirt bike: attach character as visible rider.
+	if (bIsDirtBike)
+	{
+		Character->AttachToActor(NearestPawn, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+		Character->SetActorRelativeLocation(FVector(10.f, 0.f, 30.f));
+		Character->SetActorRelativeRotation(FRotator::ZeroRotator);
+	}
 
 	// Tell the city HUD to switch to driving controls.
 	if (UPHCCityHUD* CityHUD = Cast<UPHCCityHUD>(ActiveWidget))
 	{
-		CityHUD->SetDrivingMode(true, NearestVehicle);
+		CityHUD->SetDrivingMode(true, NearestPawn);
 	}
 
 	SetGameAndUIInputMode();
@@ -557,6 +593,19 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 			SpawnedVehicle = Tank;
 		}
 	}
+	else if (VehicleType == 4)
+	{
+		APHCDirtBikePawn* Bike = World->SpawnActor<APHCDirtBikePawn>(
+			APHCDirtBikePawn::StaticClass(), SpawnLoc, SpawnRot, SP);
+		if (Bike)
+		{
+			Bike->SetBodyColor(FLinearColor(0.75f, 0.12f, 0.05f));
+			Bike->bIsOccupied = true;
+			Bike->CurrentSpeed = 0.f;
+			Bike->SetHeadlightsEnabled(true);
+			SpawnedVehicle = Bike;
+		}
+	}
 	else if (VehicleType == 1)
 	{
 		APHCDuneBuggyPawn* Buggy = World->SpawnActor<APHCDuneBuggyPawn>(
@@ -597,10 +646,24 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 
 	// Server-side: hide character, swap possession.
 	CurrentVehicle = SpawnedVehicle;
-	Character->SetActorHiddenInGame(true);
 	Character->SetActorEnableCollision(false);
-	UnPossess();
-	Possess(SpawnedVehicle);
+
+	if (VehicleType == 4)
+	{
+		// Dirt bike: attach character visibly to the bike as rider.
+		Character->SetActorHiddenInGame(false);
+		UnPossess();
+		Possess(SpawnedVehicle);
+		Character->AttachToActor(SpawnedVehicle, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+		Character->SetActorRelativeLocation(FVector(10.f, 0.f, 30.f));
+		Character->SetActorRelativeRotation(FRotator::ZeroRotator);
+	}
+	else
+	{
+		Character->SetActorHiddenInGame(true);
+		UnPossess();
+		Possess(SpawnedVehicle);
+	}
 
 	// Tell owning client to update HUD.
 	ClientOnVehicleEntered(SpawnedVehicle);
@@ -672,6 +735,26 @@ void APHCPlayerController::OnVehicleExitRequested()
 		T->CurrentSpeed = 0.f;
 		T->SetHeadlightsEnabled(false);
 	}
+	else if (APHCDirtBikePawn* DB = Cast<APHCDirtBikePawn>(CurrentVehicle))
+	{
+		ExitLoc = DB->GetExitLocation();
+		DB->bIsOccupied = false;
+		DB->ThrottleInput = 0.f;
+		DB->SteeringInput = 0.f;
+		DB->CurrentSpeed = 0.f;
+		DB->SetHeadlightsEnabled(false);
+		// Detach the visible rider character from the bike.
+		SavedCharacterPawn->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	}
+	else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(CurrentVehicle))
+	{
+		ExitLoc = BB->GetExitLocation();
+		BB->bIsOccupied = false;
+		BB->ThrottleInput = 0.f;
+		BB->SteeringInput = 0.f;
+		BB->PitchInput = 0.f;
+		BB->CurrentSpeed = 0.f;
+	}
 
 	// Unpossess vehicle, repossess character (server authority).
 	UnPossess();
@@ -737,6 +820,18 @@ void APHCPlayerController::ClientOnVehicleExited_Implementation()
 	else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(CurrentVehicle))
 	{
 		VehicleMC = R->VehicleMappingContext;
+	}
+	else if (APHCTankPawn* T = Cast<APHCTankPawn>(CurrentVehicle))
+	{
+		VehicleMC = T->VehicleMappingContext;
+	}
+	else if (APHCDirtBikePawn* DB = Cast<APHCDirtBikePawn>(CurrentVehicle))
+	{
+		VehicleMC = DB->VehicleMappingContext;
+	}
+	else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(CurrentVehicle))
+	{
+		VehicleMC = BB->VehicleMappingContext;
 	}
 
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =

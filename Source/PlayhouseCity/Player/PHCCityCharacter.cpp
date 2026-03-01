@@ -608,6 +608,11 @@ void APHCCityCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// If attached to a vehicle as a visible rider (dirt bike), skip all
+	// movement and ground-following — the vehicle handles positioning.
+	if (GetAttachParentActor() != nullptr)
+		return;
+
 	// ---- Camera shake (RPG fire recoil, GTA V style) --------------------
 	if (CameraShakeTimer > 0.f && CameraBoom)
 	{
@@ -677,7 +682,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			VertInput = FMath::Clamp(-TouchLookY * 3.f, -1.f, 1.f);
 		}
 
-		// Horizontal
+		// Horizontal (sweep to avoid flying through buildings)
 		if (!MoveDir.IsNearlyZero())
 		{
 			const FVector Delta = MoveDir * JetpackSpeed * DeltaTime;
@@ -707,11 +712,41 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	else
 	{
 
-	// ---- Horizontal movement --------------------------------------------
+	// ---- Horizontal movement (with wall collision line trace) ----------------
 	if (!MoveDir.IsNearlyZero())
 	{
 		const FVector Delta = MoveDir * Speed * DeltaTime;
-		AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), false);
+		const FVector OldPos = GetActorLocation();
+		const float MoveLen = FVector(Delta.X, Delta.Y, 0.f).Size();
+		const FVector MoveNorm = FVector(Delta.X, Delta.Y, 0.f).GetSafeNormal();
+
+		// Thin line trace at chest height (above terrain/road surface) to detect building walls
+		const FVector TraceStart(OldPos.X, OldPos.Y, OldPos.Z + 80.f);
+		const FVector TraceEnd = TraceStart + MoveNorm * (MoveLen + 50.f);
+		FCollisionQueryParams WallParams;
+		WallParams.AddIgnoredActor(this);
+		FHitResult WallHit;
+
+		bool bBlocked = GetWorld()->LineTraceSingleByChannel(
+			WallHit, TraceStart, TraceEnd, ECC_WorldStatic, WallParams);
+
+		if (bBlocked && !WallHit.bStartPenetrating && WallHit.Distance < MoveLen + 30.f)
+		{
+			// Wall ahead — move only up to 30 UU before the wall
+			const float SafeDist = FMath::Max(0.f, WallHit.Distance - 30.f);
+			if (SafeDist > 1.f)
+				AddActorWorldOffset(MoveNorm * FMath::Min(SafeDist, MoveLen), false);
+			// Slide along the wall
+			const FVector Remainder = MoveNorm * (MoveLen - FMath::Min(SafeDist, MoveLen));
+			const FVector SlideDir = FVector::VectorPlaneProject(Remainder, WallHit.Normal);
+			if (SlideDir.Size2D() > 1.f)
+				AddActorWorldOffset(FVector(SlideDir.X, SlideDir.Y, 0.f), false);
+		}
+		else
+		{
+			// No wall — move freely
+			AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), false);
+		}
 	}
 
 	// ---- Ground following -----------------------------------------------
@@ -762,19 +797,35 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			bool bFoundSurface = false;
 			if (GetWorld()->LineTraceMultiByChannel(Hits, TraceStart, TraceEnd, ECC_WorldStatic, Params))
 			{
+				// Find the highest surface at or near our feet
+				float BestZ = -1e9f;
 				for (const FHitResult& Hit : Hits)
 				{
 					if (Hit.bStartPenetrating) continue;
-					const float TargetZ = Hit.ImpactPoint.Z;
-					if (TargetZ >= Pos.Z - 100.f)
+					const float SurfZ = Hit.ImpactPoint.Z + FootOffset;
+					// Accept surfaces up to 200 UU above us (terrain slopes) and any below
+					if (SurfZ > BestZ && SurfZ < Pos.Z + 200.f)
 					{
+						BestZ = SurfZ;
 						bFoundSurface = true;
-						bHasBeenGrounded = true;
-						ManualVelocityZ = 0.f;
-						const float NewZ = FMath::FInterpTo(Pos.Z, TargetZ, DeltaTime, 12.f);
-						SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
-						break;
 					}
+				}
+				// Terrain height supplement (guaranteed terrain following via math)
+				if (UPHCCitySubsystem* CitySub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
+				{
+					const float TerrainZ = CitySub->GetTerrainHeight(Pos.X, Pos.Y) + FootOffset;
+					if (TerrainZ > BestZ && TerrainZ < Pos.Z + 200.f)
+					{
+						BestZ = TerrainZ;
+						bFoundSurface = true;
+					}
+				}
+				if (bFoundSurface)
+				{
+					bHasBeenGrounded = true;
+					ManualVelocityZ = 0.f;
+					const float NewZ = FMath::FInterpTo(Pos.Z, BestZ, DeltaTime, 12.f);
+					SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 				}
 			}
 			if (!bFoundSurface && bHasBeenGrounded)
@@ -782,7 +833,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				if (bWasGrounded) ManualVelocityZ = 0.f;
 				ManualVelocityZ -= 980.f * DeltaTime;
 				float NewZ = Pos.Z + ManualVelocityZ * DeltaTime;
-				if (NewZ <= 58.f) { NewZ = 58.f; ManualVelocityZ = 0.f; }
+				if (NewZ <= FootOffset) { NewZ = FootOffset; ManualVelocityZ = 0.f; }
 				SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 			}
 			bWasGrounded = bFoundSurface;

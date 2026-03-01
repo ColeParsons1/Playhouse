@@ -33,12 +33,18 @@ public class PlayhouseCity : ModuleRules
 			"PhysicsCore",
 			"NavigationSystem",
 			"GameplayTags",
-			"Networking"
+			"Networking",
+			"ProceduralMeshComponent"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 		});
+
+		if (Target.Platform == UnrealTargetPlatform.IOS)
+		{
+			PublicFrameworks.Add("AuthenticationServices");
+		}
 
 		DynamicallyLoadedModuleNames.AddRange(new string[]
 		{

@@ -182,10 +182,10 @@ bool UPHCAuthWidget::Initialize()
 		}
 
 		// ---------------------------------------------------------------
-		// Subtitle: "Sign In"
+		// Subtitle: "Welcome"
 		// ---------------------------------------------------------------
 		UTextBlock* SubtitleText = CreateWidget<UTextBlock>(Tree, Outer, FName("SubtitleText"));
-		SubtitleText->SetText(FText::FromString(TEXT("Sign In")));
+		SubtitleText->SetText(FText::FromString(TEXT("Welcome")));
 		{
 			FSlateFontInfo SubFont = SubtitleText->GetFont();
 			SubFont.Size = 16;
@@ -202,52 +202,11 @@ bool UPHCAuthWidget::Initialize()
 		}
 
 		// ---------------------------------------------------------------
-		// Spacer (20px)
+		// Spacer (30px)
 		// ---------------------------------------------------------------
 		USpacer* Spacer1 = CreateWidget<USpacer>(Tree, Outer, FName("Spacer1"));
-		Spacer1->SetSize(FVector2D(0.0f, 20.0f));
+		Spacer1->SetSize(FVector2D(0.0f, 30.0f));
 		FormBox->AddChild(Spacer1);
-
-		// ---------------------------------------------------------------
-		// UsernameInput  (initially collapsed -- register mode only)
-		// ---------------------------------------------------------------
-		UsernameInput = CreateWidget<UEditableTextBox>(Tree, Outer, FName("UsernameInput"));
-		UsernameInput->SetHintText(FText::FromString(TEXT("Username")));
-		UsernameInput->SetVisibility(ESlateVisibility::Collapsed);
-
-		FormBox->AddChild(UsernameInput);
-		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(UsernameInput->Slot))
-		{
-			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
-		}
-
-		// ---------------------------------------------------------------
-		// EmailInput
-		// ---------------------------------------------------------------
-		EmailInput = CreateWidget<UEditableTextBox>(Tree, Outer, FName("EmailInput"));
-		EmailInput->SetHintText(FText::FromString(TEXT("Email")));
-
-		FormBox->AddChild(EmailInput);
-		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(EmailInput->Slot))
-		{
-			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
-		}
-
-		// ---------------------------------------------------------------
-		// PasswordInput
-		// ---------------------------------------------------------------
-		PasswordInput = CreateWidget<UEditableTextBox>(Tree, Outer, FName("PasswordInput"));
-		PasswordInput->SetHintText(FText::FromString(TEXT("Password")));
-		PasswordInput->SetIsPassword(true);
-
-		FormBox->AddChild(PasswordInput);
-		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(PasswordInput->Slot))
-		{
-			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
-		}
 
 		// ---------------------------------------------------------------
 		// ErrorText (initially collapsed)
@@ -291,76 +250,35 @@ bool UPHCAuthWidget::Initialize()
 		FormBox->AddChild(Spacer2);
 
 		// ---------------------------------------------------------------
-		// LoginButton  (blue #3366FF)
+		// AppleSignInButton (black with white text, Apple HIG)
 		// ---------------------------------------------------------------
-		LoginButton = MakeButton(
-			Tree, Outer, FName("LoginButton"),
-			TEXT("Login"),
-			FLinearColor(0.2f, 0.4f, 1.0f, 1.0f),  // #3366FF
+		AppleSignInButton = MakeButton(
+			Tree, Outer, FName("AppleSignInButton"),
+			TEXT("\xEF\xA3\xBF  Sign in with Apple"),  // Apple logo U+F8FF
+			FLinearColor(0.0f, 0.0f, 0.0f, 1.0f),     // black
 			FLinearColor::White);
 
-		FormBox->AddChild(LoginButton);
-		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(LoginButton->Slot))
+		FormBox->AddChild(AppleSignInButton);
+		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(AppleSignInButton->Slot))
 		{
 			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
 		}
 
 		// ---------------------------------------------------------------
-		// RegisterButton  (purple #7744CC, initially collapsed)
-		// ---------------------------------------------------------------
-		RegisterButton = MakeButton(
-			Tree, Outer, FName("RegisterButton"),
-			TEXT("Register"),
-			FLinearColor(0.467f, 0.267f, 0.8f, 1.0f),  // #7744CC
-			FLinearColor::White);
-		RegisterButton->SetVisibility(ESlateVisibility::Collapsed);
-
-		FormBox->AddChild(RegisterButton);
-		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(RegisterButton->Slot))
-		{
-			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
-		}
-
-		// ---------------------------------------------------------------
-		// GuestButton  (green #33AA55)
+		// GuestButton (smaller, dimmer, for dev/testing fallback)
 		// ---------------------------------------------------------------
 		GuestButton = MakeButton(
 			Tree, Outer, FName("GuestButton"),
 			TEXT("Continue as Guest"),
-			FLinearColor(0.2f, 0.667f, 0.333f, 1.0f),  // #33AA55
-			FLinearColor::White);
+			FLinearColor(0.15f, 0.15f, 0.15f, 1.0f),  // dark grey
+			FLinearColor(0.5f, 0.5f, 0.5f, 1.0f));     // grey text
 
 		FormBox->AddChild(GuestButton);
 		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(GuestButton->Slot))
 		{
 			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
 			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
-		}
-
-		// ---------------------------------------------------------------
-		// Spacer (10px)
-		// ---------------------------------------------------------------
-		USpacer* Spacer3 = CreateWidget<USpacer>(Tree, Outer, FName("Spacer3"));
-		Spacer3->SetSize(FVector2D(0.0f, 10.0f));
-		FormBox->AddChild(Spacer3);
-
-		// ---------------------------------------------------------------
-		// ToggleButton  (transparent with white text)
-		// ---------------------------------------------------------------
-		ToggleButton = MakeButton(
-			Tree, Outer, FName("ToggleButton"),
-			TEXT("Create Account"),
-			FLinearColor(0.0f, 0.0f, 0.0f, 0.0f),  // transparent
-			FLinearColor::White,
-			&ToggleButtonText);
-
-		FormBox->AddChild(ToggleButton);
-		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(ToggleButton->Slot))
-		{
-			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
-			Slot->SetPadding(FMargin(0.0f));
 		}
 
 		// ---------------------------------------------------------------
@@ -383,6 +301,10 @@ void UPHCAuthWidget::NativeConstruct()
 	// =====================================================================
 	// Button bindings (works for both Blueprint-provided and C++-built UI)
 	// =====================================================================
+	if (AppleSignInButton)
+	{
+		AppleSignInButton->OnClicked.AddDynamic(this, &UPHCAuthWidget::OnAppleSignInClicked);
+	}
 	if (LoginButton)
 	{
 		LoginButton->OnClicked.AddDynamic(this, &UPHCAuthWidget::OnLoginClicked);
@@ -560,6 +482,19 @@ void UPHCAuthWidget::OnGuestClicked()
 	AuthManager->GuestLogin();
 }
 
+void UPHCAuthWidget::OnAppleSignInClicked()
+{
+	UPHCAuthManager* AuthManager = GetAuthManager();
+	if (!AuthManager)
+	{
+		ShowError(TEXT("Authentication system not available."));
+		return;
+	}
+
+	SetLoadingState(true);
+	AuthManager->AppleSignIn();
+}
+
 void UPHCAuthWidget::OnToggleClicked()
 {
 	bShowingLogin = !bShowingLogin;
@@ -650,6 +585,10 @@ void UPHCAuthWidget::SetLoadingState(bool bLoading)
 	}
 
 	// Disable / re-enable buttons so the user cannot double-submit.
+	if (AppleSignInButton)
+	{
+		AppleSignInButton->SetIsEnabled(!bLoading);
+	}
 	if (LoginButton)
 	{
 		LoginButton->SetIsEnabled(!bLoading);
