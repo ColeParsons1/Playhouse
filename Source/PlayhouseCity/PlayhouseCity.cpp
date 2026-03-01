@@ -7,6 +7,14 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionWorldPosition.h"
+#include "Materials/MaterialExpressionCameraPositionWS.h"
+#include "Materials/MaterialExpressionSubtract.h"
+#include "Materials/MaterialExpressionComponentMask.h"
+#include "Materials/MaterialExpressionDotProduct.h"
+#include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionConstant3Vector.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
 #include "Misc/PackageName.h"
@@ -22,6 +30,65 @@ void FPlayhouseCityModule::StartupModule()
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PlayhouseCity module starting up"));
 
 #if WITH_EDITOR
+	// ---------------------------------------------------------------------------
+	// Animal Crossing-style world curvature — adds WorldPositionOffset nodes
+	// that bend vertices downward based on XY distance from camera.
+	// ---------------------------------------------------------------------------
+	auto AddCurvatureWPO = [](UMaterial* Mat, UMaterialEditorOnlyData* EditorData)
+	{
+		// Vertex absolute world position
+		auto* WorldPos = NewObject<UMaterialExpressionWorldPosition>(Mat);
+		EditorData->ExpressionCollection.Expressions.Add(WorldPos);
+
+		// Camera world position
+		auto* CamPos = NewObject<UMaterialExpressionCameraPositionWS>(Mat);
+		EditorData->ExpressionCollection.Expressions.Add(CamPos);
+
+		// Subtract: vertex - camera = offset vector
+		auto* Sub = NewObject<UMaterialExpressionSubtract>(Mat);
+		Sub->A.Expression = WorldPos;
+		Sub->B.Expression = CamPos;
+		EditorData->ExpressionCollection.Expressions.Add(Sub);
+
+		// Mask to XY only (ignore Z difference)
+		auto* MaskXY = NewObject<UMaterialExpressionComponentMask>(Mat);
+		MaskXY->Input.Expression = Sub;
+		MaskXY->R = true;  MaskXY->G = true;
+		MaskXY->B = false; MaskXY->A = false;
+		EditorData->ExpressionCollection.Expressions.Add(MaskXY);
+
+		// Dot product XY . XY = distance squared
+		auto* Dot = NewObject<UMaterialExpressionDotProduct>(Mat);
+		Dot->A.Expression = MaskXY;
+		Dot->B.Expression = MaskXY;
+		EditorData->ExpressionCollection.Expressions.Add(Dot);
+
+		// Curvature constant (negative = curve downward)
+		auto* CurveK = NewObject<UMaterialExpressionConstant>(Mat);
+		CurveK->R = -0.000008f;
+		EditorData->ExpressionCollection.Expressions.Add(CurveK);
+
+		// Multiply: dist squared * curvature = Z drop (scalar)
+		auto* MulDrop = NewObject<UMaterialExpressionMultiply>(Mat);
+		MulDrop->A.Expression = Dot;
+		MulDrop->B.Expression = CurveK;
+		EditorData->ExpressionCollection.Expressions.Add(MulDrop);
+
+		// Unit Z vector (0, 0, 1)
+		auto* UnitZ = NewObject<UMaterialExpressionConstant3Vector>(Mat);
+		UnitZ->Constant = FLinearColor(0.f, 0.f, 1.f, 0.f);
+		EditorData->ExpressionCollection.Expressions.Add(UnitZ);
+
+		// Multiply scalar drop * (0,0,1) = (0, 0, Z_drop) offset vector
+		auto* MulFinal = NewObject<UMaterialExpressionMultiply>(Mat);
+		MulFinal->A.Expression = UnitZ;
+		MulFinal->B.Expression = MulDrop;
+		EditorData->ExpressionCollection.Expressions.Add(MulFinal);
+
+		// Connect to WorldPositionOffset
+		EditorData->WorldPositionOffset.Expression = MulFinal;
+	};
+
 	// ---------------------------------------------------------------------------
 	// M_PHCColor -- opaque PBR material with BaseColor, Metallic, Roughness,
 	// and EmissiveColor parameters.  Only created if the .uasset does not exist.
@@ -75,6 +142,8 @@ void FPlayhouseCityModule::StartupModule()
 		EmissiveParam->DefaultValue = FLinearColor::Black;
 		EditorData->ExpressionCollection.Expressions.Add(EmissiveParam);
 		EditorData->EmissiveColor.Expression = EmissiveParam;
+
+		AddCurvatureWPO(Mat, EditorData);
 
 		Mat->PreEditChange(nullptr);
 		Mat->PostEditChange();
@@ -150,6 +219,8 @@ void FPlayhouseCityModule::StartupModule()
 		EmissiveParam->DefaultValue = FLinearColor::Black;
 		EditorData->ExpressionCollection.Expressions.Add(EmissiveParam);
 		EditorData->EmissiveColor.Expression = EmissiveParam;
+
+		AddCurvatureWPO(Mat, EditorData);
 
 		Mat->PreEditChange(nullptr);
 		Mat->PostEditChange();
@@ -234,6 +305,8 @@ void FPlayhouseCityModule::StartupModule()
 		EditorData->ExpressionCollection.Expressions.Add(EmissiveParam);
 		EditorData->EmissiveColor.Expression = EmissiveParam;
 
+		AddCurvatureWPO(Mat, EditorData);
+
 		Mat->PreEditChange(nullptr);
 		Mat->PostEditChange();
 
@@ -310,6 +383,8 @@ void FPlayhouseCityModule::StartupModule()
 		EmissiveParam->DefaultValue = FLinearColor::Black;
 		EditorData->ExpressionCollection.Expressions.Add(EmissiveParam);
 		EditorData->EmissiveColor.Expression = EmissiveParam;
+
+		AddCurvatureWPO(Mat, EditorData);
 
 		Mat->PreEditChange(nullptr);
 		Mat->PostEditChange();

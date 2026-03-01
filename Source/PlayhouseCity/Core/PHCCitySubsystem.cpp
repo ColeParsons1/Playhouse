@@ -13614,7 +13614,7 @@ void UPHCCitySubsystem::SpawnLangtree()
 		if (Root) MC->AttachToComponent(Root, FAttachmentTransformRules::KeepWorldTransform);
 		else Owner->SetRootComponent(MC);
 		Owner->AddInstanceComponent(MC);
-		ApplyPBR(MC, Color, Metallic, Roughness);
+		ApplyPBR(MC, FLinearColor(0.95f, 0.95f, 0.95f), 1.0f, 0.02f); // mirror
 		++CompCount;
 		return MC;
 	};
@@ -13632,7 +13632,7 @@ void UPHCCitySubsystem::SpawnLangtree()
 		if (Root) MC->AttachToComponent(Root, FAttachmentTransformRules::KeepWorldTransform);
 		else Owner->SetRootComponent(MC);
 		Owner->AddInstanceComponent(MC);
-		ApplyPBR(MC, Color, Metallic, Roughness);
+		ApplyPBR(MC, FLinearColor(0.95f, 0.95f, 0.95f), 1.0f, 0.02f); // mirror
 		++CompCount;
 		return MC;
 	};
@@ -13704,7 +13704,7 @@ void UPHCCitySubsystem::SpawnLangtree()
 				SG->RegisterComponent();
 				SG->AttachToComponent(GF, FAttachmentTransformRules::KeepWorldTransform);
 				BA->AddInstanceComponent(SG);
-				ApplyPBR(SG, FLinearColor(0.08f, 0.06f, 0.04f), 0.f, 0.95f); // dark arched doorway
+				ApplyPBR(SG, FLinearColor(0.95f, 0.95f, 0.95f), 1.0f, 0.02f); // mirror
 				++CompCount;
 			}
 
@@ -13875,13 +13875,95 @@ void UPHCCitySubsystem::SpawnLangtree()
 				Cap->RegisterComponent();
 				Cap->AttachToComponent(GF, FAttachmentTransformRules::KeepWorldTransform);
 				BA->AddInstanceComponent(Cap);
-				ApplyPBR(Cap, P.Roof, 0.f, 0.92f);
+				ApplyPBR(Cap, FLinearColor(0.95f, 0.95f, 0.95f), 1.0f, 0.02f); // mirror
 				++CompCount;
 			}
 			// Small battlement ring at tower top
 			MakeCyl(BA, GF, BC + FVector(cx, cy, TowerH + 0.5f * FT),
 				FVector(6.f * FT, 6.f * FT, 1.5f * FT), P.Trim,
 				*FString::Printf(TEXT("TwR_%d_%d"), b, c), 0.f, 0.92f);
+		}
+
+		// ---- Amber edge lights — glow at sunset/night ----
+		{
+			const FLinearColor AmberGlow(1.0f, 0.6f, 0.1f);
+			const float StripW = 0.4f * FT;
+
+			// 4 vertical corner strips (full building height)
+			for (int32 e = 0; e < 4; ++e)
+			{
+				const float ex = (e % 2 == 0) ? -(AptD * 0.5f + StripW * 0.5f) : (AptD * 0.5f + StripW * 0.5f);
+				const float ey = (e < 2) ? -(AptW * 0.5f + StripW * 0.5f) : (AptW * 0.5f + StripW * 0.5f);
+
+				UStaticMeshComponent* Strip = NewObject<UStaticMeshComponent>(BA,
+					*FString::Printf(TEXT("VEL_%d_%d"), b, e));
+				Strip->SetStaticMesh(CubeMesh);
+				Strip->SetWorldLocation(BC + FVector(ex, ey, AptH * 0.5f));
+				Strip->SetWorldScale3D(FVector(StripW / 100.f, StripW / 100.f, AptH / 100.f));
+				Strip->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Strip->RegisterComponent();
+				Strip->AttachToComponent(GF, FAttachmentTransformRules::KeepWorldTransform);
+				BA->AddInstanceComponent(Strip);
+				ApplyPBR(Strip, FLinearColor(0.05f, 0.05f, 0.05f), 0.3f, 0.3f);
+				UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(Strip->GetMaterial(0));
+				if (MID)
+				{
+					NightWindowMaterials.Add(MID);
+					NightWindowLitColors.Add(AmberGlow);
+					NightWindowLitStates.Add(true);
+				}
+				++CompCount;
+			}
+
+			// 2 horizontal roofline strips (front and back edges)
+			for (int32 e = 0; e < 2; ++e)
+			{
+				const float ex = (e == 0) ? -(AptD * 0.5f + StripW * 0.5f) : (AptD * 0.5f + StripW * 0.5f);
+
+				UStaticMeshComponent* Strip = NewObject<UStaticMeshComponent>(BA,
+					*FString::Printf(TEXT("HEL_%d_%d"), b, e));
+				Strip->SetStaticMesh(CubeMesh);
+				Strip->SetWorldLocation(BC + FVector(ex, 0.f, AptH + StripW * 0.5f));
+				Strip->SetWorldScale3D(FVector(StripW / 100.f, AptW / 100.f, StripW / 100.f));
+				Strip->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Strip->RegisterComponent();
+				Strip->AttachToComponent(GF, FAttachmentTransformRules::KeepWorldTransform);
+				BA->AddInstanceComponent(Strip);
+				ApplyPBR(Strip, FLinearColor(0.05f, 0.05f, 0.05f), 0.3f, 0.3f);
+				UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(Strip->GetMaterial(0));
+				if (MID)
+				{
+					NightWindowMaterials.Add(MID);
+					NightWindowLitColors.Add(AmberGlow);
+					NightWindowLitStates.Add(true);
+				}
+				++CompCount;
+			}
+
+			// 2 horizontal roofline strips (side edges along Y)
+			for (int32 e = 0; e < 2; ++e)
+			{
+				const float ey = (e == 0) ? -(AptW * 0.5f + StripW * 0.5f) : (AptW * 0.5f + StripW * 0.5f);
+
+				UStaticMeshComponent* Strip = NewObject<UStaticMeshComponent>(BA,
+					*FString::Printf(TEXT("SEL_%d_%d"), b, e));
+				Strip->SetStaticMesh(CubeMesh);
+				Strip->SetWorldLocation(BC + FVector(0.f, ey, AptH + StripW * 0.5f));
+				Strip->SetWorldScale3D(FVector(AptD / 100.f, StripW / 100.f, StripW / 100.f));
+				Strip->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Strip->RegisterComponent();
+				Strip->AttachToComponent(GF, FAttachmentTransformRules::KeepWorldTransform);
+				BA->AddInstanceComponent(Strip);
+				ApplyPBR(Strip, FLinearColor(0.05f, 0.05f, 0.05f), 0.3f, 0.3f);
+				UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(Strip->GetMaterial(0));
+				if (MID)
+				{
+					NightWindowMaterials.Add(MID);
+					NightWindowLitColors.Add(AmberGlow);
+					NightWindowLitStates.Add(true);
+				}
+				++CompCount;
+			}
 		}
 	}
 
@@ -14740,14 +14822,14 @@ void UPHCCitySubsystem::SpawnLangtree()
 		{
 			UStaticMeshComponent* GS = NewObject<UStaticMeshComponent>(GA, TEXT("LangtreeGround"));
 			GS->SetStaticMesh(CubeMesh);
-			GS->SetWorldLocation(ComplexCenter + FVector(-50.f * FT, 120.f * FT, -1.f));
-			GS->SetWorldScale3D(FVector(900.f * FT / 100.f, 900.f * FT / 100.f, 0.02f));
+			GS->SetWorldLocation(ComplexCenter + FVector(0.f, 0.f, -100.f));
+			GS->SetWorldScale3D(FVector(1200.f * FT / 100.f, 1200.f * FT / 100.f, 2.f));
 			GS->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			GS->SetCollisionResponseToAllChannels(ECR_Block);
 			GS->RegisterComponent();
 			GA->SetRootComponent(GS);
 			GA->AddInstanceComponent(GS);
-			ApplyPBR(GS, FLinearColor(0.82f, 0.74f, 0.54f), 0.f, 0.92f); // sand ground
+			ApplyPBR(GS, FLinearColor(0.95f, 0.95f, 0.95f), 1.0f, 0.02f); // mirror ground
 			++CompCount;
 		}
 	}
