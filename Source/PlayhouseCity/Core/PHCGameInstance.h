@@ -118,6 +118,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "PHC|Auth")
 	void HandleLoginSuccess(const FString& InToken, const FPHCPlayerProfile& InProfile);
 
+	/** Persist the current coin balance to the backend (fire-and-forget). */
+	void SaveCoinsToBackend();
+
 	/** Clears auth state and broadcasts OnLogoutComplete. */
 	UFUNCTION(BlueprintCallable, Category = "PHC|Auth")
 	void HandleLogout();

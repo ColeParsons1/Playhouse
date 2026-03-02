@@ -81,6 +81,7 @@ private:
 	void SpawnGrassSystem();
 	void SpawnDirtBikePark();
 	void SpawnGoldCoins();
+	void SpawnJungle();
 	void UpdateGrassInstances(const FVector& PlayerLoc);
 
 	/** Spawn a single building with optional window lights. */
@@ -182,7 +183,7 @@ private:
 
 public:
 	/** NPC enemies — always visible, chase the player. */
-	static constexpr int32 NumGiantCrabs = 30;
+	static constexpr int32 NumGiantCrabs = 15;
 
 	struct FCrabData
 	{
@@ -199,6 +200,7 @@ public:
 		FVector SpawnPosition = FVector::ZeroVector;
 		TObjectPtr<UPointLightComponent> GlowLight;
 		float GlowBaseIntensity = 4000.f;
+		TArray<TObjectPtr<UMaterialInstanceDynamic>> BodyMIDs;
 	};
 
 	FCrabData Crabs[NumGiantCrabs];
@@ -252,6 +254,10 @@ private:
 	/** Road materials for wet road effect at night. */
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> RoadMaterials;
 	float GlobalWetness = 0.f;
+
+	/** Khufu pyramid interior — animated psychedelic emissive MIDs. */
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> PyramidInteriorMIDs;
+	float PyramidColorTime = 0.f;
 
 	/** Weather state. */
 	float WeatherTimer = 0.f;

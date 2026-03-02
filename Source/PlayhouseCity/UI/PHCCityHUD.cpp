@@ -219,7 +219,7 @@ bool UPHCCityHUD::Initialize()
 			UCanvasPanelSlot* KDS = RootCanvas->AddChildToCanvas(KDDisplayBG);
 			KDS->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f)); // top-center
 			KDS->SetAlignment(FVector2D(0.f, 0.f));
-			KDS->SetOffsets(FMargin(430.f, 10.f, 120.f, 26.f)); // right of health bar
+			KDS->SetOffsets(FMargin(430.f, 10.f, 220.f, 26.f)); // right of health bar
 			KDS->SetAutoSize(false);
 
 			KDText = WidgetTree->ConstructWidget<UTextBlock>(
@@ -1613,9 +1613,68 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 				else if (Yaw < 292.5f)                    Dir = TEXT("W");
 				else                                      Dir = TEXT("NW");
 
+				// Zone detection based on player position
+				const TCHAR* Zone;
+				if (Loc.Z < -500.f)
+				{
+					Zone = TEXT("Zone L - Underground");
+				}
+				else if (Loc.X >= -45000.f && Loc.X <= 75000.f && Loc.Y >= -162000.f && Loc.Y <= -106000.f)
+				{
+					Zone = TEXT("Zone B - Jungle");
+				}
+				else if (FVector2D::Distance(FVector2D(Loc.X, Loc.Y), FVector2D(22248.f, -62419.f)) < 30000.f)
+				{
+					Zone = TEXT("Zone C - Pyramids");
+				}
+				else if (FVector2D::Distance(FVector2D(Loc.X, Loc.Y), FVector2D(-248405.f, 7389.f)) < 20000.f)
+				{
+					Zone = TEXT("Zone I - Lake");
+				}
+				else if (FVector2D::Distance(FVector2D(Loc.X, Loc.Y), FVector2D(95000.f, 30000.f)) < 18000.f)
+				{
+					Zone = TEXT("Zone D - Sand Castle");
+				}
+				else if (FVector2D::Distance(FVector2D(Loc.X, Loc.Y), FVector2D(85000.f, 70000.f)) < 15000.f)
+				{
+					Zone = TEXT("Zone E - Mirror Castle");
+				}
+				else if (FVector2D::Distance(FVector2D(Loc.X, Loc.Y), FVector2D(-120000.f, 20000.f)) < 40000.f)
+				{
+					Zone = TEXT("Zone F - Motocross Park");
+				}
+				else if (Loc.Y > 70000.f)
+				{
+					Zone = TEXT("Zone H - Mountains");
+				}
+				else if (Loc.X > 30000.f && Loc.Y > 48000.f && Loc.X < 65000.f && Loc.Y < 78000.f)
+				{
+					Zone = TEXT("Zone K - Bay");
+				}
+				else if (Loc.X < -64000.f && Loc.Y > -30000.f && Loc.Y < 30000.f)
+				{
+					Zone = TEXT("Zone G - Highway");
+				}
+				else if (FMath::Abs(Loc.X) < 42000.f && Loc.Y > -36000.f && Loc.Y < 42000.f)
+				{
+					Zone = TEXT("Zone A - Downtown");
+				}
+				else if (FMath::Max(FMath::Abs(Loc.X), FMath::Abs(Loc.Y)) > 120000.f)
+				{
+					Zone = TEXT("Zone J - Beach / Ocean");
+				}
+				else if (Loc.Y < -70000.f)
+				{
+					Zone = TEXT("Zone M - Southern Hills");
+				}
+				else
+				{
+					Zone = TEXT("Zone N - Outskirts");
+				}
+
 				LocationText->SetText(FText::FromString(
-					FString::Printf(TEXT("%.1f mph  %s  |  X: %.0f  Y: %.0f  Z: %.0f"),
-						SpeedMPH, Dir, Loc.X, Loc.Y, Loc.Z)));
+					FString::Printf(TEXT("%s  |  %.1f mph  %s  |  X: %.0f  Y: %.0f  Z: %.0f"),
+						Zone, SpeedMPH, Dir, Loc.X, Loc.Y, Loc.Z)));
 			}
 		}
 	}
@@ -1686,8 +1745,18 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 				Ds = Char->Deaths;
 			}
 		}
+		FString PlayerName;
+		if (UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(this))
+		{
+			PlayerName = GI->LocalPlayerProfile.DisplayName;
+			if (PlayerName.IsEmpty())
+				PlayerName = GI->LocalPlayerProfile.Username;
+		}
+		if (PlayerName.IsEmpty())
+			PlayerName = TEXT("Player");
+
 		KDText->SetText(FText::FromString(
-			FString::Printf(TEXT("K:%d  D:%d"), Kills, Ds)));
+			FString::Printf(TEXT("%s  K:%d  D:%d"), *PlayerName, Kills, Ds)));
 	}
 
 	// Update player count display

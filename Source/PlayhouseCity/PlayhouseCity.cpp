@@ -65,7 +65,7 @@ void FPlayhouseCityModule::StartupModule()
 
 		// Curvature constant (negative = curve downward)
 		auto* CurveK = NewObject<UMaterialExpressionConstant>(Mat);
-		CurveK->R = -0.000008f;
+		CurveK->R = -0.000020f;
 		EditorData->ExpressionCollection.Expressions.Add(CurveK);
 
 		// Multiply: dist squared * curvature = Z drop (scalar)

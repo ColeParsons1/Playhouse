@@ -266,11 +266,11 @@ bool UPHCAuthWidget::Initialize()
 		}
 
 		// ---------------------------------------------------------------
-		// GuestButton (smaller, dimmer, for dev/testing fallback)
+		// GuestButton — auto-login as Walker
 		// ---------------------------------------------------------------
 		GuestButton = MakeButton(
 			Tree, Outer, FName("GuestButton"),
-			TEXT("Continue as Guest"),
+			TEXT("Sign in as Walker"),
 			FLinearColor(0.15f, 0.15f, 0.15f, 1.0f),  // dark grey
 			FLinearColor(0.5f, 0.5f, 0.5f, 1.0f));     // grey text
 
@@ -479,7 +479,7 @@ void UPHCAuthWidget::OnGuestClicked()
 	}
 
 	SetLoadingState(true);
-	AuthManager->GuestLogin();
+	AuthManager->Login(TEXT("tester1@example.com"), TEXT("PLACEHOLDER_PASSWORD"));
 }
 
 void UPHCAuthWidget::OnAppleSignInClicked()

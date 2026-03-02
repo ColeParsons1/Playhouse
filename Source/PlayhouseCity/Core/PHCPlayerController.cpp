@@ -198,6 +198,17 @@ void APHCPlayerController::EnterWorldMode()
 		{
 			ActiveWidget->AddToViewport(0);
 			UE_LOG(LogPlayhouseCity, Log, TEXT("PHCPlayerController::EnterWorldMode -- City HUD added to viewport."));
+
+			// Seed currency display from player profile
+			if (UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(this))
+			{
+				if (UPHCCityHUD* CityHUD = Cast<UPHCCityHUD>(ActiveWidget))
+				{
+					CityHUD->UpdateCurrencyDisplay(
+						GI->LocalPlayerProfile.Coins,
+						GI->LocalPlayerProfile.Gems);
+				}
+			}
 		}
 	}
 

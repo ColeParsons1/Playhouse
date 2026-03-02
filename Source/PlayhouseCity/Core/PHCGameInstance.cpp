@@ -14,6 +14,10 @@
 #include "Theme/PHCThemeManager.h"
 // #include "Economy/PHCEconomyManager.h"
 #include "Auth/PHCAuthManager.h"
+#include "HttpModule.h"
+#include "Interfaces/IHttpRequest.h"
+#include "Interfaces/IHttpResponse.h"
+#include "Serialization/JsonSerializer.h"
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -82,6 +86,26 @@ void UPHCGameInstance::HandleLoginSuccess(const FString& InToken, const FPHCPlay
 		*InProfile.Username, InProfile.PlayerId);
 
 	OnLoginSuccess.Broadcast(LocalPlayerProfile);
+}
+
+void UPHCGameInstance::SaveCoinsToBackend()
+{
+	if (LocalPlayerProfile.PlayerId <= 0) return;
+
+	TSharedPtr<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetNumberField(TEXT("coins"), LocalPlayerProfile.Coins);
+
+	FString BodyStr;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&BodyStr);
+	FJsonSerializer::Serialize(Body.ToSharedRef(), Writer);
+
+	const FString Url = ServerBaseUrl / FString::Printf(TEXT("api/players/%d/"), LocalPlayerProfile.PlayerId);
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetURL(Url);
+	Request->SetVerb(TEXT("PATCH"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetContentAsString(BodyStr);
+	Request->ProcessRequest();
 }
 
 void UPHCGameInstance::HandleLogout()
