@@ -1,22 +1,27 @@
-# PlayhouseCity - Architecture & Developer Guide
+# PlayhouseCity — Complete Architecture & Developer Guide
 
 ## Overview
 
-PlayhouseCity is a **UE 5.7 iOS multiplayer open-world city game** built entirely in C++ with no Blueprint assets. Players walk around a procedurally generated city, drive vehicles (Lamborghini Aventador, Dune Buggy), and play 21 mini-games. The entire city, all vehicles, buildings, lighting, and UI are constructed programmatically at runtime using basic engine meshes (`/Engine/BasicShapes/Cube`, `Cylinder`, `Sphere`, `Plane`, `Cone`).
+PlayhouseCity is a **UE 5.7 iOS multiplayer open-world city game** built entirely in C++ with no Blueprint assets. Players walk around a procedurally generated city, drive 7 vehicles, fight NPC enemies with 6 weapon types, and play 23 mini-games. The entire city, all vehicles, buildings, lighting, and UI are constructed programmatically at runtime using basic engine meshes (`/Engine/BasicShapes/Cube`, `Cylinder`, `Sphere`, `Plane`, `Cone`).
 
 **Key design principle:** Zero `.uasset` dependencies for gameplay code. All input mappings, materials, meshes, and widgets are created via `NewObject<>` / `CreateDefaultSubobject<>` at runtime.
 
-**Three custom materials** are auto-created by the module startup (`PlayhouseCity.cpp`):
+**Four custom materials** are auto-created by the module startup (`PlayhouseCity.cpp`):
 - `M_PHCColor` — opaque PBR (BaseColor, Metallic, Roughness, EmissiveColor)
 - `M_PHCGlass` — translucent (BaseColor, Opacity, Metallic, Roughness, EmissiveColor)
 - `M_PHCClearCoat` — automotive clear coat paint (BaseColor, Metallic, Roughness, ClearCoat, ClearCoatRoughness, EmissiveColor)
+- `M_PHCSkin` — subsurface skin (BaseColor, Roughness, SubsurfaceColor, Opacity, EmissiveColor)
+
+**Bundle ID:** `com.playhousecity.PlayhouseCity`
+**Backend:** Django REST API + Django Channels WebSocket at `tfplayhouse.com`
+**Total C++ lines:** ~55,000+
 
 ---
 
 ## Build & Deploy
 
 ```bash
-# Build for iOS
+# Build for iOS (incremental ~11 seconds)
 "/Users/Shared/Epic Games/UE_5.7/Engine/Build/BatchFiles/RunUBT.sh" \
   PlayhouseCity IOS Development \
   -Project="/Users/coleparsons/PlayhouseCity/PlayhouseCity.uproject" \
@@ -34,8 +39,30 @@ xcrun devicectl device install app --device 2EC6F309-9272-5A23-BB85-C58FF82D63FA
 xcrun devicectl device process launch --device 2EC6F309-9272-5A23-BB85-C58FF82D63FA \
   com.playhousecity.PlayhouseCity
 
+# TestFlight Deploy (full build + upload)
+./deploy_testflight.sh                    # Full build + upload
+./deploy_testflight.sh --build-only       # Build IPA without uploading
+./deploy_testflight.sh --upload-only      # Upload existing IPA
+
 # Build dedicated server (Linux, on build server BUILD_SERVER_IP)
-# Production server: GAME_SERVER_IP
+ssh root@BUILD_SERVER_IP 'cd /root/UE5 && ./Engine/Build/BatchFiles/RunUBT.sh \
+  PlayhouseCityServer Linux Development \
+  -Project="/root/PlayhouseCity/PlayhouseCity.uproject" -Server -NoHotReload'
+
+# Sync source to build server
+rsync -az --delete /Users/coleparsons/PlayhouseCity/Source/ \
+  root@BUILD_SERVER_IP:/root/PlayhouseCity/Source/
+
+# Deploy server binary to production
+scp root@BUILD_SERVER_IP:/root/PlayhouseCity/Binaries/Linux/PlayhouseCityServer \
+  /tmp/PlayhouseCityServer
+scp /tmp/PlayhouseCityServer \
+  root@GAME_SERVER_IP:/home/gameserver/PlayhouseCity/Binaries/Linux/PlayhouseCityServer
+
+# Start dedicated server
+ssh root@GAME_SERVER_IP 'su - gameserver -c "cd /home/gameserver/PlayhouseCity/Binaries/Linux && \
+  nohup stdbuf -oL ./PlayhouseCityServer /Game/Maps/City_Main -server -log -port=7777 \
+  -nullrhi -nosplash -nosound -nopause -NoTextureStreaming > /home/gameserver/server.log 2>&1 &"'
 ```
 
 **Important:** Always use `RunUBT.sh` for builds, NOT `xcodebuild`. Build time is ~11 seconds for incremental changes.
@@ -48,6 +75,7 @@ xcrun devicectl device process launch --device 2EC6F309-9272-5A23-BB85-C58FF82D6
 
 ```
 UPHCGameInstance::Init()
+  -> Network version override (FNetworkVersion, fixed version=1)
   -> Creates subsystems: HttpClient, WebSocketClient, ThemeManager, EconomyManager, AuthManager
 
 APHCCityGameMode (server authority)
@@ -57,163 +85,426 @@ APHCCityGameMode (server authority)
   -> Sets GameStateClass = APHCGameState
 
 UPHCCitySubsystem::OnWorldBeginPlay() (runs on ALL machines independently)
+  -> Skips on NM_DedicatedServer (no visuals needed)
+  -> Skips if bPendingServerConnect (avoids double city gen during ClientTravel)
   -> SpawnCityEnvironment()
      -> SpawnGround(), SpawnOceanAndBeach(), SpawnSkyAndLighting()
      -> SpawnCityGrid() (24x24 block grid with roads, sidewalks, buildings)
      -> SpawnSkyscrapers() (27 unique downtown towers)
      -> SpawnStreetLights(), SpawnPalmTrees(), SpawnRamps()
      -> SpawnOutskirts(), SpawnHills(), SpawnStarfield(), SpawnCloudLayer()
+     -> SpawnGiantCrab() (15 crabs), SpawnNPCPlayers() (5 NPCs)
+     -> SpawnNPCHelicopter(), SpawnGoldCoins() (14 coins)
+     -> SpawnLightRail(), SpawnLangtree(), SpawnTerrainGrid()
+     -> SpawnGrassSystem(), SpawnDirtBikePark(), SpawnJungle()
 
 APHCPlayerController::BeginPlay()
+  -> Skips UI on server-side controllers (!IsLocalController())
   -> EnterWorldMode()
      -> Creates UPHCCityHUD (all widgets built in C++)
      -> Sets Game+UI input mode
+
+APHCCityCharacter::BeginPlay()
+  -> Skips mesh/material setup on NM_DedicatedServer
+  -> Creates input assets, registers mapping context
+  -> Applies PBR materials to 45 mesh components
 ```
 
 ### Core Classes
 
-| Class | File | Role |
-|-------|------|------|
-| `APHCCityGameMode` | `Core/PHCCityGameMode.cpp` | Server game mode. Sets default classes, handles PostLogin/Logout. Tracks spawned vehicles. |
-| `UPHCCitySubsystem` | `Core/PHCCitySubsystem.cpp` | **Largest file (~5500 lines).** `UTickableWorldSubsystem` that generates the entire city procedurally and runs the day/night cycle. Runs identically on server and all clients (deterministic seed). |
-| `APHCPlayerController` | `Core/PHCPlayerController.cpp` | Player controller. Manages UI screens (auth, main HUD, city HUD), mini-game launching, and vehicle entry/exit. |
-| `UPHCGameInstance` | `Core/PHCGameInstance.cpp` | Root game instance. Owns HTTP/WebSocket/Auth/Economy/Theme subsystems. Handles multiplayer session management (HostGame/JoinGame/LeaveGame). |
-| `APHCGameState` | `Core/PHCGameState.cpp` | Replicates `ServerDayNightTime` so all clients synchronize lighting. |
-| `APHCCityCharacter` | `Player/PHCCityCharacter.cpp` | Third-person character with spring arm camera. Enhanced Input for WASD/gamepad/touch. Has `UPHCTouchInputComponent` for mobile virtual joystick. |
-| `APHCPlayerState` | `Player/PHCPlayerState.cpp` | Per-player replicated state: profile, room ID, ready status. |
-| `APHCVehiclePawn` | `Vehicle/PHCVehiclePawn.cpp` | Lamborghini Aventador. Arcade physics (no UE vehicle system). Built from ~20 static mesh components. ClearCoat shading model for automotive paint. Own camera boom + Enhanced Input context. |
-| `APHCDuneBuggyPawn` | `Vehicle/PHCDuneBuggyPawn.cpp` | Off-road buggy. Similar to Aventador but with roll cage, brush guard, missile launcher. ClearCoat paint. |
-| `APHCMissileProjectile` | `Vehicle/PHCMissileProjectile.cpp` | Projectile fired from dune buggy. Uses `UProjectileMovementComponent`. |
-| `UPHCCityHUD` | `UI/PHCCityHUD.cpp` | Main in-game HUD. All widgets constructed in `Initialize()` via `WidgetTree->ConstructWidget<>`. Has currency display, vehicle selection popup, multiplayer Host/Join buttons, mobile touch controls for walking and driving. |
-| `UPHCTouchInputComponent` | `Input/PHCTouchInputComponent.cpp` | Mobile virtual joystick (left half = move, right half = camera look). Attaches to character. |
+| Class | File | Lines | Role |
+|-------|------|-------|------|
+| `FPlayhouseCityModule` | `PlayhouseCity.cpp` | 435 | Module startup, creates 4 materials with Animal Crossing world curvature |
+| `APHCCityGameMode` | `Core/PHCCityGameMode.cpp` | 91 | Server game mode. Sets default classes, handles PostLogin/Logout. Tracks spawned vehicles. |
+| `UPHCCitySubsystem` | `Core/PHCCitySubsystem.cpp` | **16,620** | `UTickableWorldSubsystem` — generates entire city procedurally, runs day/night cycle, manages all NPC systems |
+| `APHCPlayerController` | `Core/PHCPlayerController.cpp` | 952 | Player controller. Manages UI screens, mini-game launching, vehicle entry/exit, server RPCs |
+| `UPHCGameInstance` | `Core/PHCGameInstance.cpp` | 277 | Root game instance. Owns HTTP/WebSocket/Auth/Economy/Theme subsystems. Multiplayer sessions. Network version override. |
+| `APHCGameState` | `Core/PHCGameState.cpp` | 15 | Replicates `ServerDayNightTime` for lighting sync |
+| `APHCCityCharacter` | `Player/PHCCityCharacter.cpp` | 2,424 | 45-component character with procedural animation, 6 weapons, jetpack, COD-style combat |
+| `APHCPlayerState` | `Player/PHCPlayerState.cpp` | 84 | Replicated profile, room ID, ready status |
+| `UPHCCityHUD` | `UI/PHCCityHUD.cpp` | 3,111 | Main in-game HUD — all widgets, vehicle selection, weapon selection, mobile touch controls |
+| `UPHCTouchInputComponent` | `Input/PHCTouchInputComponent.cpp` | 226 | Mobile virtual joystick (left=move, right=camera look) |
 
-### City Generation (PHCCitySubsystem)
+---
 
-The city is a **24x24 grid** of blocks. Each block is ~3600 UU. Block types are determined by grid position:
+## City Generation (PHCCitySubsystem)
 
-- **Downtown core (blocks 7-10, 10-15):** 27 unique skyscrapers with architectural details
-- **Midtown:** Tall commercial buildings, institutional buildings
-- **Residential (outer ring):** Brick houses with pitched roofs, lawns, garages, cylinder chimneys with cone caps, corner pilasters, foundation bush spheres, doorway arches
-- **Waterfront:** Beach, bay, ocean with wave animation
-- **Industrial:** Warehouses with loading docks, cylinder smokestacks with cone caps
-- **Parks:** Trees, paths, fountains, hedge sphere rows, cone topiary trees
-- **Arts district:** Buildings with murals and colorful walls
+### Grid & Dimensions
+- **24x24 block grid**, each block ~3600 UU
+- Ground plane at (0,0,0), scaled (1400,1400,1). Ground surface at **Z=0**
+- **Deterministic:** `FRandomStream CityRandom` (seed 42) + `DetailRandom` (seed 137)
 
-Each block has roads (dark asphalt) on all four sides with sidewalks. Street lights line intersections. Palm trees along boulevards.
+### District Types
+- **Downtown Core (blocks 7-10, 10-15):** 27 unique skyscrapers
+- **Midtown:** Tall commercial/institutional buildings
+- **Residential (outer ring):** Brick houses (8 tones, roughness 0.92), pitched roofs, cylinder chimneys + cone caps, corner pilasters, foundation bush spheres
+- **Waterfront:** Beach, bay, ocean with wave animation (amplitude 3 UU)
+- **Industrial:** Warehouses, cylinder smokestacks + cone caps
+- **Parks:** Trees, hedge sphere rows, cone topiary, fountains
+- **Arts District:** Colorful murals
 
-**Day/night cycle** runs in `Tick()` with GTA V-style graphics:
-- Sun rotates with god rays (`bEnableLightShaftBloom`)
-- 4-phase color grading (Dawn/Day/Sunset/Night) via `ColorGain`/`ColorOffset`
-- Filmic tone mapping (FilmSlope=0.88, FilmToe=0.55, FilmShoulder=0.26)
-- Chromatic aberration, film grain, depth of field
-- Directional fog inscattering (warm haze at dawn/dusk)
-- Cloud layer drift animation (two translucent planes at Z=15000/16500)
-- Ocean wave heave (amplitude 3 UU, base Z=-8)
-- Wet roads at night (roughness drops, base color darkens)
-- Street lights use `USpotLightComponent` (downward cone, warm sodium)
-- Window lights toggle on at night with warm glow
+### Day/Night Cycle
+- `DayNightTime`: 0=sunrise, **0.25=noon (default start)**, 0.5=sunset, 0.75=midnight
+- `bNightModeLocked`: toggleable via HUD button
+- 4-phase color grading: Dawn (warm pink-amber) / Day (subtle) / Sunset (golden) / Night (cool blue)
+- Sun god rays (`bEnableLightShaftBloom=true`, `BloomScale=1.2`)
+- Filmic tone mapping: Slope=0.88, Toe=0.55, Shoulder=0.26
+- Chromatic aberration: 0.4, Film grain: 0.06, DoF: FocalDistance=3000
+- Street lights: USpotLightComponent, warm sodium FColor(255,200,120), outer cone 55°
+- Window glow at night, wet roads at night, cloud drift animation
 
-**Ground plane:** `/Engine/BasicShapes/Plane` at `(0, 0, 0)` scaled to `(1400, 1400, 1)`. Ground surface is at **Z=0**.
+### Natural Disasters
+| Type | Duration | Behavior |
+|------|----------|----------|
+| Tornado | 30s | Spinning actor circling the city |
+| Earthquake | 20s | Camera shake, intensity phasing |
+| Thunderstorm | 45s | Lightning flash effects |
+| Meteor Shower | 40s | Spawned meteor actors with velocity |
+Auto-trigger cooldown: 120-300s. Also manual via HUD disaster buttons.
 
-**Building collision:** House bodies, roofs, lawns, garages have `QueryAndPhysics` collision. Skyscraper `MakeCubeMC` components have `NoCollision`. This distinction matters for vehicle ground traces (see Known Issues).
+---
 
-### Vehicle System
+## Vehicle System (7 Vehicles)
 
-Vehicles use a custom arcade physics model (NOT UE's vehicle system):
+All vehicles use custom arcade physics (NOT UE vehicle system). `SetSimulatePhysics(false)`. Movement via `AddActorWorldOffset(ForwardVector * Speed * DeltaTime, bSweep=false)`. All use M_PHCClearCoat material.
 
-- **No physics simulation** (`SetSimulatePhysics(false)`)
-- **Speed** builds via `ThrottleInput` -> `CurrentSpeed` with quadratic acceleration curve
-- **Steering** applies yaw rotation, scaled inversely with speed
-- **Movement** via `AddActorWorldOffset()` using forward vector * speed * delta
-- **No ground trace** currently (removed to fix floating bug - see Known Issues)
-- **Camera** has its own spring arm (`TargetArmLength=600`, `SocketOffset=(0,0,180)`, `bDoCollisionTest=false`)
+### Speed Comparison
 
-**Vehicle entry flow:**
-1. Player taps "Car" button -> vehicle selection popup
-2. Selects Aventador or Buggy -> `PHCPlayerController::SpawnAndEnterVehicle()`
-3. Vehicle spawns 300 UU in front of character, 50 UU above
-4. Character's Enhanced Input mapping context removed
-5. Character hidden + collision disabled
-6. `UnPossess()` character, `Possess()` vehicle
-7. HUD switches to driving mode (gas/brake/steering touch zones)
+| Vehicle | MaxSpeed | Acceleration | Steering | Weapons | Components |
+|---------|----------|-------------|----------|---------|------------|
+| SR-71 Blackbird | 28,700 | 13,000 | 100 | Rockets + Bomb | 27 |
+| F-22 Raptor | 14,350 | 6,500 | 120 | Rockets + Bomb | 23 |
+| Dirt Bike | 8,125 | 5,625 | 200 | None | 22 |
+| Aventador | 8,375 | 5,500 | 150 | None | 20 |
+| Black Hawk | 7,175 | 3,250 | 120 | Rockets + Bomb | 33 |
+| Dune Buggy | 5,100 | 3,200 | 180 | Missiles | 24 |
+| M60 Tank | 3,000 | 1,800 | 100 | 105mm Cannon | 40+ |
 
-**Vehicle exit flow:**
-1. Player presses F key or Exit button -> `PHCVehiclePawn::HandleExitVehicle()`
-2. Calls `PHCPlayerController::OnVehicleExitRequested()` via `ProcessEvent`
-3. Vehicle input context removed
-4. `UnPossess()` vehicle, `Possess()` saved character
-5. Character teleported to vehicle exit location, unhidden
-6. HUD switches back to walking mode
+### Vehicle Details
 
-### Input System
+- **Lamborghini Aventador** (`PHCVehiclePawn`): Pure driving, ClearCoat paint, 20 components
+- **Dune Buggy** (`PHCDuneBuggyPawn`): Roll cage, brush guard, missile launcher (FireCooldown=0.05s)
+- **F-22 Raptor** (`PHCRaptorPawn`): Full 3D flight (pitch ±60°), rockets + gravity bomb (spawns APHCNukeExplosion, 3s cooldown), afterburner animation
+- **M60 Tank** (`PHCTankPawn`): Independent turret yaw (60°/s), 105mm cannon with recoil animation (2s cooldown), 6 road wheels per side
+- **Dirt Bike** (`PHCDirtBikePawn`): Player visible as rider, fastest steering
+- **SR-71 Blackbird** (`PHCBlackbirdPawn`): Double Raptor speed, gold-plated, stored in underground airport hangar
+- **Black Hawk UH-60** (`PHCBlackHawkPawn`): 4 main rotor blades + 2 tail blades (animated), rockets + bomb, also used as NPC patrol helicopter
 
-All input uses **UE5 Enhanced Input** created programmatically (no `.uasset` files):
+### Flight Mechanics (Raptor, Blackbird, Black Hawk)
+- PitchSpeed=80°/s, MaxPitchAngle=60°, AutoLevelSpeed=2°/s, MinAltitude=50 UU
+- Pitch controls: Space/Shift keys or left touch vertical axis
 
-- `UInputAction` objects created in `BeginPlay()` via `NewObject<>`
-- `UInputMappingContext` with key mappings added via `MapKey()`
-- Bindings via `UEnhancedInputComponent::BindAction()`
-- Separate mapping contexts for character (IMC_CityDefault) and vehicles (IMC_Vehicle)
+### Vehicle Entry Flow
+1. Player taps "Car" button → vehicle selection popup (7 options)
+2. Selects vehicle → `PHCPlayerController::SpawnAndEnterVehicle(type)`
+3. Vehicle spawns 300 UU ahead, 50 UU above character
+4. Character hidden + collision disabled, `UnPossess()` → `Possess()` vehicle
+5. HUD switches to driving mode (gas/brake/steering touch zones)
 
-**Mobile touch input** is dual-system:
-1. `UPHCTouchInputComponent` on the character handles walk-mode joystick/look
-2. `UPHCCityHUD::NativeTick()` handles driving-mode touch zones (gas/brake/steering)
+### Vehicle Type Mapping
+| Type ID | Vehicle | HUD Button |
+|---------|---------|------------|
+| 0 | Aventador | SelectAventadorBtn |
+| 1 | Dune Buggy | SelectBuggyBtn |
+| 2 | F-22 Raptor | SelectRaptorBtn |
+| 3 | M60 Tank | SelectTankBtn |
+| 4 | Dirt Bike | SelectDirtBikeBtn |
+| 5 | Black Hawk | SelectBlackHawkBtn |
+| — | Jetpack | SelectJetpackBtn |
 
-### Visual / Rendering System
+### Support Actors
+- **APHCMissileProjectile:** UProjectileMovementComponent, Speed=15000, LifeSpan=1.5s, trail system, RPG rocket mode, manual gravity mode, bomb detonation at altitude
+- **APHCNukeExplosion:** 5s duration, FireballCore, 3 FlameBursts, SmokePlume, DebrisRing, ShockwaveRing, 10 Embers, all animated per-frame
 
-The city uses a GTA V-inspired rendering pipeline, all configured programmatically:
+---
 
-**Post-Process Volume** (created in `SpawnSkyAndLighting()`):
-- Filmic tone mapping: `FilmSlope=0.88`, `FilmToe=0.55`, `FilmShoulder=0.26`, `FilmBlackClip=0.0`, `FilmWhiteClip=0.04`
-- Chromatic aberration: `SceneFringeIntensity=0.4`
-- Film grain: `FilmGrainIntensity=0.06`
-- Depth of field: `FocalDistance=3000`, `Fstop=22` (walking) / `Fstop=4` (driving), `SensorWidth=24.576`
-- Color grading animated per time-of-day in `Tick()` via `ColorGain`/`ColorOffset`
+## Character System (PHCCityCharacter)
 
-**Lighting:**
-- Directional light (sun) with god rays (`bEnableLightShaftBloom=true`, `BloomScale=1.2`)
-- `USpotLightComponent` street lights (downward cone, warm sodium `FColor(255,200,120)`, outer cone 55 deg)
-- Directional fog inscattering at dawn/dusk
+### 45 Mesh Components (Fortnite-quality organic character)
+- **Head (13):** Head, Jaw, Neck, Eyes (L/R whites + pupils), Nose, Mouth, Ears (L/R), Brows (L/R)
+- **Hair (4):** Top, Back, SideL, SideR
+- **Torso (6):** Chest, Abs, Pelvis, Collar, Belt, BeltBuckle
+- **Arms (10):** L/R × Shoulder, UpperArm, Elbow, Forearm, Hand
+- **Legs (12):** L/R × Thigh, Knee, Shin, Foot, Toe, Sole
+- 180 UU tall, root at hips (Z=0 relative)
 
-**Materials:**
-- `M_PHCColor` — standard opaque PBR for buildings, ground, etc.
-- `M_PHCGlass` — translucent for glass surfaces, cloud layers, ocean
-- `M_PHCClearCoat` — `MSM_ClearCoat` shading model for vehicle body panels (Metallic=0.9, Roughness=0.35, ClearCoat=1.0, ClearCoatRoughness=0.03)
+### Color Palette
+| Part | Color (RGB) | Roughness |
+|------|-------------|-----------|
+| Skin | (0.55, 0.38, 0.26) | 0.45 |
+| Hair | (0.02, 0.02, 0.03) | 0.85 |
+| Shirt | (0.12, 0.38, 0.18) | 0.82 |
+| Denim | (0.08, 0.10, 0.20) | 0.78 |
+| Belt | (0.06, 0.04, 0.03) | 0.35 |
+| Shoes | (0.92, 0.92, 0.90) | 0.45 |
+| Sole | (0.05, 0.05, 0.05) | — |
 
-**Mesh variety (de-blockify):**
-All 5 basic shapes are actively used:
-- `CubeMesh` — building bodies, roofs, windows, doors, awnings, roads
-- `CylinderMesh` — corner pilasters, chimneys, porch posts, columns, flagpoles, awning supports, neon tubes, smokestacks, building corner edges, lamp poles
-- `SphereMesh` — foundation bushes, hedge rows, rooftop domes, fountain spouts, lamp globes, starfield, palm canopy
-- `ConeMesh` — chimney caps, smokestack caps, rooftop spires, topiary trees, lamp shades
-- `PlaneMesh` — ground, roads, sidewalks, lawns, ocean, cloud layers, starfield
+### Animation System
+- Procedural walk animation via `WalkCyclePhase` / `WalkAnimBlend`
+- Spring damper system: LeanPitch/Roll, HandLag L/R, HairLag, WeaponSway, WeaponKick
+- Idle breathing animation
 
-**Residential colors** are brick tones (classic red, warm red, dark red, orange, brown, tan, burgundy, terracotta) with high roughness (0.92) for matte brick texture.
+### Movement
+- Derives from `APawn` (NOT ACharacter) — manual movement, no capsule/CMC
+- `UBoxComponent` collision (22×26×90)
+- Manual gravity + jump via `ManualVelocityZ`
+- WalkSpeed=1788, SprintSpeed=2000
+- `bIsSprinting` (Replicated)
 
-### Multiplayer
+### COD-Style Combat
+- **Recoil:** Per-shot pitch kick + yaw scatter, auto-recovery (speed=6)
+- **ADS:** FOV hip=90 → aim=65, sensitivity ×0.6, interpolation speed=12
+- **Bullet Spread:** Hip=3.5° half-angle, ADS=0.8°
+- **Hit Marker:** White X flash at crosshair (0.25s timer)
+- **Muzzle Flash:** Dynamic UPointLightComponent
 
-- **Architecture:** Listen server (one player hosts, others connect via IP)
+### Jetpack System
+- 9 components: Body, NozzleL/R, FlameL/R, StrapL/R, GlowL/R (UPointLightComponent)
+- `bJetpackEquipped`, `JetpackVerticalInput` (+1 ascend, -1 descend)
+
+### Health
+- Health=100, MaxHealth=100, CrabKills (int32), Deaths (int32)
+- DamageFlashTimer for red screen overlay
+- On death: increment Deaths, restore MaxHealth, teleport to (0,0,100)
+
+---
+
+## Weapon System (6 Weapons)
+
+### Weapon Type IDs
+`CurrentWeaponType`: -1=None, 0=Minigun, 1=RPG/Bazooka, 2=Sword, 3=Scythe (default), 4=Dagger, 5=AK-47
+
+### Damage Table
+
+| Weapon | Damage/Hit | Hits to Kill (100hp) | Range | Mechanism |
+|--------|-----------|---------------------|-------|-----------|
+| Minigun | 8 (hitscan) | 13 | Infinite (line trace) | Continuous fire, spinning barrel |
+| AK-47 | 12 (hitscan) | 9 | Infinite (line trace) | Continuous fire |
+| RPG | 100 | 1 | Projectile (15000 speed) | GTA V explosion on impact |
+| Sword | 50 | 2 | Melee | Sweep attack |
+| Scythe | 34 | 3 | Melee | Swing animation |
+| Dagger | Instant kill | 1 | 800 UU, 120° cone | 0.25s stab |
+
+### Weapon Meshes
+- **Minigun (3):** Body, Barrel (spinning), Muzzle
+- **AK-47 (5):** Body, Barrel, Magazine, Stock, Muzzle
+- **RPG/Bazooka (7):** Tube, RearEnd, FrontSight, RearSight, Grip, Scope, Muzzle
+- **Scythe (3):** Handle, Blade, BladeEdge
+- **Dagger (3):** Handle, Blade, Guard
+
+### NPC Helicopter Special Damage
+- NPCHeliHealth=240: Minigun needs 30 hits, AK-47 needs 20 hits, RPG needs 3 hits
+
+### Crab Contact Damage to Player
+- 25 damage per contact, 450 UU radius, 0.6s cooldown (4 hits to kill player)
+
+---
+
+## NPC Systems
+
+### Giant Crabs (15 enemies)
+- **Data:** `FCrabData` — Actor, HipJoints[], KneeJoints[], AnimTime, Health=100, GlowLight (intensity=4000)
+- **Visibility:** Night-only (sun sine < -0.3 or bNightModeLocked)
+- **AI:** Chase player at 2094 UU/s, avoid safe zones (sand castle radius 20000, underground airport)
+- **Contact:** 25 damage, 450 UU radius, 0.6s cooldown
+- **Death:** Explosion, +20 coins per kill
+- **Wave System:** When all 15 dead → 60s rest → all respawn
+
+### NPC Patrol Helicopter
+- Uses `APHCBlackHawkPawn` as NPC, Health=240
+- **Visibility:** Daytime only
+- **Patrol:** Circular path at fixed altitude, `NPCHeliPatrolAngle` animated
+- **Crash:** On death: falls (800 + timer×200 UU/s), tumbles, spawns APHCNukeExplosion on ground impact
+- **Respawn:** 60s timer after crash
+
+### NPC Player Characters (5 wanderers)
+- **Data:** `FNPCPlayerData` — 28 body mesh components, GlowLight (cyan, intensity=8000, attenuation=600), Health=100, WanderTarget, WanderWaitTimer
+- **Visibility:** Always visible (cyan underglow for night visibility)
+- **AI:** Random wander, walk toward target, idle pauses
+- **Spawn positions:** Close to origin: (500,300), (-400,600), (800,-500), (-600,-400), (200,900) at Z=75
+- **Damage:** Takes all weapon types (hitscan, melee, projectile proximity)
+- **Death:** Explosion, respawn at original position
+
+---
+
+## HUD System (PHCCityHUD)
+
+### Top-Level Elements
+- Currency display (coins/gems), Menu button, Location/username text
+- Health bar (BG + fill + text), K/D display, Player count
+
+### Vehicle Selection Popup
+- 7 buttons: Aventador, Buggy, Raptor, Jetpack, Tank, Dirt Bike, Black Hawk
+
+### Weapon Selection Popup
+- 6 buttons: Minigun, RPG, Sword, Scythe, Dagger, AK-47
+- Fire button for shooting
+
+### Disaster Selection
+- 5 buttons: Tornado, Earthquake, Thunderstorm, Meteor, Stop
+
+### Night Mode / Camera Mode Toggles
+
+### Driving Mode Controls (Mobile Touch)
+- Steering panel, Gas pedal, Brake pedal, Exit button, Fire button, Drop bomb button
+
+### Walking Mode Controls (Mobile Touch)
+- Left half: movement joystick
+- Right half: camera look
+
+### Combat UI
+- Crosshair (dot + 4 arms), Hit marker (4 diagonal lines), ADS button
+- Damage flash overlay (full-screen red)
+
+### Multiplayer UI
+- Host/Join buttons, IP input, Connect/Cancel
+
+---
+
+## Input System
+
+### Enhanced Input (All Runtime-Created — No .uasset Files)
+
+#### Character (IMC_CityDefault)
+| Action | Keys | Type |
+|--------|------|------|
+| Move | WASD | Axis2D |
+| Look | Mouse XY | Axis2D |
+| Jump | Spacebar | Bool |
+| Sprint | Left Shift | Bool (Started/Completed) |
+| Interact | E | Bool |
+| ADS | Right Mouse | Bool (Started/Completed) |
+
+#### Vehicles (IMC_Vehicle)
+| Action | Keys | Type |
+|--------|------|------|
+| Throttle | W / Up | Bool |
+| Brake | S / Down | Bool |
+| Steer | A/D or Left/Right | Axis1D |
+| Exit | F | Bool |
+| PitchUp (flight) | Space | Bool |
+| PitchDown (flight) | Left Shift | Bool |
+
+### Mobile Touch
+1. **UPHCTouchInputComponent:** Left half=movement joystick (deadzone=0.02, radius=0.08), Right half=camera look (sensitivity=0.15)
+2. **PHCCityHUD::NativeTick():** Driving mode touch zones for steering/gas/brake
+
+---
+
+## Material System (4 Materials)
+
+All materials include **Animal Crossing-style world curvature** WorldPositionOffset (curvature=-0.000020).
+
+### M_PHCColor (Opaque PBR)
+- Default Lit, params: BaseColor, Metallic (0.0), Roughness (0.5), EmissiveColor
+- Usage: Buildings, ground, roads, environment
+
+### M_PHCGlass (Translucent)
+- BLEND_Translucent, TLM_SurfacePerPixelLighting
+- Params: BaseColor (0.1/0.15/0.2), Opacity (0.3), Metallic (0.0), Roughness (0.05), EmissiveColor
+- Usage: Glass, clouds, ocean, cockpit canopies
+
+### M_PHCClearCoat (Automotive Paint)
+- MSM_ClearCoat shading model
+- Params: BaseColor, Metallic (0.9), Roughness (0.35), ClearCoat (1.0), ClearCoatRoughness (0.03), EmissiveColor
+- Usage: All vehicle body panels
+
+### M_PHCSkin (Subsurface Skin)
+- MSM_Subsurface shading model
+- Params: BaseColor (0.55/0.38/0.26), Roughness (0.45), SubsurfaceColor (0.9/0.2/0.1), Opacity (0.35), EmissiveColor
+- Usage: Character skin with warm SSS glow when backlit
+
+---
+
+## Multiplayer
+
+### Architecture
+- **Listen server model:** One player hosts, others connect via IP
+- **Dedicated server:** Linux binary on GAME_SERVER_IP, port 7777
 - **Session management:** `UPHCGameInstance::HostGame()` / `JoinGame(IP)` / `LeaveGame()`
-- **City sync:** Each machine generates identical city from deterministic `FRandomStream` seed
-- **Day/night sync:** Server replicates `APHCGameState::ServerDayNightTime`
-- **Player replication:** `APHCPlayerState` replicates profile, room, ready status
-- **Vehicle replication:** Currently disabled (`bReplicates` commented out in vehicle constructors)
-- **Dedicated server target:** `PlayhouseCityServer.Target.cs` exists but server binary deployment is WIP
+- **Network version override:** `FNetworkVersion` delegates set to fixed version=1 (resolves source build vs launcher build mismatch)
 
-### Mini-Games (21 total)
+### City Sync
+- Each machine generates identical city from deterministic `FRandomStream` seeds — **no city data replicated**
+- Server replicates `APHCGameState::ServerDayNightTime` for lighting sync
 
-All mini-games follow the same pattern:
-- `APHCMiniGameMode` base class (spawned as an actor, not the framework game mode)
-- `UPHCMiniGameHUD` base class for game UI
-- Launched via `APHCPlayerController::LaunchGame(EPHCGameType)`
-- Each has its own GameMode + HUD + supporting actors
+### Replication
+| Class | Replicated Properties |
+|-------|----------------------|
+| APHCGameState | ServerDayNightTime |
+| APHCPlayerState | PlayerProfile, CurrentRoomId, bIsReady |
+| APHCCityCharacter | bIsSprinting |
+| Vehicle Pawns | bIsOccupied |
 
-| Category | Games |
-|----------|-------|
-| **Board/Card** | Bingo, ColorCards, Connect4, Ludo, Pong, Pool |
-| **Action** | BabyShark, PackCatch, TempleRun, KitchenChaos, TowerDefense, CelDamage |
-| **Physics** | AngryDucks, GooBridge, Jenga, Cornhole, Carrom, Tanks |
-| **Puzzle/Quiz** | GuessSign, MapsQuiz, PegGame |
-| **Casino** | LuckySlots, Simulator |
+### RPCs
+| RPC | Direction | Reliability | Purpose |
+|-----|-----------|------------|---------|
+| ServerSetThrottle/Steering/Pitch | Server | Unreliable | Vehicle input sync |
+| ServerFireMissile/Rocket/Cannon | Server | Reliable | Vehicle weapon fire |
+| ServerDropBomb | Server | Reliable | Gravity bomb |
+| ServerSpawnAndEnterVehicle | Server | Reliable | Vehicle entry |
+| ServerExitVehicle | Server | Reliable | Vehicle exit |
+| ClientOnVehicleEntered/Exited | Client | Reliable | HUD mode switch |
+
+### Dedicated Server Notes
+- Auto-connect currently disabled (vehicles need replication first)
+- `PHCCitySubsystem` skips city generation on NM_DedicatedServer
+- `PHCPlayerController` skips UI on non-local controllers
+- `PHCCityCharacter` skips mesh/material setup on dedicated server
+- `bPendingServerConnect` flag defers initial city gen during ClientTravel
+
+---
+
+## Servers
+
+| Server | IP | Role |
+|--------|-----|------|
+| **Production** | GAME_SERVER_IP | Dedicated game server (Linux), runs as `gameserver` user |
+| **Build** | BUILD_SERVER_IP | UE5 source build at `/root/UE5/`, project at `/root/PlayhouseCity/` |
+| **Backend API** | tfplayhouse.com | Django REST API + WebSocket (auth, economy, social, rooms) |
+
+### Server Launch Command
+```bash
+stdbuf -oL ./PlayhouseCityServer /Game/Maps/City_Main -server -log -port=7777 \
+  -nullrhi -nosplash -nosound -nopause -NoTextureStreaming
+```
+
+### TestFlight Configuration
+- Distribution cert SHA-1: `REDACTED_CERT_SHA1`
+- API Key ID: `REDACTED_KEY_ID`, Issuer: `REDACTED_ISSUER_ID`
+- Uses `RunUAT.sh BuildCookRun -platform=IOS -clientconfig=Shipping -distribution`
+
+---
+
+## Mini-Games (23 Games)
+
+All extend `APHCMiniGameMode` (base) + `UPHCMiniGameHUD` (base HUD). Launched via `APHCPlayerController::LaunchGame(EPHCGameType)`.
+
+| # | Game | Folder | Category |
+|---|------|--------|----------|
+| 1 | Angry Ducks | AngryDucks | Physics |
+| 2 | Baby Shark | BabyShark | Action |
+| 3 | Bingo | Bingo | Board |
+| 4 | Carrom | Carrom | Physics |
+| 5 | Cel Damage | CelDamage | Action |
+| 6 | Color Cards | ColorCards | Card |
+| 7 | Connect 4 | Connect4 | Board |
+| 8 | Cornhole | Cornhole | Physics |
+| 9 | Goo Bridge | GooBridge | Physics |
+| 10 | Guess Sign | GuessSign | Puzzle |
+| 11 | Jenga | Jenga | Physics |
+| 12 | Kitchen Chaos | KitchenChaos | Action |
+| 13 | Ludo | Ludo | Board |
+| 14 | Lucky Slots | LuckySlots | Casino |
+| 15 | Maps Quiz | MapsQuiz | Quiz |
+| 16 | Pack Catch | PackCatch | Action |
+| 17 | Peg Game | PegGame | Puzzle |
+| 18 | Pong | Pong | Board |
+| 19 | Pool | Pool | Board |
+| 20 | Simulator | Simulator | Sim |
+| 21 | Tanks | Tanks | Physics |
+| 22 | Temple Run | TempleRun | Action |
+| 23 | Tower Defense | TowerDefense | Action |
 
 ---
 
@@ -221,114 +512,91 @@ All mini-games follow the same pattern:
 
 ```
 Source/PlayhouseCity/
-  PlayhouseCity.h/cpp          -- Module definition, log category
-  PlayhouseCity.Build.cs       -- Build rules (EnhancedInput, Networking, etc.)
+  PlayhouseCity.h/cpp          -- Module definition, log category, 4 material creation (435 lines)
+  PlayhouseCity.Build.cs       -- Build rules (C++20, EnhancedInput, Networking, ProceduralMeshComponent)
 
   Core/
-    PHCCityGameMode.h/cpp      -- Server game mode (64 lines)
-    PHCCitySubsystem.h/cpp     -- City generation + day/night + GTA V graphics (~5500 lines)
-    PHCPlayerController.h/cpp  -- UI management, game launch, vehicle entry/exit
-    PHCGameInstance.h/cpp      -- Root instance, subsystems, multiplayer sessions
-    PHCGameState.h/cpp         -- Replicated day/night time
-    PHCLobbyGameMode.h/cpp     -- Legacy lobby mode (not used in city mode)
-    PHCTypes.h                 -- Enums (EPHCGameType, EPHCGameplayMode), structs (FPHCPlayerProfile)
+    PHCCityGameMode.h/cpp      -- Server game mode (91 lines)
+    PHCCitySubsystem.h/cpp     -- City generation + day/night + NPCs + disasters (16,620 lines)
+    PHCPlayerController.h/cpp  -- UI management, game launch, vehicle entry/exit (952 lines)
+    PHCGameInstance.h/cpp      -- Root instance, subsystems, multiplayer, network version (277 lines)
+    PHCGameState.h/cpp         -- Replicated day/night time (15 lines)
+    PHCLobbyGameMode.h/cpp     -- Legacy lobby mode (21 lines)
+    PHCTypes.h                 -- Enums, structs (428 lines)
 
   Player/
-    PHCCityCharacter.h/cpp     -- Third-person character, Enhanced Input, touch component
-    PHCPlayerState.h/cpp       -- Replicated player profile/room/ready state
+    PHCCityCharacter.h/cpp     -- 45-component character, 6 weapons, jetpack (2,424 lines)
+    PHCPlayerState.h/cpp       -- Replicated player profile/room/ready (84 lines)
 
   Vehicle/
-    PHCVehiclePawn.h/cpp       -- Lamborghini Aventador (~700 lines)
-    PHCDuneBuggyPawn.h/cpp     -- Dune buggy with missiles (~700 lines)
-    PHCMissileProjectile.h/cpp -- Missile fired from buggy
+    PHCVehiclePawn.h/cpp       -- Lamborghini Aventador (827 lines)
+    PHCDuneBuggyPawn.h/cpp     -- Dune buggy with missiles (817 lines)
+    PHCRaptorPawn.h/cpp        -- F-22 Raptor fighter jet (986 lines)
+    PHCTankPawn.h/cpp          -- M60A1 Tank (985 lines)
+    PHCDirtBikePawn.h/cpp      -- Dirt bike (759 lines)
+    PHCBlackbirdPawn.h/cpp     -- SR-71 Blackbird (892 lines)
+    PHCBlackHawkPawn.h/cpp     -- UH-60 Black Hawk (879 lines)
+    PHCMissileProjectile.h/cpp -- Projectile with trails (394 lines)
+    PHCNukeExplosion.h/cpp     -- GTA V-style nuke explosion (478 lines)
 
   UI/
-    PHCCityHUD.h/cpp           -- Main 3D world HUD overlay (~1100 lines)
-    PHCMainHUD.h/cpp           -- Lobby menu (phone overlay)
-    PHCLeaderboardWidget.h/cpp -- Leaderboard display
+    PHCCityHUD.h/cpp           -- Main 3D world HUD (3,111 lines)
+    PHCMainHUD.h/cpp           -- Lobby menu phone overlay (484 lines)
+    PHCLeaderboardWidget.h/cpp -- Leaderboard display (327 lines)
     Avatar/, Economy/, Garden/, Panels/, Rooms/, Shop/  -- Sub-widgets
 
   Input/
-    PHCTouchInputComponent.h/cpp -- Mobile virtual joystick + camera look
+    PHCTouchInputComponent.h/cpp -- Mobile virtual joystick + camera look (226 lines)
 
-  Auth/                        -- Authentication manager + widget
-  Economy/                     -- Currency, store management
-  Network/                     -- HTTP client, WebSocket client, API cache
-  Social/                      -- Follow system, player search
-  Theme/                       -- UI theming system
-  Rooms/                       -- Voice room manager
+  Auth/                        -- Authentication manager + widget (1,263 lines total)
+  Economy/                     -- Currency, store management (846 lines total)
+  Network/                     -- HTTP client, WebSocket client, API cache (1,346 lines total)
+  Social/                      -- Follow system, player search (925 lines total)
+  Theme/                       -- UI theming system (777 lines total)
+  Rooms/                       -- Voice room manager + themes (718 lines total)
 
   Games/
-    Base/PHCMiniGameMode.h/cpp -- Base class for all mini-games
-    Base/PHCMiniGameHUD.h/cpp  -- Base class for mini-game UIs
-    [21 game folders]          -- Each with GameMode + HUD + supporting actors
+    Base/PHCMiniGameMode.h/cpp -- Base class for all mini-games (198 lines)
+    Base/PHCMiniGameHUD.h/cpp  -- Base class for mini-game UIs (465 lines)
+    [23 game folders]          -- Each with GameMode + HUD + supporting actors
 ```
+
+---
+
+## Data Structs (PHCTypes.h)
+
+- `FPHCPlayerProfile`: PlayerId, Username, DisplayName, AvatarUrl, Coins, Gems, Level, XP, FollowerCount, FollowingCount, bIsGuest
+- `FPHCAvatarData`: Layers (TArray of FPHCAvatarLayer), SkinTone
+- `FPHCShopItem`: ItemId, Name, Description, ImageUrl, Category, CurrencyType, Price, bOwned
+- `FPHCRoomInfo`: RoomId, RoomName, HostName, HostId, ThemeId, Status, PlayerCount, MaxPlayers(=8)
+- `FPHCThemeData`: ThemeId, ThemeName, 12 color slots
+- `FPHCGameResult`: GameType, Score, CoinsEarned, XPEarned, bWon, TimePlayed
+- `FPHCDailyBonus`, `FPHCGardenPlot`, `FPHCFollowInfo`, `FPHCLeaderboardEntry`, `FPHCChatMessage`
 
 ---
 
 ## Known Issues & Open Items
 
-### Vehicle No-Collision (temporary)
-Vehicles use `AddActorWorldOffset(bSweep=false)` so they pass through buildings. Proper collision channels need to be set up. Ground trace was removed (caused floating bug), so vehicles don't follow terrain or interact with ramps.
-
-### Multiplayer Replication Disabled
-Vehicle `bReplicates`, `SetReplicateMovement()`, etc. are commented out in both vehicle constructors. Character `bReplicates` also commented out. Re-enable when vehicle entry/exit is stable in multiplayer.
+### Vehicle Replication
+- Vehicle `bReplicates` and `SetReplicateMovement()` are NOT enabled in vehicle constructors
+- Auto-connect to dedicated server is disabled until vehicle replication is implemented
+- Character `bReplicates=true` and `SetReplicateMovement=true` ARE set (30Hz net update)
 
 ### No PlayerStart Actor
-Characters spawn at world origin `(0,0,0)` via UE's default logic. A proper spawn point at a nice city location would be better.
+- Characters spawn at (-28000, -28000, 58) via `SpawnDefaultPawnAtTransform_Implementation()`
 
-### Mountains Removed
-53 outskirts mountains were removed from `SpawnHills()` during debugging. Hills along the highway corridor and at compass points remain.
-
-### Dead Code in Vehicle Headers
-`ExhaustPuffs`, `ExhaustPuffAge`, `NextExhaustPuff`, `ExhaustSpawnTimer` members exist in both `PHCVehiclePawn.h` and `PHCDuneBuggyPawn.h` but the exhaust system was removed. These should be cleaned up.
-
----
-
-## Recent Changes (latest first)
-
-### City De-Blockify
-Added cylinders, spheres, and cones throughout city to break up cubic monotony:
-- **Houses:** 4 corner pilasters (cylinder), cylinder chimney + cone cap, doorway arch (cylinder), foundation bushes (spheres)
-- **Shops:** Corner trim cylinders, awning support posts (cylinder), neon tube (cylinder)
-- **Buildings:** Corner edge cylinders, rooftop spires (cone) and domes (sphere)
-- **Institutions:** Hemisphere dome on roof, flagpole cylinder
-- **Warehouses:** Cone caps on smokestacks
-- **Parks:** Hedge sphere rows along paths, cone topiary trees
-- **Street lights:** Inverted cone lamp shade above sphere globe
-
-### GTA V Graphics Overhaul
-- Filmic tone mapping, chromatic aberration, film grain, depth of field
-- 4-phase time-of-day color grading (Dawn warm pink-amber / Day subtle / Sunset golden / Night cool blue)
-- God rays on directional light, directional fog inscattering
-- Spot light street pools (replaced point lights), cloud layer drift
-- Ocean wave animation (3 UU amplitude), wet roads at night
-- ClearCoat shading model on vehicle body panels (M_PHCClearCoat material)
-- Brick residential colors (8 tones), high roughness (0.92)
-
-### PBR Material System
-- All building types, ground, roads, sidewalks, vehicles, trees, and lights use proper PBR parameters (Metallic, Roughness, EmissiveColor)
-- Three auto-created materials: M_PHCColor, M_PHCGlass, M_PHCClearCoat
+### Dead Code
+- `ExhaustPuffs`/`ExhaustPuffAge`/`NextExhaustPuff`/`ExhaustSpawnTimer` in VehiclePawn and DuneBuggyPawn headers
 
 ---
 
 ## Conventions
 
-- **All UI built in C++** via `WidgetTree->ConstructWidget<>` in `Initialize()` overrides. No UMG Blueprint widgets.
-- **All input created at runtime** via `NewObject<UInputAction>` and `NewObject<UInputMappingContext>`. No `.uasset` input assets.
-- **All meshes are engine basic shapes** (`/Engine/BasicShapes/Cube`, `Cylinder`, `Sphere`, `Plane`, `Cone`) with `UMaterialInstanceDynamic` for PBR via `SetVectorParameterValue("BaseColor", Color)`, `SetScalarParameterValue("Roughness", ...)`, etc.
+- **All UI built in C++** via `WidgetTree->ConstructWidget<>` — no UMG Blueprint widgets
+- **All input created at runtime** via `NewObject<UInputAction>` — no .uasset input assets
+- **All meshes are engine basic shapes** with `UMaterialInstanceDynamic` for PBR
 - **Log category:** `LogPlayhouseCity` (declared in `PlayhouseCity.h`)
-- **Class prefix:** `PHC` (PlayHouseCity) for all custom classes
+- **Class prefix:** `PHC` (PlayHouseCity)
 - **Header guards:** `#pragma once`
-- **Mobile platform checks:** `#if PLATFORM_IOS || PLATFORM_ANDROID` for touch-specific code
+- **Mobile checks:** `#if PLATFORM_IOS || PLATFORM_ANDROID`
 - **No Blueprints, no .uasset files** in the gameplay layer
-
----
-
-## Servers
-
-| Server | IP | Role |
-|--------|----|------|
-| Production | GAME_SERVER_IP | Dedicated game server (Linux) |
-| Build | BUILD_SERVER_IP | Linux build server for server binaries |
-| Backend API | tfplayhouse.com | REST API + WebSocket for auth, economy, social |
