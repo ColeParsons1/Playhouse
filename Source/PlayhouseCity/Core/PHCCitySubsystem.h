@@ -16,6 +16,7 @@ class USpotLightComponent;
 class UPointLightComponent;
 class APostProcessVolume;
 class APHCBlackbirdPawn;
+class APHCBlackHawkPawn;
 
 /** City district types for zone-based procedural generation. */
 enum class ECityDistrict : uint8
@@ -161,7 +162,7 @@ private:
 
 public:
 	/** Normalized time in the day/night cycle (0 = sunrise, 0.25 = noon, 0.5 = sunset, 0.75 = midnight). */
-	float DayNightTime = 0.f;
+	float DayNightTime = 0.25f;
 
 	/** When true, DayNightTime is frozen (Night mode from HUD button). */
 	bool bNightModeLocked = false;
@@ -227,6 +228,39 @@ public:
 
 	FGoldCoinData GoldCoins[NumGoldCoins];
 
+	/** NPC player characters — wander city during daytime, damageable. */
+	static constexpr int32 NumNPCPlayers = 5;
+
+	struct FNPCPlayerData
+	{
+		TObjectPtr<AActor> Actor;
+		// Body meshes needing per-frame animation
+		TObjectPtr<UStaticMeshComponent> HeadMesh, JawMesh, NeckMesh;
+		TObjectPtr<UStaticMeshComponent> ChestMesh, AbsMesh, PelvisMesh;
+		TObjectPtr<UStaticMeshComponent> CollarMesh, BeltMesh, BeltBuckleMesh;
+		TObjectPtr<UStaticMeshComponent> LShoulderMesh, LUpperArmMesh, LElbowMesh, LForearmMesh, LHandMesh;
+		TObjectPtr<UStaticMeshComponent> RShoulderMesh, RUpperArmMesh, RElbowMesh, RForearmMesh, RHandMesh;
+		TObjectPtr<UStaticMeshComponent> LThighMesh, LKneeMesh, LShinMesh, LFootMesh, LSoleMesh;
+		TObjectPtr<UStaticMeshComponent> RThighMesh, RKneeMesh, RShinMesh, RFootMesh, RSoleMesh;
+		TObjectPtr<UStaticMeshComponent> HairTopMesh, HairBackMesh;
+		TArray<TObjectPtr<UMaterialInstanceDynamic>> BodyMIDs;
+		TObjectPtr<UPointLightComponent> GlowLight;
+		float Health = 100.f;
+		float DamageFlashTimer = 0.f;
+		bool bVisible = false;
+		FVector SpawnPosition = FVector::ZeroVector;
+		float AnimTime = 0.f;
+		float WalkAnimBlend = 0.f;
+		FVector WanderTarget = FVector::ZeroVector;
+		float WanderWaitTimer = 0.f;
+	};
+
+	FNPCPlayerData NPCPlayers[NumNPCPlayers];
+	bool bNPCPlayersVisible = false;
+
+	void SpawnNPCPlayers();
+	void RespawnNPCPlayer(int32 Index);
+
 private:
 
 	static bool IsInCrabForbiddenZone(const FVector& P)
@@ -242,6 +276,24 @@ private:
 	UPROPERTY(Transient) TObjectPtr<AActor> LightRailTrainActor;
 	float LightRailPosition = 0.f;
 	bool bLightRailForward = true;
+
+public:
+	/** NPC patrol helicopter (flies during daytime, damageable). */
+	void SpawnNPCHelicopter();
+	void OnNPCHeliDestroyed();
+	void RespawnNPCHelicopter();
+
+	UPROPERTY(Transient) TObjectPtr<APHCBlackHawkPawn> NPCHelicopter;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> NPCHeliBodyMIDs;
+	float NPCHeliPatrolAngle = 0.f;
+	bool bNPCHeliVisible = false;
+	float NPCHeliHealth = 240.f;
+	float NPCHeliDamageFlashTimer = 0.f;
+	bool bNPCHeliCrashing = false;
+	float NPCHeliCrashTimer = 0.f;
+	float NPCHeliRespawnTimer = -1.f;
+
+private:
 
 	/** Cloud layer actors for parallax drift. */
 	UPROPERTY(Transient) TObjectPtr<AActor> CloudLayerActor;

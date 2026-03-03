@@ -148,6 +148,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "PHC|Multiplayer")
 	bool bIsHost = false;
 
+	/** Set during Init() — tells CitySubsystem to skip initial city generation
+	 *  since ClientTravel will reload the map anyway. */
+	bool bPendingServerConnect = false;
+
 private:
 	// -- Owned subsystem instances (outer = this) -----------------------------
 

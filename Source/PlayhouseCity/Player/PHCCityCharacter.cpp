@@ -33,6 +33,13 @@ APHCCityCharacter::APHCCityCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
+	// ---- Multiplayer replication ----
+	bReplicates = true;
+	SetReplicateMovement(true);
+	NetUpdateFrequency = 30.f;
+	MinNetUpdateFrequency = 15.f;
+	bAlwaysRelevant = true;
+
 	// ---- Root: UBoxComponent — same pattern as vehicle ----
 	CharacterCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("CharacterCollision"));
 	CharacterCollision->SetBoxExtent(FVector(22.f, 26.f, 90.f));
@@ -268,6 +275,15 @@ APHCCityCharacter::APHCCityCharacter()
 	DaggerBladeMesh  = MakeCube(TEXT("DaggerBlade"),  FVector(0.f, 26.f, 30.f), FVector(2.f, 1.2f, 18.f));
 	DaggerGuardMesh  = MakeCube(TEXT("DaggerGuard"),  FVector(0.f, 26.f, 18.f), FVector(8.f, 1.5f, 2.f));
 
+	// ================================================================
+	//  AK-47 WEAPON — receiver body + barrel + banana mag + stock + muzzle flash
+	// ================================================================
+	AK47BodyMesh   = MakeCube(TEXT("AK47Body"),   FVector(0.f, 26.f, 40.f), FVector(28.f, 3.5f, 5.f));
+	AK47BarrelMesh = MakeCyl(TEXT("AK47Barrel"),  FVector(0.f, 26.f, 70.f), 1.2f, 50.f);
+	AK47MagMesh    = MakeCube(TEXT("AK47Mag"),    FVector(0.f, 26.f, 30.f), FVector(4.f, 2.5f, 16.f));
+	AK47StockMesh  = MakeCube(TEXT("AK47Stock"),  FVector(0.f, 26.f, 38.f), FVector(24.f, 3.f, 4.f));
+	AK47MuzzleMesh = MakeSph(TEXT("AK47Muzzle"),  FVector(0.f, 26.f, 100.f), 5.f);
+
 	// Enable shadows on major body parts for visual depth and grounding
 	auto Shadow = [](UStaticMeshComponent* C) { if (C) C->CastShadow = true; };
 	Shadow(HeadMesh); Shadow(JawMesh); Shadow(NeckMesh);
@@ -280,6 +296,15 @@ APHCCityCharacter::APHCCityCharacter()
 	Shadow(LeftShinMesh); Shadow(RightShinMesh);
 	Shadow(LeftFootMesh); Shadow(RightFootMesh);
 	Shadow(ScytheHandleMesh); Shadow(ScytheBladeMesh);
+
+	// Muzzle flash dynamic point light (shared by all ranged weapons)
+	MuzzleFlashLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("MuzzleFlashLight"));
+	MuzzleFlashLight->SetupAttachment(RootComponent);
+	MuzzleFlashLight->SetIntensity(0.f);
+	MuzzleFlashLight->SetAttenuationRadius(600.f);
+	MuzzleFlashLight->SetLightColor(FColor(255, 180, 80));
+	MuzzleFlashLight->SetCastShadows(false);
+	MuzzleFlashLight->SetVisibility(false);
 
 	// Massive bounds to prevent any form of culling on mobile
 	CharacterCollision->SetBoundsScale(200.f);
@@ -378,6 +403,14 @@ void APHCCityCharacter::CreateInputAssets()
 	DefaultMappingContext->MapKey(JumpAction, EKeys::Gamepad_FaceButton_Bottom);
 	DefaultMappingContext->MapKey(SprintAction, EKeys::Gamepad_LeftThumbstick);
 	DefaultMappingContext->MapKey(InteractAction, EKeys::Gamepad_FaceButton_Left);
+
+	// ADS (aim down sights)
+	ADSAction = NewObject<UInputAction>(this, TEXT("IA_ADS"));
+	ADSAction->ValueType = EInputActionValueType::Boolean;
+#if !PLATFORM_IOS && !PLATFORM_ANDROID
+	DefaultMappingContext->MapKey(ADSAction, EKeys::RightMouseButton);
+#endif
+	DefaultMappingContext->MapKey(ADSAction, EKeys::Gamepad_LeftTrigger);
 }
 
 // ---------------------------------------------------------------------------
@@ -387,6 +420,14 @@ void APHCCityCharacter::CreateInputAssets()
 void APHCCityCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// On dedicated server: skip input, materials, and visual setup entirely
+	if (GetWorld() && GetWorld()->GetNetMode() == NM_DedicatedServer)
+	{
+		UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCityCharacter::BeginPlay -- Dedicated server, skipping visual setup. Pawn at %s"),
+			*GetActorLocation().ToString());
+		return;
+	}
 
 	CreateInputAssets();
 
@@ -422,6 +463,11 @@ void APHCCityCharacter::BeginPlay()
 				EIC->BindAction(SprintAction, ETriggerEvent::Completed, this, &APHCCityCharacter::HandleSprintCompleted);
 			}
 			if (InteractAction) EIC->BindAction(InteractAction, ETriggerEvent::Started, this, &APHCCityCharacter::HandleInteract);
+			if (ADSAction)
+			{
+				EIC->BindAction(ADSAction, ETriggerEvent::Started, this, &APHCCityCharacter::HandleADSStarted);
+				EIC->BindAction(ADSAction, ETriggerEvent::Completed, this, &APHCCityCharacter::HandleADSCompleted);
+			}
 		}
 	}
 
@@ -593,6 +639,28 @@ void APHCCityCharacter::BeginPlay()
 	ApplyColor(DaggerHandleMesh, DaggerHandle, 0.80f, 0.0f);
 	ApplyColor(DaggerGuardMesh,  DaggerGuard,  0.25f, 0.70f);
 
+	// AK-47 materials — dark gunmetal body/barrel, wooden stock, dark brown mag
+	const FLinearColor AK47Metal(0.20f, 0.20f, 0.22f);
+	const FLinearColor AK47Wood(0.30f, 0.20f, 0.08f);
+	const FLinearColor AK47MagColor(0.15f, 0.12f, 0.05f);
+	ApplyColor(AK47BodyMesh,   AK47Metal,    0.35f, 0.9f);
+	ApplyColor(AK47BarrelMesh, AK47Metal,    0.25f, 0.95f);
+	ApplyColor(AK47MagMesh,    AK47MagColor, 0.70f, 0.3f);
+	ApplyColor(AK47StockMesh,  AK47Wood,     0.80f, 0.0f);
+	// Muzzle flash: bright emissive (hidden when not firing)
+	if (AK47MuzzleMesh && AK47MuzzleMesh->GetStaticMesh() && ColorMat)
+	{
+		UMaterialInstanceDynamic* AKMuzMID = UMaterialInstanceDynamic::Create(ColorMat, AK47MuzzleMesh);
+		if (AKMuzMID)
+		{
+			AKMuzMID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(1.f, 0.6f, 0.1f));
+			AKMuzMID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(10.f, 6.f, 2.f));
+			AKMuzMID->SetScalarParameterValue(TEXT("Metallic"), 0.f);
+			AKMuzMID->SetScalarParameterValue(TEXT("Roughness"), 0.5f);
+			AK47MuzzleMesh->SetMaterial(0, AKMuzMID);
+		}
+	}
+
 	// Mark as grounded immediately — ground plane has no collision.
 	bHasBeenGrounded = true;
 
@@ -613,19 +681,72 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	if (GetAttachParentActor() != nullptr)
 		return;
 
+	// ---- ADS interpolation + FOV (COD-style) ----------------------------
+	if (bFirstPersonMode)
+	{
+		const float ADSTarget = bADS ? 1.f : 0.f;
+		ADSAlpha = FMath::FInterpTo(ADSAlpha, ADSTarget, DeltaTime, ADSInterpSpeed);
+		if (FollowCamera)
+		{
+			FollowCamera->SetFieldOfView(FMath::Lerp(ADSFOVHip, ADSFOVAim, ADSAlpha));
+		}
+	}
+	else
+	{
+		ADSAlpha = 0.f;
+		bADS = false;
+		if (FollowCamera) FollowCamera->SetFieldOfView(90.f);
+	}
+
+	// ---- Recoil recovery (COD-style: pull back toward zero) -------------
+	if (bFirstPersonMode && GetController())
+	{
+		if (RecoilPitchAccum > 0.01f)
+		{
+			const bool bCurrentlyFiring = (bMinigunFiring || bAK47Firing);
+			const float RecRate = bCurrentlyFiring ? 2.f : RecoilRecoverySpeed;
+			const float PitchRecover = FMath::Min(RecRate * DeltaTime, RecoilPitchAccum);
+			AddControllerPitchInput(-PitchRecover);
+			RecoilPitchAccum -= PitchRecover;
+		}
+		else { RecoilPitchAccum = 0.f; }
+
+		if (FMath::Abs(RecoilYawAccum) > 0.01f)
+		{
+			const float YawRecover = FMath::Sign(RecoilYawAccum) * FMath::Min(3.f * DeltaTime, FMath::Abs(RecoilYawAccum));
+			AddControllerYawInput(-YawRecover);
+			RecoilYawAccum -= YawRecover;
+		}
+		else { RecoilYawAccum = 0.f; }
+	}
+
 	// ---- Camera shake (RPG fire recoil, GTA V style) --------------------
 	if (CameraShakeTimer > 0.f && CameraBoom)
 	{
 		CameraShakeTimer -= DeltaTime;
+		const FVector BaseOffset = bFirstPersonMode
+			? FVector(0.f, 0.f, 76.f)
+			: FVector(0.f, 75.f, 60.f);
 		const float Decay = FMath::Max(CameraShakeTimer / 0.35f, 0.f);
 		const float ShakeX = FMath::RandRange(-CameraShakeIntensity, CameraShakeIntensity) * Decay;
 		const float ShakeZ = FMath::RandRange(-CameraShakeIntensity, CameraShakeIntensity) * Decay;
-		CameraBoom->SocketOffset = FVector(0.f, 75.f + ShakeX, 60.f + ShakeZ);
+		CameraBoom->SocketOffset = BaseOffset + FVector(0.f, ShakeX, ShakeZ);
 
 		if (CameraShakeTimer <= 0.f)
 		{
-			// Restore default socket offset
-			CameraBoom->SocketOffset = FVector(0.f, 75.f, 60.f);
+			CameraBoom->SocketOffset = BaseOffset;
+		}
+	}
+
+	// ---- Per-shot micro-shake for automatic weapons ---------------------
+	if (bFirstPersonMode && ShotShakeTimer > 0.f)
+	{
+		ShotShakeTimer -= DeltaTime;
+		if (GetController())
+		{
+			const float ShakeMag = 0.05f * FMath::Min(ShotShakeTimer / 0.03f, 1.f);
+			AddControllerPitchInput(FMath::RandRange(-ShakeMag, ShakeMag) * 0.3f);
+			AddControllerYawInput(FMath::RandRange(-ShakeMag, ShakeMag) * 0.15f);
 		}
 	}
 
@@ -1167,6 +1288,51 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		HairFollow(HairSideLMesh, FVector(-2.f, -13.f, 4.f));
 		HairFollow(HairSideRMesh, FVector(-2.f,  13.f, 4.f));
 
+		// Camera-relative FP grip helper: keeps weapon in view at any pitch
+		const float FPCamPitch = (bFirstPersonMode && GetController())
+			? GetController()->GetControlRotation().Pitch
+			: 0.f;
+		const FVector FPCamOrigin(0.f, 0.f, 76.f); // matches CameraBoom SocketOffset
+		const FRotator FPPitchRot(-FPCamPitch, 0.f, 0.f);
+
+		// ---- FP Weapon Bob (figure-8 using WalkCyclePhase) ----
+		FVector FPWeaponOffset = FVector::ZeroVector;
+		if (bFirstPersonMode)
+		{
+			const float BobScale = FMath::Lerp(1.f, 0.15f, ADSAlpha);
+			WeaponBobH = FMath::Sin(WalkCyclePhase) * 1.2f * WalkAnimBlend * BobScale;
+			WeaponBobV = FMath::Sin(2.f * WalkCyclePhase) * 0.8f * WalkAnimBlend * BobScale;
+
+			// ---- Weapon Sway (spring-based viewmodel lag) ----
+			const float CurYaw = GetController() ? GetController()->GetControlRotation().Yaw : 0.f;
+			const float CurPitch = GetController() ? GetController()->GetControlRotation().Pitch : 0.f;
+			float YawDelta = CurYaw - PrevAimYaw;
+			if (YawDelta > 180.f) YawDelta -= 360.f;
+			if (YawDelta < -180.f) YawDelta += 360.f;
+			float PitchDelta = CurPitch - PrevAimPitch;
+			if (PitchDelta > 180.f) PitchDelta -= 360.f;
+			if (PitchDelta < -180.f) PitchDelta += 360.f;
+			PrevAimYaw = CurYaw;
+			PrevAimPitch = CurPitch;
+
+			WeaponSwayX.Vel += -YawDelta * 0.6f;
+			WeaponSwayY.Vel += -PitchDelta * 0.4f;
+			const float SwayX = WeaponSwayX.Update(0.f, 60.f, 10.f, DeltaTime);
+			const float SwayZ = WeaponSwayY.Update(0.f, 60.f, 10.f, DeltaTime);
+			const float SwayScale = FMath::Lerp(1.f, 0.2f, ADSAlpha);
+
+			// ---- Weapon Kick (per-shot impulse, spring recovery) ----
+			const float KickZ = WeaponKickZ.Update(0.f, 80.f, 12.f, DeltaTime);
+			const float KickX = WeaponKickX.Update(0.f, 80.f, 12.f, DeltaTime);
+
+			FPWeaponOffset = FVector(
+				KickX + SwayX * SwayScale * 0.5f,
+				WeaponBobH + SwayX * SwayScale,
+				WeaponBobV + SwayZ * SwayScale + KickZ
+			);
+		}
+		// Usage: GripPt = FPCamOrigin + FPPitchRot.RotateVector(CamLocalOffset)
+
 		// ---- Dagger: held in right hand, stab animation ----
 		if (DaggerHandleMesh && DaggerBladeMesh && DaggerGuardMesh)
 		{
@@ -1177,9 +1343,11 @@ void APHCCityCharacter::Tick(float DeltaTime)
 
 			if (bShowDagger)
 			{
-				const FVector RHand = RightHandMesh
-					? RightHandMesh->GetRelativeLocation()
-					: FVector(0.f, 26.f, 6.f);
+				const FVector RHand = bFirstPersonMode
+					? FPCamOrigin + FPPitchRot.RotateVector(FVector(25.f, 12.f, -18.f) + FPWeaponOffset)
+					: (RightHandMesh
+						? RightHandMesh->GetRelativeLocation()
+						: FVector(0.f, 26.f, 6.f));
 
 				// Hold angle: blade points upward by default
 				float HoldPitch = -15.f;
@@ -1224,9 +1392,11 @@ void APHCCityCharacter::Tick(float DeltaTime)
 
 			if (bShowScythe)
 			{
-				const FVector RHand = RightHandMesh
-					? RightHandMesh->GetRelativeLocation()
-					: FVector(0.f, 26.f, 6.f);
+				const FVector RHand = bFirstPersonMode
+					? FPCamOrigin + FPPitchRot.RotateVector(FVector(25.f, 15.f, -21.f) + FPWeaponOffset)
+					: (RightHandMesh
+						? RightHandMesh->GetRelativeLocation()
+						: FVector(0.f, 26.f, 6.f));
 
 				// Hold angle: handle extends upward and slightly back
 				float HoldPitch = -15.f;
@@ -1269,23 +1439,33 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			if (bShowMinigun)
 			{
 				// Grip point: midpoint between both hands
-				const FVector RHand = RightHandMesh
-					? RightHandMesh->GetRelativeLocation()
-					: FVector(20.f, 26.f, 40.f);
-				const FVector LHand = LeftHandMesh
-					? LeftHandMesh->GetRelativeLocation()
-					: FVector(22.f, -26.f, 38.f);
-				const FVector GripCenter = (RHand + LHand) * 0.5f;
+				const FVector MiniHip(30.f, 5.f, -21.f);
+				const FVector MiniADS(22.f, 0.f, -17.f);
+				const FVector GripCenter = bFirstPersonMode
+					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(MiniHip, MiniADS, ADSAlpha) + FPWeaponOffset)
+					: [&]() {
+						const FVector RH = RightHandMesh
+							? RightHandMesh->GetRelativeLocation()
+							: FVector(20.f, 26.f, 40.f);
+						const FVector LH = LeftHandMesh
+							? LeftHandMesh->GetRelativeLocation()
+							: FVector(22.f, -26.f, 38.f);
+						return (RH + LH) * 0.5f;
+					}();
 
-				// Gun points forward (rotated 90 deg so cylinder axis = forward)
-				const FRotator GunRot(90.f, 0.f, 0.f);
+				// Camera pitch so the gun aims where the player is looking
+				const float MinigunAimPitch = FPCamPitch;
+				const FRotator MiniAimRot(-MinigunAimPitch, 0.f, 0.f);
+
+				// Gun points forward (rotated 90 deg so cylinder axis = forward) + aim pitch
+				const FRotator GunRot(90.f - MinigunAimPitch, 0.f, 0.f);
 
 				// Body: at grip center, extends forward
-				MinigunBodyMesh->SetRelativeLocation(GripCenter + FVector(12.f, 0.f, 0.f));
+				MinigunBodyMesh->SetRelativeLocation(GripCenter + MiniAimRot.RotateVector(FVector(12.f, 0.f, 0.f)));
 				MinigunBodyMesh->SetRelativeRotation(GunRot);
 
 				// Barrel cluster: in front of body
-				MinigunBarrelMesh->SetRelativeLocation(GripCenter + FVector(40.f, 0.f, 0.f));
+				MinigunBarrelMesh->SetRelativeLocation(GripCenter + MiniAimRot.RotateVector(FVector(40.f, 0.f, 0.f)));
 
 				// Spin barrels
 				if (bMinigunFiring)
@@ -1296,10 +1476,10 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				{
 					MinigunSpinAngle *= FMath::Max(0.f, 1.f - 2.f * DeltaTime);
 				}
-				MinigunBarrelMesh->SetRelativeRotation(FRotator(90.f, MinigunSpinAngle, 0.f));
+				MinigunBarrelMesh->SetRelativeRotation(FRotator(90.f - MinigunAimPitch, MinigunSpinAngle, 0.f));
 
 				// Muzzle flash at barrel tip
-				MinigunMuzzleMesh->SetRelativeLocation(GripCenter + FVector(70.f, 0.f, 0.f));
+				MinigunMuzzleMesh->SetRelativeLocation(GripCenter + MiniAimRot.RotateVector(FVector(70.f, 0.f, 0.f)));
 				MinigunMuzzleMesh->SetRelativeRotation(GunRot);
 
 				// Muzzle flash emissive flicker
@@ -1348,50 +1528,49 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			if (bShowBazooka)
 			{
 				// Shoulder weapon pose: tube on right shoulder pointing forward
-				const FVector RShoulder = RightShoulderMesh
-					? RightShoulderMesh->GetRelativeLocation()
-					: FVector(0.f, 22.f, 46.f);
+				const FVector BazHip(20.f, 12.f, -11.f);
+				const FVector BazADSP(15.f, 2.f, -8.f);
+				const FVector RShoulder = bFirstPersonMode
+					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(BazHip, BazADSP, ADSAlpha) + FPWeaponOffset)
+					: (RightShoulderMesh
+						? RightShoulderMesh->GetRelativeLocation()
+						: FVector(0.f, 22.f, 46.f));
 
-				// Cylinder axis is Z, so Pitch 90 points it forward (actor X)
-				const FRotator GunRot(90.f, 0.f, 0.f);
-				const FVector TubeCenter = RShoulder + FVector(25.f, 4.f, 0.f);
+				// Cylinder axis is Z, so Pitch 90 points it forward (actor X) + aim pitch
+				const FRotator BazGunRot(90.f - FPCamPitch, 0.f, 0.f);
+				const FRotator BazAimRot(-FPCamPitch, 0.f, 0.f);
+				const FVector TubeCenter = RShoulder + BazAimRot.RotateVector(FVector(25.f, 4.f, 0.f));
 
 				if (BazookaTubeMesh)
 				{
 					BazookaTubeMesh->SetRelativeLocation(TubeCenter);
-					BazookaTubeMesh->SetRelativeRotation(GunRot);
+					BazookaTubeMesh->SetRelativeRotation(BazGunRot);
 				}
 				if (BazookaRearEndMesh)
 				{
-					// Rear flare sits at back end of tube (tube half-length = 60 back)
-					BazookaRearEndMesh->SetRelativeLocation(TubeCenter + FVector(-60.f, 0.f, 0.f));
-					BazookaRearEndMesh->SetRelativeRotation(GunRot);
+					BazookaRearEndMesh->SetRelativeLocation(TubeCenter + BazAimRot.RotateVector(FVector(-60.f, 0.f, 0.f)));
+					BazookaRearEndMesh->SetRelativeRotation(BazGunRot);
 				}
 				if (BazookaFrontSightMesh)
 				{
-					// Front sight on top, near muzzle end
-					BazookaFrontSightMesh->SetRelativeLocation(TubeCenter + FVector(52.f, 0.f, 5.f));
+					BazookaFrontSightMesh->SetRelativeLocation(TubeCenter + BazAimRot.RotateVector(FVector(52.f, 0.f, 5.f)));
 				}
 				if (BazookaRearSightMesh)
 				{
-					// Rear sight on top, near shoulder end
-					BazookaRearSightMesh->SetRelativeLocation(TubeCenter + FVector(-20.f, 0.f, 5.f));
+					BazookaRearSightMesh->SetRelativeLocation(TubeCenter + BazAimRot.RotateVector(FVector(-20.f, 0.f, 5.f)));
 				}
 				if (BazookaGripMesh)
 				{
-					// Pistol grip underneath tube center
-					BazookaGripMesh->SetRelativeLocation(TubeCenter + FVector(0.f, 0.f, -10.f));
+					BazookaGripMesh->SetRelativeLocation(TubeCenter + BazAimRot.RotateVector(FVector(0.f, 0.f, -10.f)));
 				}
 				if (BazookaScopeMesh)
 				{
-					// Scope on top between sights
-					BazookaScopeMesh->SetRelativeLocation(TubeCenter + FVector(16.f, 0.f, 7.f));
-					BazookaScopeMesh->SetRelativeRotation(GunRot);
+					BazookaScopeMesh->SetRelativeLocation(TubeCenter + BazAimRot.RotateVector(FVector(16.f, 0.f, 7.f)));
+					BazookaScopeMesh->SetRelativeRotation(BazGunRot);
 				}
 				if (BazookaMuzzleMesh)
 				{
-					// Muzzle flash at barrel tip
-					BazookaMuzzleMesh->SetRelativeLocation(TubeCenter + FVector(68.f, 0.f, 0.f));
+					BazookaMuzzleMesh->SetRelativeLocation(TubeCenter + BazAimRot.RotateVector(FVector(68.f, 0.f, 0.f)));
 				}
 
 				// Timers
@@ -1399,6 +1578,108 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				if (BazookaFireTimer > 0.f) BazookaFireTimer -= DeltaTime;
 			}
 		}
+
+		// ---- AK-47: held in right hand, hold-to-fire ----
+		if (AK47BodyMesh && AK47BarrelMesh && AK47MagMesh && AK47StockMesh && AK47MuzzleMesh)
+		{
+			const bool bShowAK = (CurrentWeaponType == 5);
+			AK47BodyMesh->SetVisibility(bShowAK);
+			AK47BarrelMesh->SetVisibility(bShowAK);
+			AK47MagMesh->SetVisibility(bShowAK);
+			AK47StockMesh->SetVisibility(bShowAK);
+			AK47MuzzleMesh->SetVisibility(bShowAK && bAK47Firing);
+
+			if (bShowAK)
+			{
+				const FVector AKHip(30.f, 8.f, -19.f);
+				const FVector AKADSPos(22.f, 0.f, -15.f);
+				const FVector GripPt = bFirstPersonMode
+					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(AKHip, AKADSPos, ADSAlpha) + FPWeaponOffset)
+					: (RightHandMesh
+						? RightHandMesh->GetRelativeLocation()
+						: FVector(0.f, 26.f, 6.f));
+
+				// Get camera pitch so the gun aims where the player is looking
+				const float AimPitch = FPCamPitch;
+				const FRotator AimRot(-AimPitch, 0.f, 0.f); // negate: component-relative pitch
+
+				// Cylinder barrel needs 90 pitch + aim pitch
+				const FRotator BarrelRot(90.f - AimPitch, 0.f, 0.f);
+
+				// Body/receiver centered at grip
+				AK47BodyMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(10.f, 0.f, 0.f)));
+				AK47BodyMesh->SetRelativeRotation(AimRot);
+
+				// Barrel extends forward from body
+				AK47BarrelMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(45.f, 0.f, 0.f)));
+				AK47BarrelMesh->SetRelativeRotation(BarrelRot);
+
+				// Banana mag underneath body, angled slightly
+				AK47MagMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(6.f, 0.f, -12.f)));
+				AK47MagMesh->SetRelativeRotation(FRotator(8.f - AimPitch, 0.f, 0.f));
+
+				// Stock extends behind from body
+				AK47StockMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(-22.f, 0.f, -1.f)));
+				AK47StockMesh->SetRelativeRotation(AimRot);
+
+				// Muzzle flash at barrel tip
+				AK47MuzzleMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(72.f, 0.f, 0.f)));
+
+				// Muzzle flash emissive flicker
+				if (bAK47Firing && AK47MuzzleMesh->GetNumMaterials() > 0)
+				{
+					UMaterialInstanceDynamic* MuzzleMID = Cast<UMaterialInstanceDynamic>(
+						AK47MuzzleMesh->GetMaterial(0));
+					if (MuzzleMID)
+					{
+						const float Flicker = FMath::RandRange(0.5f, 1.0f);
+						MuzzleMID->SetVectorParameterValue(TEXT("EmissiveColor"),
+							FLinearColor(8.f * Flicker, 4.f * Flicker, 0.5f * Flicker));
+					}
+				}
+
+				// Continuous fire: spawn bullets at fire rate (~8 rounds/sec)
+				if (bAK47Firing)
+				{
+					AK47FireTimer -= DeltaTime;
+					if (AK47FireTimer <= 0.f)
+					{
+						AK47FireTimer = 0.12f;
+						FireWeapon();
+					}
+				}
+				else
+				{
+					AK47FireTimer = 0.f;
+				}
+			}
+		}
+
+		// ---- Muzzle flash dynamic light (shared by all ranged weapons) ----
+		if (bFirstPersonMode && MuzzleFlashLight)
+		{
+			if (MuzzleFlashLightTimer > 0.f)
+			{
+				MuzzleFlashLightTimer -= DeltaTime;
+				MuzzleFlashLight->SetVisibility(true);
+				MuzzleFlashLight->SetIntensity(8000.f * FMath::Max(MuzzleFlashLightTimer / 0.04f, 0.f));
+				// Position at muzzle of current weapon
+				if (CurrentWeaponType == 5 && AK47MuzzleMesh)
+					MuzzleFlashLight->SetRelativeLocation(AK47MuzzleMesh->GetRelativeLocation());
+				else if (CurrentWeaponType == 0 && MinigunMuzzleMesh)
+					MuzzleFlashLight->SetRelativeLocation(MinigunMuzzleMesh->GetRelativeLocation());
+				else if (CurrentWeaponType == 1 && BazookaMuzzleMesh)
+					MuzzleFlashLight->SetRelativeLocation(BazookaMuzzleMesh->GetRelativeLocation());
+			}
+			else
+			{
+				MuzzleFlashLight->SetVisibility(false);
+				MuzzleFlashLight->SetIntensity(0.f);
+			}
+		}
+
+		// ---- Hit marker timer decay ----
+		if (HitMarkerTimer > 0.f) HitMarkerTimer -= DeltaTime;
 	}
 }
 
@@ -1434,8 +1715,10 @@ void APHCCityCharacter::HandleLook(const FInputActionValue& Value)
 {
 	if (!GetController()) return;
 	const FVector2D LookVector = Value.Get<FVector2D>();
-	AddControllerYawInput(LookVector.X);
-	AddControllerPitchInput(LookVector.Y);
+	const float SensMult = (bFirstPersonMode && ADSAlpha > 0.01f)
+		? FMath::Lerp(1.f, ADSSensitivityMult, ADSAlpha) : 1.f;
+	AddControllerYawInput(LookVector.X * SensMult);
+	AddControllerPitchInput(LookVector.Y * SensMult);
 }
 
 void APHCCityCharacter::HandleJumpStarted(const FInputActionValue& /*Value*/)
@@ -1479,6 +1762,21 @@ void APHCCityCharacter::HandleInteract(const FInputActionValue& /*Value*/)
 	bPendingVehicleInteract = true;
 }
 
+void APHCCityCharacter::HandleADSStarted(const FInputActionValue& /*Value*/)
+{
+	SetADS(true);
+}
+
+void APHCCityCharacter::HandleADSCompleted(const FInputActionValue& /*Value*/)
+{
+	SetADS(false);
+}
+
+void APHCCityCharacter::SetADS(bool bNewADS)
+{
+	bADS = bNewADS;
+}
+
 // ---------------------------------------------------------------------------
 // Weapons
 // ---------------------------------------------------------------------------
@@ -1490,22 +1788,141 @@ void APHCCityCharacter::FireWeapon()
 	UWorld* World = GetWorld();
 	if (!World) return;
 
-	const FRotator SpawnRot = GetActorRotation();
-	const FVector AimDir = GetActorForwardVector();
-	const FVector SpawnLoc = GetActorLocation()
-		+ AimDir * 120.f
-		+ FVector(0.f, 0.f, 20.f);
+	// Use controller rotation (includes camera pitch) so bullets go where you're looking
+	const FRotator SpawnRot = GetController()
+		? GetController()->GetControlRotation()
+		: GetActorRotation();
+	const FVector AimDir = SpawnRot.Vector();
+	// Spawn tracer exactly at the muzzle flash orb
+	FVector SpawnLoc;
+	if (CurrentWeaponType == 5 && AK47MuzzleMesh)
+		SpawnLoc = AK47MuzzleMesh->GetComponentLocation();
+	else if (CurrentWeaponType == 0 && MinigunMuzzleMesh)
+		SpawnLoc = MinigunMuzzleMesh->GetComponentLocation();
+	else if (CurrentWeaponType == 1 && BazookaMuzzleMesh)
+		SpawnLoc = BazookaMuzzleMesh->GetComponentLocation();
+	else
+		SpawnLoc = GetActorLocation() + AimDir * 40.f + FVector(0.f, 0.f, 60.f);
 
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	if (CurrentWeaponType == 0) // Minigun — identical to Dune Buggy gun
+	if (CurrentWeaponType == 0 || CurrentWeaponType == 5) // Minigun / AK-47 — hitscan
 	{
+		// No spread — bullets go exactly where you aim
+		const FVector ShotDir = AimDir;
+
+		// Hitscan line trace
+		const FVector TraceStart = FollowCamera
+			? FollowCamera->GetComponentLocation()
+			: (GetActorLocation() + FVector(0.f, 0.f, 76.f));
+		const FVector TraceEnd = TraceStart + ShotDir * 50000.f;
+
+		FCollisionQueryParams TraceParams;
+		TraceParams.AddIgnoredActor(this);
+		FHitResult HitResult;
+		bool bHit = World->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
+
+		if (bHit && HitResult.GetActor() && HitResult.GetActor()->ActorHasTag(FName("GiantCrab")))
+		{
+			const float BulletDamage = (CurrentWeaponType == 5) ? 12.f : 8.f;
+			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+			if (CitySub)
+			{
+				for (int32 CI = 0; CI < UPHCCitySubsystem::NumGiantCrabs; ++CI)
+				{
+					if (CitySub->Crabs[CI].Actor == HitResult.GetActor())
+					{
+						CitySub->Crabs[CI].Health -= BulletDamage;
+						CitySub->Crabs[CI].DamageFlashTimer = 0.15f;
+						HitMarkerTimer = 0.25f;
+						if (CitySub->Crabs[CI].Health <= 0.f)
+						{
+							CrabKills++;
+							const FVector CrabLoc = HitResult.GetActor()->GetActorLocation();
+							APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
+								APHCMissileProjectile::StaticClass(), CrabLoc, FRotator::ZeroRotator);
+							if (TempProj) { TempProj->SpawnExplosion(CrabLoc); TempProj->Destroy(); }
+							CitySub->RespawnCrab(CI);
+						}
+						break;
+					}
+				}
+			}
+		}
+
+		// Check NPC helicopter hit
+		if (bHit && HitResult.GetActor() && HitResult.GetActor()->ActorHasTag(FName("NPCHelicopter")))
+		{
+			const float BulletDamage = (CurrentWeaponType == 5) ? 12.f : 8.f;
+			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+			if (CitySub && CitySub->NPCHelicopter && !CitySub->bNPCHeliCrashing)
+			{
+				CitySub->NPCHeliHealth -= BulletDamage;
+				CitySub->NPCHeliDamageFlashTimer = 0.15f;
+				HitMarkerTimer = 0.25f;
+				if (CitySub->NPCHeliHealth <= 0.f)
+				{
+					CitySub->OnNPCHeliDestroyed();
+				}
+			}
+		}
+
+		// Check NPC player hit
+		if (bHit && HitResult.GetActor() && HitResult.GetActor()->ActorHasTag(FName("NPCPlayer")))
+		{
+			const float BulletDamage = (CurrentWeaponType == 5) ? 12.f : 8.f;
+			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+			if (CitySub)
+			{
+				for (int32 NI = 0; NI < UPHCCitySubsystem::NumNPCPlayers; ++NI)
+				{
+					if (CitySub->NPCPlayers[NI].Actor == HitResult.GetActor())
+					{
+						CitySub->NPCPlayers[NI].Health -= BulletDamage;
+						CitySub->NPCPlayers[NI].DamageFlashTimer = 0.15f;
+						HitMarkerTimer = 0.25f;
+						if (CitySub->NPCPlayers[NI].Health <= 0.f)
+						{
+							const FVector NPCLoc = HitResult.GetActor()->GetActorLocation();
+							APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
+								APHCMissileProjectile::StaticClass(), NPCLoc, FRotator::ZeroRotator);
+							if (TempProj) { TempProj->SpawnExplosion(NPCLoc); TempProj->Destroy(); }
+							CitySub->RespawnNPCPlayer(NI);
+						}
+						break;
+					}
+				}
+			}
+		}
+
+		// Visual tracer projectile (cosmetic only)
 		APHCMissileProjectile* Bullet = World->SpawnActor<APHCMissileProjectile>(
-			APHCMissileProjectile::StaticClass(), SpawnLoc, SpawnRot, SP);
+			APHCMissileProjectile::StaticClass(), SpawnLoc, ShotDir.Rotation(), SP);
 		if (Bullet)
 		{
 			Bullet->OwnerVehicle = this;
+		}
+
+		// COD recoil: per-shot pitch kick + yaw scatter
+		if (bFirstPersonMode && GetController())
+		{
+			const float RecoilMult = FMath::Lerp(1.f, 0.5f, ADSAlpha);
+			const float PitchKick = FMath::RandRange(0.04f, 0.08f) * RecoilMult;
+			AddControllerPitchInput(PitchKick);
+			RecoilPitchAccum += PitchKick;
+
+			const float YawKick = FMath::RandRange(-0.03f, 0.03f) * RecoilMult;
+			AddControllerYawInput(YawKick);
+			RecoilYawAccum += YawKick;
+
+			// Viewmodel kick impulse
+			const float KickScale = (CurrentWeaponType == 5) ? 1.f : 0.5f;
+			WeaponKickZ.Vel += 2.f * RecoilMult * KickScale;
+			WeaponKickX.Vel += -1.f * RecoilMult * KickScale;
+
+			ShotShakeTimer = 0.03f;
+			MuzzleFlashLightTimer = 0.04f;
 		}
 	}
 	else if (CurrentWeaponType == 1) // RPG — identical to Tank cannon
@@ -1514,10 +1931,10 @@ void APHCCityCharacter::FireWeapon()
 		BazookaFireTimer = 2.0f; // 2s cooldown (matches Tank)
 
 		const FVector MuzzleLoc = GetActorLocation()
-			+ GetActorForwardVector() * 120.f
+			+ AimDir * 120.f
 			+ FVector(0.f, 0.f, 40.f);
-		const FRotator MuzzleRot(0.f, GetActorRotation().Yaw, 0.f);
-		const FVector Dir = MuzzleRot.Vector();
+		const FRotator MuzzleRot = SpawnRot;
+		const FVector Dir = AimDir;
 
 		APHCMissileProjectile* Proj = World->SpawnActor<APHCMissileProjectile>(
 			APHCMissileProjectile::StaticClass(), MuzzleLoc, MuzzleRot, SP);
@@ -1581,6 +1998,40 @@ void APHCCityCharacter::FireWeapon()
 			}
 			break; // Hit one crab per swing
 		}
+
+		// Sword vs NPC players
+		for (TActorIterator<AActor> It2(World); It2; ++It2)
+		{
+			AActor* A = *It2;
+			if (!A || A->IsHidden() || !A->ActorHasTag(FName("NPCPlayer"))) continue;
+
+			const FVector NLoc = A->GetActorLocation();
+			if (FVector::Dist2D(MyLoc, NLoc) > SwingRange) continue;
+
+			const FVector ToNPC = (NLoc - MyLoc).GetSafeNormal2D();
+			if (FVector::DotProduct(Forward.GetSafeNormal2D(), ToNPC) < -0.2f) continue;
+
+			if (CitySub)
+			{
+				for (int32 NI = 0; NI < UPHCCitySubsystem::NumNPCPlayers; ++NI)
+				{
+					if (CitySub->NPCPlayers[NI].Actor == A)
+					{
+						CitySub->NPCPlayers[NI].Health -= SwordDamage;
+						CitySub->NPCPlayers[NI].DamageFlashTimer = 0.2f;
+						if (CitySub->NPCPlayers[NI].Health <= 0.f)
+						{
+							APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
+								APHCMissileProjectile::StaticClass(), NLoc, FRotator::ZeroRotator);
+							if (TempProj) { TempProj->SpawnExplosion(NLoc); TempProj->Destroy(); }
+							CitySub->RespawnNPCPlayer(NI);
+						}
+						break;
+					}
+				}
+			}
+			break;
+		}
 	}
 	else if (CurrentWeaponType == 3) // Scythe — 34 damage per hit (3 hits to kill)
 	{
@@ -1625,6 +2076,40 @@ void APHCCityCharacter::FireWeapon()
 				}
 			}
 			break; // Hit one crab per swing
+		}
+
+		// Scythe vs NPC players
+		for (TActorIterator<AActor> It2(World); It2; ++It2)
+		{
+			AActor* A = *It2;
+			if (!A || A->IsHidden() || !A->ActorHasTag(FName("NPCPlayer"))) continue;
+
+			const FVector NLoc = A->GetActorLocation();
+			if (FVector::Dist2D(MyLoc, NLoc) > SwingRange) continue;
+
+			const FVector ToNPC = (NLoc - MyLoc).GetSafeNormal2D();
+			if (FVector::DotProduct(Forward.GetSafeNormal2D(), ToNPC) < -0.2f) continue;
+
+			if (CitySub)
+			{
+				for (int32 NI = 0; NI < UPHCCitySubsystem::NumNPCPlayers; ++NI)
+				{
+					if (CitySub->NPCPlayers[NI].Actor == A)
+					{
+						CitySub->NPCPlayers[NI].Health -= ScytheDamage;
+						CitySub->NPCPlayers[NI].DamageFlashTimer = 0.2f;
+						if (CitySub->NPCPlayers[NI].Health <= 0.f)
+						{
+							APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
+								APHCMissileProjectile::StaticClass(), NLoc, FRotator::ZeroRotator);
+							if (TempProj) { TempProj->SpawnExplosion(NLoc); TempProj->Destroy(); }
+							CitySub->RespawnNPCPlayer(NI);
+						}
+						break;
+					}
+				}
+			}
+			break;
 		}
 	}
 	else if (CurrentWeaponType == 4) // Dagger — 1-hit kill on crabs
@@ -1678,6 +2163,38 @@ void APHCCityCharacter::FireWeapon()
 			}
 
 			break; // Kill one crab per stab
+		}
+
+		// Dagger vs NPC players — 1-hit kill
+		for (TActorIterator<AActor> It2(World); It2; ++It2)
+		{
+			AActor* A = *It2;
+			if (!A || A->IsHidden() || !A->ActorHasTag(FName("NPCPlayer"))) continue;
+
+			const FVector NLoc = A->GetActorLocation();
+			if (FVector::Dist2D(MyLoc, NLoc) > StabRange) continue;
+
+			const FVector ToNPC = (NLoc - MyLoc).GetSafeNormal2D();
+			if (FVector::DotProduct(Forward.GetSafeNormal2D(), ToNPC) < 0.0f) continue;
+
+			APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
+				APHCMissileProjectile::StaticClass(), NLoc, FRotator::ZeroRotator);
+			if (TempProj) { TempProj->SpawnExplosion(NLoc); TempProj->Destroy(); }
+
+			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+			if (CitySub)
+			{
+				for (int32 NI = 0; NI < UPHCCitySubsystem::NumNPCPlayers; ++NI)
+				{
+					if (CitySub->NPCPlayers[NI].Actor == A)
+					{
+						CitySub->NPCPlayers[NI].Health = 0.f;
+						CitySub->RespawnNPCPlayer(NI);
+						break;
+					}
+				}
+			}
+			break;
 		}
 	}
 }
@@ -1826,4 +2343,82 @@ void APHCCityCharacter::UnequipJetpack()
 	Destroy(reinterpret_cast<UActorComponent*&>(JetpackStrapR));
 	Destroy(reinterpret_cast<UActorComponent*&>(JetpackGlowL));
 	Destroy(reinterpret_cast<UActorComponent*&>(JetpackGlowR));
+}
+
+// ---------------------------------------------------------------------------
+// SetFirstPersonMode — Toggle between FP and TP camera
+// ---------------------------------------------------------------------------
+
+void APHCCityCharacter::SetFirstPersonMode(bool bFirstPerson)
+{
+	bFirstPersonMode = bFirstPerson;
+
+	if (!bFirstPerson)
+	{
+		bADS = false;
+		ADSAlpha = 0.f;
+		RecoilPitchAccum = 0.f;
+		RecoilYawAccum = 0.f;
+	}
+
+	if (!CameraBoom) return;
+
+	if (bFirstPerson)
+	{
+		CameraBoom->TargetArmLength = 0.f;
+		CameraBoom->SocketOffset = FVector(0.f, 0.f, 76.f);
+		CameraBoom->bEnableCameraLag = false;
+		CameraBoom->bEnableCameraRotationLag = false;
+		bUseControllerRotationYaw = true;
+	}
+	else
+	{
+		CameraBoom->TargetArmLength = 450.f;
+		CameraBoom->SocketOffset = FVector(0.f, 75.f, 60.f);
+		CameraBoom->bEnableCameraLag = true;
+		CameraBoom->CameraLagSpeed = 10.f;
+		CameraBoom->bEnableCameraRotationLag = true;
+		CameraBoom->CameraRotationLagSpeed = 8.f;
+		bUseControllerRotationYaw = false;
+	}
+
+	const bool bShow = !bFirstPerson;
+	auto SetVis = [bShow](UStaticMeshComponent* M) { if (M) M->SetVisibility(bShow); };
+
+	// Head & Face
+	SetVis(HeadMesh); SetVis(JawMesh); SetVis(NeckMesh);
+	SetVis(LeftEyeWhiteMesh); SetVis(RightEyeWhiteMesh);
+	SetVis(LeftPupilMesh); SetVis(RightPupilMesh);
+	SetVis(NoseMesh); SetVis(MouthMesh);
+	SetVis(LeftEarMesh); SetVis(RightEarMesh);
+	SetVis(LeftBrowMesh); SetVis(RightBrowMesh);
+
+	// Hair
+	SetVis(HairTopMesh); SetVis(HairBackMesh);
+	SetVis(HairSideLMesh); SetVis(HairSideRMesh);
+
+	// Torso
+	SetVis(ChestMesh); SetVis(AbsMesh); SetVis(PelvisMesh);
+	SetVis(CollarMesh); SetVis(BeltMesh); SetVis(BeltBuckleMesh);
+
+	// Left Arm
+	SetVis(LeftShoulderMesh); SetVis(LeftUpperArmMesh);
+	SetVis(LeftElbowMesh); SetVis(LeftForearmMesh); SetVis(LeftHandMesh);
+
+	// Right Arm
+	SetVis(RightShoulderMesh); SetVis(RightUpperArmMesh);
+	SetVis(RightElbowMesh); SetVis(RightForearmMesh); SetVis(RightHandMesh);
+
+	// Left Leg
+	SetVis(LeftThighMesh); SetVis(LeftKneeMesh); SetVis(LeftShinMesh);
+	SetVis(LeftFootMesh); SetVis(LeftToeMesh); SetVis(LeftSoleMesh);
+
+	// Right Leg
+	SetVis(RightThighMesh); SetVis(RightKneeMesh); SetVis(RightShinMesh);
+	SetVis(RightFootMesh); SetVis(RightToeMesh); SetVis(RightSoleMesh);
+
+	// Jetpack
+	SetVis(JetpackBodyMesh); SetVis(JetpackNozzleL); SetVis(JetpackNozzleR);
+	SetVis(JetpackFlameL); SetVis(JetpackFlameR);
+	SetVis(JetpackStrapL); SetVis(JetpackStrapR);
 }

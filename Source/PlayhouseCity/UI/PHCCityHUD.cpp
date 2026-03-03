@@ -12,6 +12,7 @@
 #include "Vehicle/PHCTankPawn.h"
 #include "Vehicle/PHCDirtBikePawn.h"
 #include "Vehicle/PHCBlackbirdPawn.h"
+#include "Vehicle/PHCBlackHawkPawn.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "PlayhouseCity.h"
@@ -29,6 +30,7 @@
 #include "Misc/Paths.h"
 #include "Core/PHCCitySubsystem.h"
 #include "Core/PHCCityGameMode.h"
+#include "EngineUtils.h"
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -479,6 +481,31 @@ bool UPHCCityHUD::Initialize()
 		DisBtnSlot->SetOffsets(FMargin(170.f, 176.f, 100.f, 40.f));
 
 		// ============================================================
+		//  Camera mode toggle (below Disasters)
+		// ============================================================
+		CameraModeButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("CameraModeButton"));
+
+		FButtonStyle CamBtnStyle = CameraModeButton->GetStyle();
+		CamBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.05f, 0.3f, 0.35f, 0.85f));
+		CamBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.08f, 0.4f, 0.45f, 0.95f));
+		CamBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.03f, 0.2f, 0.25f, 1.0f));
+		CameraModeButton->SetStyle(CamBtnStyle);
+
+		CameraModeLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("CameraModeLabel"));
+		CameraModeLabel->SetText(FText::FromString(TEXT("View")));
+		CameraModeLabel->SetFont(BtnFont);
+		CameraModeLabel->SetColorAndOpacity(FSlateColor(White));
+		CameraModeLabel->SetJustification(ETextJustify::Center);
+		CameraModeButton->AddChild(CameraModeLabel);
+
+		UCanvasPanelSlot* CamBtnSlot = RootCanvas->AddChildToCanvas(CameraModeButton);
+		CamBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+		CamBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
+		CamBtnSlot->SetOffsets(FMargin(170.f, 232.f, 100.f, 40.f));
+
+		// ============================================================
 		//  MOBILE-ONLY: On-foot action buttons (bottom-right)
 		// ============================================================
 #if PLATFORM_IOS || PLATFORM_ANDROID
@@ -842,6 +869,29 @@ bool UPHCCityHUD::Initialize()
 		BikeSlot->SetVerticalAlignment(VAlign_Center);
 		BikeSlot->SetHorizontalAlignment(HAlign_Center);
 
+		// -- Black Hawk button (dark military green) --
+		SelectBlackHawkBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectBlackHawkBtn"));
+		{
+			FButtonStyle Style = SelectBlackHawkBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.25f, 0.30f, 0.25f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.32f, 0.38f, 0.32f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.18f, 0.22f, 0.18f, 1.0f));
+			SelectBlackHawkBtn->SetStyle(Style);
+		}
+		UTextBlock* BlackHawkLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("BlackHawkSelectLabel"));
+		BlackHawkLabel->SetText(FText::FromString(TEXT("Black Hawk")));
+		BlackHawkLabel->SetFont(BtnFont);
+		BlackHawkLabel->SetColorAndOpacity(FSlateColor(White));
+		BlackHawkLabel->SetJustification(ETextJustify::Center);
+		SelectBlackHawkBtn->AddChild(BlackHawkLabel);
+
+		UHorizontalBoxSlot* HawkSlot = SelectHBox->AddChildToHorizontalBox(SelectBlackHawkBtn);
+		HawkSlot->SetPadding(FMargin(8.f));
+		HawkSlot->SetVerticalAlignment(VAlign_Center);
+		HawkSlot->SetHorizontalAlignment(HAlign_Center);
+
 		VehicleSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
@@ -1002,6 +1052,34 @@ bool UPHCCityHUD::Initialize()
 		DaggerSlot->SetPadding(FMargin(8.f));
 		DaggerSlot->SetVerticalAlignment(VAlign_Center);
 		DaggerSlot->SetHorizontalAlignment(HAlign_Center);
+
+		USpacer* WepSpacer5 = WidgetTree->ConstructWidget<USpacer>(
+			USpacer::StaticClass(), TEXT("WepBtnSpacer5"));
+		WepSpacer5->SetSize(FVector2D(20.f, 0.f));
+		WepHBox->AddChildToHorizontalBox(WepSpacer5);
+
+		// -- AK-47 button (dark olive/military green) --
+		SelectAK47Btn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectAK47Btn"));
+		{
+			FButtonStyle Style = SelectAK47Btn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.25f, 0.30f, 0.10f, 0.9f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.35f, 0.40f, 0.15f, 1.0f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.15f, 0.20f, 0.05f, 1.0f));
+			SelectAK47Btn->SetStyle(Style);
+		}
+		UTextBlock* AK47Label = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("AK47SelectLabel"));
+		AK47Label->SetText(FText::FromString(TEXT("AK-47")));
+		AK47Label->SetFont(BtnFont);
+		AK47Label->SetColorAndOpacity(FSlateColor(White));
+		AK47Label->SetJustification(ETextJustify::Center);
+		SelectAK47Btn->AddChild(AK47Label);
+
+		UHorizontalBoxSlot* AK47Slot = WepHBox->AddChildToHorizontalBox(SelectAK47Btn);
+		AK47Slot->SetPadding(FMargin(8.f));
+		AK47Slot->SetVerticalAlignment(VAlign_Center);
+		AK47Slot->SetHorizontalAlignment(HAlign_Center);
 
 		WeaponSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
@@ -1359,6 +1437,108 @@ bool UPHCCityHUD::Initialize()
 		FlashSlot->SetOffsets(FMargin(0.f));
 		DamageFlashOverlay->SetVisibility(ESlateVisibility::HitTestInvisible);
 
+		// ============================================================
+		//  COD-style CROSSHAIR — dot + 4 lines, center of screen
+		// ============================================================
+		{
+			const FLinearColor CHColor(1.f, 1.f, 1.f, 0.85f);
+			const float DotSz = 4.f, LineW = 2.f, LineL = 12.f, Gap = 6.f;
+
+			CrosshairDot = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CrosshairDot"));
+			CrosshairDot->SetBrushColor(CHColor);
+			UCanvasPanelSlot* DS = RootCanvas->AddChildToCanvas(CrosshairDot);
+			DS->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+			DS->SetAlignment(FVector2D(0.5f, 0.5f));
+			DS->SetOffsets(FMargin(0.f, 0.f, DotSz, DotSz));
+			CrosshairDot->SetVisibility(ESlateVisibility::Collapsed);
+
+			CrosshairTop = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CrosshairTop"));
+			CrosshairTop->SetBrushColor(CHColor);
+			UCanvasPanelSlot* TS = RootCanvas->AddChildToCanvas(CrosshairTop);
+			TS->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+			TS->SetAlignment(FVector2D(0.5f, 1.f));
+			TS->SetOffsets(FMargin(0.f, -(Gap + LineL), LineW, LineL));
+			CrosshairTop->SetVisibility(ESlateVisibility::Collapsed);
+
+			CrosshairBottom = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CrosshairBottom"));
+			CrosshairBottom->SetBrushColor(CHColor);
+			UCanvasPanelSlot* BS = RootCanvas->AddChildToCanvas(CrosshairBottom);
+			BS->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+			BS->SetAlignment(FVector2D(0.5f, 0.f));
+			BS->SetOffsets(FMargin(0.f, Gap, LineW, LineL));
+			CrosshairBottom->SetVisibility(ESlateVisibility::Collapsed);
+
+			CrosshairLeft = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CrosshairLeft"));
+			CrosshairLeft->SetBrushColor(CHColor);
+			UCanvasPanelSlot* LS = RootCanvas->AddChildToCanvas(CrosshairLeft);
+			LS->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+			LS->SetAlignment(FVector2D(1.f, 0.5f));
+			LS->SetOffsets(FMargin(-(Gap + LineL), 0.f, LineL, LineW));
+			CrosshairLeft->SetVisibility(ESlateVisibility::Collapsed);
+
+			CrosshairRight = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CrosshairRight"));
+			CrosshairRight->SetBrushColor(CHColor);
+			UCanvasPanelSlot* RS = RootCanvas->AddChildToCanvas(CrosshairRight);
+			RS->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+			RS->SetAlignment(FVector2D(0.f, 0.5f));
+			RS->SetOffsets(FMargin(Gap, 0.f, LineL, LineW));
+			CrosshairRight->SetVisibility(ESlateVisibility::Collapsed);
+		}
+
+		// ============================================================
+		//  HIT MARKER — 4 short bars forming X at crosshair
+		// ============================================================
+		{
+			const FLinearColor HMColor(1.f, 1.f, 1.f, 0.95f);
+			const float HML = 10.f, HMW = 2.f, HMGap = 5.f;
+
+			auto MakeHM = [&](const FName& N, float OX, float OY) -> UBorder*
+			{
+				UBorder* L = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), N);
+				L->SetBrushColor(HMColor);
+				UCanvasPanelSlot* S = RootCanvas->AddChildToCanvas(L);
+				S->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+				S->SetAlignment(FVector2D(0.5f, 0.5f));
+				S->SetOffsets(FMargin(OX, OY, HML, HMW));
+				L->SetVisibility(ESlateVisibility::Collapsed);
+				return L;
+			};
+
+			HitMarkerTL = MakeHM(TEXT("HitMarkerTL"), -(HMGap + HML), -(HMGap + HMW));
+			HitMarkerTR = MakeHM(TEXT("HitMarkerTR"), HMGap, -(HMGap + HMW));
+			HitMarkerBL = MakeHM(TEXT("HitMarkerBL"), -(HMGap + HML), HMGap);
+			HitMarkerBR = MakeHM(TEXT("HitMarkerBR"), HMGap, HMGap);
+		}
+
+		// ============================================================
+		//  Mobile ADS button (iOS/Android only)
+		// ============================================================
+#if PLATFORM_IOS || PLATFORM_ANDROID
+		{
+			ADSButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("ADSButton"));
+			{
+				FButtonStyle Style = ADSButton->GetStyle();
+				Style.Normal.TintColor  = FSlateColor(FLinearColor(0.3f, 0.3f, 0.3f, 0.5f));
+				Style.Hovered.TintColor = FSlateColor(FLinearColor(0.3f, 0.3f, 0.3f, 0.5f));
+				Style.Pressed.TintColor = FSlateColor(FLinearColor(0.1f, 0.4f, 0.8f, 0.7f));
+				ADSButton->SetStyle(Style);
+			}
+			UTextBlock* ADSLabel = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("ADSLabel"));
+			ADSLabel->SetText(FText::FromString(TEXT("ADS")));
+			ADSLabel->SetFont(BtnFont);
+			ADSLabel->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			ADSLabel->SetJustification(ETextJustify::Center);
+			ADSButton->AddChild(ADSLabel);
+
+			UCanvasPanelSlot* ADSSlot = RootCanvas->AddChildToCanvas(ADSButton);
+			ADSSlot->SetAnchors(FAnchors(0.45f, 0.85f, 0.45f, 0.85f));
+			ADSSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			ADSSlot->SetOffsets(FMargin(0.f, 0.f, 70.f, 70.f));
+			ADSButton->SetVisibility(ESlateVisibility::Collapsed);
+		}
+#endif
+
 		UE_LOG(LogPlayhouseCity, Log, TEXT("UPHCCityHUD: Widget tree built programmatically."));
 	}
 
@@ -1419,6 +1599,10 @@ void UPHCCityHUD::NativeConstruct()
 	{
 		SelectDirtBikeBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectDirtBike);
 	}
+	if (SelectBlackHawkBtn)
+	{
+		SelectBlackHawkBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectBlackHawk);
+	}
 	if (FireButton)
 	{
 		FireButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnFireButtonPressed);
@@ -1439,6 +1623,10 @@ void UPHCCityHUD::NativeConstruct()
 	if (DisastersButton)
 	{
 		DisastersButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDisastersButtonClicked);
+	}
+	if (CameraModeButton)
+	{
+		CameraModeButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnCameraModeButtonClicked);
 	}
 	if (SelectTornadoBtn)
 	{
@@ -1480,6 +1668,10 @@ void UPHCCityHUD::NativeConstruct()
 	{
 		SelectDaggerBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectDagger);
 	}
+	if (SelectAK47Btn)
+	{
+		SelectAK47Btn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectAK47);
+	}
 	if (WeaponFireButton)
 	{
 		WeaponFireButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnWeaponFirePressed);
@@ -1513,6 +1705,11 @@ void UPHCCityHUD::NativeConstruct()
 	if (ExitVehicleButton)
 	{
 		ExitVehicleButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnExitVehicleClicked);
+	}
+	if (ADSButton)
+	{
+		ADSButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnADSPressed);
+		ADSButton->OnReleased.AddDynamic(this, &UPHCCityHUD::OnADSReleased);
 	}
 #endif
 }
@@ -1783,31 +1980,41 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			{
 				constexpr float ShowRange = 2000.f;
 				const FVector Loc = P->GetActorLocation();
+				UWorld* W = GetWorld();
 
-				// Check SpawnedVehicles from game mode
-				if (APHCCityGameMode* CityGM = Cast<APHCCityGameMode>(GetWorld()->GetAuthGameMode()))
+				// Scan all vehicle types in the world
+				auto CheckRange = [&](AActor* A) -> bool
 				{
-					for (APHCVehiclePawn* V : CityGM->SpawnedVehicles)
-					{
-						if (V && !V->bIsOccupied && FVector::Dist(Loc, V->GetActorLocation()) < ShowRange)
-						{
-							bNearVehicle = true;
-							break;
-						}
-					}
+					return A && FVector::Dist(Loc, A->GetActorLocation()) < ShowRange;
+				};
+
+				for (TActorIterator<APHCVehiclePawn> It(W); !bNearVehicle && It; ++It)
+				{
+					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
 				}
-
-				// Also check the Blackbird
-				if (!bNearVehicle)
+				for (TActorIterator<APHCDuneBuggyPawn> It(W); !bNearVehicle && It; ++It)
 				{
-					if (UPHCCitySubsystem* Sub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
-					{
-						APHCBlackbirdPawn* BB = Sub->AirportBlackbird;
-						if (BB && !BB->bIsOccupied && FVector::Dist(Loc, BB->GetActorLocation()) < ShowRange)
-						{
-							bNearVehicle = true;
-						}
-					}
+					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
+				}
+				for (TActorIterator<APHCRaptorPawn> It(W); !bNearVehicle && It; ++It)
+				{
+					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
+				}
+				for (TActorIterator<APHCTankPawn> It(W); !bNearVehicle && It; ++It)
+				{
+					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
+				}
+				for (TActorIterator<APHCDirtBikePawn> It(W); !bNearVehicle && It; ++It)
+				{
+					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
+				}
+				for (TActorIterator<APHCBlackbirdPawn> It(W); !bNearVehicle && It; ++It)
+				{
+					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
+				}
+				for (TActorIterator<APHCBlackHawkPawn> It(W); !bNearVehicle && It; ++It)
+				{
+					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
 				}
 			}
 		}
@@ -1911,6 +2118,13 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 				BB->PitchInput = NewPitch;
 				if (!BB->HasAuthority()) { BB->ServerSetSteering(NewSteering); BB->ServerSetThrottle(NewThrottle); BB->ServerSetPitch(NewPitch); }
 			}
+			else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(DrivenVehicle))
+			{
+				BH->SteeringInput = NewSteering;
+				BH->ThrottleInput = NewThrottle;
+				BH->PitchInput = NewPitch;
+				if (!BH->HasAuthority()) { BH->ServerSetSteering(NewSteering); BH->ServerSetThrottle(NewThrottle); BH->ServerSetPitch(NewPitch); }
+			}
 
 			if (bFireTouched)
 			{
@@ -1918,6 +2132,7 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 				else if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle)) { Raptor->FireRocket(); }
 				else if (APHCTankPawn* Tank = Cast<APHCTankPawn>(DrivenVehicle)) { Tank->FireCannon(); }
 				else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(DrivenVehicle)) { BB->FireRocket(); }
+				else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(DrivenVehicle)) { BH->FireRocket(); }
 			}
 		}
 		else
@@ -1933,7 +2148,12 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			const float ScreenMidX = VPWidth * 0.5f;  // 50/50 split
 			const float JoystickMaxRadius = VPWidth * 0.10f;
 			const float DeadZone = VPWidth * 0.015f;
-			const float LookSensitivity = 0.15f;
+			float LookSensitivity = 0.15f;
+			// Scale look sensitivity down when ADS is active
+			if (Char->bFirstPersonMode)
+			{
+				LookSensitivity *= FMath::Lerp(1.f, Char->ADSSensitivityMult, Char->ADSAlpha);
+			}
 			const float ButtonZoneY = VPHeight * 0.25f; // top 25% reserved for buttons
 
 			// Enter Vehicle button area (bottom-center, 200x55 px, 120px above bottom)
@@ -2050,6 +2270,81 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	} while (false);
 #endif
 
+	// -- COD crosshair / hit marker / ADS button dynamics -----------------------
+	{
+		APHCCityCharacter* Char = nullptr;
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			Char = Cast<APHCCityCharacter>(PC->GetPawn());
+		}
+
+		const bool bFPRangedWeapon = Char && Char->bFirstPersonMode &&
+			(Char->CurrentWeaponType == 0 || Char->CurrentWeaponType == 1 || Char->CurrentWeaponType == 5);
+
+		// Crosshair visibility: show in FP mode with ranged weapon
+		const ESlateVisibility CrossVis = bFPRangedWeapon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+		if (CrosshairDot) CrosshairDot->SetVisibility(CrossVis);
+		if (CrosshairTop) CrosshairTop->SetVisibility(CrossVis);
+		if (CrosshairBottom) CrosshairBottom->SetVisibility(CrossVis);
+		if (CrosshairLeft) CrosshairLeft->SetVisibility(CrossVis);
+		if (CrosshairRight) CrosshairRight->SetVisibility(CrossVis);
+
+		// Dynamic spread: reposition crosshair lines based on ADSAlpha
+		if (bFPRangedWeapon && Char)
+		{
+			const float SpreadDeg = FMath::Lerp(Char->SpreadHipfire, Char->SpreadADS, Char->ADSAlpha);
+			// Convert degrees to screen-space pixels (~6 px per degree at default FOV)
+			const float GapPx = 6.f + SpreadDeg * 6.f;
+
+			if (CrosshairTop)
+			{
+				if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(CrosshairTop->Slot))
+					S->SetPosition(FVector2D(-1.f, -(GapPx + 12.f)));
+			}
+			if (CrosshairBottom)
+			{
+				if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(CrosshairBottom->Slot))
+					S->SetPosition(FVector2D(-1.f, GapPx));
+			}
+			if (CrosshairLeft)
+			{
+				if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(CrosshairLeft->Slot))
+					S->SetPosition(FVector2D(-(GapPx + 12.f), -1.f));
+			}
+			if (CrosshairRight)
+			{
+				if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(CrosshairRight->Slot))
+					S->SetPosition(FVector2D(GapPx, -1.f));
+			}
+		}
+
+		// Hit marker fade
+		if (Char && Char->HitMarkerTimer > 0.f)
+		{
+			const float Alpha = FMath::Clamp(Char->HitMarkerTimer / 0.15f, 0.f, 1.f);
+			const FLinearColor HMColor(1.f, 1.f, 1.f, Alpha);
+			if (HitMarkerTL) { HitMarkerTL->SetBrushColor(HMColor); HitMarkerTL->SetVisibility(ESlateVisibility::HitTestInvisible); }
+			if (HitMarkerTR) { HitMarkerTR->SetBrushColor(HMColor); HitMarkerTR->SetVisibility(ESlateVisibility::HitTestInvisible); }
+			if (HitMarkerBL) { HitMarkerBL->SetBrushColor(HMColor); HitMarkerBL->SetVisibility(ESlateVisibility::HitTestInvisible); }
+			if (HitMarkerBR) { HitMarkerBR->SetBrushColor(HMColor); HitMarkerBR->SetVisibility(ESlateVisibility::HitTestInvisible); }
+		}
+		else
+		{
+			if (HitMarkerTL) HitMarkerTL->SetVisibility(ESlateVisibility::Collapsed);
+			if (HitMarkerTR) HitMarkerTR->SetVisibility(ESlateVisibility::Collapsed);
+			if (HitMarkerBL) HitMarkerBL->SetVisibility(ESlateVisibility::Collapsed);
+			if (HitMarkerBR) HitMarkerBR->SetVisibility(ESlateVisibility::Collapsed);
+		}
+
+		// ADS button visibility: show on mobile in FP mode with gun-type weapon
+#if PLATFORM_IOS || PLATFORM_ANDROID
+		if (ADSButton)
+		{
+			ADSButton->SetVisibility(bFPRangedWeapon ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		}
+#endif
+	}
+
 	// Continuous fire while Fire UButton is held (desktop/fallback).
 	if (bFireHeld && bDrivingMode)
 	{
@@ -2068,6 +2363,10 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(DrivenVehicle))
 		{
 			BB->FireRocket();
+		}
+		else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(DrivenVehicle))
+		{
+			BH->FireRocket();
 		}
 	}
 }
@@ -2088,14 +2387,14 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 	if (FireButton)
 	{
 		const bool bShowFire = bDriving &&
-			(Cast<APHCDuneBuggyPawn>(Vehicle) != nullptr || Cast<APHCRaptorPawn>(Vehicle) != nullptr || Cast<APHCTankPawn>(Vehicle) != nullptr || Cast<APHCBlackbirdPawn>(Vehicle) != nullptr);
+			(Cast<APHCDuneBuggyPawn>(Vehicle) != nullptr || Cast<APHCRaptorPawn>(Vehicle) != nullptr || Cast<APHCTankPawn>(Vehicle) != nullptr || Cast<APHCBlackbirdPawn>(Vehicle) != nullptr || Cast<APHCBlackHawkPawn>(Vehicle) != nullptr);
 		FireButton->SetVisibility(bShowFire ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 
 	// Show drop bomb button for raptor and blackbird.
 	if (DropBombButton)
 	{
-		const bool bShowDrop = bDriving && (Cast<APHCRaptorPawn>(Vehicle) != nullptr || Cast<APHCBlackbirdPawn>(Vehicle) != nullptr);
+		const bool bShowDrop = bDriving && (Cast<APHCRaptorPawn>(Vehicle) != nullptr || Cast<APHCBlackbirdPawn>(Vehicle) != nullptr || Cast<APHCBlackHawkPawn>(Vehicle) != nullptr);
 		DropBombButton->SetVisibility(bShowDrop ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 
@@ -2170,6 +2469,12 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 			BB->ThrottleInput = 0.f;
 			BB->SteeringInput = 0.f;
 			BB->PitchInput = 0.f;
+		}
+		else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(Vehicle))
+		{
+			BH->ThrottleInput = 0.f;
+			BH->SteeringInput = 0.f;
+			BH->PitchInput = 0.f;
 		}
 	}
 
@@ -2280,6 +2585,10 @@ void UPHCCityHUD::OnFireButtonPressed()
 	{
 		Raptor->FireRocket();
 	}
+	else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(DrivenVehicle))
+	{
+		BH->FireRocket();
+	}
 }
 
 void UPHCCityHUD::OnFireButtonReleased()
@@ -2382,6 +2691,16 @@ void UPHCCityHUD::OnSelectDirtBike()
 	}
 }
 
+void UPHCCityHUD::OnSelectBlackHawk()
+{
+	HideVehicleSelection();
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		PC->SpawnAndEnterVehicle(5);
+		SetDrivingMode(true, PC->GetPawn());
+	}
+}
+
 void UPHCCityHUD::OnDropBombClicked()
 {
 	if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle))
@@ -2391,6 +2710,10 @@ void UPHCCityHUD::OnDropBombClicked()
 	else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(DrivenVehicle))
 	{
 		BB->DropBomb();
+	}
+	else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(DrivenVehicle))
+	{
+		BH->DropBomb();
 	}
 }
 
@@ -2699,6 +3022,23 @@ void UPHCCityHUD::OnSelectDagger()
 	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
 }
 
+void UPHCCityHUD::OnSelectAK47()
+{
+	HideWeaponSelection();
+	EquippedWeaponType = 5;
+
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->CurrentWeaponType = 5;
+		}
+	}
+
+	if (WeaponFireLabel) WeaponFireLabel->SetText(FText::FromString(TEXT("SPRAY")));
+	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
+}
+
 void UPHCCityHUD::OnWeaponFirePressed()
 {
 	bWeaponFireHeld = true;
@@ -2710,6 +3050,10 @@ void UPHCCityHUD::OnWeaponFirePressed()
 			if (EquippedWeaponType == 0) // Minigun — hold to spray
 			{
 				Char->bMinigunFiring = true;
+			}
+			else if (EquippedWeaponType == 5) // AK-47 — hold to spray
+			{
+				Char->bAK47Firing = true;
 			}
 			else // All other weapons — single fire on press
 			{
@@ -2728,6 +3072,40 @@ void UPHCCityHUD::OnWeaponFireReleased()
 		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
 		{
 			Char->bMinigunFiring = false;
+			Char->bAK47Firing = false;
+		}
+	}
+}
+
+void UPHCCityHUD::OnCameraModeButtonClicked()
+{
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->SetFirstPersonMode(!Char->bFirstPersonMode);
+		}
+	}
+}
+
+void UPHCCityHUD::OnADSPressed()
+{
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->SetADS(true);
+		}
+	}
+}
+
+void UPHCCityHUD::OnADSReleased()
+{
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->SetADS(false);
 		}
 	}
 }

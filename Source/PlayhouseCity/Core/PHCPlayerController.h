@@ -19,6 +19,7 @@ class APHCCityCharacter;
 class APHCTankPawn;
 class APHCDirtBikePawn;
 class APHCBlackbirdPawn;
+class APHCBlackHawkPawn;
 
 /**
  * Top-level player controller for the PlayhouseCity lobby.

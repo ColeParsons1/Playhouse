@@ -18,6 +18,7 @@ class APHCRaptorPawn;
 class APHCTankPawn;
 class APHCDirtBikePawn;
 class APHCBlackbirdPawn;
+class APHCBlackHawkPawn;
 
 /**
  * Lightweight HUD overlay for the PlayhouseCity 3D open world.
@@ -163,6 +164,9 @@ protected:
 	TObjectPtr<UButton> SelectDaggerBtn;
 
 	UPROPERTY()
+	TObjectPtr<UButton> SelectAK47Btn;
+
+	UPROPERTY()
 	TObjectPtr<UButton> WeaponFireButton;
 
 	UPROPERTY()
@@ -225,6 +229,9 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UButton> SelectDirtBikeBtn;
 
+	UPROPERTY()
+	TObjectPtr<UButton> SelectBlackHawkBtn;
+
 	// -- Multiplayer UI -------------------------------------------------------
 
 	UPROPERTY()
@@ -276,6 +283,22 @@ protected:
 	// -- Damage flash overlay (full-screen translucent red) -------------------
 	UPROPERTY()
 	TObjectPtr<UBorder> DamageFlashOverlay;
+
+	// -- COD-style crosshair (FP mode only) --------------------------------
+	UPROPERTY() TObjectPtr<UBorder> CrosshairDot;
+	UPROPERTY() TObjectPtr<UBorder> CrosshairTop;
+	UPROPERTY() TObjectPtr<UBorder> CrosshairBottom;
+	UPROPERTY() TObjectPtr<UBorder> CrosshairLeft;
+	UPROPERTY() TObjectPtr<UBorder> CrosshairRight;
+
+	// -- Hit marker (white X flash at crosshair) ---------------------------
+	UPROPERTY() TObjectPtr<UBorder> HitMarkerTL;
+	UPROPERTY() TObjectPtr<UBorder> HitMarkerTR;
+	UPROPERTY() TObjectPtr<UBorder> HitMarkerBL;
+	UPROPERTY() TObjectPtr<UBorder> HitMarkerBR;
+
+	// -- Mobile ADS button -------------------------------------------------
+	UPROPERTY() TObjectPtr<UButton> ADSButton;
 
 	/** The IP address string being entered by the user. */
 	FString EnteredIP;
@@ -338,6 +361,9 @@ private:
 	void OnSelectDirtBike();
 
 	UFUNCTION()
+	void OnSelectBlackHawk();
+
+	UFUNCTION()
 	void OnDropBombClicked();
 
 	UFUNCTION()
@@ -374,6 +400,15 @@ private:
 	void OnSelectDagger();
 
 	UFUNCTION()
+	void OnSelectAK47();
+
+	UFUNCTION()
+	void OnADSPressed();
+
+	UFUNCTION()
+	void OnADSReleased();
+
+	UFUNCTION()
 	void OnWeaponFirePressed();
 
 	UFUNCTION()
@@ -384,6 +419,9 @@ private:
 
 	UFUNCTION()
 	void OnDisastersButtonClicked();
+
+	UFUNCTION()
+	void OnCameraModeButtonClicked();
 
 	UFUNCTION()
 	void OnSelectTornado();
@@ -405,6 +443,14 @@ private:
 
 	void ShowDisasterSelection();
 	void HideDisasterSelection();
+
+	// -- Camera mode toggle ---------------------------------------------------
+
+	UPROPERTY()
+	TObjectPtr<UButton> CameraModeButton;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> CameraModeLabel;
 
 	bool bMenuOpen = false;
 	bool bVehicleSelectOpen = false;

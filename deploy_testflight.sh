@@ -106,11 +106,11 @@ if [ "$BUILD" = true ]; then
         -archivedirectory="$ARCHIVE_DIR" \
         -UTF8Output \
         2>&1 | tee "$ARCHIVE_DIR/build.log"
+    BUILD_EXIT=${PIPESTATUS[0]}
 
-    # Check if build succeeded
-    if [ $? -ne 0 ]; then
+    if [ $BUILD_EXIT -ne 0 ]; then
         echo ""
-        echo "ERROR: Build failed. Check $ARCHIVE_DIR/build.log for details."
+        echo "ERROR: Build failed (exit code $BUILD_EXIT). Check $ARCHIVE_DIR/build.log for details."
         exit 1
     fi
 
@@ -131,6 +131,29 @@ if [ "$BUILD" = true ]; then
             echo "ERROR: No .app bundle found in $ARCHIVE_DIR or Saved/StagedBuilds"
             exit 1
         fi
+
+        # Re-sign with distribution certificate + provisioning profile
+        echo "       Re-signing with distribution certificate..."
+        DIST_PROFILE="$PROJECT_DIR/Build/IOS/PlayhouseCity_Distribution.mobileprovision"
+        # Use SHA-1 hash to avoid ambiguity with duplicate cert names
+        DIST_IDENTITY="REDACTED_CERT_SHA1"
+
+        # Embed distribution provisioning profile
+        cp "$DIST_PROFILE" "$APP_FILE/embedded.mobileprovision"
+
+        # Generate entitlements from the profile
+        ENTITLEMENTS_FILE="/tmp/phc_entitlements_$$.plist"
+        security cms -D -i "$DIST_PROFILE" 2>/dev/null | \
+            plutil -extract Entitlements xml1 -o "$ENTITLEMENTS_FILE" -
+
+        # Re-sign with distribution identity
+        /usr/bin/codesign --force --sign "$DIST_IDENTITY" \
+            --entitlements "$ENTITLEMENTS_FILE" \
+            --timestamp=none \
+            --generate-entitlement-der \
+            "$APP_FILE"
+        rm -f "$ENTITLEMENTS_FILE"
+        echo "       Re-signed successfully."
 
         # Create IPA (a zip of Payload/AppName.app)
         IPA_FILE="$ARCHIVE_DIR/PlayhouseCity.ipa"

@@ -90,6 +90,35 @@ void FPlayhouseCityModule::StartupModule()
 	};
 
 	// ---------------------------------------------------------------------------
+	// Patch existing materials: disconnect WorldPositionOffset (remove curvature)
+	// ---------------------------------------------------------------------------
+	auto RemoveCurvatureFromMaterial = [](const FString& PackagePath, const FString& AssetName)
+	{
+		const FString ObjectPath = PackagePath + TEXT(".") + AssetName;
+		UMaterial* Mat = LoadObject<UMaterial>(nullptr, *ObjectPath);
+		if (!Mat) return;
+		UMaterialEditorOnlyData* EditorData = Mat->GetEditorOnlyData();
+		if (!EditorData || !EditorData->WorldPositionOffset.Expression) return;
+
+		EditorData->WorldPositionOffset.Expression = nullptr;
+		Mat->PreEditChange(nullptr);
+		Mat->PostEditChange();
+
+		const FString FilePath = FPackageName::LongPackageNameToFilename(
+			PackagePath, FPackageName::GetAssetPackageExtension());
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		UPackage::SavePackage(Mat->GetPackage(), Mat, *FilePath, SaveArgs);
+
+		UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Removed curvature WPO from %s"), *AssetName);
+	};
+
+	RemoveCurvatureFromMaterial(TEXT("/Game/Materials/M_PHCColor"), TEXT("M_PHCColor"));
+	RemoveCurvatureFromMaterial(TEXT("/Game/Materials/M_PHCGlass"), TEXT("M_PHCGlass"));
+	RemoveCurvatureFromMaterial(TEXT("/Game/Materials/M_PHCClearCoat"), TEXT("M_PHCClearCoat"));
+	RemoveCurvatureFromMaterial(TEXT("/Game/Materials/M_PHCSkin"), TEXT("M_PHCSkin"));
+
+	// ---------------------------------------------------------------------------
 	// M_PHCColor -- opaque PBR material with BaseColor, Metallic, Roughness,
 	// and EmissiveColor parameters.  Only created if the .uasset does not exist.
 	// ---------------------------------------------------------------------------

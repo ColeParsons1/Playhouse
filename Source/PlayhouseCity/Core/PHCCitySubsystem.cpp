@@ -31,6 +31,8 @@
 #include "ProceduralMeshComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Vehicle/PHCBlackbirdPawn.h"
+#include "Vehicle/PHCBlackHawkPawn.h"
+#include "Vehicle/PHCNukeExplosion.h"
 #include "Core/PHCPlayerController.h"
 #include "Core/PHCGameInstance.h"
 #include "Economy/PHCEconomyManager.h"
@@ -105,6 +107,26 @@ bool UPHCCitySubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) c
 void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
+
+	// Dedicated servers don't need city visuals — skip generation entirely
+	if (InWorld.GetNetMode() == NM_DedicatedServer)
+	{
+		UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Skipping city generation on dedicated server"));
+		bCityGenerated = true;
+		return;
+	}
+
+	// Skip city generation on the initial map load when we know a ClientTravel
+	// to the dedicated server is coming — avoids generating the city twice
+	// (once now, then tear down + regenerate after the server travel).
+	if (UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(GetWorld()))
+	{
+		if (GI->bPendingServerConnect)
+		{
+			UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Deferring city generation until server connection completes"));
+			return;
+		}
+	}
 
 	if (bCityGenerated) return;
 	bCityGenerated = true;
@@ -510,6 +532,301 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		LightRailTrainActor->SetActorRotation(FRotator(0.f, bLightRailForward ? 90.f : -90.f, 0.f));
 	}
 
+	// ---- NPC patrol helicopter (daytime, damageable, crash + respawn) ----
+	if (NPCHelicopter)
+	{
+		// ---- Respawn timer (helicopter destroyed, waiting to come back) ----
+		if (NPCHeliRespawnTimer >= 0.f)
+		{
+			NPCHeliRespawnTimer -= DeltaTime;
+			if (NPCHeliRespawnTimer <= 0.f)
+			{
+				RespawnNPCHelicopter();
+			}
+		}
+		// ---- Crash spiral (helicopter falling) ----
+		else if (bNPCHeliCrashing)
+		{
+			NPCHeliCrashTimer += DeltaTime;
+
+			FVector Pos = NPCHelicopter->GetActorLocation();
+			FRotator Rot = NPCHelicopter->GetActorRotation();
+
+			// Descend — accelerates over time
+			const float FallSpeed = 800.f + NPCHeliCrashTimer * 200.f;
+			Pos.Z -= FallSpeed * DeltaTime;
+
+			// Spin yaw (rotating)
+			Rot.Yaw += 180.f * DeltaTime;
+
+			// Increasing roll tilt
+			Rot.Roll = FMath::FInterpTo(Rot.Roll, 45.f, DeltaTime, 1.5f);
+
+			// Nose down pitch
+			Rot.Pitch = FMath::FInterpTo(Rot.Pitch, -20.f, DeltaTime, 1.0f);
+
+			NPCHelicopter->SetActorLocation(Pos);
+			NPCHelicopter->SetActorRotation(Rot);
+
+			// Slow the rotors during crash (set bIsOccupied false so they wind down)
+			NPCHelicopter->bIsOccupied = false;
+
+			// Ground impact — large fiery nuke explosion and hide
+			if (Pos.Z <= 10.f)
+			{
+				const FVector CrashLoc(Pos.X, Pos.Y, FMath::Max(Pos.Z, 0.f));
+
+				// Spawn nuke explosion (large fireball + smoke plume + shockwave)
+				FActorSpawnParameters ExpSP;
+				ExpSP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+				World->SpawnActor<APHCNukeExplosion>(APHCNukeExplosion::StaticClass(), CrashLoc, FRotator::ZeroRotator, ExpSP);
+
+				NPCHelicopter->SetActorHiddenInGame(true);
+				bNPCHeliVisible = false;
+				bNPCHeliCrashing = false;
+				NPCHeliRespawnTimer = 60.f; // respawn in 60 seconds
+			}
+		}
+		// ---- Normal patrol ----
+		else
+		{
+			// Visible during daytime: T in [0.02 .. 0.48]
+			const bool bShouldBeVisible = (T > 0.02f && T < 0.48f);
+			if (bShouldBeVisible != bNPCHeliVisible)
+			{
+				bNPCHeliVisible = bShouldBeVisible;
+				NPCHelicopter->SetActorHiddenInGame(!bNPCHeliVisible);
+			}
+
+			if (bNPCHeliVisible)
+			{
+				NPCHelicopter->bIsOccupied = true;
+
+				// Circular patrol over city center
+				const float PatrolRadius = 18000.f;
+				const float PatrolAltitude = 3500.f;
+				const float PatrolSpeed = 0.015f; // radians/sec
+				NPCHeliPatrolAngle += PatrolSpeed * DeltaTime;
+				if (NPCHeliPatrolAngle > 2.f * UE_PI) NPCHeliPatrolAngle -= 2.f * UE_PI;
+
+				const FVector HeliPos(
+					PatrolRadius * FMath::Cos(NPCHeliPatrolAngle),
+					PatrolRadius * FMath::Sin(NPCHeliPatrolAngle),
+					PatrolAltitude);
+				NPCHelicopter->SetActorLocation(HeliPos);
+
+				const float HeadingDeg = FMath::RadiansToDegrees(NPCHeliPatrolAngle) + 90.f;
+				NPCHelicopter->SetActorRotation(FRotator(0.f, HeadingDeg, 0.f));
+			}
+			else
+			{
+				NPCHelicopter->bIsOccupied = false;
+			}
+		}
+
+		// ---- Damage flash (red emissive on hit, resets after 0.15s) ----
+		if (NPCHeliDamageFlashTimer > 0.f)
+		{
+			NPCHeliDamageFlashTimer -= DeltaTime;
+			if (NPCHeliDamageFlashTimer > 0.f)
+			{
+				const FLinearColor RedFlash(4.0f, 0.0f, 0.0f);
+				for (UMaterialInstanceDynamic* MID : NPCHeliBodyMIDs)
+				{
+					if (MID) MID->SetVectorParameterValue(TEXT("EmissiveColor"), RedFlash);
+				}
+			}
+			else
+			{
+				for (UMaterialInstanceDynamic* MID : NPCHeliBodyMIDs)
+				{
+					if (MID) MID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
+				}
+			}
+		}
+	}
+
+	// ---- NPC player characters (always visible, wander, damageable) ----
+	{
+		// Ensure all NPCs are visible (they have cyan underglow for night)
+		if (!bNPCPlayersVisible)
+		{
+			bNPCPlayersVisible = true;
+			for (int32 NI = 0; NI < NumNPCPlayers; ++NI)
+			{
+				FNPCPlayerData& NP = NPCPlayers[NI];
+				if (!NP.Actor) continue;
+				NP.Actor->SetActorHiddenInGame(false);
+				NP.bVisible = true;
+			}
+		}
+
+		if (bNPCPlayersVisible)
+		{
+			// Animation constants (same as PHCCityCharacter)
+			constexpr float ShPivZ = 54.f, HipPivZ = 2.f;
+			constexpr float UArmHalf = 10.f, FArmHalf = 9.f;
+			constexpr float ThighHalf = 14.f, ShinHalf = 12.f;
+			constexpr float WalkSpeed = 600.f;
+			constexpr float CycleSpeed = 13.f;
+			constexpr float ThighAmp = 35.f, UpperArmAmp = 30.f;
+			constexpr float KneeBendMax = 40.f, ElbowBendMax = 35.f;
+			constexpr float LeanAmp = 6.f, BobAmp = 2.f;
+
+			auto OrgSin = [](float P) -> float
+			{
+				return FMath::Sin(P) + 0.12f * FMath::Sin(2.f * P) + 0.05f * FMath::Sin(3.f * P - 0.4f);
+			};
+
+			for (int32 NI = 0; NI < NumNPCPlayers; ++NI)
+			{
+				FNPCPlayerData& NP = NPCPlayers[NI];
+				if (!NP.Actor || !NP.bVisible) continue;
+
+				// ---- Wander AI ----
+				FVector Pos = NP.Actor->GetActorLocation();
+				bool bMoving = false;
+
+				if (NP.WanderWaitTimer > 0.f)
+				{
+					NP.WanderWaitTimer -= DeltaTime;
+				}
+				else
+				{
+					const float DistToTarget = FVector::Dist2D(Pos, NP.WanderTarget);
+					if (DistToTarget < 200.f)
+					{
+						// Pick new wander target within city
+						NP.WanderTarget = FVector(
+							FMath::RandRange(-25000.f, 25000.f),
+							FMath::RandRange(-25000.f, 25000.f), 0.f);
+						NP.WanderWaitTimer = FMath::RandRange(2.f, 5.f);
+					}
+					else
+					{
+						bMoving = true;
+						FVector MoveDir = (NP.WanderTarget - Pos).GetSafeNormal2D();
+						FVector NewPos = Pos + MoveDir * WalkSpeed * DeltaTime;
+						NewPos.Z = 75.f;
+						NP.Actor->SetActorLocation(NewPos);
+
+						// Face movement direction
+						FRotator DesiredRot(0.f, MoveDir.Rotation().Yaw, 0.f);
+						FRotator CurRot = NP.Actor->GetActorRotation();
+						NP.Actor->SetActorRotation(FMath::RInterpTo(CurRot, DesiredRot, DeltaTime, 6.f));
+					}
+				}
+
+				// ---- Walk animation ----
+				const float TargetBlend = bMoving ? 1.f : 0.f;
+				NP.WalkAnimBlend = FMath::FInterpTo(NP.WalkAnimBlend, TargetBlend, DeltaTime, 8.f);
+				const float Blend = NP.WalkAnimBlend;
+
+				if (bMoving) NP.AnimTime += CycleSpeed * DeltaTime;
+
+				const float Phase = NP.AnimTime;
+				const float O = OrgSin(Phase);
+				const float LThighSwing = O * ThighAmp * Blend;
+				const float RThighSwing = -LThighSwing;
+				const float RArmSwing = O * UpperArmAmp * Blend;
+				const float LArmSwing = -RArmSwing;
+
+				const float LKneeBend = FMath::Max(0.f, -LThighSwing / (ThighAmp + 0.01f)) * KneeBendMax * Blend;
+				const float RKneeBend = FMath::Max(0.f, -RThighSwing / (ThighAmp + 0.01f)) * KneeBendMax * Blend;
+				const float LElbowBend = (0.3f + 0.7f * FMath::Abs(LArmSwing / (UpperArmAmp + 0.01f))) * ElbowBendMax * Blend;
+				const float RElbowBend = (0.3f + 0.7f * FMath::Abs(RArmSwing / (UpperArmAmp + 0.01f))) * ElbowBendMax * Blend;
+
+				const float TorsoLean = LeanAmp * Blend;
+				const float VertBounce = FMath::Cos(Phase * 2.f) * BobAmp * Blend;
+
+				// AnimateArm lambda
+				auto AnimArm = [&](UStaticMeshComponent* UA, UStaticMeshComponent* FA,
+					UStaticMeshComponent* EJ, UStaticMeshComponent* HN,
+					UStaticMeshComponent* SH, float Y, float Swing, float Bend_)
+				{
+					const FRotator URot(Swing, 0.f, 0.f);
+					const FVector UOff = URot.RotateVector(FVector(0.f, 0.f, -UArmHalf));
+					if (UA) { UA->SetRelativeLocation(FVector(UOff.X, Y, ShPivZ + UOff.Z + VertBounce));
+					          UA->SetRelativeRotation(FRotator(Swing, 0.f, 0.f)); }
+					const FVector ELocal = URot.RotateVector(FVector(0.f, 0.f, -UArmHalf * 2.f));
+					const FVector EPos(ELocal.X, Y, ShPivZ + ELocal.Z + VertBounce);
+					if (EJ) { EJ->SetRelativeLocation(EPos); }
+					const float FAngle = Swing - Bend_;
+					const FRotator FRot(FAngle, 0.f, 0.f);
+					const FVector FOff = FRot.RotateVector(FVector(0.f, 0.f, -FArmHalf));
+					if (FA) { FA->SetRelativeLocation(FVector(EPos.X + FOff.X, Y, EPos.Z + FOff.Z));
+					          FA->SetRelativeRotation(FRotator(FAngle, 0.f, 0.f)); }
+					if (HN) {
+						const FVector HLocal = FRot.RotateVector(FVector(0.f, 0.f, -(FArmHalf * 2.f + 3.f)));
+						HN->SetRelativeLocation(FVector(EPos.X + HLocal.X, Y, EPos.Z + HLocal.Z));
+					}
+					if (SH) { SH->SetRelativeLocation(FVector(UOff.X * 0.2f, Y + (Y > 0 ? -1.f : 1.f), ShPivZ + VertBounce)); }
+				};
+
+				// AnimateLeg lambda
+				auto AnimLeg = [&](UStaticMeshComponent* TH, UStaticMeshComponent* SN,
+					UStaticMeshComponent* KN, UStaticMeshComponent* FT,
+					UStaticMeshComponent* SL, float Y, float Swing, float Bend_)
+				{
+					const FRotator TRot(Swing, 0.f, 0.f);
+					const FVector TOff = TRot.RotateVector(FVector(0.f, 0.f, -ThighHalf));
+					if (TH) { TH->SetRelativeLocation(FVector(TOff.X, Y, HipPivZ + TOff.Z));
+					          TH->SetRelativeRotation(FRotator(Swing, 0.f, 0.f)); }
+					const FVector KLocal = TRot.RotateVector(FVector(0.f, 0.f, -ThighHalf * 2.f));
+					const FVector KPos(KLocal.X, Y, HipPivZ + KLocal.Z);
+					if (KN) { KN->SetRelativeLocation(KPos); }
+					const float SAngle = Swing + Bend_;
+					const FRotator SRot(SAngle, 0.f, 0.f);
+					const FVector SOff = SRot.RotateVector(FVector(0.f, 0.f, -ShinHalf));
+					if (SN) { SN->SetRelativeLocation(FVector(KPos.X + SOff.X, Y, KPos.Z + SOff.Z));
+					          SN->SetRelativeRotation(FRotator(SAngle, 0.f, 0.f)); }
+					const FVector FLocal = SRot.RotateVector(FVector(0.f, 0.f, -(ShinHalf * 2.f + 4.f)));
+					float FZ = FMath::Max(KPos.Z + FLocal.Z, -73.f);
+					float FX = KPos.X + FLocal.X + 4.f;
+					if (FT) { FT->SetRelativeLocation(FVector(FX, Y, FZ)); FT->SetRelativeRotation(FRotator::ZeroRotator); }
+					if (SL) { SL->SetRelativeLocation(FVector(FX, Y, FZ - 5.f)); SL->SetRelativeRotation(FRotator::ZeroRotator); }
+				};
+
+				// Apply animation
+				AnimArm(NP.LUpperArmMesh, NP.LForearmMesh, NP.LElbowMesh, NP.LHandMesh, NP.LShoulderMesh, -26.f, LArmSwing, LElbowBend);
+				AnimArm(NP.RUpperArmMesh, NP.RForearmMesh, NP.RElbowMesh, NP.RHandMesh, NP.RShoulderMesh,  26.f, RArmSwing, RElbowBend);
+				AnimLeg(NP.LThighMesh, NP.LShinMesh, NP.LKneeMesh, NP.LFootMesh, NP.LSoleMesh, -11.f, LThighSwing, LKneeBend);
+				AnimLeg(NP.RThighMesh, NP.RShinMesh, NP.RKneeMesh, NP.RFootMesh, NP.RSoleMesh,  11.f, RThighSwing, RKneeBend);
+
+				// Torso lean + bounce
+				if (NP.ChestMesh) {
+					NP.ChestMesh->SetRelativeLocation(FVector(1.f, 0.f, 44.f + VertBounce));
+					NP.ChestMesh->SetRelativeRotation(FRotator(TorsoLean, 0.f, 0.f));
+				}
+				if (NP.AbsMesh) {
+					NP.AbsMesh->SetRelativeLocation(FVector(0.f, 0.f, 28.f + VertBounce * 0.8f));
+					NP.AbsMesh->SetRelativeRotation(FRotator(TorsoLean * 0.6f, 0.f, 0.f));
+				}
+				if (NP.PelvisMesh) NP.PelvisMesh->SetRelativeLocation(FVector(0.f, 0.f, 12.f + VertBounce * 0.4f));
+				if (NP.HeadMesh) NP.HeadMesh->SetRelativeLocation(FVector(0.f, 0.f, 76.f + VertBounce * 0.3f));
+				if (NP.JawMesh) NP.JawMesh->SetRelativeLocation(FVector(2.f, 0.f, 67.f + VertBounce * 0.3f));
+				if (NP.NeckMesh) NP.NeckMesh->SetRelativeLocation(FVector(0.f, 0.f, 60.f + VertBounce * 0.5f));
+				if (NP.CollarMesh) NP.CollarMesh->SetRelativeLocation(FVector(2.f, 0.f, 56.f + VertBounce));
+				if (NP.BeltMesh) NP.BeltMesh->SetRelativeLocation(FVector(0.f, 0.f, 20.f + VertBounce * 0.4f));
+				if (NP.BeltBuckleMesh) NP.BeltBuckleMesh->SetRelativeLocation(FVector(8.f, 0.f, 20.f + VertBounce * 0.4f));
+				if (NP.HairTopMesh) NP.HairTopMesh->SetRelativeLocation(FVector(-1.f, 0.f, 88.f + VertBounce * 0.3f));
+				if (NP.HairBackMesh) NP.HairBackMesh->SetRelativeLocation(FVector(-8.f, 0.f, 80.f + VertBounce * 0.3f));
+
+				// ---- Damage flash ----
+				if (NP.DamageFlashTimer > 0.f)
+				{
+					NP.DamageFlashTimer -= DeltaTime;
+					const FLinearColor FlashColor = (NP.DamageFlashTimer > 0.f)
+						? FLinearColor(4.f, 0.f, 0.f) : FLinearColor::Black;
+					for (UMaterialInstanceDynamic* MID : NP.BodyMIDs)
+					{
+						if (MID) MID->SetVectorParameterValue(TEXT("EmissiveColor"), FlashColor);
+					}
+				}
+			}
+		}
+	}
+
 	// ---- Ocean wave heave ----
 	if (OceanActor)
 	{
@@ -855,6 +1172,46 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 
 					Proj->Destroy();
 					break;
+				}
+			}
+
+			// NPC helicopter proximity damage from projectiles (RPG, vehicle rockets)
+			if (NPCHelicopter && bNPCHeliVisible && !bNPCHeliCrashing && Proj && IsValid(Proj))
+			{
+				const FVector HLoc = NPCHelicopter->GetActorLocation();
+				if (FVector::Dist(PLoc, HLoc) < HitRadius)
+				{
+					NPCHeliHealth -= BulletDamage;
+					NPCHeliDamageFlashTimer = 0.15f;
+					if (NPCHeliHealth <= 0.f)
+					{
+						OnNPCHeliDestroyed();
+					}
+					Proj->Destroy();
+				}
+			}
+
+			// NPC player proximity damage from projectiles
+			if (Proj && IsValid(Proj))
+			{
+				for (int32 NI = 0; NI < NumNPCPlayers; ++NI)
+				{
+					if (!NPCPlayers[NI].Actor || !NPCPlayers[NI].bVisible) continue;
+					const FVector NLoc = NPCPlayers[NI].Actor->GetActorLocation();
+					if (FVector::Dist2D(PLoc, NLoc) < HitRadius)
+					{
+						NPCPlayers[NI].Health -= BulletDamage;
+						NPCPlayers[NI].DamageFlashTimer = 0.2f;
+
+						if (NPCPlayers[NI].Health <= 0.f)
+						{
+							Proj->SpawnExplosion(NLoc);
+							RespawnNPCPlayer(NI);
+						}
+
+						Proj->Destroy();
+						break;
+					}
 				}
 			}
 		}
@@ -2031,6 +2388,8 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnGiantCrab();
 	SpawnGoldCoins();
 	SpawnGrassSystem();
+	SpawnNPCHelicopter();
+	SpawnNPCPlayers();
 }
 
 // ---------------------------------------------------------------------------
@@ -15921,4 +16280,341 @@ void UPHCCitySubsystem::SpawnLangtree()
 	}
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("Langtree Lake Norman: Spawned sand fort complex with %d components."), CompCount);
+}
+
+// ---------------------------------------------------------------------------
+// SpawnNPCHelicopter — one AI-controlled Black Hawk patrol helicopter
+// ---------------------------------------------------------------------------
+void UPHCCitySubsystem::SpawnNPCHelicopter()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	const FVector SpawnPos(18000.f, 0.f, 3500.f);
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	NPCHelicopter = World->SpawnActor<APHCBlackHawkPawn>(APHCBlackHawkPawn::StaticClass(), SpawnPos, FRotator::ZeroRotator, Params);
+	if (!NPCHelicopter) return;
+
+	// Mark as occupied so the rotor animation runs, but nobody is piloting
+	NPCHelicopter->bIsOccupied = true;
+
+	// Set MinAltitude very low so the ground clamp never fights our SetActorLocation
+	NPCHelicopter->MinAltitude = -100000.f;
+
+	// Tag for hitscan identification (same pattern as "GiantCrab")
+	NPCHelicopter->Tags.Add(FName("NPCHelicopter"));
+
+	// Set collision to QueryOnly so hitscan line traces can hit it, but no physics blocking
+	if (NPCHelicopter->VehicleCollision)
+	{
+		NPCHelicopter->VehicleCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		NPCHelicopter->VehicleCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
+		NPCHelicopter->VehicleCollision->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	}
+
+	// Collect all body MIDs for damage flash effect
+	NPCHeliBodyMIDs.Empty();
+	for (UStaticMeshComponent* Comp : NPCHelicopter->BodyColoredMeshes)
+	{
+		if (!Comp) continue;
+		UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(Comp->GetMaterial(0));
+		if (MID) NPCHeliBodyMIDs.Add(MID);
+	}
+
+	// Start hidden (Tick will show it during daytime)
+	NPCHelicopter->SetActorHiddenInGame(true);
+	bNPCHeliVisible = false;
+	NPCHeliPatrolAngle = 0.f;
+	NPCHeliHealth = 240.f;
+	bNPCHeliCrashing = false;
+	NPCHeliCrashTimer = 0.f;
+	NPCHeliRespawnTimer = -1.f;
+	NPCHeliDamageFlashTimer = 0.f;
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("NPC patrol helicopter spawned (APHCBlackHawkPawn)."));
+}
+
+// ---------------------------------------------------------------------------
+void UPHCCitySubsystem::OnNPCHeliDestroyed()
+{
+	bNPCHeliCrashing = true;
+	NPCHeliCrashTimer = 0.f;
+}
+
+// ---------------------------------------------------------------------------
+void UPHCCitySubsystem::RespawnNPCHelicopter()
+{
+	if (!NPCHelicopter) return;
+
+	NPCHeliHealth = 240.f;
+	bNPCHeliCrashing = false;
+	NPCHeliCrashTimer = 0.f;
+	NPCHeliRespawnTimer = -1.f;
+	NPCHeliDamageFlashTimer = 0.f;
+	NPCHeliPatrolAngle = 0.f;
+
+	// Clear emissive flash
+	for (UMaterialInstanceDynamic* MID : NPCHeliBodyMIDs)
+	{
+		if (MID) MID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
+	}
+
+	NPCHelicopter->SetActorLocation(FVector(18000.f, 0.f, 3500.f));
+	NPCHelicopter->SetActorRotation(FRotator::ZeroRotator);
+	NPCHelicopter->bIsOccupied = true;
+
+	// Show if daytime
+	const bool bDay = (DayNightTime > 0.02f && DayNightTime < 0.48f);
+	NPCHelicopter->SetActorHiddenInGame(!bDay);
+	bNPCHeliVisible = bDay;
+}
+
+// ---------------------------------------------------------------------------
+// SpawnNPCPlayers — 5 wandering NPC player characters (daytime, damageable)
+// ---------------------------------------------------------------------------
+void UPHCCitySubsystem::SpawnNPCPlayers()
+{
+	UWorld* World = GetWorld();
+	if (!World || !SphereMesh || !CylinderMesh || !CubeMesh || !ColorMaterial) return;
+
+	const FVector Spawns[NumNPCPlayers] = {
+		{  500.f,   300.f, 75.f },
+		{ -400.f,   600.f, 75.f },
+		{  800.f,  -500.f, 75.f },
+		{ -600.f,  -400.f, 75.f },
+		{  200.f,   900.f, 75.f },
+	};
+
+	// Colors (matching PHCCityCharacter::BeginPlay)
+	const FLinearColor Skin(0.55f, 0.38f, 0.26f);
+	const FLinearColor SkinDark(0.42f, 0.28f, 0.18f);
+	const FLinearColor Hair(0.02f, 0.02f, 0.03f);
+	const FLinearColor Shirt(0.12f, 0.38f, 0.18f);
+	const FLinearColor Denim(0.08f, 0.10f, 0.20f);
+	const FLinearColor BeltColor(0.06f, 0.04f, 0.03f);
+	const FLinearColor Buckle(0.65f, 0.60f, 0.50f);
+	const FLinearColor Shoe(0.92f, 0.92f, 0.90f);
+	const FLinearColor SoleColor(0.05f, 0.05f, 0.05f);
+
+	for (int32 NI = 0; NI < NumNPCPlayers; ++NI)
+	{
+		FNPCPlayerData& NP = NPCPlayers[NI];
+		NP.SpawnPosition = Spawns[NI];
+
+		AActor* A = World->SpawnActor<AActor>(AActor::StaticClass(), Spawns[NI], FRotator::ZeroRotator);
+		if (!A) continue;
+		NP.Actor = A;
+		A->Tags.Add(FName("NPCPlayer"));
+
+		// Root: box component for hitscan collision (QueryOnly)
+		UBoxComponent* Root = NewObject<UBoxComponent>(A, TEXT("NPCRoot"));
+		Root->SetBoxExtent(FVector(22.f, 26.f, 90.f));
+		Root->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		Root->SetCollisionResponseToAllChannels(ECR_Ignore);
+		Root->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+		Root->SetGenerateOverlapEvents(false);
+		Root->RegisterComponent();
+		A->SetRootComponent(Root);
+		A->AddInstanceComponent(Root);
+
+		// Mesh helpers (runtime, not constructor)
+		auto MC = [&](const FName& Name) -> UStaticMeshComponent*
+		{
+			UStaticMeshComponent* C = NewObject<UStaticMeshComponent>(A, Name);
+			C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			C->SetGenerateOverlapEvents(false);
+			C->CastShadow = false;
+			C->RegisterComponent();
+			C->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+			A->AddInstanceComponent(C);
+			return C;
+		};
+
+		auto MakeOval = [&](const FName& Name, const FVector& Loc, const FVector& Scale) -> UStaticMeshComponent*
+		{
+			UStaticMeshComponent* C = MC(Name);
+			C->SetStaticMesh(SphereMesh);
+			C->SetRelativeScale3D(Scale);
+			C->SetRelativeLocation(Loc);
+			return C;
+		};
+
+		auto MakeSph = [&](const FName& Name, const FVector& Loc, float R) -> UStaticMeshComponent*
+		{
+			UStaticMeshComponent* C = MC(Name);
+			C->SetStaticMesh(SphereMesh);
+			float S = R / 50.f;
+			C->SetRelativeScale3D(FVector(S, S, S));
+			C->SetRelativeLocation(Loc);
+			return C;
+		};
+
+		auto MakeCyl = [&](const FName& Name, const FVector& Loc, float R, float H) -> UStaticMeshComponent*
+		{
+			UStaticMeshComponent* C = MC(Name);
+			C->SetStaticMesh(CylinderMesh);
+			C->SetRelativeScale3D(FVector(R / 50.f, R / 50.f, H / 100.f));
+			C->SetRelativeLocation(Loc);
+			return C;
+		};
+
+		auto MakeCube = [&](const FName& Name, const FVector& Loc, const FVector& SizeUU) -> UStaticMeshComponent*
+		{
+			UStaticMeshComponent* C = MC(Name);
+			C->SetStaticMesh(CubeMesh);
+			C->SetRelativeScale3D(SizeUU / 100.f);
+			C->SetRelativeLocation(Loc);
+			return C;
+		};
+
+		auto SetColor = [&](UStaticMeshComponent* Comp, const FLinearColor& Color, float Roughness, float Metallic = 0.f)
+		{
+			if (!Comp) return;
+			UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(ColorMaterial, Comp);
+			if (!MID) return;
+			MID->SetVectorParameterValue(TEXT("BaseColor"), Color);
+			MID->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+			MID->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+			Comp->SetMaterial(0, MID);
+			NP.BodyMIDs.Add(MID);
+		};
+
+		// Unique per-NPC names
+		auto N = [NI](const TCHAR* Base) -> FName
+		{
+			return FName(*FString::Printf(TEXT("NPC%d_%s"), NI, Base));
+		};
+
+		// ---- HEAD ----
+		NP.HeadMesh = MakeOval(N(TEXT("Head")), FVector(0, 0, 76), FVector(0.26f, 0.28f, 0.28f));
+		SetColor(NP.HeadMesh, Skin, 0.45f);
+		NP.JawMesh = MakeOval(N(TEXT("Jaw")), FVector(2, 0, 67), FVector(0.22f, 0.24f, 0.16f));
+		SetColor(NP.JawMesh, SkinDark, 0.50f);
+
+		// ---- HAIR ----
+		NP.HairTopMesh = MakeOval(N(TEXT("HairTop")), FVector(-1, 0, 88), FVector(0.28f, 0.30f, 0.10f));
+		SetColor(NP.HairTopMesh, Hair, 0.85f);
+		NP.HairBackMesh = MakeOval(N(TEXT("HairBack")), FVector(-8, 0, 80), FVector(0.12f, 0.26f, 0.18f));
+		SetColor(NP.HairBackMesh, Hair, 0.85f);
+
+		// ---- NECK ----
+		NP.NeckMesh = MakeCyl(N(TEXT("Neck")), FVector(0, 0, 60), 4.f, 10.f);
+		SetColor(NP.NeckMesh, Skin, 0.45f);
+
+		// ---- TORSO ----
+		NP.ChestMesh = MakeOval(N(TEXT("Chest")), FVector(1, 0, 44), FVector(0.22f, 0.44f, 0.26f));
+		SetColor(NP.ChestMesh, Shirt, 0.82f);
+		NP.AbsMesh = MakeOval(N(TEXT("Abs")), FVector(0, 0, 28), FVector(0.16f, 0.32f, 0.18f));
+		SetColor(NP.AbsMesh, Shirt, 0.82f);
+		NP.PelvisMesh = MakeOval(N(TEXT("Pelvis")), FVector(0, 0, 12), FVector(0.17f, 0.36f, 0.20f));
+		SetColor(NP.PelvisMesh, Denim, 0.78f);
+
+		// ---- CLOTHING DETAIL ----
+		NP.CollarMesh = MakeCube(N(TEXT("Collar")), FVector(2, 0, 56), FVector(10, 26, 2));
+		SetColor(NP.CollarMesh, Shirt, 0.82f);
+		NP.BeltMesh = MakeCube(N(TEXT("Belt")), FVector(0, 0, 20), FVector(12, 36, 3));
+		SetColor(NP.BeltMesh, BeltColor, 0.35f);
+		NP.BeltBuckleMesh = MakeCube(N(TEXT("Buckle")), FVector(8, 0, 20), FVector(3, 4, 4));
+		SetColor(NP.BeltBuckleMesh, Buckle, 0.30f, 0.6f);
+
+		// ---- LEFT ARM ----
+		NP.LShoulderMesh = MakeSph(N(TEXT("LShld")), FVector(0, -25, 54), 7.f);
+		SetColor(NP.LShoulderMesh, Shirt, 0.82f);
+		NP.LUpperArmMesh = MakeCyl(N(TEXT("LUArm")), FVector(0, -26, 44), 4.5f, 20.f);
+		SetColor(NP.LUpperArmMesh, Shirt, 0.82f);
+		NP.LElbowMesh = MakeSph(N(TEXT("LElbow")), FVector(0, -26, 32), 4.f);
+		SetColor(NP.LElbowMesh, Skin, 0.45f);
+		NP.LForearmMesh = MakeCyl(N(TEXT("LFArm")), FVector(0, -26, 20), 4.f, 18.f);
+		SetColor(NP.LForearmMesh, Skin, 0.45f);
+		NP.LHandMesh = MakeSph(N(TEXT("LHand")), FVector(0, -26, 6), 3.5f);
+		SetColor(NP.LHandMesh, Skin, 0.45f);
+
+		// ---- RIGHT ARM ----
+		NP.RShoulderMesh = MakeSph(N(TEXT("RShld")), FVector(0, 25, 54), 7.f);
+		SetColor(NP.RShoulderMesh, Shirt, 0.82f);
+		NP.RUpperArmMesh = MakeCyl(N(TEXT("RUArm")), FVector(0, 26, 44), 4.5f, 20.f);
+		SetColor(NP.RUpperArmMesh, Shirt, 0.82f);
+		NP.RElbowMesh = MakeSph(N(TEXT("RElbow")), FVector(0, 26, 32), 4.f);
+		SetColor(NP.RElbowMesh, Skin, 0.45f);
+		NP.RForearmMesh = MakeCyl(N(TEXT("RFArm")), FVector(0, 26, 20), 4.f, 18.f);
+		SetColor(NP.RForearmMesh, Skin, 0.45f);
+		NP.RHandMesh = MakeSph(N(TEXT("RHand")), FVector(0, 26, 6), 3.5f);
+		SetColor(NP.RHandMesh, Skin, 0.45f);
+
+		// ---- LEFT LEG ----
+		NP.LThighMesh = MakeCyl(N(TEXT("LThigh")), FVector(0, -11, -12), 5.5f, 28.f);
+		SetColor(NP.LThighMesh, Denim, 0.78f);
+		NP.LKneeMesh = MakeSph(N(TEXT("LKnee")), FVector(0, -11, -30), 5.f);
+		SetColor(NP.LKneeMesh, Denim, 0.78f);
+		NP.LShinMesh = MakeCyl(N(TEXT("LShin")), FVector(0, -11, -48), 4.5f, 24.f);
+		SetColor(NP.LShinMesh, Denim, 0.78f);
+		NP.LFootMesh = MakeCube(N(TEXT("LFoot")), FVector(4, -11, -68), FVector(22, 12, 8));
+		SetColor(NP.LFootMesh, Shoe, 0.45f);
+		NP.LSoleMesh = MakeCube(N(TEXT("LSole")), FVector(4, -11, -73), FVector(22, 12, 2.5f));
+		SetColor(NP.LSoleMesh, SoleColor, 0.90f);
+
+		// ---- RIGHT LEG ----
+		NP.RThighMesh = MakeCyl(N(TEXT("RThigh")), FVector(0, 11, -12), 5.5f, 28.f);
+		SetColor(NP.RThighMesh, Denim, 0.78f);
+		NP.RKneeMesh = MakeSph(N(TEXT("RKnee")), FVector(0, 11, -30), 5.f);
+		SetColor(NP.RKneeMesh, Denim, 0.78f);
+		NP.RShinMesh = MakeCyl(N(TEXT("RShin")), FVector(0, 11, -48), 4.5f, 24.f);
+		SetColor(NP.RShinMesh, Denim, 0.78f);
+		NP.RFootMesh = MakeCube(N(TEXT("RFoot")), FVector(4, 11, -68), FVector(22, 12, 8));
+		SetColor(NP.RFootMesh, Shoe, 0.45f);
+		NP.RSoleMesh = MakeCube(N(TEXT("RSole")), FVector(4, 11, -73), FVector(22, 12, 2.5f));
+		SetColor(NP.RSoleMesh, SoleColor, 0.90f);
+
+		// Cyan underglow point light
+		UPointLightComponent* Glow = NewObject<UPointLightComponent>(A, N(TEXT("Glow")));
+		Glow->SetRelativeLocation(FVector(0.f, 0.f, -70.f));
+		Glow->SetLightColor(FLinearColor(0.f, 1.f, 1.f));
+		Glow->SetIntensity(8000.f);
+		Glow->SetAttenuationRadius(600.f);
+		Glow->SetCastShadows(false);
+		Glow->MaxDrawDistance = 15000.f;
+		Glow->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+		Glow->RegisterComponent();
+		A->AddInstanceComponent(Glow);
+		NP.GlowLight = Glow;
+
+		// Start visible so NPCs appear immediately
+		A->SetActorHiddenInGame(false);
+		NP.bVisible = true;
+		NP.Health = 100.f;
+		NP.AnimTime = 0.f;
+		NP.WalkAnimBlend = 0.f;
+		NP.WanderTarget = Spawns[NI] + FVector(FMath::RandRange(-5000.f, 5000.f), FMath::RandRange(-5000.f, 5000.f), 0.f);
+		NP.WanderWaitTimer = FMath::RandRange(1.f, 4.f);
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Spawned %d NPC player characters."), NumNPCPlayers);
+}
+
+// ---------------------------------------------------------------------------
+void UPHCCitySubsystem::RespawnNPCPlayer(int32 Index)
+{
+	if (Index < 0 || Index >= NumNPCPlayers) return;
+	FNPCPlayerData& NP = NPCPlayers[Index];
+	if (!NP.Actor) return;
+
+	NP.Health = 100.f;
+	NP.DamageFlashTimer = 0.f;
+	NP.AnimTime = 0.f;
+	NP.WalkAnimBlend = 0.f;
+
+	for (UMaterialInstanceDynamic* MID : NP.BodyMIDs)
+	{
+		if (MID) MID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
+	}
+
+	NP.Actor->SetActorLocation(NP.SpawnPosition);
+	NP.Actor->SetActorRotation(FRotator::ZeroRotator);
+
+	NP.Actor->SetActorHiddenInGame(false);
+	NP.bVisible = true;
+
+	NP.WanderTarget = NP.SpawnPosition + FVector(FMath::RandRange(-5000.f, 5000.f), FMath::RandRange(-5000.f, 5000.f), 0.f);
+	NP.WanderWaitTimer = FMath::RandRange(2.f, 5.f);
 }

@@ -7,6 +7,7 @@
 #include "Engine/GameEngine.h"
 #include "Engine/NetDriver.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/NetworkVersion.h"
 
 // Subsystem headers -- uncomment each as the corresponding class is created.
 // #include "Network/PHCHttpClient.h"
@@ -38,6 +39,22 @@ void UPHCGameInstance::Init()
 	Super::Init();
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCGameInstance::Init -- Initializing PlayhouseCity game instance."));
+
+	// Override network version so source-built server and launcher-built client
+	// always report the same version (both are UE 5.7.3).
+	static constexpr uint32 PHCNetworkVersion = 1;
+	FNetworkVersion::GetLocalNetworkVersionOverride.BindLambda([]() -> uint32
+	{
+		return PHCNetworkVersion;
+	});
+	FNetworkVersion::IsNetworkCompatibleOverride.BindLambda([](uint32 LocalVersion, uint32 RemoteVersion) -> bool
+	{
+		return true;
+	});
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCGameInstance::Init -- Network version override set to %u."), PHCNetworkVersion);
+
+	// Auto-connect disabled for now (vehicles need replication first).
+	// bPendingServerConnect = true;
 
 	CreateSubsystems();
 }
@@ -178,6 +195,9 @@ void UPHCGameInstance::JoinGame(const FString& IPAddress)
 
 	FString TravelURL = FString::Printf(TEXT("%s:7777"), *IPAddress);
 	UE_LOG(LogPlayhouseCity, Log, TEXT("JoinGame: Connecting to %s..."), *TravelURL);
+
+	// Clear the pending flag so the map reload after ClientTravel generates the city
+	bPendingServerConnect = false;
 
 	PC->ClientTravel(TravelURL, TRAVEL_Absolute);
 

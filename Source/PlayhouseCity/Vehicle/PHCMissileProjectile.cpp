@@ -28,20 +28,20 @@ APHCMissileProjectile::APHCMissileProjectile()
 	CollisionSphere->bNeverDistanceCull = true;
 	SetRootComponent(CollisionSphere);
 
-	// Single elongated cube — lightweight bullet/tracer round
+	// Elongated sphere — bullet/tracer round shape
 	ProjectileMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ProjectileMesh"));
 	ProjectileMesh->SetupAttachment(CollisionSphere);
 	ProjectileMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	ProjectileMesh->SetRelativeScale3D(FVector(2.0f, 0.20f, 0.20f));
+	ProjectileMesh->SetRelativeScale3D(FVector(1.8f, 0.14f, 0.14f));
 	ProjectileMesh->SetBoundsScale(200.f);
 	ProjectileMesh->bNeverDistanceCull = true;
 	ProjectileMesh->SetCastShadow(false);
 
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(
-		TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (CubeMesh.Succeeded())
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> BulletMesh(
+		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	if (BulletMesh.Succeeded())
 	{
-		ProjectileMesh->SetStaticMesh(CubeMesh.Object);
+		ProjectileMesh->SetStaticMesh(BulletMesh.Object);
 	}
 
 	// No ProjectileMovementComponent — manual velocity in Tick is far cheaper

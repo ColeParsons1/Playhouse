@@ -209,6 +209,14 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BazookaScopeMesh;
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> BazookaMuzzleMesh;
 
+	// -- AK-47 weapon mesh ---------------------------------------------------
+
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> AK47BodyMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> AK47BarrelMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> AK47MagMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> AK47StockMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> AK47MuzzleMesh;
+
 	// -- Health ---------------------------------------------------------------
 	float Health = 100.f;
 	float MaxHealth = 100.f;
@@ -222,7 +230,7 @@ public:
 
 	// -- Weapon state ---------------------------------------------------------
 
-	int32 CurrentWeaponType = 3; // -1=none, 0=Gun, 1=RPG, 2=Sword, 3=Scythe
+	int32 CurrentWeaponType = 3; // -1=none, 0=Gun, 1=RPG, 2=Sword, 3=Scythe, 4=Dagger, 5=AK47
 
 	float ScytheSwingTimer = 0.f;  // >0 = currently swinging
 
@@ -234,6 +242,48 @@ public:
 	float BazookaMuzzleFlashTimer = 0.f;
 	float CameraShakeTimer = 0.f;
 	float CameraShakeIntensity = 0.f;
+
+	bool bAK47Firing = false;
+	float AK47FireTimer = 0.f;
+
+	// -- COD-style weapon feel ------------------------------------------------
+
+	// Recoil (per-shot pitch kick + yaw scatter, auto-recovery)
+	float RecoilPitchAccum = 0.f;
+	float RecoilYawAccum = 0.f;
+	float RecoilRecoverySpeed = 6.f;
+
+	// Weapon viewmodel bob (uses existing WalkCyclePhase/WalkAnimBlend)
+	float WeaponBobH = 0.f;
+	float WeaponBobV = 0.f;
+
+	// ADS (Aim Down Sights)
+	bool bADS = false;
+	float ADSAlpha = 0.f;
+	float ADSInterpSpeed = 12.f;
+	float ADSFOVHip = 90.f;
+	float ADSFOVAim = 65.f;
+	float ADSSensitivityMult = 0.6f;
+
+	// Bullet spread (half-angle degrees)
+	float SpreadHipfire = 3.5f;
+	float SpreadADS = 0.8f;
+
+	// Per-shot micro-shake
+	float ShotShakeTimer = 0.f;
+
+	// Hit marker
+	float HitMarkerTimer = 0.f;
+
+	// Muzzle flash dynamic light
+	UPROPERTY(Transient) TObjectPtr<UPointLightComponent> MuzzleFlashLight;
+	float MuzzleFlashLightTimer = 0.f;
+
+	// ADS input
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "PHC|Input")
+	TObjectPtr<UInputAction> ADSAction;
+
+	void SetADS(bool bNewADS);
 
 	void FireWeapon();
 
@@ -257,6 +307,10 @@ public:
 	FSimpleSpring LHandLagX, LHandLagZ;
 	FSimpleSpring RHandLagX, RHandLagZ;
 	FSimpleSpring HairLagZ;
+	FSimpleSpring WeaponSwayX, WeaponSwayY;
+	FSimpleSpring WeaponKickZ, WeaponKickX;
+	float PrevAimYaw = 0.f;
+	float PrevAimPitch = 0.f;
 	float IdleTimer = 0.f;
 
 	// -- Mobile touch input (written by HUD each frame, read by Tick) ------
@@ -267,6 +321,11 @@ public:
 	float TouchLookY = 0.f;
 	bool bHUDTouchActive = false;
 
+	// -- Camera perspective toggle -----------------------------------------
+
+	bool bFirstPersonMode = false;
+	void SetFirstPersonMode(bool bFirstPerson);
+
 protected:
 	void HandleMove(const FInputActionValue& Value);
 	void HandleLook(const FInputActionValue& Value);
@@ -275,6 +334,8 @@ protected:
 	void HandleSprintStarted(const FInputActionValue& Value);
 	void HandleSprintCompleted(const FInputActionValue& Value);
 	void HandleInteract(const FInputActionValue& Value);
+	void HandleADSStarted(const FInputActionValue& Value);
+	void HandleADSCompleted(const FInputActionValue& Value);
 
 private:
 	void CreateInputAssets();

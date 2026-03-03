@@ -44,10 +44,12 @@
 #include "Vehicle/PHCTankPawn.h"
 #include "Vehicle/PHCDirtBikePawn.h"
 #include "Vehicle/PHCBlackbirdPawn.h"
+#include "Vehicle/PHCBlackHawkPawn.h"
 #include "Player/PHCCityCharacter.h"
 #include "Core/PHCCityGameMode.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
+#include "EngineUtils.h"
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -72,6 +74,14 @@ void APHCPlayerController::BeginPlay()
 	Super::BeginPlay();
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCPlayerController::BeginPlay"));
+
+	// On a dedicated server, this controller is a server-side proxy for a remote
+	// player — skip all UI/input setup since there's no local viewport.
+	if (!IsLocalController())
+	{
+		UE_LOG(LogPlayhouseCity, Log, TEXT("PHCPlayerController::BeginPlay -- Server-side controller, skipping UI setup."));
+		return;
+	}
 
 	// Ensure the cursor is visible and input is in UI mode.
 	SetUIOnlyInputMode();
@@ -213,6 +223,10 @@ void APHCPlayerController::EnterWorldMode()
 	}
 
 	SetGameAndUIInputMode();
+
+	// Multiplayer auto-connect disabled for now — vehicles don't replicate yet,
+	// so single-player mode is needed for vehicle gameplay to work.
+	// TODO: Re-enable once vehicle pawns have bReplicates + SetReplicateMovement.
 }
 
 void APHCPlayerController::EnterMenuMode()
@@ -451,43 +465,28 @@ void APHCPlayerController::EnterNearestVehicle()
 	APHCCityCharacter* Character = Cast<APHCCityCharacter>(GetPawn());
 	if (!Character) return;
 
-	// Find nearest vehicle within range (APHCVehiclePawn or APHCBlackbirdPawn).
+	// Find nearest unoccupied vehicle within range (any type).
 	constexpr float EnterRange = 2000.f;
 	const FVector CharLoc = Character->GetActorLocation();
+	UWorld* World = GetWorld();
 
 	APawn* NearestPawn = nullptr;
 	float NearestDist = EnterRange;
 
-	// Scan VehiclePawn array from game mode.
-	if (APHCCityGameMode* CityGM = Cast<APHCCityGameMode>(GetWorld()->GetAuthGameMode()))
+	auto TryNearest = [&](APawn* V, bool bOccupied)
 	{
-		for (APHCVehiclePawn* Vehicle : CityGM->SpawnedVehicles)
-		{
-			if (!Vehicle || Vehicle->bIsOccupied) continue;
+		if (!V || bOccupied) return;
+		const float Dist = FVector::Dist(CharLoc, V->GetActorLocation());
+		if (Dist < NearestDist) { NearestDist = Dist; NearestPawn = V; }
+	};
 
-			const float Dist = FVector::Dist(CharLoc, Vehicle->GetActorLocation());
-			if (Dist < NearestDist)
-			{
-				NearestDist = Dist;
-				NearestPawn = Vehicle;
-			}
-		}
-	}
-
-	// Also check the SR-71 Blackbird in the underground airport.
-	if (UPHCCitySubsystem* CitySub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
-	{
-		APHCBlackbirdPawn* BB = CitySub->AirportBlackbird;
-		if (BB && !BB->bIsOccupied)
-		{
-			const float Dist = FVector::Dist(CharLoc, BB->GetActorLocation());
-			if (Dist < NearestDist)
-			{
-				NearestDist = Dist;
-				NearestPawn = BB;
-			}
-		}
-	}
+	for (TActorIterator<APHCVehiclePawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCDuneBuggyPawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCRaptorPawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCTankPawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCDirtBikePawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCBlackbirdPawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCBlackHawkPawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
 
 	if (!NearestPawn)
 	{
@@ -524,10 +523,38 @@ void APHCPlayerController::EnterNearestVehicle()
 		V->CurrentSpeed = 0.f;
 		V->SetHeadlightsEnabled(true);
 	}
+	else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(NearestPawn))
+	{
+		B->bIsOccupied = true;
+		B->CurrentSpeed = 0.f;
+		B->SetHeadlightsEnabled(true);
+	}
+	else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(NearestPawn))
+	{
+		R->bIsOccupied = true;
+		R->CurrentSpeed = 0.f;
+	}
+	else if (APHCTankPawn* T = Cast<APHCTankPawn>(NearestPawn))
+	{
+		T->bIsOccupied = true;
+		T->CurrentSpeed = 0.f;
+		T->SetHeadlightsEnabled(true);
+	}
+	else if (APHCDirtBikePawn* DB = Cast<APHCDirtBikePawn>(NearestPawn))
+	{
+		DB->bIsOccupied = true;
+		DB->CurrentSpeed = 0.f;
+		DB->SetHeadlightsEnabled(true);
+	}
 	else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(NearestPawn))
 	{
 		BB->bIsOccupied = true;
 		BB->CurrentSpeed = 0.f;
+	}
+	else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(NearestPawn))
+	{
+		BH->bIsOccupied = true;
+		BH->CurrentSpeed = 0.f;
 	}
 
 	UnPossess();
@@ -615,6 +642,17 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 			Bike->CurrentSpeed = 0.f;
 			Bike->SetHeadlightsEnabled(true);
 			SpawnedVehicle = Bike;
+		}
+	}
+	else if (VehicleType == 5)
+	{
+		APHCBlackHawkPawn* Hawk = World->SpawnActor<APHCBlackHawkPawn>(
+			APHCBlackHawkPawn::StaticClass(), SpawnLoc, SpawnRot, SP);
+		if (Hawk)
+		{
+			Hawk->bIsOccupied = true;
+			Hawk->CurrentSpeed = 0.f;
+			SpawnedVehicle = Hawk;
 		}
 	}
 	else if (VehicleType == 1)
@@ -766,6 +804,15 @@ void APHCPlayerController::OnVehicleExitRequested()
 		BB->PitchInput = 0.f;
 		BB->CurrentSpeed = 0.f;
 	}
+	else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(CurrentVehicle))
+	{
+		ExitLoc = BH->GetExitLocation();
+		BH->bIsOccupied = false;
+		BH->ThrottleInput = 0.f;
+		BH->SteeringInput = 0.f;
+		BH->PitchInput = 0.f;
+		BH->CurrentSpeed = 0.f;
+	}
 
 	// Unpossess vehicle, repossess character (server authority).
 	UnPossess();
@@ -843,6 +890,10 @@ void APHCPlayerController::ClientOnVehicleExited_Implementation()
 	else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(CurrentVehicle))
 	{
 		VehicleMC = BB->VehicleMappingContext;
+	}
+	else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(CurrentVehicle))
+	{
+		VehicleMC = BH->VehicleMappingContext;
 	}
 
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
