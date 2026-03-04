@@ -60,6 +60,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "PHC|UI")
 	void SetDrivingMode(bool bDriving, APawn* Vehicle);
 
+	/** Set by PlayerController when a vehicle entry is requested but vehicle hasn't replicated yet. */
+	bool bPendingVehicleEntry = false;
+
 protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> CoinText;

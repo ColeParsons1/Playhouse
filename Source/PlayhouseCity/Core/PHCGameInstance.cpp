@@ -53,8 +53,7 @@ void UPHCGameInstance::Init()
 	});
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCGameInstance::Init -- Network version override set to %u."), PHCNetworkVersion);
 
-	// Auto-connect disabled for now (vehicles need replication first).
-	// bPendingServerConnect = true;
+	bPendingServerConnect = true;
 
 	CreateSubsystems();
 }

@@ -14,6 +14,8 @@ class UStaticMeshComponent;
 class UInputMappingContext;
 class UInputAction;
 class UPointLightComponent;
+class UMaterialInstanceDynamic;
+class UTextRenderComponent;
 struct FInputActionValue;
 
 /**
@@ -46,6 +48,10 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
+
+	/** Floating player name above head. */
+	UPROPERTY()
+	TObjectPtr<UTextRenderComponent> NameTextComp;
 
 	// -- Fortnite-Quality Character (45 components) --------------------------
 	// Sphere-based organic body, facial features, overlapping shapes for
@@ -153,6 +159,9 @@ public:
 
 	/** True after the character has touched ground at least once. */
 	bool bHasBeenGrounded = false;
+
+	/** True once the floating name text has been set from the player profile. */
+	bool bNameTextSet = false;
 
 	/** True when grounded on previous frame. */
 	bool bWasGrounded = false;
@@ -325,6 +334,39 @@ public:
 
 	bool bFirstPersonMode = false;
 	void SetFirstPersonMode(bool bFirstPerson);
+
+	// -- Network movement replication (client → server) --------------------
+
+	/** Server RPC: owning client sends position/rotation so server can
+	 *  update the authoritative actor, which then replicates to all others. */
+	UFUNCTION(Server, Unreliable)
+	void ServerUpdateMovement(FVector_NetQuantize NewLocation, FRotator NewRotation);
+
+	float NetMoveSendTimer = 0.f;
+
+	// -- PvP damage (server-authoritative) ---------------------------------
+
+	/** Called by the attacker's client to request damage on another player. */
+	UFUNCTION(Server, Reliable)
+	void ServerInflictDamage(APHCCityCharacter* Victim, float Damage);
+
+	/** Multicast: all clients flash the victim's body red. */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastDamageFlash();
+
+	/** Called on the victim's owning client to show the red screen overlay. */
+	UFUNCTION(Client, Reliable)
+	void ClientOnDamaged(float NewHealth);
+
+	/** Called on the victim's owning client on death. */
+	UFUNCTION(Client, Reliable)
+	void ClientOnKilled();
+
+	/** Array of body MIDs for emissive flash (populated in BeginPlay). */
+	TArray<TObjectPtr<UMaterialInstanceDynamic>> BodyMIDs;
+
+	/** Timer for red body flash visible to all players. */
+	float PvPDamageFlashTimer = 0.f;
 
 protected:
 	void HandleMove(const FInputActionValue& Value);

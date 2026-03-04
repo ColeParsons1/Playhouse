@@ -460,6 +460,99 @@ void UPHCAuthManager::Register(const FString& Username, const FString& Email, co
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCAuthManager::Register -- POST %s"), *Url);
 }
 
+bool UPHCAuthManager::FetchProfileById(int32 PlayerId)
+{
+	if (!GameInstance || PlayerId <= 0)
+	{
+		return false;
+	}
+
+	if (bRequestInFlight)
+	{
+		return false;
+	}
+
+	bRequestInFlight = true;
+
+	const FString Url = GameInstance->ServerBaseUrl / FString::Printf(TEXT("api/players/%d/"), PlayerId);
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetURL(Url);
+	Request->SetVerb(TEXT("GET"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->OnProcessRequestComplete().BindUObject(this, &UPHCAuthManager::HandleFetchProfileResponse);
+	Request->ProcessRequest();
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCAuthManager::FetchProfileById -- GET %s"), *Url);
+	return true;
+}
+
+void UPHCAuthManager::HandleFetchProfileResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bConnectedSuccessfully)
+{
+	bRequestInFlight = false;
+
+	if (!bConnectedSuccessfully || !Response.IsValid())
+	{
+		BroadcastResult(false, TEXT("Could not reach the server."));
+		return;
+	}
+
+	const int32 Code = Response->GetResponseCode();
+	const FString Body = Response->GetContentAsString();
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCAuthManager::HandleFetchProfileResponse -- HTTP %d, Body: %.200s"), Code, *Body);
+
+	TSharedPtr<FJsonObject> JsonObject;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Body);
+	const bool bParsed = FJsonSerializer::Deserialize(Reader, JsonObject);
+
+	if (!bParsed || !JsonObject.IsValid())
+	{
+		BroadcastResult(false, FString::Printf(TEXT("Server returned invalid response (HTTP %d)."), Code));
+		return;
+	}
+
+	// The GET /api/players/{id}/ endpoint may return the player object directly
+	// or wrapped in { "success": true, "player": { ... } }.
+	bool bSuccess = false;
+	if (JsonObject->TryGetBoolField(TEXT("success"), bSuccess) && bSuccess)
+	{
+		if (ParseAndApplyPlayer(JsonObject))
+		{
+			BroadcastResult(true, FString());
+			return;
+		}
+	}
+
+	// Try parsing the response as a direct player object (no wrapper).
+	FPHCPlayerProfile Profile;
+	int32 IntVal = 0;
+	FString StrVal;
+
+	if (JsonObject->TryGetNumberField(TEXT("id"), IntVal))       { Profile.PlayerId = IntVal; }
+	if (JsonObject->TryGetStringField(TEXT("name"), StrVal))      { Profile.Username = StrVal; Profile.DisplayName = StrVal; }
+	if (JsonObject->TryGetStringField(TEXT("username"), StrVal))  { Profile.Username = StrVal; }
+	if (JsonObject->TryGetNumberField(TEXT("coins"), IntVal))     { Profile.Coins = IntVal; }
+	if (JsonObject->TryGetNumberField(TEXT("gems"), IntVal))      { Profile.Gems = IntVal; }
+	if (JsonObject->TryGetNumberField(TEXT("level"), IntVal))     { Profile.Level = IntVal; }
+	if (JsonObject->TryGetNumberField(TEXT("xp"), IntVal))        { Profile.XP = IntVal; }
+	if (JsonObject->TryGetNumberField(TEXT("followers"), IntVal)) { Profile.FollowerCount = IntVal; }
+
+	if (Profile.PlayerId > 0)
+	{
+		SavePlayerId(Profile.PlayerId);
+		if (GameInstance)
+		{
+			GameInstance->HandleLoginSuccess(FString::FromInt(Profile.PlayerId), Profile);
+			UE_LOG(LogPlayhouseCity, Log, TEXT("PHCAuthManager -- Fetched profile '%s' (ID %d), Coins: %d, Gems: %d"),
+				*Profile.Username, Profile.PlayerId, Profile.Coins, Profile.Gems);
+		}
+		BroadcastResult(true, FString());
+		return;
+	}
+
+	BroadcastResult(false, TEXT("Could not fetch player profile."));
+}
+
 void UPHCAuthManager::GuestLogin()
 {
 	if (!GameInstance)

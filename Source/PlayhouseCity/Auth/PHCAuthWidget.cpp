@@ -266,11 +266,27 @@ bool UPHCAuthWidget::Initialize()
 		}
 
 		// ---------------------------------------------------------------
-		// GuestButton — auto-login as Walker
+		// WalkerButton — sign in as Walker
+		// ---------------------------------------------------------------
+		WalkerButton = MakeButton(
+			Tree, Outer, FName("WalkerButton"),
+			TEXT("Sign in as Walker"),
+			FLinearColor(0.12f, 0.38f, 0.18f, 1.0f),  // green (shirt color)
+			FLinearColor::White);
+
+		FormBox->AddChild(WalkerButton);
+		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(WalkerButton->Slot))
+		{
+			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+		}
+
+		// ---------------------------------------------------------------
+		// GuestButton — continue as anonymous guest
 		// ---------------------------------------------------------------
 		GuestButton = MakeButton(
 			Tree, Outer, FName("GuestButton"),
-			TEXT("Sign in as Walker"),
+			TEXT("Continue as Guest"),
 			FLinearColor(0.15f, 0.15f, 0.15f, 1.0f),  // dark grey
 			FLinearColor(0.5f, 0.5f, 0.5f, 1.0f));     // grey text
 
@@ -316,6 +332,10 @@ void UPHCAuthWidget::NativeConstruct()
 	if (GuestButton)
 	{
 		GuestButton->OnClicked.AddDynamic(this, &UPHCAuthWidget::OnGuestClicked);
+	}
+	if (WalkerButton)
+	{
+		WalkerButton->OnClicked.AddDynamic(this, &UPHCAuthWidget::OnWalkerClicked);
 	}
 	if (ToggleButton)
 	{
@@ -471,15 +491,62 @@ void UPHCAuthWidget::OnRegisterClicked()
 
 void UPHCAuthWidget::OnGuestClicked()
 {
-	UPHCAuthManager* AuthManager = GetAuthManager();
-	if (!AuthManager)
+	UPHCGameInstance* GI = Cast<UPHCGameInstance>(GetGameInstance());
+	if (!GI)
 	{
-		ShowError(TEXT("Authentication system not available."));
+		ShowError(TEXT("Could not access game instance."));
 		return;
 	}
 
-	SetLoadingState(true);
-	AuthManager->Login(TEXT("tester1@example.com"), TEXT("PLACEHOLDER_PASSWORD"));
+	// Bypass backend auth — create a local guest profile.
+	FPHCPlayerProfile GuestProfile;
+	GuestProfile.Username = TEXT("Guest");
+	GuestProfile.DisplayName = TEXT("Guest");
+	GuestProfile.bIsGuest = true;
+
+	GI->HandleLoginSuccess(TEXT(""), GuestProfile);
+}
+
+void UPHCAuthWidget::OnWalkerClicked()
+{
+	// Try to auto-login with saved Apple credentials to fetch the real
+	// profile (coins, gems, level, etc.) from the backend.
+	UPHCAuthManager* Auth = GetAuthManager();
+	if (Auth)
+	{
+		if (Auth->AutoLoginWithApple())
+		{
+			// Backend request started — OnAuthResult will handle success/failure.
+			SetLoadingState(true);
+			return;
+		}
+	}
+
+	// No saved Apple credentials — try fetching profile by saved player ID.
+	if (Auth)
+	{
+		const int32 SavedId = Auth->LoadPlayerId();
+		if (SavedId > 0 && Auth->FetchProfileById(SavedId))
+		{
+			SetLoadingState(true);
+			return;
+		}
+	}
+
+	// Last resort: local Walker profile (no backend data available).
+	UPHCGameInstance* GI = Cast<UPHCGameInstance>(GetGameInstance());
+	if (!GI)
+	{
+		ShowError(TEXT("Could not access game instance."));
+		return;
+	}
+
+	FPHCPlayerProfile WalkerProfile;
+	WalkerProfile.Username = TEXT("Walker");
+	WalkerProfile.DisplayName = TEXT("Walker");
+	WalkerProfile.bIsGuest = false;
+
+	GI->HandleLoginSuccess(TEXT(""), WalkerProfile);
 }
 
 void UPHCAuthWidget::OnAppleSignInClicked()
@@ -600,6 +667,10 @@ void UPHCAuthWidget::SetLoadingState(bool bLoading)
 	if (GuestButton)
 	{
 		GuestButton->SetIsEnabled(!bLoading);
+	}
+	if (WalkerButton)
+	{
+		WalkerButton->SetIsEnabled(!bLoading);
 	}
 	if (ToggleButton)
 	{

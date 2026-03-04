@@ -46,6 +46,7 @@
 #include "Vehicle/PHCBlackbirdPawn.h"
 #include "Vehicle/PHCBlackHawkPawn.h"
 #include "Player/PHCCityCharacter.h"
+#include "Components/StaticMeshComponent.h"
 #include "Core/PHCCityGameMode.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
@@ -146,6 +147,46 @@ void APHCPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+void APHCPlayerController::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	APawn* CurrentPawn = GetPawn();
+
+	// -- Track vehicle position while driving --
+	// Move the hidden character to follow the vehicle every tick.  This way
+	// when the server Possess()es the character back, it's ALREADY at the
+	// vehicle's position — no need to set it after the fact.
+	if (bWasDrivingVehicle && CurrentPawn && !Cast<APHCCityCharacter>(CurrentPawn))
+	{
+		LastVehiclePosition = CurrentPawn->GetActorLocation();
+		if (SavedCharacterPawn)
+		{
+			SavedCharacterPawn->SetActorLocation(CurrentPawn->GetActorLocation());
+		}
+	}
+
+	// -- Detect vehicle→character pawn transition --
+	// When the server Possess()es our character back, the pawn changes from
+	// vehicle to character. Detect this and handle ALL exit logic locally,
+	// without relying on the ClientOnVehicleExited RPC (which may fail due
+	// to parameter mismatch with an older server build).
+	if (bWasDrivingVehicle && CurrentPawn && Cast<APHCCityCharacter>(CurrentPawn))
+	{
+		HandleLocalVehicleExit();
+	}
+
+	// -- Enforce exit position for several frames --
+	if (ExitTeleportFrames > 0)
+	{
+		if (CurrentPawn)
+		{
+			CurrentPawn->SetActorLocation(PendingExitLocation);
+		}
+		--ExitTeleportFrames;
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Screen management
 // ---------------------------------------------------------------------------
@@ -224,9 +265,14 @@ void APHCPlayerController::EnterWorldMode()
 
 	SetGameAndUIInputMode();
 
-	// Multiplayer auto-connect disabled for now — vehicles don't replicate yet,
-	// so single-player mode is needed for vehicle gameplay to work.
-	// TODO: Re-enable once vehicle pawns have bReplicates + SetReplicateMovement.
+	// Auto-connect to the dedicated server.
+	if (UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(this))
+	{
+		if (!GI->bInMultiplayerSession)
+		{
+			GI->JoinGame(TEXT("GAME_SERVER_IP"));
+		}
+	}
 }
 
 void APHCPlayerController::EnterMenuMode()
@@ -500,6 +546,7 @@ void APHCPlayerController::EnterNearestVehicle()
 	// Save character reference and hide it.
 	SavedCharacterPawn = Character;
 	CurrentVehicle = NearestPawn;
+	bWasDrivingVehicle = true;
 
 	// Remove character's mapping context.
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
@@ -586,10 +633,17 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 
 	// Save character reference on this machine (needed for exit flow).
 	SavedCharacterPawn = Character;
+	bWasDrivingVehicle = true;
 
 	if (!HasAuthority())
 	{
-		// Client: ask the server to spawn the vehicle.
+		// Client: immediately switch HUD to driving mode so controls appear.
+		// DrivenVehicle will be filled in by auto-detection when pawn changes.
+		if (UPHCCityHUD* CityHUD = Cast<UPHCCityHUD>(ActiveWidget))
+		{
+			CityHUD->bPendingVehicleEntry = true;
+			CityHUD->SetDrivingMode(true, nullptr);
+		}
 		ServerSpawnAndEnterVehicle(VehicleType);
 		return;
 	}
@@ -735,96 +789,114 @@ void APHCPlayerController::UnequipJetpack()
 
 void APHCPlayerController::OnVehicleExitRequested()
 {
-	if (!CurrentVehicle || !SavedCharacterPawn) return;
-
 	if (!HasAuthority())
 	{
+		// Client: LastVehiclePosition is already up-to-date from Tick().
+		// The server's vehicle position may be wrong (Unreliable input RPCs),
+		// but we'll use our stored position in ClientOnVehicleExited.
 		ServerExitVehicle();
 		return;
 	}
 
-	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCPlayerController::OnVehicleExitRequested -- Exiting vehicle."));
+	if (!CurrentVehicle || !SavedCharacterPawn) return;
 
-	// Access vehicle-specific members via cast.
-	FVector ExitLoc = CurrentVehicle->GetActorLocation() + FVector(0.f, -300.f, 100.f);
+	APawn* DrivenPawn = GetPawn();
+	if (!DrivenPawn) DrivenPawn = CurrentVehicle;
 
-	if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(CurrentVehicle))
-	{
-		ExitLoc = V->GetExitLocation();
-		V->bIsOccupied = false;
-		V->ThrottleInput = 0.f;
-		V->SteeringInput = 0.f;
-		V->CurrentSpeed = 0.f;
-		V->SetHeadlightsEnabled(false);
-	}
-	else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(CurrentVehicle))
-	{
-		ExitLoc = B->GetExitLocation();
-		B->bIsOccupied = false;
-		B->ThrottleInput = 0.f;
-		B->SteeringInput = 0.f;
-		B->CurrentSpeed = 0.f;
-		B->SetHeadlightsEnabled(false);
-	}
-	else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(CurrentVehicle))
-	{
-		ExitLoc = R->GetExitLocation();
-		R->bIsOccupied = false;
-		R->ThrottleInput = 0.f;
-		R->SteeringInput = 0.f;
-		R->PitchInput = 0.f;
-		R->CurrentSpeed = 0.f;
-	}
-	else if (APHCTankPawn* T = Cast<APHCTankPawn>(CurrentVehicle))
-	{
-		ExitLoc = T->GetExitLocation();
-		T->bIsOccupied = false;
-		T->ThrottleInput = 0.f;
-		T->SteeringInput = 0.f;
-		T->CurrentSpeed = 0.f;
-		T->SetHeadlightsEnabled(false);
-	}
-	else if (APHCDirtBikePawn* DB = Cast<APHCDirtBikePawn>(CurrentVehicle))
-	{
-		ExitLoc = DB->GetExitLocation();
-		DB->bIsOccupied = false;
-		DB->ThrottleInput = 0.f;
-		DB->SteeringInput = 0.f;
-		DB->CurrentSpeed = 0.f;
-		DB->SetHeadlightsEnabled(false);
-		// Detach the visible rider character from the bike.
-		SavedCharacterPawn->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-	}
-	else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(CurrentVehicle))
-	{
-		ExitLoc = BB->GetExitLocation();
-		BB->bIsOccupied = false;
-		BB->ThrottleInput = 0.f;
-		BB->SteeringInput = 0.f;
-		BB->PitchInput = 0.f;
-		BB->CurrentSpeed = 0.f;
-	}
-	else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(CurrentVehicle))
-	{
-		ExitLoc = BH->GetExitLocation();
-		BH->bIsOccupied = false;
-		BH->ThrottleInput = 0.f;
-		BH->SteeringInput = 0.f;
-		BH->PitchInput = 0.f;
-		BH->CurrentSpeed = 0.f;
-	}
+	// Prefer LastVehiclePosition (updated every tick from client-side prediction)
+	// over GetActorLocation() which may be stale on the server.
+	FVector VehicleLoc = (!LastVehiclePosition.IsZero())
+		? LastVehiclePosition
+		: DrivenPawn->GetActorLocation();
 
-	// Unpossess vehicle, repossess character (server authority).
-	UnPossess();
-	Possess(SavedCharacterPawn);
+	UE_LOG(LogPlayhouseCity, Log, TEXT("OnVehicleExitRequested -- VehicleLoc=%s (LastVehicle=%s, DrivenPawn=%s)"),
+		*VehicleLoc.ToString(), *LastVehiclePosition.ToString(),
+		*DrivenPawn->GetActorLocation().ToString());
+
+	FVector ExitLoc = VehicleLoc + FVector(0.f, -300.f, 100.f);
+
+	// Helper: clear vehicle state on whichever reference is valid.
+	auto ClearVehicleState = [&](APawn* VPawn)
+	{
+		if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(VPawn))
+		{
+			V->bIsOccupied = false;
+			V->ThrottleInput = 0.f;
+			V->SteeringInput = 0.f;
+			V->CurrentSpeed = 0.f;
+			V->SetHeadlightsEnabled(false);
+		}
+		else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(VPawn))
+		{
+			B->bIsOccupied = false;
+			B->ThrottleInput = 0.f;
+			B->SteeringInput = 0.f;
+			B->CurrentSpeed = 0.f;
+			B->SetHeadlightsEnabled(false);
+		}
+		else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(VPawn))
+		{
+			R->bIsOccupied = false;
+			R->ThrottleInput = 0.f;
+			R->SteeringInput = 0.f;
+			R->PitchInput = 0.f;
+			R->CurrentSpeed = 0.f;
+		}
+		else if (APHCTankPawn* T = Cast<APHCTankPawn>(VPawn))
+		{
+			T->bIsOccupied = false;
+			T->ThrottleInput = 0.f;
+			T->SteeringInput = 0.f;
+			T->CurrentSpeed = 0.f;
+			T->SetHeadlightsEnabled(false);
+		}
+		else if (APHCDirtBikePawn* DB = Cast<APHCDirtBikePawn>(VPawn))
+		{
+			DB->bIsOccupied = false;
+			DB->ThrottleInput = 0.f;
+			DB->SteeringInput = 0.f;
+			DB->CurrentSpeed = 0.f;
+			DB->SetHeadlightsEnabled(false);
+			SavedCharacterPawn->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		}
+		else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(VPawn))
+		{
+			BB->bIsOccupied = false;
+			BB->ThrottleInput = 0.f;
+			BB->SteeringInput = 0.f;
+			BB->PitchInput = 0.f;
+			BB->CurrentSpeed = 0.f;
+		}
+		else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(VPawn))
+		{
+			BH->bIsOccupied = false;
+			BH->ThrottleInput = 0.f;
+			BH->SteeringInput = 0.f;
+			BH->PitchInput = 0.f;
+			BH->CurrentSpeed = 0.f;
+		}
+	};
+
+	// Clear state on both references (they may be the same or different pawns).
+	ClearVehicleState(DrivenPawn);
+	if (CurrentVehicle != DrivenPawn)
+		ClearVehicleState(CurrentVehicle);
+
+	// Move character to exit location BEFORE repossessing — Possess() snapshots
+	// the pawn's position for replication, so it must already be at ExitLoc.
 	SavedCharacterPawn->SetActorLocation(ExitLoc);
 	SavedCharacterPawn->SetActorHiddenInGame(false);
 	SavedCharacterPawn->SetActorEnableCollision(true);
 
-	// Tell owning client to update HUD.
-	ClientOnVehicleExited();
+	// Unpossess vehicle, repossess character (server authority).
+	UnPossess();
+	Possess(SavedCharacterPawn);
+
+	// Tell owning client to update HUD and set character position.
+	ClientOnVehicleExited(ExitLoc);
 
 	CurrentVehicle = nullptr;
+	LastVehiclePosition = FVector::ZeroVector;
 }
 
 void APHCPlayerController::ServerSpawnAndEnterVehicle_Implementation(int32 VehicleType)
@@ -847,6 +919,20 @@ void APHCPlayerController::ClientOnVehicleEntered_Implementation(APawn* NewVehic
 				Subsystem->RemoveMappingContext(SavedCharacterPawn->DefaultMappingContext);
 			}
 		}
+
+		// Disable character collision on client (server already does this, but it doesn't replicate).
+		SavedCharacterPawn->SetActorEnableCollision(false);
+
+		// Dirt bike: make character body visible as rider (even in first person).
+		if (Cast<APHCDirtBikePawn>(NewVehicle))
+		{
+			TArray<UStaticMeshComponent*> Meshes;
+			SavedCharacterPawn->GetComponents<UStaticMeshComponent>(Meshes);
+			for (UStaticMeshComponent* M : Meshes)
+			{
+				if (M) M->SetVisibility(true);
+			}
+		}
 	}
 
 	if (UPHCCityHUD* CityHUD = Cast<UPHCCityHUD>(ActiveWidget))
@@ -862,53 +948,124 @@ void APHCPlayerController::ServerExitVehicle_Implementation()
 	OnVehicleExitRequested();
 }
 
-void APHCPlayerController::ClientOnVehicleExited_Implementation()
+void APHCPlayerController::ServerSetVehicleInput_Implementation(float Throttle, float Steering, float Pitch)
 {
-	// Local: restore character input context, switch HUD.
-	UInputMappingContext* VehicleMC = nullptr;
-
-	if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(CurrentVehicle))
+	APawn* P = GetPawn();
+	if (!P)
 	{
-		VehicleMC = V->VehicleMappingContext;
+		UE_LOG(LogPlayhouseCity, Warning, TEXT("ServerSetVehicleInput: GetPawn() is NULL!"));
+		return;
 	}
-	else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(CurrentVehicle))
+	if (FMath::Abs(Throttle) > 0.01f)
 	{
-		VehicleMC = B->VehicleMappingContext;
-	}
-	else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(CurrentVehicle))
-	{
-		VehicleMC = R->VehicleMappingContext;
-	}
-	else if (APHCTankPawn* T = Cast<APHCTankPawn>(CurrentVehicle))
-	{
-		VehicleMC = T->VehicleMappingContext;
-	}
-	else if (APHCDirtBikePawn* DB = Cast<APHCDirtBikePawn>(CurrentVehicle))
-	{
-		VehicleMC = DB->VehicleMappingContext;
-	}
-	else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(CurrentVehicle))
-	{
-		VehicleMC = BB->VehicleMappingContext;
-	}
-	else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(CurrentVehicle))
-	{
-		VehicleMC = BH->VehicleMappingContext;
+		UE_LOG(LogPlayhouseCity, Log, TEXT("ServerSetVehicleInput: T=%.2f S=%.2f Pawn=%s"), Throttle, Steering, *P->GetClass()->GetName());
 	}
 
+	if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(P))
+	{
+		V->ThrottleInput = Throttle;
+		V->SteeringInput = Steering;
+	}
+	else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(P))
+	{
+		B->ThrottleInput = Throttle;
+		B->SteeringInput = Steering;
+	}
+	else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(P))
+	{
+		R->ThrottleInput = Throttle;
+		R->SteeringInput = Steering;
+		R->PitchInput = Pitch;
+	}
+	else if (APHCTankPawn* T = Cast<APHCTankPawn>(P))
+	{
+		T->ThrottleInput = Throttle;
+		T->SteeringInput = Steering;
+		T->TurretYawInput = Pitch;
+	}
+	else if (APHCDirtBikePawn* DB = Cast<APHCDirtBikePawn>(P))
+	{
+		DB->ThrottleInput = Throttle;
+		DB->SteeringInput = Steering;
+	}
+	else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(P))
+	{
+		BB->ThrottleInput = Throttle;
+		BB->SteeringInput = Steering;
+		BB->PitchInput = Pitch;
+	}
+	else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(P))
+	{
+		BH->ThrottleInput = Throttle;
+		BH->SteeringInput = Steering;
+		BH->PitchInput = Pitch;
+	}
+}
+
+void APHCPlayerController::HandleLocalVehicleExit()
+{
+	// This runs on the CLIENT when Tick detects the pawn changed from vehicle
+	// back to character.  It handles ALL exit cleanup without relying on the
+	// ClientOnVehicleExited RPC (which may not fire if the server has a
+	// different RPC signature).
+
+	bWasDrivingVehicle = false;
+
+	// Compute exit location from the last known vehicle position.
+	FVector ExitLoc = FVector::ZeroVector;
+	if (!LastVehiclePosition.IsZero())
+	{
+		ExitLoc = LastVehiclePosition + FVector(0.f, -300.f, 100.f);
+	}
+
+	APHCCityCharacter* Character = Cast<APHCCityCharacter>(GetPawn());
+
+	// Set character position and make visible.
+	if (Character && !ExitLoc.IsZero())
+	{
+		Character->SetActorLocation(ExitLoc);
+		Character->SetActorHiddenInGame(false);
+		Character->SetActorEnableCollision(true);
+
+		// Enforce position for ~60 frames (~1 second) to override server
+		// replication until ServerUpdateMovement corrects the server.
+		PendingExitLocation = ExitLoc;
+		ExitTeleportFrames = 60;
+	}
+
+	// Swap input contexts: remove vehicle, add character.
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
 			ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
 	{
-		if (VehicleMC)
+		// Try to remove whichever vehicle mapping context is active.
+		auto TryRemoveVehicleMC = [&](APawn* VPawn)
 		{
-			Subsystem->RemoveMappingContext(VehicleMC);
-		}
-		if (SavedCharacterPawn && SavedCharacterPawn->DefaultMappingContext)
+			UInputMappingContext* MC = nullptr;
+			if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(VPawn)) MC = V->VehicleMappingContext;
+			else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(VPawn)) MC = B->VehicleMappingContext;
+			else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(VPawn)) MC = R->VehicleMappingContext;
+			else if (APHCTankPawn* T = Cast<APHCTankPawn>(VPawn)) MC = T->VehicleMappingContext;
+			else if (APHCDirtBikePawn* DB = Cast<APHCDirtBikePawn>(VPawn)) MC = DB->VehicleMappingContext;
+			else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(VPawn)) MC = BB->VehicleMappingContext;
+			else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(VPawn)) MC = BH->VehicleMappingContext;
+			if (MC) Subsystem->RemoveMappingContext(MC);
+		};
+		if (CurrentVehicle) TryRemoveVehicleMC(CurrentVehicle);
+
+		// Restore character input.
+		if (Character && Character->DefaultMappingContext)
 		{
-			Subsystem->AddMappingContext(SavedCharacterPawn->DefaultMappingContext, 0);
+			Subsystem->AddMappingContext(Character->DefaultMappingContext, 0);
 		}
 	}
 
+	// Dirt bike: re-apply first person if needed.
+	if (Cast<APHCDirtBikePawn>(CurrentVehicle) && Character && Character->bFirstPersonMode)
+	{
+		Character->SetFirstPersonMode(true);
+	}
+
+	// Switch HUD back to walking mode.
 	if (UPHCCityHUD* CityHUD = Cast<UPHCCityHUD>(ActiveWidget))
 	{
 		CityHUD->SetDrivingMode(false, nullptr);
@@ -916,6 +1073,17 @@ void APHCPlayerController::ClientOnVehicleExited_Implementation()
 
 	SetGameAndUIInputMode();
 	CurrentVehicle = nullptr;
+	LastVehiclePosition = FVector::ZeroVector;
+}
+
+void APHCPlayerController::ClientOnVehicleExited_Implementation(FVector ExitLocation)
+{
+	// If HandleLocalVehicleExit already ran (from Tick-based detection),
+	// skip — everything is already handled.
+	if (!bWasDrivingVehicle) return;
+
+	// Otherwise run the same exit logic.
+	HandleLocalVehicleExit();
 }
 
 // ---------------------------------------------------------------------------

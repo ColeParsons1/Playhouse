@@ -2034,6 +2034,33 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		const float ScreenHalfX = VPWidth * 0.5f;
 		const float ScreenHalfY = VPHeight * 0.5f;
 
+		// Auto-detect vehicle possession (fallback if Client RPC timing is off).
+		APawn* CurrentPawn = PC->GetPawn();
+		const bool bPawnIsVehicle = CurrentPawn && !Cast<APHCCityCharacter>(CurrentPawn);
+
+		if (bPawnIsVehicle)
+		{
+			if (!bDrivingMode)
+			{
+				SetDrivingMode(true, CurrentPawn);
+			}
+			else if (DrivenVehicle != CurrentPawn)
+			{
+				DrivenVehicle = CurrentPawn;
+			}
+			// Vehicle found — clear pending flag.
+			bPendingVehicleEntry = false;
+		}
+		else if (bDrivingMode && !bPendingVehicleEntry && CurrentPawn && Cast<APHCCityCharacter>(CurrentPawn))
+		{
+			// Pawn is back to character — auto-exit driving mode.
+			SetDrivingMode(false, nullptr);
+		}
+
+		float DebugThrottle = 0.f;
+		float DebugSteering = 0.f;
+		int32 DebugTouchCount = 0;
+
 		if (bDrivingMode && DrivenVehicle)
 		{
 			// ---- DRIVING TOUCH INPUT (unchanged) ----
@@ -2078,52 +2105,55 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 				}
 			}
 
+			// Set input locally on the vehicle pawn for client-side prediction,
+			// and relay to server via PlayerController RPC.
 			if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(DrivenVehicle))
 			{
 				V->SteeringInput = NewSteering;
 				V->ThrottleInput = NewThrottle;
-				if (!V->HasAuthority()) { V->ServerSetSteering(NewSteering); V->ServerSetThrottle(NewThrottle); }
 			}
 			else if (APHCDuneBuggyPawn* B = Cast<APHCDuneBuggyPawn>(DrivenVehicle))
 			{
 				B->SteeringInput = NewSteering;
 				B->ThrottleInput = NewThrottle;
-				if (!B->HasAuthority()) { B->ServerSetSteering(NewSteering); B->ServerSetThrottle(NewThrottle); }
 			}
 			else if (APHCRaptorPawn* R = Cast<APHCRaptorPawn>(DrivenVehicle))
 			{
 				R->SteeringInput = NewSteering;
 				R->ThrottleInput = NewThrottle;
 				R->PitchInput = NewPitch;
-				if (!R->HasAuthority()) { R->ServerSetSteering(NewSteering); R->ServerSetThrottle(NewThrottle); R->ServerSetPitch(NewPitch); }
 			}
 			else if (APHCTankPawn* T = Cast<APHCTankPawn>(DrivenVehicle))
 			{
 				T->SteeringInput = NewSteering;
 				T->ThrottleInput = NewThrottle;
-				// Use pitch axis (left panel vertical) for turret rotation
 				T->TurretYawInput = NewPitch;
-				if (!T->HasAuthority()) { T->ServerSetSteering(NewSteering); T->ServerSetThrottle(NewThrottle); T->ServerSetTurretYaw(NewPitch); }
 			}
 			else if (APHCDirtBikePawn* DB = Cast<APHCDirtBikePawn>(DrivenVehicle))
 			{
 				DB->SteeringInput = NewSteering;
 				DB->ThrottleInput = NewThrottle;
-				if (!DB->HasAuthority()) { DB->ServerSetSteering(NewSteering); DB->ServerSetThrottle(NewThrottle); }
 			}
 			else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(DrivenVehicle))
 			{
 				BB->SteeringInput = NewSteering;
 				BB->ThrottleInput = NewThrottle;
 				BB->PitchInput = NewPitch;
-				if (!BB->HasAuthority()) { BB->ServerSetSteering(NewSteering); BB->ServerSetThrottle(NewThrottle); BB->ServerSetPitch(NewPitch); }
 			}
 			else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(DrivenVehicle))
 			{
 				BH->SteeringInput = NewSteering;
 				BH->ThrottleInput = NewThrottle;
 				BH->PitchInput = NewPitch;
-				if (!BH->HasAuthority()) { BH->ServerSetSteering(NewSteering); BH->ServerSetThrottle(NewThrottle); BH->ServerSetPitch(NewPitch); }
+			}
+
+			// Also relay to server for authoritative processing.
+			if (APHCPlayerController* PHC_PC = Cast<APHCPlayerController>(PC))
+			{
+				if (!PHC_PC->HasAuthority())
+				{
+					PHC_PC->ServerSetVehicleInput(NewThrottle, NewSteering, NewPitch);
+				}
 			}
 
 			if (bFireTouched)
@@ -2134,6 +2164,9 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 				else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(DrivenVehicle)) { BB->FireRocket(); }
 				else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(DrivenVehicle)) { BH->FireRocket(); }
 			}
+
+			DebugThrottle = NewThrottle;
+			DebugSteering = NewSteering;
 		}
 		else
 		{
@@ -2266,6 +2299,24 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 				}
 			}
 			bEnterTouchActive = bEnterTouched;
+		}
+		// DEBUG: show driving input values + vehicle position (temporary).
+		if (LocationText)
+		{
+			FString LocStr;
+			if (bDrivingMode && CurrentPawn)
+			{
+				FVector Pos = CurrentPawn->GetActorLocation();
+				LocStr = FString::Printf(TEXT("T:%.1f S:%.1f Pos:%.0f,%.0f,%.0f"),
+					DebugThrottle, DebugSteering, Pos.X, Pos.Y, Pos.Z);
+			}
+			else if (CurrentPawn)
+			{
+				FVector Pos = CurrentPawn->GetActorLocation();
+				LocStr = FString::Printf(TEXT("Char:%.0f,%.0f,%.0f"),
+					Pos.X, Pos.Y, Pos.Z);
+			}
+			LocationText->SetText(FText::FromString(LocStr));
 		}
 	} while (false);
 #endif
@@ -2428,9 +2479,14 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 	}
 
 	// Toggle driving controls.
-	if (SteeringPanel) { SteeringPanel->SetVisibility(DriveVis); }
-	if (GasPedalPanel) { GasPedalPanel->SetVisibility(DriveVis); }
-	if (BrakePedalPanel) { BrakePedalPanel->SetVisibility(DriveVis); }
+	// Use SelfHitTestInvisible for info panels so touches pass through to
+	// GetInputTouchState (same approach as walking panels above).
+	{
+		const ESlateVisibility DrivePanelVis = bDriving ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed;
+		if (SteeringPanel) { SteeringPanel->SetVisibility(DrivePanelVis); }
+		if (GasPedalPanel) { GasPedalPanel->SetVisibility(DrivePanelVis); }
+		if (BrakePedalPanel) { BrakePedalPanel->SetVisibility(DrivePanelVis); }
+	}
 	if (ExitVehicleButton) { ExitVehicleButton->SetVisibility(DriveVis); }
 
 	// Reset walking touch state.
@@ -2633,7 +2689,6 @@ void UPHCCityHUD::OnSelectAventador()
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
 		PC->SpawnAndEnterVehicle(0);
-		SetDrivingMode(true, PC->GetPawn());
 	}
 }
 
@@ -2643,7 +2698,6 @@ void UPHCCityHUD::OnSelectBuggy()
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
 		PC->SpawnAndEnterVehicle(1);
-		SetDrivingMode(true, PC->GetPawn());
 	}
 }
 
@@ -2653,7 +2707,6 @@ void UPHCCityHUD::OnSelectRaptor()
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
 		PC->SpawnAndEnterVehicle(2);
-		SetDrivingMode(true, PC->GetPawn());
 	}
 }
 
@@ -2677,7 +2730,6 @@ void UPHCCityHUD::OnSelectTank()
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
 		PC->SpawnAndEnterVehicle(3);
-		SetDrivingMode(true, PC->GetPawn());
 	}
 }
 
@@ -2687,7 +2739,6 @@ void UPHCCityHUD::OnSelectDirtBike()
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
 		PC->SpawnAndEnterVehicle(4);
-		SetDrivingMode(true, PC->GetPawn());
 	}
 }
 
@@ -2697,7 +2748,6 @@ void UPHCCityHUD::OnSelectBlackHawk()
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
 		PC->SpawnAndEnterVehicle(5);
-		SetDrivingMode(true, PC->GetPawn());
 	}
 }
 
@@ -2728,7 +2778,6 @@ void UPHCCityHUD::OnExitVehicleClicked()
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
 		PC->OnVehicleExitRequested();
-		SetDrivingMode(false, PC->GetPawn());
 	}
 }
 

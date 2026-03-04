@@ -646,22 +646,10 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		}
 	}
 
-	// ---- NPC player characters (always visible, wander, damageable) ----
+	// ---- NPC player characters — REMOVED (real players only) ----
+	if (false)
 	{
-		// Ensure all NPCs are visible (they have cyan underglow for night)
-		if (!bNPCPlayersVisible)
-		{
-			bNPCPlayersVisible = true;
-			for (int32 NI = 0; NI < NumNPCPlayers; ++NI)
-			{
-				FNPCPlayerData& NP = NPCPlayers[NI];
-				if (!NP.Actor) continue;
-				NP.Actor->SetActorHiddenInGame(false);
-				NP.bVisible = true;
-			}
-		}
-
-		if (bNPCPlayersVisible)
+		if (false)
 		{
 			// Animation constants (same as PHCCityCharacter)
 			constexpr float ShPivZ = 54.f, HipPivZ = 2.f;
@@ -1191,29 +1179,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 				}
 			}
 
-			// NPC player proximity damage from projectiles
-			if (Proj && IsValid(Proj))
-			{
-				for (int32 NI = 0; NI < NumNPCPlayers; ++NI)
-				{
-					if (!NPCPlayers[NI].Actor || !NPCPlayers[NI].bVisible) continue;
-					const FVector NLoc = NPCPlayers[NI].Actor->GetActorLocation();
-					if (FVector::Dist2D(PLoc, NLoc) < HitRadius)
-					{
-						NPCPlayers[NI].Health -= BulletDamage;
-						NPCPlayers[NI].DamageFlashTimer = 0.2f;
-
-						if (NPCPlayers[NI].Health <= 0.f)
-						{
-							Proj->SpawnExplosion(NLoc);
-							RespawnNPCPlayer(NI);
-						}
-
-						Proj->Destroy();
-						break;
-					}
-				}
-			}
+			// NPC player proximity damage — removed (no more NPC players)
 		}
 
 		// --- Crab contact damage to player ---
@@ -2389,7 +2355,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnGoldCoins();
 	SpawnGrassSystem();
 	SpawnNPCHelicopter();
-	SpawnNPCPlayers();
+	// SpawnNPCPlayers(); // Removed — real players only
 }
 
 // ---------------------------------------------------------------------------
@@ -9186,6 +9152,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 	if (!World || !SphereMesh || !CubeMesh || !CylinderMesh || !ConeMesh) return;
 
 	int32 CompIdx = 0;
+	bool bIcePeak = false; // set per-peak; lambdas capture by ref
 
 	// ================================================================
 	// Mesh helpers
@@ -9209,7 +9176,17 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		ApplyPBR(MC, Col, Metal, Rough);
+		if (bIcePeak)
+		{
+			float B = (Col.R + Col.G + Col.B) / 3.f;
+			FLinearColor IceCol(0.6f + B * 0.3f, 0.75f + B * 0.2f, 0.9f + B * 0.08f);
+			ApplyPBRGlass(MC, GlassMaterial, IceCol, 0.65f, 0.15f, 0.04f,
+				FLinearColor(0.03f, 0.12f, 0.30f));
+		}
+		else
+		{
+			ApplyPBR(MC, Col, Metal, Rough);
+		}
 		O->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -9233,7 +9210,17 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		ApplyPBR(MC, Col, Metal, Rough);
+		if (bIcePeak)
+		{
+			float B = (Col.R + Col.G + Col.B) / 3.f;
+			FLinearColor IceCol(0.6f + B * 0.3f, 0.75f + B * 0.2f, 0.9f + B * 0.08f);
+			ApplyPBRGlass(MC, GlassMaterial, IceCol, 0.65f, 0.15f, 0.04f,
+				FLinearColor(0.03f, 0.12f, 0.30f));
+		}
+		else
+		{
+			ApplyPBR(MC, Col, Metal, Rough);
+		}
 		O->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -9257,7 +9244,17 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		ApplyPBR(MC, Col, Metal, Rough);
+		if (bIcePeak)
+		{
+			float B = (Col.R + Col.G + Col.B) / 3.f;
+			FLinearColor IceCol(0.6f + B * 0.3f, 0.75f + B * 0.2f, 0.9f + B * 0.08f);
+			ApplyPBRGlass(MC, GlassMaterial, IceCol, 0.65f, 0.15f, 0.04f,
+				FLinearColor(0.03f, 0.12f, 0.30f));
+		}
+		else
+		{
+			ApplyPBR(MC, Col, Metal, Rough);
+		}
 		O->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -9362,6 +9359,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		const float RY = PD.RadY;
 
 		const bool bVolcanic = (P >= VolcanoStartIdx && P <= VolcanoEndIdx);
+		bIcePeak = !bVolcanic; // all northern peaks (0-22) are glacier ice
 
 		// Per-peak color jitter
 		const float CJ = CityRandom.FRandRange(-0.03f, 0.03f);

@@ -981,6 +981,13 @@ void APHCRaptorPawn::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(APHCRaptorPawn, bIsOccupied);
 }
 
-void APHCRaptorPawn::ServerSetThrottle_Implementation(float Value) { ThrottleInput = Value; }
+void APHCRaptorPawn::ServerSetThrottle_Implementation(float Value)
+{
+	ThrottleInput = Value;
+	if (FMath::Abs(Value) > 0.01f)
+	{
+		UE_LOG(LogPlayhouseCity, Log, TEXT("Raptor ServerSetThrottle: %.2f Speed=%.1f Occupied=%d"), Value, CurrentSpeed, bIsOccupied ? 1 : 0);
+	}
+}
 void APHCRaptorPawn::ServerSetSteering_Implementation(float Value) { SteeringInput = Value; }
 void APHCRaptorPawn::ServerSetPitch_Implementation(float Value) { PitchInput = Value; }

@@ -26,6 +26,9 @@ APHCTankPawn::APHCTankPawn()
 	PrimaryActorTick.bCanEverTick = true;
 	bReplicates = true;
 	SetReplicateMovement(true);
+	NetUpdateFrequency = 30.f;
+	MinNetUpdateFrequency = 15.f;
+	bAlwaysRelevant = true;
 
 	// ---- Root collision ----
 	VehicleCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("VehicleCollision"));

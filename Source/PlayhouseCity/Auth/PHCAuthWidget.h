@@ -81,6 +81,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UButton> GuestButton;
 
+	/** Sign in as Walker (backend auth with stored credentials). */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UButton> WalkerButton;
+
 	/** Sign In with Apple button. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UButton> AppleSignInButton;
@@ -117,6 +121,9 @@ protected:
 
 	UFUNCTION()
 	void OnGuestClicked();
+
+	UFUNCTION()
+	void OnWalkerClicked();
 
 	UFUNCTION()
 	void OnAppleSignInClicked();

@@ -77,6 +77,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "PHC|Auth")
 	void Register(const FString& Username, const FString& Email, const FString& Password);
 
+	/** Fetch a player profile by saved player ID. Returns true if attempt was started. */
+	UFUNCTION(BlueprintCallable, Category = "PHC|Auth")
+	bool FetchProfileById(int32 PlayerId);
+
 	/** Anonymous / guest session -- creates a local-only profile. */
 	UFUNCTION(BlueprintCallable, Category = "PHC|Auth")
 	void GuestLogin();
@@ -113,6 +117,9 @@ private:
 
 	/** Handler for Apple Sign In backend response -- also persists Apple user ID. */
 	void HandleAppleAuthResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bConnectedSuccessfully);
+
+	/** Handler for FetchProfileById GET response. */
+	void HandleFetchProfileResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bConnectedSuccessfully);
 
 	/** Parse the player object from a JSON response and apply login. */
 	bool ParseAndApplyPlayer(const TSharedPtr<class FJsonObject>& JsonObject);

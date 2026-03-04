@@ -819,6 +819,10 @@ void APHCVehiclePawn::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 void APHCVehiclePawn::ServerSetThrottle_Implementation(float Value)
 {
 	ThrottleInput = Value;
+	if (FMath::Abs(Value) > 0.01f)
+	{
+		UE_LOG(LogPlayhouseCity, Log, TEXT("Aventador ServerSetThrottle: %.2f Speed=%.1f Occupied=%d"), Value, CurrentSpeed, bIsOccupied ? 1 : 0);
+	}
 }
 
 void APHCVehiclePawn::ServerSetSteering_Implementation(float Value)

@@ -24,6 +24,9 @@
 #include "Net/UnrealNetwork.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Components/TextRenderComponent.h"
+#include "GameFramework/PlayerState.h"
+#include "Player/PHCPlayerState.h"
 
 // ---------------------------------------------------------------------------
 // Constructor — Fortnite-quality character from basic shapes
@@ -491,6 +494,7 @@ void APHCCityCharacter::BeginPlay()
 			MID->SetScalarParameterValue(TEXT("Roughness"), Roughness);
 			MID->SetScalarParameterValue(TEXT("Metallic"), Metallic);
 			Comp->SetMaterial(0, MID);
+			BodyMIDs.Add(MID);
 		}
 	};
 
@@ -513,6 +517,7 @@ void APHCCityCharacter::BeginPlay()
 			MID->SetVectorParameterValue(TEXT("EmissiveColor"),
 				FLinearColor(0.012f, 0.006f, 0.003f));
 			Comp->SetMaterial(0, MID);
+			BodyMIDs.Add(MID);
 		}
 	};
 
@@ -664,6 +669,36 @@ void APHCCityCharacter::BeginPlay()
 	// Mark as grounded immediately — ground plane has no collision.
 	bHasBeenGrounded = true;
 
+	// ---- 5% taller ----
+	SetActorScale3D(FVector(1.05f));
+
+	// ---- Cyan underglow (visible to other players, helps spot each other) ----
+	{
+		UPointLightComponent* GlowLight = NewObject<UPointLightComponent>(this, TEXT("CyanUnderglow"));
+		GlowLight->SetupAttachment(RootComponent);
+		GlowLight->SetRelativeLocation(FVector(0.f, 0.f, -85.f));
+		GlowLight->SetLightColor(FLinearColor(0.f, 1.f, 1.f));
+		GlowLight->SetIntensity(8000.f);
+		GlowLight->SetAttenuationRadius(600.f);
+		GlowLight->SetCastShadows(false);
+		GlowLight->MaxDrawDistance = 15000.f;
+		GlowLight->RegisterComponent();
+	}
+
+	// ---- Floating player name above head ----
+	{
+		NameTextComp = NewObject<UTextRenderComponent>(this, TEXT("PlayerNameText"));
+		NameTextComp->SetupAttachment(RootComponent);
+		NameTextComp->SetRelativeLocation(FVector(0.f, 0.f, 110.f));
+		NameTextComp->SetHorizontalAlignment(EHTA_Center);
+		NameTextComp->SetVerticalAlignment(EVRTA_TextBottom);
+		NameTextComp->SetWorldSize(18.f);
+		NameTextComp->SetTextRenderColor(FColor::White);
+		NameTextComp->SetText(FText::GetEmpty());
+		NameTextComp->RegisterComponent();
+		bNameTextSet = false;
+	}
+
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCityCharacter::BeginPlay -- Pawn at %s"),
 		*GetActorLocation().ToString());
 }
@@ -680,6 +715,22 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	// movement and ground-following — the vehicle handles positioning.
 	if (GetAttachParentActor() != nullptr)
 		return;
+
+	// ---- Floating name: set from PlayerState profile once available ------
+	if (!bNameTextSet && NameTextComp)
+	{
+		if (APHCPlayerState* PS = GetPlayerState<APHCPlayerState>())
+		{
+			const FPHCPlayerProfile& Prof = PS->GetPlayerProfile();
+			if (Prof.PlayerId > 0 || Prof.bIsGuest)
+			{
+				FString Name = Prof.bIsGuest ? TEXT("Guest") : Prof.Username;
+				if (Name.IsEmpty()) Name = TEXT("Guest");
+				NameTextComp->SetText(FText::FromString(Name));
+				bNameTextSet = true;
+			}
+		}
+	}
 
 	// ---- ADS interpolation + FOV (COD-style) ----------------------------
 	if (bFirstPersonMode)
@@ -1681,6 +1732,36 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		// ---- Hit marker timer decay ----
 		if (HitMarkerTimer > 0.f) HitMarkerTimer -= DeltaTime;
 	}
+
+	// =====================================================================
+	//  PvP damage flash — red emissive on body meshes (visible to all clients)
+	// =====================================================================
+	if (PvPDamageFlashTimer > 0.f)
+	{
+		PvPDamageFlashTimer -= DeltaTime;
+		const FLinearColor FlashColor = PvPDamageFlashTimer > 0.f
+			? FLinearColor(4.f, 0.f, 0.f) : FLinearColor::Black;
+		for (UMaterialInstanceDynamic* MID : BodyMIDs)
+		{
+			if (MID) MID->SetVectorParameterValue(TEXT("EmissiveColor"), FlashColor);
+		}
+	}
+
+	// =====================================================================
+	//  Network: send position/rotation to server so other clients see us move.
+	//  Only the autonomous proxy (owning client on a dedicated server) needs
+	//  to do this — the server then updates the authoritative actor, which
+	//  replicates to all simulated proxies via SetReplicateMovement(true).
+	// =====================================================================
+	if (IsLocallyControlled() && !HasAuthority())
+	{
+		NetMoveSendTimer -= DeltaTime;
+		if (NetMoveSendTimer <= 0.f)
+		{
+			NetMoveSendTimer = 1.f / 15.f;  // 15 Hz
+			ServerUpdateMovement(GetActorLocation(), GetActorRotation());
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1868,6 +1949,18 @@ void APHCCityCharacter::FireWeapon()
 			}
 		}
 
+		// Check player character hit (PvP)
+		if (bHit && HitResult.GetActor() && HitResult.GetActor() != this)
+		{
+			APHCCityCharacter* HitPlayer = Cast<APHCCityCharacter>(HitResult.GetActor());
+			if (HitPlayer)
+			{
+				const float BulletDmg = (CurrentWeaponType == 5) ? 12.f : 8.f;
+				ServerInflictDamage(HitPlayer, BulletDmg);
+				HitMarkerTimer = 0.25f;
+			}
+		}
+
 		// Check NPC player hit
 		if (bHit && HitResult.GetActor() && HitResult.GetActor()->ActorHasTag(FName("NPCPlayer")))
 		{
@@ -1999,6 +2092,23 @@ void APHCCityCharacter::FireWeapon()
 			break; // Hit one crab per swing
 		}
 
+		// Sword vs other players (PvP)
+		for (TActorIterator<APHCCityCharacter> PIt(World); PIt; ++PIt)
+		{
+			APHCCityCharacter* Other = *PIt;
+			if (!Other || Other == this || Other->IsHidden()) continue;
+
+			const FVector PLoc = Other->GetActorLocation();
+			if (FVector::Dist2D(MyLoc, PLoc) > SwingRange) continue;
+
+			const FVector ToP = (PLoc - MyLoc).GetSafeNormal2D();
+			if (FVector::DotProduct(Forward.GetSafeNormal2D(), ToP) < -0.2f) continue;
+
+			ServerInflictDamage(Other, SwordDamage);
+			HitMarkerTimer = 0.25f;
+			break;
+		}
+
 		// Sword vs NPC players
 		for (TActorIterator<AActor> It2(World); It2; ++It2)
 		{
@@ -2076,6 +2186,23 @@ void APHCCityCharacter::FireWeapon()
 				}
 			}
 			break; // Hit one crab per swing
+		}
+
+		// Scythe vs other players (PvP)
+		for (TActorIterator<APHCCityCharacter> PIt(World); PIt; ++PIt)
+		{
+			APHCCityCharacter* Other = *PIt;
+			if (!Other || Other == this || Other->IsHidden()) continue;
+
+			const FVector PLoc = Other->GetActorLocation();
+			if (FVector::Dist2D(MyLoc, PLoc) > SwingRange) continue;
+
+			const FVector ToP = (PLoc - MyLoc).GetSafeNormal2D();
+			if (FVector::DotProduct(Forward.GetSafeNormal2D(), ToP) < -0.2f) continue;
+
+			ServerInflictDamage(Other, ScytheDamage);
+			HitMarkerTimer = 0.25f;
+			break;
 		}
 
 		// Scythe vs NPC players
@@ -2165,6 +2292,23 @@ void APHCCityCharacter::FireWeapon()
 			break; // Kill one crab per stab
 		}
 
+		// Dagger vs other players (PvP) — instant kill
+		for (TActorIterator<APHCCityCharacter> PIt(World); PIt; ++PIt)
+		{
+			APHCCityCharacter* Other = *PIt;
+			if (!Other || Other == this || Other->IsHidden()) continue;
+
+			const FVector PLoc = Other->GetActorLocation();
+			if (FVector::Dist2D(MyLoc, PLoc) > StabRange) continue;
+
+			const FVector ToP = (PLoc - MyLoc).GetSafeNormal2D();
+			if (FVector::DotProduct(Forward.GetSafeNormal2D(), ToP) < 0.0f) continue;
+
+			ServerInflictDamage(Other, 200.f);  // guaranteed kill
+			HitMarkerTimer = 0.25f;
+			break;
+		}
+
 		// Dagger vs NPC players — 1-hit kill
 		for (TActorIterator<AActor> It2(World); It2; ++It2)
 		{
@@ -2207,6 +2351,58 @@ void APHCCityCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(APHCCityCharacter, bIsSprinting);
+}
+
+void APHCCityCharacter::ServerUpdateMovement_Implementation(FVector_NetQuantize NewLocation, FRotator NewRotation)
+{
+	SetActorLocation(NewLocation);
+	SetActorRotation(NewRotation);
+}
+
+// ---------------------------------------------------------------------------
+// PvP damage RPCs
+// ---------------------------------------------------------------------------
+
+void APHCCityCharacter::ServerInflictDamage_Implementation(APHCCityCharacter* Victim, float Damage)
+{
+	if (!Victim || Victim == this) return;
+
+	Victim->Health -= Damage;
+
+	// Tell all clients to flash the victim's body red.
+	Victim->MulticastDamageFlash();
+
+	if (Victim->Health <= 0.f)
+	{
+		// Victim died — notify their client.
+		Victim->ClientOnKilled();
+		Victim->Health = Victim->MaxHealth;
+		Victim->SetActorLocation(FVector(0.f, 0.f, 100.f));
+	}
+	else
+	{
+		// Victim took damage — notify their client for red screen overlay.
+		Victim->ClientOnDamaged(Victim->Health);
+	}
+}
+
+void APHCCityCharacter::MulticastDamageFlash_Implementation()
+{
+	PvPDamageFlashTimer = 0.15f;
+}
+
+void APHCCityCharacter::ClientOnDamaged_Implementation(float NewHealth)
+{
+	Health = NewHealth;
+	DamageFlashTimer = 0.3f;  // triggers the red screen overlay in HUD NativeTick
+}
+
+void APHCCityCharacter::ClientOnKilled_Implementation()
+{
+	Deaths++;
+	Health = MaxHealth;
+	DamageFlashTimer = 0.5f;
+	SetActorLocation(FVector(0.f, 0.f, 100.f));
 }
 
 // ---------------------------------------------------------------------------

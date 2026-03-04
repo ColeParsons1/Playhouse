@@ -132,7 +132,12 @@ public:
 
 	/** Client RPC: update local HUD after server possession change (exiting vehicle). */
 	UFUNCTION(Client, Reliable)
-	void ClientOnVehicleExited();
+	void ClientOnVehicleExited(FVector ExitLocation);
+
+	/** Server RPC: relay vehicle input through the controller (vehicle RPCs
+	 *  don't arrive on dynamically spawned pawns). */
+	UFUNCTION(Server, Unreliable)
+	void ServerSetVehicleInput(float Throttle, float Steering, float Pitch);
 
 	/** Returns the currently active top-level widget (e.g. CityHUD). */
 	UUserWidget* GetActiveWidget() const { return ActiveWidget; }
@@ -140,6 +145,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void Tick(float DeltaTime) override;
 
 private:
 	/** Currently displayed top-level widget (auth or HUD). */
@@ -173,4 +179,23 @@ private:
 	/** The vehicle we're currently driving (Aventador or Dune Buggy). */
 	UPROPERTY()
 	TObjectPtr<APawn> CurrentVehicle;
+
+	/** Client-side: last known vehicle position, updated every tick while
+	 *  driving. Used for exit location since the server's vehicle position
+	 *  may diverge due to Unreliable input RPCs. */
+	FVector LastVehiclePosition = FVector::ZeroVector;
+
+	/** Client-side: target exit position to enforce for several frames after
+	 *  exiting a vehicle. This overrides the server's stale replicated position
+	 *  until the client's ServerUpdateMovement corrects the server. */
+	FVector PendingExitLocation = FVector::ZeroVector;
+	int32 ExitTeleportFrames = 0;
+
+	/** True while we're driving a vehicle (set on enter, cleared on Tick-based
+	 *  exit detection). Used to detect vehicle-to-character pawn transition. */
+	bool bWasDrivingVehicle = false;
+
+	/** Performs all client-side vehicle exit cleanup: position, input contexts,
+	 *  collision, HUD mode. Called from Tick when pawn change is detected. */
+	void HandleLocalVehicleExit();
 };
