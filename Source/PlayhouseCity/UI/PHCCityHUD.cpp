@@ -285,7 +285,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* CarBtnSlot = RootCanvas->AddChildToCanvas(CarButton);
 		CarBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f)); // top-left
 		CarBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		CarBtnSlot->SetOffsets(FMargin(50.f, 64.f, 80.f, 32.f));
+		CarBtnSlot->SetOffsets(FMargin(50.f, 64.f, 110.f, 42.f));
 
 		// ============================================================
 		//  CENTER-BOTTOM: "ENTER VEHICLE" button — large, bright green
@@ -340,7 +340,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* WepBtnSlot = RootCanvas->AddChildToCanvas(WeaponsButton);
 		WepBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		WepBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		WepBtnSlot->SetOffsets(FMargin(50.f, 100.f, 80.f, 32.f));
+		WepBtnSlot->SetOffsets(FMargin(50.f, 112.f, 110.f, 42.f));
 
 		// ============================================================
 		//  TOP-LEFT (below Weapons): "Night" toggle button
@@ -391,7 +391,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* DisBtnSlot = RootCanvas->AddChildToCanvas(DisastersButton);
 		DisBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		DisBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		DisBtnSlot->SetOffsets(FMargin(50.f, 136.f, 80.f, 32.f));
+		DisBtnSlot->SetOffsets(FMargin(50.f, 160.f, 110.f, 42.f));
 
 		// ============================================================
 		//  Camera mode toggle (below Disasters)
@@ -416,7 +416,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* CamBtnSlot = RootCanvas->AddChildToCanvas(CameraModeButton);
 		CamBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		CamBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		CamBtnSlot->SetOffsets(FMargin(50.f, 172.f, 80.f, 32.f));
+		CamBtnSlot->SetOffsets(FMargin(50.f, 208.f, 110.f, 42.f));
 
 		// ============================================================
 		//  MOBILE-ONLY: On-foot action buttons (bottom-right)
@@ -2504,8 +2504,8 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 			WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
 		}
 	}
-	if (HostButton) { HostButton->SetVisibility(WalkVis); }
-	if (JoinButton) { JoinButton->SetVisibility(WalkVis); }
+	if (HostButton) { HostButton->SetVisibility(ESlateVisibility::Collapsed); }
+	if (JoinButton) { JoinButton->SetVisibility(ESlateVisibility::Collapsed); }
 #if PLATFORM_IOS || PLATFORM_ANDROID
 	// Jump/Sprint/Interact buttons removed.
 	// Use SelfHitTestInvisible (not Visible) so touches pass through to buttons underneath.
