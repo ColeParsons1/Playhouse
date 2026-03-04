@@ -85,6 +85,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UButton> WalkerButton;
 
+	/** Sign in as Layne (backend auth with stored credentials). */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UButton> LayneButton;
+
+	/** Sign in as Dev (backend auth with stored credentials). */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UButton> DevButton;
+
 	/** Sign In with Apple button. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UButton> AppleSignInButton;
@@ -124,6 +132,12 @@ protected:
 
 	UFUNCTION()
 	void OnWalkerClicked();
+
+	UFUNCTION()
+	void OnLayneClicked();
+
+	UFUNCTION()
+	void OnDevClicked();
 
 	UFUNCTION()
 	void OnAppleSignInClicked();

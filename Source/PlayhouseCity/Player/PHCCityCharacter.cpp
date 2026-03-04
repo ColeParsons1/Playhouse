@@ -1906,7 +1906,7 @@ void APHCCityCharacter::FireWeapon()
 
 		if (bHit && HitResult.GetActor() && HitResult.GetActor()->ActorHasTag(FName("GiantCrab")))
 		{
-			const float BulletDamage = (CurrentWeaponType == 5) ? 12.f : 8.f;
+			const float BulletDamage = (CurrentWeaponType == 5) ? 12.f : 7.f;
 			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
 			if (CitySub)
 			{
@@ -1935,7 +1935,7 @@ void APHCCityCharacter::FireWeapon()
 		// Check NPC helicopter hit
 		if (bHit && HitResult.GetActor() && HitResult.GetActor()->ActorHasTag(FName("NPCHelicopter")))
 		{
-			const float BulletDamage = (CurrentWeaponType == 5) ? 12.f : 8.f;
+			const float BulletDamage = (CurrentWeaponType == 5) ? 12.f : 7.f;
 			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
 			if (CitySub && CitySub->NPCHelicopter && !CitySub->bNPCHeliCrashing)
 			{
@@ -1955,7 +1955,7 @@ void APHCCityCharacter::FireWeapon()
 			APHCCityCharacter* HitPlayer = Cast<APHCCityCharacter>(HitResult.GetActor());
 			if (HitPlayer)
 			{
-				const float BulletDmg = (CurrentWeaponType == 5) ? 12.f : 8.f;
+				const float BulletDmg = (CurrentWeaponType == 5) ? 12.f : 7.f;
 				ServerInflictDamage(HitPlayer, BulletDmg);
 				HitMarkerTimer = 0.25f;
 			}
@@ -1964,7 +1964,7 @@ void APHCCityCharacter::FireWeapon()
 		// Check NPC player hit
 		if (bHit && HitResult.GetActor() && HitResult.GetActor()->ActorHasTag(FName("NPCPlayer")))
 		{
-			const float BulletDamage = (CurrentWeaponType == 5) ? 12.f : 8.f;
+			const float BulletDamage = (CurrentWeaponType == 5) ? 12.f : 7.f;
 			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
 			if (CitySub)
 			{

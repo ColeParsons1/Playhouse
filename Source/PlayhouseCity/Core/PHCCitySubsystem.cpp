@@ -1615,7 +1615,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 				{
 					if (UPHCGameInstance* GI = Cast<UPHCGameInstance>(World->GetGameInstance()))
 					{
-						GI->LocalPlayerProfile.Coins += 5;
+						GI->LocalPlayerProfile.Coins += 20;
 						GI->SaveCoinsToBackend();
 
 						// Update HUD
@@ -7346,16 +7346,10 @@ void UPHCCitySubsystem::SpawnGiantCrab()
 	UWorld* W = GetWorld();
 	if (!W || !SphereMesh || !CylinderMesh || !CubeMesh || !ConeMesh || !ColorMaterial) return;
 
-	// 30 spawn positions — 10 inside the city, 20 outside
+	// Spawn positions — scattered across the city
 	const FVector CrabSpawns[NumGiantCrabs] = {
-		// Inside city (scattered across the 24x24 grid, ±36000 range)
 		{  5000,   5000, 0}, { -8000,  12000, 0}, { 20000, -15000, 0},
-		{-18000, -20000, 0}, { 25000,  25000, 0}, {-25000,   8000, 0},
-		{ 10000, -28000, 0}, {-12000,  30000, 0}, { 30000,   0,    0},
-		{  0,    -10000, 0},
-		// Outside city
-		{-55000, -20000, 0}, {-60000, 15000, 0}, {-50000, -45000, 0},
-		{45000, -30000, 0},  {50000, -50000, 0},
+		{-18000, -20000, 0},
 	};
 
 	// --- Colors (Roblox "Noob" style) ---
@@ -9178,10 +9172,11 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		MC->RegisterComponent();
 		if (bIcePeak)
 		{
+			// Rocky ice mountain: dark blue-gray rock with subtle icy emissive
 			float B = (Col.R + Col.G + Col.B) / 3.f;
-			FLinearColor IceCol(0.6f + B * 0.3f, 0.75f + B * 0.2f, 0.9f + B * 0.08f);
-			ApplyPBRGlass(MC, GlassMaterial, IceCol, 0.65f, 0.15f, 0.04f,
-				FLinearColor(0.03f, 0.12f, 0.30f));
+			FLinearColor IceRockCol(0.22f + B * 0.12f, 0.25f + B * 0.12f, 0.32f + B * 0.10f);
+			ApplyPBR(MC, IceRockCol, 0.08f, 0.88f,
+				FLinearColor(0.01f, 0.03f, 0.06f));
 		}
 		else
 		{
@@ -9213,9 +9208,9 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		if (bIcePeak)
 		{
 			float B = (Col.R + Col.G + Col.B) / 3.f;
-			FLinearColor IceCol(0.6f + B * 0.3f, 0.75f + B * 0.2f, 0.9f + B * 0.08f);
-			ApplyPBRGlass(MC, GlassMaterial, IceCol, 0.65f, 0.15f, 0.04f,
-				FLinearColor(0.03f, 0.12f, 0.30f));
+			FLinearColor IceRockCol(0.22f + B * 0.12f, 0.25f + B * 0.12f, 0.32f + B * 0.10f);
+			ApplyPBR(MC, IceRockCol, 0.08f, 0.88f,
+				FLinearColor(0.01f, 0.03f, 0.06f));
 		}
 		else
 		{
@@ -9247,9 +9242,9 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		if (bIcePeak)
 		{
 			float B = (Col.R + Col.G + Col.B) / 3.f;
-			FLinearColor IceCol(0.6f + B * 0.3f, 0.75f + B * 0.2f, 0.9f + B * 0.08f);
-			ApplyPBRGlass(MC, GlassMaterial, IceCol, 0.65f, 0.15f, 0.04f,
-				FLinearColor(0.03f, 0.12f, 0.30f));
+			FLinearColor IceRockCol(0.22f + B * 0.12f, 0.25f + B * 0.12f, 0.32f + B * 0.10f);
+			ApplyPBR(MC, IceRockCol, 0.08f, 0.88f,
+				FLinearColor(0.01f, 0.03f, 0.06f));
 		}
 		else
 		{
@@ -9309,9 +9304,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 	};
 	const int32 NumPeaks = UE_ARRAY_COUNT(Peaks);
 
-	// Snow peaks (northern tallest only — southern peaks are volcanic)
-	const int32 SnowIdx[] = { 4, 8, 2, 13, 10, 6, 15, 0 };
-	const int32 NumSnow = UE_ARRAY_COUNT(SnowIdx);
+	// All northern peaks (0-22) get snow coverage; southern (volcanic) do not.
 
 	// Southern front row = indices 23-32, back row = 33-36
 	const int32 VolcanoStartIdx = 23;
@@ -9320,16 +9313,16 @@ void UPHCCitySubsystem::SpawnMountainRange()
 	// ================================================================
 	// Color palette — layered geological look
 	// ================================================================
-	const FLinearColor RockDark(0.25f, 0.23f, 0.21f);    // deep shadow rock
-	const FLinearColor RockMid(0.38f, 0.36f, 0.33f);     // mid-tone granite
-	const FLinearColor RockLight(0.48f, 0.45f, 0.42f);   // lighter exposed face
-	const FLinearColor CliffFace(0.22f, 0.20f, 0.19f);   // near-vertical dark cliff
-	const FLinearColor Talus(0.32f, 0.30f, 0.27f);       // scree/debris color
-	const FLinearColor Alpine(0.22f, 0.28f, 0.15f);      // green alpine meadow
-	const FLinearColor TreeLine(0.12f, 0.18f, 0.08f);    // dark forest green
-	const FLinearColor SnowFresh(0.94f, 0.95f, 0.97f);   // bright fresh snow
-	const FLinearColor SnowOld(0.82f, 0.84f, 0.88f);     // packed/old snow
-	const FLinearColor RidgeRock(0.30f, 0.28f, 0.26f);   // ridge connector
+	const FLinearColor RockDark(0.18f, 0.20f, 0.25f);    // deep blue-gray shadow rock
+	const FLinearColor RockMid(0.28f, 0.32f, 0.38f);     // mid-tone blue-gray granite
+	const FLinearColor RockLight(0.38f, 0.42f, 0.50f);   // lighter blue-gray exposed face
+	const FLinearColor CliffFace(0.15f, 0.17f, 0.22f);   // near-vertical dark frozen cliff
+	const FLinearColor Talus(0.25f, 0.28f, 0.33f);       // frozen scree/debris
+	const FLinearColor Alpine(0.35f, 0.40f, 0.48f);      // icy gray-blue (no green on ice mountains)
+	const FLinearColor TreeLine(0.20f, 0.24f, 0.30f);    // dark frozen rock base
+	const FLinearColor SnowFresh(0.88f, 0.92f, 0.97f);   // bright ice-white snow
+	const FLinearColor SnowOld(0.72f, 0.78f, 0.88f);     // packed blue-tinted ice
+	const FLinearColor RidgeRock(0.22f, 0.25f, 0.30f);   // frozen ridge connector
 
 	// Volcanic palette
 	const FLinearColor VolcanicRock(0.10f, 0.08f, 0.07f);    // dark basalt
@@ -9936,13 +9929,6 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 		else
 		{
-		bool bSnow = false;
-		for (int32 Si = 0; Si < NumSnow; ++Si)
-		{
-			if (SnowIdx[Si] == P) { bSnow = true; break; }
-		}
-		if (bSnow)
-		{
 			// Main snow mantle — cone draped over the peak
 			const float SnowH = H * 0.30f;
 			const float SnowDiam = RX * 0.9f;
@@ -9980,7 +9966,6 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				FVector(RX * 0.25f / 100.f, RY * 0.22f / 100.f, H * 0.18f / 100.f),
 				FRotator::ZeroRotator,
 				SnowFresh, 0.50f, 0.f);
-		}
 		} // end snow vs volcano
 	}
 
@@ -14319,6 +14304,162 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 				}
 			}
 		}
+	}
+
+	// --- Torch lights along the river near the pyramids ---
+	{
+		const float TorchStartX = -20000.f;
+		const float TorchEndX = 60000.f;
+		const float TorchSpacing = 5000.f;
+		const int32 NumTorches = FMath::CeilToInt((TorchEndX - TorchStartX) / TorchSpacing);
+		const FLinearColor TorchWood(0.12f, 0.07f, 0.03f);
+		const FLinearColor CharredWood(0.05f, 0.03f, 0.02f);
+		const FLinearColor IronBand(0.10f, 0.09f, 0.08f);
+		// Flame colors — layered from white-hot core to smoky tip
+		const FLinearColor FlameCore(1.0f, 0.95f, 0.7f);
+		const FLinearColor FlameMid(1.0f, 0.55f, 0.05f);
+		const FLinearColor FlameOuter(0.9f, 0.25f, 0.02f);
+		const FLinearColor FlameTip(0.6f, 0.12f, 0.01f);
+		const FLinearColor CoreEmissive(20.f, 16.f, 6.f);
+		const FLinearColor MidEmissive(14.f, 5.f, 0.5f);
+		const FLinearColor OuterEmissive(8.f, 2.f, 0.2f);
+		const FLinearColor TipEmissive(3.f, 0.6f, 0.06f);
+		int32 TorchIdx = 0;
+
+		for (int32 Ti = 0; Ti < NumTorches; ++Ti)
+		{
+			const float TX = TorchStartX + Ti * TorchSpacing;
+			const float RiverY = -97000.f + FMath::Sin(TX * 0.00004f) * 2500.f;
+
+			for (int32 Side = 0; Side < 2; ++Side)
+			{
+				const float BankOffset = (Side == 0) ? 3000.f : -3000.f;
+				const float TY = RiverY + BankOffset;
+				const float TZ = GetTerrainHeight(TX, TY);
+
+				AActor* TorchActor = World->SpawnActor<AActor>(
+					AActor::StaticClass(), FVector(TX, TY, TZ), FRotator::ZeroRotator);
+				if (!TorchActor) continue;
+
+				const float PoleH = 600.f;
+				const float TopZ = TZ + PoleH;
+
+				// Torch pole — dark wood stake
+				UStaticMeshComponent* Pole = NewObject<UStaticMeshComponent>(
+					TorchActor, *FString::Printf(TEXT("TorchPole_%d"), TorchIdx));
+				Pole->SetStaticMesh(CylinderMesh);
+				Pole->SetWorldLocation(FVector(TX, TY, TZ + PoleH * 0.5f));
+				Pole->SetWorldScale3D(FVector(0.25f, 0.25f, PoleH / 100.f));
+				Pole->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Pole->SetBoundsScale(30.f);
+				Pole->RegisterComponent();
+				ApplyPBR(Pole, TorchWood, 0.f, 0.90f);
+				TorchActor->SetRootComponent(Pole);
+				TorchActor->AddInstanceComponent(Pole);
+
+				// Iron band near top
+				UStaticMeshComponent* Band = NewObject<UStaticMeshComponent>(
+					TorchActor, *FString::Printf(TEXT("TorchBand_%d"), TorchIdx));
+				Band->SetStaticMesh(CylinderMesh);
+				Band->SetWorldLocation(FVector(TX, TY, TopZ - 40.f));
+				Band->SetWorldScale3D(FVector(0.35f, 0.35f, 0.15f));
+				Band->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Band->SetBoundsScale(30.f);
+				Band->RegisterComponent();
+				ApplyPBR(Band, IronBand, 0.7f, 0.45f);
+				TorchActor->AddInstanceComponent(Band);
+
+				// Charred wrap at top of pole
+				UStaticMeshComponent* Wrap = NewObject<UStaticMeshComponent>(
+					TorchActor, *FString::Printf(TEXT("TorchWrap_%d"), TorchIdx));
+				Wrap->SetStaticMesh(CylinderMesh);
+				Wrap->SetWorldLocation(FVector(TX, TY, TopZ));
+				Wrap->SetWorldScale3D(FVector(0.40f, 0.40f, 0.35f));
+				Wrap->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Wrap->SetBoundsScale(30.f);
+				Wrap->RegisterComponent();
+				ApplyPBR(Wrap, CharredWood, 0.f, 0.95f, FLinearColor(0.8f, 0.2f, 0.02f));
+				TorchActor->AddInstanceComponent(Wrap);
+
+				// Flame core — white-hot inner cone (brightest)
+				UStaticMeshComponent* FCore = NewObject<UStaticMeshComponent>(
+					TorchActor, *FString::Printf(TEXT("TorchFCore_%d"), TorchIdx));
+				FCore->SetStaticMesh(ConeMesh);
+				FCore->SetWorldLocation(FVector(TX, TY, TopZ + 30.f));
+				FCore->SetWorldScale3D(FVector(0.30f, 0.30f, 1.8f));
+				FCore->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				FCore->SetBoundsScale(30.f);
+				FCore->RegisterComponent();
+				ApplyPBR(FCore, FlameCore, 0.f, 0.15f, CoreEmissive);
+				TorchActor->AddInstanceComponent(FCore);
+
+				// Mid flame — orange cone, slightly wider
+				UStaticMeshComponent* FMid = NewObject<UStaticMeshComponent>(
+					TorchActor, *FString::Printf(TEXT("TorchFMid_%d"), TorchIdx));
+				FMid->SetStaticMesh(ConeMesh);
+				FMid->SetWorldLocation(FVector(TX, TY, TopZ + 20.f));
+				FMid->SetWorldScale3D(FVector(0.50f, 0.50f, 2.2f));
+				FMid->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				FMid->SetBoundsScale(30.f);
+				FMid->RegisterComponent();
+				if (GlassMaterial)
+					ApplyPBRGlass(FMid, GlassMaterial, FlameMid, 0.6f, 0.f, 0.1f, MidEmissive);
+				TorchActor->AddInstanceComponent(FMid);
+
+				// Outer flame — red-orange translucent cone, widest
+				UStaticMeshComponent* FOuter = NewObject<UStaticMeshComponent>(
+					TorchActor, *FString::Printf(TEXT("TorchFOut_%d"), TorchIdx));
+				FOuter->SetStaticMesh(ConeMesh);
+				FOuter->SetWorldLocation(FVector(TX, TY, TopZ + 10.f));
+				FOuter->SetWorldScale3D(FVector(0.70f, 0.70f, 2.8f));
+				FOuter->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				FOuter->SetBoundsScale(30.f);
+				FOuter->RegisterComponent();
+				if (GlassMaterial)
+					ApplyPBRGlass(FOuter, GlassMaterial, FlameOuter, 0.4f, 0.f, 0.1f, OuterEmissive);
+				TorchActor->AddInstanceComponent(FOuter);
+
+				// Flame tip — tall wispy cone at the very top
+				UStaticMeshComponent* FTip = NewObject<UStaticMeshComponent>(
+					TorchActor, *FString::Printf(TEXT("TorchFTip_%d"), TorchIdx));
+				FTip->SetStaticMesh(ConeMesh);
+				FTip->SetWorldLocation(FVector(TX, TY, TopZ + 100.f));
+				FTip->SetWorldScale3D(FVector(0.25f, 0.25f, 1.5f));
+				FTip->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				FTip->SetBoundsScale(30.f);
+				FTip->RegisterComponent();
+				if (GlassMaterial)
+					ApplyPBRGlass(FTip, GlassMaterial, FlameTip, 0.3f, 0.f, 0.1f, TipEmissive);
+				TorchActor->AddInstanceComponent(FTip);
+
+				// Ember glow sphere at the base of the flame
+				UStaticMeshComponent* Ember = NewObject<UStaticMeshComponent>(
+					TorchActor, *FString::Printf(TEXT("TorchEmber_%d"), TorchIdx));
+				Ember->SetStaticMesh(SphereMesh);
+				Ember->SetWorldLocation(FVector(TX, TY, TopZ + 15.f));
+				Ember->SetWorldScale3D(FVector(0.55f, 0.55f, 0.35f));
+				Ember->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Ember->SetBoundsScale(30.f);
+				Ember->RegisterComponent();
+				ApplyPBR(Ember, FLinearColor(1.f, 0.4f, 0.02f), 0.f, 0.2f,
+					FLinearColor(12.f, 4.f, 0.3f));
+				TorchActor->AddInstanceComponent(Ember);
+
+				// Main torch light — strong warm glow
+				UPointLightComponent* TorchLight = NewObject<UPointLightComponent>(
+					TorchActor, *FString::Printf(TEXT("TorchLight_%d"), TorchIdx));
+				TorchLight->SetWorldLocation(FVector(TX, TY, TopZ + 120.f));
+				TorchLight->SetIntensity(8000.f);
+				TorchLight->SetAttenuationRadius(5000.f);
+				TorchLight->SetLightColor(FColor(255, 140, 40));
+				TorchLight->SetCastShadows(false);
+				TorchLight->RegisterComponent();
+				TorchActor->AddInstanceComponent(TorchLight);
+
+				++TorchIdx;
+			}
+		}
+		UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Spawned %d river torches near pyramids."), TorchIdx);
 	}
 
 	// --- Ambient night lighting: 4x4 grid of warm golden lights across pirate beach + pyramid area ---

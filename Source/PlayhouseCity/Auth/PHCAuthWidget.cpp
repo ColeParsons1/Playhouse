@@ -59,6 +59,8 @@ namespace PHCAuthWidgetLocal
 		Style.SetNormal(NormalBrush);
 		Style.SetHovered(NormalBrush);
 		Style.SetPressed(NormalBrush);
+		Style.NormalPadding = FMargin(20.f, 18.f);
+		Style.PressedPadding = FMargin(20.f, 18.f);
 		Btn->SetStyle(Style);
 
 		// Child label.
@@ -67,7 +69,7 @@ namespace PHCAuthWidgetLocal
 		Label->SetText(FText::FromString(LabelText));
 
 		FSlateFontInfo Font = Label->GetFont();
-		Font.Size = 16;
+		Font.Size = 24;
 		Label->SetFont(Font);
 		Label->SetColorAndOpacity(FSlateColor(TextColor));
 		Label->SetJustification(ETextJustify::Center);
@@ -282,6 +284,38 @@ bool UPHCAuthWidget::Initialize()
 		}
 
 		// ---------------------------------------------------------------
+		// LayneButton — sign in as Layne
+		// ---------------------------------------------------------------
+		LayneButton = MakeButton(
+			Tree, Outer, FName("LayneButton"),
+			TEXT("Sign in as Layne"),
+			FLinearColor(0.18f, 0.22f, 0.55f, 1.0f),  // blue-purple
+			FLinearColor::White);
+
+		FormBox->AddChild(LayneButton);
+		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(LayneButton->Slot))
+		{
+			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+		}
+
+		// ---------------------------------------------------------------
+		// DevButton — sign in as Dev
+		// ---------------------------------------------------------------
+		DevButton = MakeButton(
+			Tree, Outer, FName("DevButton"),
+			TEXT("Sign in as Dev"),
+			FLinearColor(0.55f, 0.12f, 0.12f, 1.0f),  // dark red
+			FLinearColor::White);
+
+		FormBox->AddChild(DevButton);
+		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(DevButton->Slot))
+		{
+			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+		}
+
+		// ---------------------------------------------------------------
 		// GuestButton — continue as anonymous guest
 		// ---------------------------------------------------------------
 		GuestButton = MakeButton(
@@ -336,6 +370,14 @@ void UPHCAuthWidget::NativeConstruct()
 	if (WalkerButton)
 	{
 		WalkerButton->OnClicked.AddDynamic(this, &UPHCAuthWidget::OnWalkerClicked);
+	}
+	if (LayneButton)
+	{
+		LayneButton->OnClicked.AddDynamic(this, &UPHCAuthWidget::OnLayneClicked);
+	}
+	if (DevButton)
+	{
+		DevButton->OnClicked.AddDynamic(this, &UPHCAuthWidget::OnDevClicked);
 	}
 	if (ToggleButton)
 	{
@@ -549,6 +591,32 @@ void UPHCAuthWidget::OnWalkerClicked()
 	GI->HandleLoginSuccess(TEXT(""), WalkerProfile);
 }
 
+void UPHCAuthWidget::OnLayneClicked()
+{
+	UPHCAuthManager* Auth = GetAuthManager();
+	if (!Auth)
+	{
+		ShowError(TEXT("Authentication system not available."));
+		return;
+	}
+
+	SetLoadingState(true);
+	Auth->Login(TEXT("tester2@example.com"), TEXT("PLACEHOLDER_PASSWORD"));
+}
+
+void UPHCAuthWidget::OnDevClicked()
+{
+	UPHCAuthManager* Auth = GetAuthManager();
+	if (!Auth)
+	{
+		ShowError(TEXT("Authentication system not available."));
+		return;
+	}
+
+	SetLoadingState(true);
+	Auth->Login(TEXT("dev@example.com"), TEXT("PLACEHOLDER_PASSWORD"));
+}
+
 void UPHCAuthWidget::OnAppleSignInClicked()
 {
 	UPHCAuthManager* AuthManager = GetAuthManager();
@@ -671,6 +739,14 @@ void UPHCAuthWidget::SetLoadingState(bool bLoading)
 	if (WalkerButton)
 	{
 		WalkerButton->SetIsEnabled(!bLoading);
+	}
+	if (LayneButton)
+	{
+		LayneButton->SetIsEnabled(!bLoading);
+	}
+	if (DevButton)
+	{
+		DevButton->SetIsEnabled(!bLoading);
 	}
 	if (ToggleButton)
 	{

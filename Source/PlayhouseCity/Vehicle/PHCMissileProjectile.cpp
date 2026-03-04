@@ -32,7 +32,7 @@ APHCMissileProjectile::APHCMissileProjectile()
 	ProjectileMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ProjectileMesh"));
 	ProjectileMesh->SetupAttachment(CollisionSphere);
 	ProjectileMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	ProjectileMesh->SetRelativeScale3D(FVector(1.8f, 0.14f, 0.14f));
+	ProjectileMesh->SetRelativeScale3D(FVector(4.0f, 0.35f, 0.35f));
 	ProjectileMesh->SetBoundsScale(200.f);
 	ProjectileMesh->bNeverDistanceCull = true;
 	ProjectileMesh->SetCastShadow(false);

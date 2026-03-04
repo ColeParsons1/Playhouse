@@ -236,95 +236,6 @@ bool UPHCCityHUD::Initialize()
 		// ============================================================
 		//  TOP-RIGHT (below currency): "Fire" button -- missile launcher
 		// ============================================================
-		FireButton = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("FireButton"));
-
-		// Large circular red button, positioned just above the gas pedal.
-		const float FireBtnSize = 168.f;
-		const float CornerR = FireBtnSize * 0.5f; // half size = circle
-
-		auto MakeRoundBrush = [&](const FLinearColor& Color) -> FSlateBrush
-		{
-			FSlateBrush Brush;
-			Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
-			Brush.TintColor = FSlateColor(Color);
-			Brush.OutlineSettings.CornerRadii = FVector4(CornerR, CornerR, CornerR, CornerR);
-			Brush.OutlineSettings.Color = FSlateColor(FLinearColor::Transparent);
-			Brush.OutlineSettings.Width = 0.f;
-			return Brush;
-		};
-
-		FButtonStyle FireBtnStyle = FireButton->GetStyle();
-		FireBtnStyle.Normal  = MakeRoundBrush(FLinearColor(0.7f, 0.1f, 0.1f, 0.85f));
-		FireBtnStyle.Hovered = MakeRoundBrush(FLinearColor(0.85f, 0.15f, 0.15f, 0.95f));
-		FireBtnStyle.Pressed = MakeRoundBrush(FLinearColor(0.5f, 0.08f, 0.08f, 1.0f));
-		FireButton->SetStyle(FireBtnStyle);
-		FireButton->SetTouchMethod(EButtonTouchMethod::DownAndUp);
-		FireButton->SetClickMethod(EButtonClickMethod::MouseDown);
-		FireButton->SetPressMethod(EButtonPressMethod::ButtonPress);
-
-		UTextBlock* FireLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("FireLabel"));
-		const FSlateFontInfo FireFont = FSlateFontInfo(
-			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 22);
-		FireLabel->SetText(FText::FromString(TEXT("FIRE")));
-		FireLabel->SetFont(FireFont);
-		FireLabel->SetColorAndOpacity(FSlateColor(White));
-		FireLabel->SetJustification(ETextJustify::Center);
-		FireButton->AddChild(FireLabel);
-
-		UCanvasPanelSlot* FireBtnSlot = RootCanvas->AddChildToCanvas(FireButton);
-		// Positioned on the left side, just above the steering panel (steering anchors at Y 0.5)
-		FireBtnSlot->SetAnchors(FAnchors(0.15f, 0.48f, 0.15f, 0.48f));
-		FireBtnSlot->SetAlignment(FVector2D(0.5f, 1.f)); // bottom-center of button at anchor
-		FireBtnSlot->SetOffsets(FMargin(0.f, 0.f, FireBtnSize, FireBtnSize));
-
-		FireButton->SetVisibility(ESlateVisibility::Collapsed);
-
-		// ============================================================
-		//  RIGHT (next to Fire): "Drop" button -- bomb drop
-		// ============================================================
-		DropBombButton = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("DropBombButton"));
-
-		const float DropBtnSize = 140.f;
-		const float DropCornerR = DropBtnSize * 0.5f;
-
-		auto MakeRoundBrushDrop = [&](const FLinearColor& Color) -> FSlateBrush
-		{
-			FSlateBrush Brush;
-			Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
-			Brush.TintColor = FSlateColor(Color);
-			Brush.OutlineSettings.CornerRadii = FVector4(DropCornerR, DropCornerR, DropCornerR, DropCornerR);
-			Brush.OutlineSettings.Color = FSlateColor(FLinearColor::Transparent);
-			Brush.OutlineSettings.Width = 0.f;
-			return Brush;
-		};
-
-		FButtonStyle DropBtnStyle = DropBombButton->GetStyle();
-		DropBtnStyle.Normal  = MakeRoundBrushDrop(FLinearColor(0.15f, 0.08f, 0.45f, 0.85f));
-		DropBtnStyle.Hovered = MakeRoundBrushDrop(FLinearColor(0.22f, 0.12f, 0.55f, 0.95f));
-		DropBtnStyle.Pressed = MakeRoundBrushDrop(FLinearColor(0.10f, 0.05f, 0.35f, 1.0f));
-		DropBombButton->SetStyle(DropBtnStyle);
-
-		UTextBlock* DropLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("DropBombLabel"));
-		const FSlateFontInfo DropFont = FSlateFontInfo(
-			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 18);
-		DropLabel->SetText(FText::FromString(TEXT("DROP")));
-		DropLabel->SetFont(DropFont);
-		DropLabel->SetColorAndOpacity(FSlateColor(White));
-		DropLabel->SetJustification(ETextJustify::Center);
-		DropBombButton->AddChild(DropLabel);
-
-		UCanvasPanelSlot* DropBtnSlot = RootCanvas->AddChildToCanvas(DropBombButton);
-		// To the right of Fire button (Fire at 0.77, Drop at 0.91)
-		DropBtnSlot->SetAnchors(FAnchors(0.91f, 0.48f, 0.91f, 0.48f));
-		DropBtnSlot->SetAlignment(FVector2D(0.5f, 1.f));
-		DropBtnSlot->SetOffsets(FMargin(0.f, 0.f, DropBtnSize, DropBtnSize));
-
-		DropBombButton->SetVisibility(ESlateVisibility::Collapsed);
-
 		// ============================================================
 		//  TOP-LEFT: Menu button (opens lobby HUD as overlay)
 		// ============================================================
@@ -349,6 +260,7 @@ bool UPHCCityHUD::Initialize()
 		MenuBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f)); // top-left
 		MenuBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
 		MenuBtnSlot->SetOffsets(FMargin(80.f, 16.f, 80.f, 40.f));
+		MenuButton->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
 		//  TOP-LEFT (below Menu): "Car" button -- spawns Aventador
@@ -373,7 +285,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* CarBtnSlot = RootCanvas->AddChildToCanvas(CarButton);
 		CarBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f)); // top-left
 		CarBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		CarBtnSlot->SetOffsets(FMargin(80.f, 64.f, 80.f, 40.f));
+		CarBtnSlot->SetOffsets(FMargin(50.f, 64.f, 80.f, 32.f));
 
 		// ============================================================
 		//  CENTER-BOTTOM: "ENTER VEHICLE" button — large, bright green
@@ -428,7 +340,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* WepBtnSlot = RootCanvas->AddChildToCanvas(WeaponsButton);
 		WepBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		WepBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		WepBtnSlot->SetOffsets(FMargin(170.f, 64.f, 100.f, 40.f));
+		WepBtnSlot->SetOffsets(FMargin(50.f, 100.f, 80.f, 32.f));
 
 		// ============================================================
 		//  TOP-LEFT (below Weapons): "Night" toggle button
@@ -454,6 +366,7 @@ bool UPHCCityHUD::Initialize()
 		NightBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		NightBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
 		NightBtnSlot->SetOffsets(FMargin(170.f, 120.f, 100.f, 40.f));
+		NightButton->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
 		//  Disasters button (below Night)
@@ -478,7 +391,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* DisBtnSlot = RootCanvas->AddChildToCanvas(DisastersButton);
 		DisBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		DisBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		DisBtnSlot->SetOffsets(FMargin(170.f, 176.f, 100.f, 40.f));
+		DisBtnSlot->SetOffsets(FMargin(50.f, 136.f, 80.f, 32.f));
 
 		// ============================================================
 		//  Camera mode toggle (below Disasters)
@@ -503,7 +416,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* CamBtnSlot = RootCanvas->AddChildToCanvas(CameraModeButton);
 		CamBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		CamBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		CamBtnSlot->SetOffsets(FMargin(170.f, 232.f, 100.f, 40.f));
+		CamBtnSlot->SetOffsets(FMargin(50.f, 172.f, 80.f, 32.f));
 
 		// ============================================================
 		//  MOBILE-ONLY: On-foot action buttons (bottom-right)
@@ -687,6 +600,96 @@ bool UPHCCityHUD::Initialize()
 		ExitSlot->SetOffsets(FMargin(80.f, 64.f, 80.f, 40.f));
 
 		ExitVehicleButton->SetVisibility(ESlateVisibility::Collapsed);
+
+		// ============================================================
+		//  FIRE button -- large circular red, on top of drive panels
+		// ============================================================
+		FireButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("FireButton"));
+
+		const float FireBtnSize = 168.f;
+		const float CornerR = FireBtnSize * 0.5f;
+
+		auto MakeRoundBrush = [&](const FLinearColor& Color) -> FSlateBrush
+		{
+			FSlateBrush Brush;
+			Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
+			Brush.TintColor = FSlateColor(Color);
+			Brush.OutlineSettings.CornerRadii = FVector4(CornerR, CornerR, CornerR, CornerR);
+			Brush.OutlineSettings.Color = FSlateColor(FLinearColor::Transparent);
+			Brush.OutlineSettings.Width = 0.f;
+			return Brush;
+		};
+
+		FButtonStyle FireBtnStyle = FireButton->GetStyle();
+		FireBtnStyle.Normal  = MakeRoundBrush(FLinearColor(0.7f, 0.1f, 0.1f, 0.85f));
+		FireBtnStyle.Hovered = MakeRoundBrush(FLinearColor(0.85f, 0.15f, 0.15f, 0.95f));
+		FireBtnStyle.Pressed = MakeRoundBrush(FLinearColor(0.5f, 0.08f, 0.08f, 1.0f));
+		FireButton->SetStyle(FireBtnStyle);
+		FireButton->SetTouchMethod(EButtonTouchMethod::DownAndUp);
+		FireButton->SetClickMethod(EButtonClickMethod::MouseDown);
+		FireButton->SetPressMethod(EButtonPressMethod::ButtonPress);
+
+		UTextBlock* FireLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("FireLabel"));
+		const FSlateFontInfo FireFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 22);
+		FireLabel->SetText(FText::FromString(TEXT("FIRE")));
+		FireLabel->SetFont(FireFont);
+		FireLabel->SetColorAndOpacity(FSlateColor(White));
+		FireLabel->SetJustification(ETextJustify::Center);
+		FireButton->AddChild(FireLabel);
+
+		UCanvasPanelSlot* FireBtnSlot = RootCanvas->AddChildToCanvas(FireButton);
+		FireBtnSlot->SetAnchors(FAnchors(0.15f, 0.48f, 0.15f, 0.48f));
+		FireBtnSlot->SetAlignment(FVector2D(0.5f, 1.f));
+		FireBtnSlot->SetOffsets(FMargin(0.f, 0.f, FireBtnSize, FireBtnSize));
+		FireButton->SetVisibility(ESlateVisibility::Collapsed);
+
+		// ============================================================
+		//  DROP button -- purple circle, bomb drop
+		// ============================================================
+		DropBombButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("DropBombButton"));
+
+		const float DropBtnSize = 140.f;
+		const float DropCornerR = DropBtnSize * 0.5f;
+
+		auto MakeRoundBrushDrop = [&](const FLinearColor& Color) -> FSlateBrush
+		{
+			FSlateBrush Brush;
+			Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
+			Brush.TintColor = FSlateColor(Color);
+			Brush.OutlineSettings.CornerRadii = FVector4(DropCornerR, DropCornerR, DropCornerR, DropCornerR);
+			Brush.OutlineSettings.Color = FSlateColor(FLinearColor::Transparent);
+			Brush.OutlineSettings.Width = 0.f;
+			return Brush;
+		};
+
+		FButtonStyle DropBtnStyle = DropBombButton->GetStyle();
+		DropBtnStyle.Normal  = MakeRoundBrushDrop(FLinearColor(0.15f, 0.08f, 0.45f, 0.85f));
+		DropBtnStyle.Hovered = MakeRoundBrushDrop(FLinearColor(0.22f, 0.12f, 0.55f, 0.95f));
+		DropBtnStyle.Pressed = MakeRoundBrushDrop(FLinearColor(0.10f, 0.05f, 0.35f, 1.0f));
+		DropBombButton->SetStyle(DropBtnStyle);
+		DropBombButton->SetTouchMethod(EButtonTouchMethod::DownAndUp);
+		DropBombButton->SetClickMethod(EButtonClickMethod::MouseDown);
+		DropBombButton->SetPressMethod(EButtonPressMethod::ButtonPress);
+
+		UTextBlock* DropLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("DropBombLabel"));
+		const FSlateFontInfo DropFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 18);
+		DropLabel->SetText(FText::FromString(TEXT("DROP")));
+		DropLabel->SetFont(DropFont);
+		DropLabel->SetColorAndOpacity(FSlateColor(White));
+		DropLabel->SetJustification(ETextJustify::Center);
+		DropBombButton->AddChild(DropLabel);
+
+		UCanvasPanelSlot* DropBtnSlot = RootCanvas->AddChildToCanvas(DropBombButton);
+		DropBtnSlot->SetAnchors(FAnchors(0.85f, 0.30f, 0.85f, 0.30f));
+		DropBtnSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+		DropBtnSlot->SetOffsets(FMargin(0.f, 0.f, DropBtnSize, DropBtnSize));
+		DropBombButton->SetVisibility(ESlateVisibility::Collapsed);
 #endif
 
 		// ============================================================
@@ -930,7 +933,7 @@ bool UPHCCityHUD::Initialize()
 		}
 		UTextBlock* GunLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("GunSelectLabel"));
-		GunLabel->SetText(FText::FromString(TEXT("Gun")));
+		GunLabel->SetText(FText::FromString(TEXT("Minigun")));
 		GunLabel->SetFont(BtnFont);
 		GunLabel->SetColorAndOpacity(FSlateColor(White));
 		GunLabel->SetJustification(ETextJustify::Center);
@@ -1300,6 +1303,7 @@ bool UPHCCityHUD::Initialize()
 		HostSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		HostSlot->SetAlignment(FVector2D(0.f, 0.f));
 		HostSlot->SetOffsets(FMargin(80.f, 112.f, 80.f, 40.f));
+		HostButton->SetVisibility(ESlateVisibility::Collapsed);
 
 		JoinButton = WidgetTree->ConstructWidget<UButton>(
 			UButton::StaticClass(), TEXT("JoinButton"));
@@ -1323,6 +1327,7 @@ bool UPHCCityHUD::Initialize()
 		JoinSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		JoinSlot->SetAlignment(FVector2D(0.f, 0.f));
 		JoinSlot->SetOffsets(FMargin(80.f, 160.f, 80.f, 40.f));
+		JoinButton->SetVisibility(ESlateVisibility::Collapsed);
 
 		// Player count display (top-right, below currency)
 		PlayerCountText = WidgetTree->ConstructWidget<UTextBlock>(
@@ -1610,7 +1615,7 @@ void UPHCCityHUD::NativeConstruct()
 	}
 	if (DropBombButton)
 	{
-		DropBombButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDropBombClicked);
+		DropBombButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnDropBombClicked);
 	}
 	if (WeaponsButton)
 	{
@@ -1747,7 +1752,7 @@ void UPHCCityHUD::NativeDestruct()
 	}
 	if (DropBombButton)
 	{
-		DropBombButton->OnClicked.RemoveAll(this);
+		DropBombButton->OnPressed.RemoveAll(this);
 	}
 	if (HostButton) { HostButton->OnClicked.RemoveAll(this); }
 	if (JoinButton) { JoinButton->OnClicked.RemoveAll(this); }
@@ -2046,7 +2051,19 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			}
 			else if (DrivenVehicle != CurrentPawn)
 			{
+				// Vehicle pawn arrived after initial SetDrivingMode(true, nullptr) —
+				// update pointer and fire/drop visibility without re-running full mode switch.
 				DrivenVehicle = CurrentPawn;
+				if (FireButton)
+				{
+					const bool bShowFire = (Cast<APHCDuneBuggyPawn>(CurrentPawn) || Cast<APHCRaptorPawn>(CurrentPawn) || Cast<APHCTankPawn>(CurrentPawn) || Cast<APHCBlackbirdPawn>(CurrentPawn) || Cast<APHCBlackHawkPawn>(CurrentPawn));
+					FireButton->SetVisibility(bShowFire ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+				}
+				if (DropBombButton)
+				{
+					const bool bShowDrop = (Cast<APHCRaptorPawn>(CurrentPawn) || Cast<APHCBlackbirdPawn>(CurrentPawn) || Cast<APHCBlackHawkPawn>(CurrentPawn));
+					DropBombButton->SetVisibility(bShowDrop ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+				}
 			}
 			// Vehicle found — clear pending flag.
 			bPendingVehicleEntry = false;
@@ -2068,11 +2085,17 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			float NewThrottle = 0.f;
 			float NewPitch = 0.f;
 			bool bFireTouched = false;
+			bool bDropTouched = false;
 
-			const float FireCenterX = VPWidth * 0.77f;
+			const float FireCenterX = VPWidth * 0.15f;
 			const float FireBtnRadius = 84.f;
-			const float FireBottomY = VPHeight * 0.48f;
-			const float FireTopY = FireBottomY - FireBtnRadius * 2.f;
+			const float FireCenterY = VPHeight * 0.48f - FireBtnRadius;
+			const float FireTopY = FireCenterY - FireBtnRadius;
+			const float FireBottomY = FireCenterY + FireBtnRadius;
+
+			const float DropCenterX = VPWidth * 0.85f;
+			const float DropBtnRadius = 70.f;
+			const float DropCenterY = VPHeight * 0.30f;
 
 			for (int32 i = 0; i < 5; ++i)
 			{
@@ -2086,6 +2109,13 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 					TouchY >= FireTopY && TouchY <= FireBottomY)
 				{
 					bFireTouched = true;
+					continue;
+				}
+
+				if (TouchX >= DropCenterX - DropBtnRadius && TouchX <= DropCenterX + DropBtnRadius &&
+					TouchY >= DropCenterY - DropBtnRadius && TouchY <= DropCenterY + DropBtnRadius)
+				{
+					bDropTouched = true;
 					continue;
 				}
 
@@ -2163,6 +2193,13 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 				else if (APHCTankPawn* Tank = Cast<APHCTankPawn>(DrivenVehicle)) { Tank->FireCannon(); }
 				else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(DrivenVehicle)) { BB->FireRocket(); }
 				else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(DrivenVehicle)) { BH->FireRocket(); }
+			}
+
+			if (bDropTouched)
+			{
+				if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle)) { Raptor->DropBomb(); }
+				else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(DrivenVehicle)) { BB->DropBomb(); }
+				else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(DrivenVehicle)) { BH->DropBomb(); }
 			}
 
 			DebugThrottle = NewThrottle;
@@ -2329,11 +2366,12 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			Char = Cast<APHCCityCharacter>(PC->GetPawn());
 		}
 
-		const bool bFPRangedWeapon = Char && Char->bFirstPersonMode &&
+		const bool bRangedWeapon = Char &&
 			(Char->CurrentWeaponType == 0 || Char->CurrentWeaponType == 1 || Char->CurrentWeaponType == 5);
+		const bool bFPRangedWeapon = bRangedWeapon && Char->bFirstPersonMode;
 
-		// Crosshair visibility: show in FP mode with ranged weapon
-		const ESlateVisibility CrossVis = bFPRangedWeapon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+		// Crosshair visibility: show with ranged weapon in any camera mode
+		const ESlateVisibility CrossVis = bRangedWeapon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
 		if (CrosshairDot) CrosshairDot->SetVisibility(CrossVis);
 		if (CrosshairTop) CrosshairTop->SetVisibility(CrossVis);
 		if (CrosshairBottom) CrosshairBottom->SetVisibility(CrossVis);
@@ -2341,7 +2379,7 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		if (CrosshairRight) CrosshairRight->SetVisibility(CrossVis);
 
 		// Dynamic spread: reposition crosshair lines based on ADSAlpha
-		if (bFPRangedWeapon && Char)
+		if (bRangedWeapon && Char)
 		{
 			const float SpreadDeg = FMath::Lerp(Char->SpreadHipfire, Char->SpreadADS, Char->ADSAlpha);
 			// Convert degrees to screen-space pixels (~6 px per degree at default FOV)
@@ -2641,6 +2679,14 @@ void UPHCCityHUD::OnFireButtonPressed()
 	{
 		Raptor->FireRocket();
 	}
+	else if (APHCTankPawn* Tank = Cast<APHCTankPawn>(DrivenVehicle))
+	{
+		Tank->FireCannon();
+	}
+	else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(DrivenVehicle))
+	{
+		BB->FireRocket();
+	}
 	else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(DrivenVehicle))
 	{
 		BH->FireRocket();
@@ -2753,15 +2799,26 @@ void UPHCCityHUD::OnSelectBlackHawk()
 
 void UPHCCityHUD::OnDropBombClicked()
 {
-	if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(DrivenVehicle))
+	// Try cached DrivenVehicle first, fall back to current pawn
+	APawn* Vehicle = DrivenVehicle;
+	if (!Vehicle)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			Vehicle = PC->GetPawn();
+		}
+	}
+	if (!Vehicle) return;
+
+	if (APHCRaptorPawn* Raptor = Cast<APHCRaptorPawn>(Vehicle))
 	{
 		Raptor->DropBomb();
 	}
-	else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(DrivenVehicle))
+	else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(Vehicle))
 	{
 		BB->DropBomb();
 	}
-	else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(DrivenVehicle))
+	else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(Vehicle))
 	{
 		BH->DropBomb();
 	}

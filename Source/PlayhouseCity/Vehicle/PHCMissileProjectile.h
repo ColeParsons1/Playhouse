@@ -64,7 +64,7 @@ public:
 	bool bIsRPGRocket = false;
 
 	// -- Trail configuration (overridable per projectile) --
-	float TrailDotScale = 0.12f;
+	float TrailDotScale = 0.30f;
 	float TrailDotLifespan = 0.4f;
 	float TrailDotInterval = 0.03f;
 	float TrailDotRandomSpread = 0.f;

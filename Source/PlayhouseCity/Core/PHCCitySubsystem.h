@@ -184,7 +184,7 @@ private:
 
 public:
 	/** NPC enemies — always visible, chase the player. */
-	static constexpr int32 NumGiantCrabs = 15;
+	static constexpr int32 NumGiantCrabs = 4;
 
 	struct FCrabData
 	{
