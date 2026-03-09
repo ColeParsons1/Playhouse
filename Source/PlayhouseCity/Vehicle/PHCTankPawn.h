@@ -141,6 +141,10 @@ public:
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Vehicle")
 	bool bIsOccupied = false;
 
+	float VehicleHealth = 240.f;
+	bool bIsDestroyed = false;
+	float DamageFlashTimer = 0.f;
+
 	float VerticalVelocity = 0.f;
 	bool bWasGrounded = false;
 	bool bHasBeenGrounded = false;

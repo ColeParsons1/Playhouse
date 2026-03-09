@@ -15,6 +15,8 @@ class UInputMappingContext;
 class UInputAction;
 class UMaterial;
 class UMaterialInstanceDynamic;
+class USpotLightComponent;
+class UPointLightComponent;
 struct FInputActionValue;
 
 /**
@@ -86,6 +88,14 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Vehicle") TObjectPtr<UStaticMeshComponent> NavLightR;
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Vehicle") TObjectPtr<UStaticMeshComponent> TailLight;
 
+	// Formation lights (electroluminescent strips for night flying)
+	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> FormationLightStrips;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Vehicle") TObjectPtr<UPointLightComponent> FormationGlow;
+
+	// Headlight spotlights (illuminate area ahead)
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Vehicle") TObjectPtr<USpotLightComponent> HeadlightSpotL;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Vehicle") TObjectPtr<USpotLightComponent> HeadlightSpotR;
+
 	// Camera
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Vehicle")
 	TObjectPtr<USpringArmComponent> CameraBoom;
@@ -138,6 +148,12 @@ public:
 
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Vehicle")
 	bool bIsOccupied = false;
+
+	// -- Damage system --
+	float VehicleHealth = 240.f;
+	bool bIsCrashing = false;
+	float CrashTimer = 0.f;
+	float DamageFlashTimer = 0.f;
 
 	void SetBodyColor(const FLinearColor& Color);
 	void SetHeadlightsEnabled(bool bEnabled);

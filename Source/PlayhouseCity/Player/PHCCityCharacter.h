@@ -14,6 +14,7 @@ class UStaticMeshComponent;
 class UInputMappingContext;
 class UInputAction;
 class UPointLightComponent;
+class USpotLightComponent;
 class UMaterialInstanceDynamic;
 class UTextRenderComponent;
 struct FInputActionValue;
@@ -141,7 +142,7 @@ public:
 	// -- Movement parameters --------------------------------------------------
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Movement")
-	float WalkSpeed = 1788.f;
+	float WalkSpeed = 1967.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Movement")
 	float SprintSpeed = 2000.f;
@@ -188,6 +189,13 @@ public:
 	void EquipJetpack();
 	void UnequipJetpack();
 
+	// -- Roller Blades --------------------------------------------------------
+
+	bool bRollerBladesEquipped = false;
+
+	void EquipRollerBlades();
+	void UnequipRollerBlades();
+
 	// -- Dagger weapon mesh ---------------------------------------------------
 
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> DaggerHandleMesh;
@@ -195,6 +203,17 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> DaggerGuardMesh;
 
 	float DaggerStabTimer = 0.f;  // >0 = currently stabbing
+
+	// -- Lightsaber weapon mesh ------------------------------------------------
+
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SaberHiltMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SaberEmitterMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SaberBladeMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SaberCoreMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SaberPommelMesh;
+	UPROPERTY(Transient) TObjectPtr<UPointLightComponent> SaberGlow;
+
+	float SaberSwingTimer = 0.f;
 
 	// -- Scythe weapon mesh ---------------------------------------------------
 
@@ -226,6 +245,15 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> AK47StockMesh;
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> AK47MuzzleMesh;
 
+	// -- 50 Cal Sniper Rifle mesh -----------------------------------------------
+
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SniperBodyMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SniperBarrelMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SniperScopeMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SniperStockMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SniperMagMesh;
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SniperMuzzleMesh;
+
 	// -- Health ---------------------------------------------------------------
 	float Health = 100.f;
 	float MaxHealth = 100.f;
@@ -234,12 +262,94 @@ public:
 	int32 CrabKills = 0;
 	int32 Deaths = 0;
 
+	// -- XP / Leveling system -------------------------------------------------
+	int32 PlayerLevel = 1;
+	int32 PlayerXP = 0;
+	int32 XPToNextLevel = 100;   // formula: 100 * Level
+	float XPAccumTimer = 0.f;    // passive XP timer (1 XP/sec while moving)
+	float LevelUpFlashTimer = 0.f; // visual feedback on level-up
+
+	/** Add XP and handle level-up. Returns true if leveled up. */
+	bool AddXP(int32 Amount);
+
+	// -- Daily login reward ---------------------------------------------------
+	int32 LoginStreak = 0;         // current consecutive day streak (0-6)
+	int32 LastLoginJulianDay = 0;  // Julian day number of last login
+	bool bDailyRewardPending = false; // true = popup should show
+	bool bDailyRewardClaimed = false; // true = already claimed today
+
+	/** Check daily login and set bDailyRewardPending if new day. */
+	void CheckDailyLogin();
+
+	/** Claim daily reward and advance streak. */
+	int32 ClaimDailyReward();
+
+	// -- Kill streak multiplier -----------------------------------------------
+	int32 KillStreakCount = 0;
+	float KillStreakTimer = 0.f;  // resets to 5s on each kill, decrements
+	float KillStreakMultiplier() const;
+
+	// -- Loot crate system ----------------------------------------------------
+	bool bLootCrateActive = false;
+	float LootCrateTimer = 0.f;     // total time spinning (2s)
+	float LootCrateSpinAngle = 0.f; // visual spinner rotation
+	int32 LootCrateReward = 0;      // final coin reward
+	int32 LootCrateXPReward = 0;    // final XP reward
+
+	/** Roll a random loot crate reward and start the spin animation. */
+	void StartLootCrate();
+
+	// -- Achievement system ---------------------------------------------------
+	static constexpr int32 NumAchievements = 20;
+
+	struct FAchievement
+	{
+		const TCHAR* Name;
+		const TCHAR* Desc;
+		int32 Target;
+	};
+
+	static const FAchievement AchievementDefs[NumAchievements];
+	bool AchievementUnlocked[NumAchievements] = {};
+	float AchievementPopupTimer = 0.f;
+	int32 LastUnlockedAchievement = -1;
+	int32 TotalCoinsCollected = 0;
+	float TotalDistanceWalked = 0.f;
+	FVector PrevTickLocation = FVector::ZeroVector;
+	int32 VehiclesUsed = 0;          // bitmask of vehicle types driven
+	int32 MiniGamesPlayed = 0;
+
+	/** Check all achievements and unlock any newly completed ones. */
+	void CheckAchievements();
+
+	// -- Limited-time events --------------------------------------------------
+	enum class EActiveEvent : uint8 { None, GoldenHour, CrabSwarm, NightHunt };
+	EActiveEvent CurrentEvent = EActiveEvent::None;
+	float EventTimer = 0.f;         // time remaining on current event
+	float EventCooldown = 0.f;      // gap between events
+	float EventCoinMultiplier() const;
+
+	// -- Vehicle unlock progression -------------------------------------------
+	/** Returns true if the given vehicle type is unlocked at current level. */
+	bool IsVehicleUnlocked(int32 VehicleType) const;
+	/** Returns the level required to unlock a vehicle type. */
+	static int32 VehicleUnlockLevel(int32 VehicleType);
+
+	// -- Weekly stats (leaderboard) -------------------------------------------
+	int32 WeeklyXP = 0;
+	int32 WeeklyKills = 0;
+	int32 WeeklyCoins = 0;
+	int32 LastResetWeek = 0; // ISO week number * year
+
+	/** Check and reset weekly stats if new week. */
+	void CheckWeeklyReset();
+
 	/** >0 = screen should flash red (set by subsystem on crab contact). */
 	float DamageFlashTimer = 0.f;
 
 	// -- Weapon state ---------------------------------------------------------
 
-	int32 CurrentWeaponType = 3; // -1=none, 0=Gun, 1=RPG, 2=Sword, 3=Scythe, 4=Dagger, 5=AK47
+	int32 CurrentWeaponType = 3; // -1=none, 0=Gun, 1=RPG, 2=Sword, 3=Scythe, 4=Dagger, 5=AK47, 6=Sniper
 
 	float ScytheSwingTimer = 0.f;  // >0 = currently swinging
 
@@ -254,6 +364,9 @@ public:
 
 	bool bAK47Firing = false;
 	float AK47FireTimer = 0.f;
+
+	float SniperFireTimer = 0.f; // bolt-action cooldown (1.8s)
+	FVector2D ScopedLookSmooth = FVector2D::ZeroVector; // smoothed look input when scoped
 
 	// -- COD-style weapon feel ------------------------------------------------
 
@@ -274,6 +387,14 @@ public:
 	float ADSFOVAim = 65.f;
 	float ADSSensitivityMult = 0.6f;
 
+	// Sniper scope zoom (adjustable by user)
+	float SniperZoomFOV = 10.f;
+	static constexpr float SniperZoomMin = 1.f;
+	static constexpr float SniperZoomMax = 40.f;
+
+	// Thermal scope (MW2 style)
+	bool bThermalScope = false;
+
 	// Bullet spread (half-angle degrees)
 	float SpreadHipfire = 3.5f;
 	float SpreadADS = 0.8f;
@@ -287,6 +408,10 @@ public:
 	// Muzzle flash dynamic light
 	UPROPERTY(Transient) TObjectPtr<UPointLightComponent> MuzzleFlashLight;
 	float MuzzleFlashLightTimer = 0.f;
+
+	// -- Flashlight --------------------------------------------------------------
+	UPROPERTY(Transient) TObjectPtr<USpotLightComponent> FlashlightSpot;
+	bool bFlashlightOn = false;
 
 	// ADS input
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "PHC|Input")

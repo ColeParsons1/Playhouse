@@ -22,6 +22,7 @@
 #include "Vehicle/PHCMissileProjectile.h"
 #include "Components/SphereComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/SpotLightComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Vehicle/PHCNukeExplosion.h"
 
@@ -238,6 +239,34 @@ APHCBlackHawkPawn::APHCBlackHawkPawn()
 
 	TailLight = MakeCube(TEXT("TailLight"),
 		FVector(-620.f, 0.f, 55.f), FVector(6.f, 6.f, 4.f));
+
+	// ====================================================================
+	//  HEADLIGHT SPOTLIGHTS
+	// ====================================================================
+
+	HeadlightSpotL = CreateDefaultSubobject<USpotLightComponent>(TEXT("HeadlightSpotL"));
+	HeadlightSpotL->SetupAttachment(VehicleCollision);
+	HeadlightSpotL->SetRelativeLocation(FVector(350.f, -60.f, -60.f));
+	HeadlightSpotL->SetRelativeRotation(FRotator(-15.f, 0.f, 0.f));
+	HeadlightSpotL->SetIntensity(80000.f);
+	HeadlightSpotL->SetAttenuationRadius(6000.f);
+	HeadlightSpotL->SetOuterConeAngle(35.f);
+	HeadlightSpotL->SetInnerConeAngle(20.f);
+	HeadlightSpotL->SetLightColor(FColor(255, 250, 240));
+	HeadlightSpotL->SetCastShadows(false);
+	HeadlightSpotL->SetVisibility(false);
+
+	HeadlightSpotR = CreateDefaultSubobject<USpotLightComponent>(TEXT("HeadlightSpotR"));
+	HeadlightSpotR->SetupAttachment(VehicleCollision);
+	HeadlightSpotR->SetRelativeLocation(FVector(350.f, 60.f, -60.f));
+	HeadlightSpotR->SetRelativeRotation(FRotator(-15.f, 0.f, 0.f));
+	HeadlightSpotR->SetIntensity(80000.f);
+	HeadlightSpotR->SetAttenuationRadius(6000.f);
+	HeadlightSpotR->SetOuterConeAngle(35.f);
+	HeadlightSpotR->SetInnerConeAngle(20.f);
+	HeadlightSpotR->SetLightColor(FColor(255, 250, 240));
+	HeadlightSpotR->SetCastShadows(false);
+	HeadlightSpotR->SetVisibility(false);
 
 	// ====================================================================
 	//  CAMERA
@@ -539,6 +568,51 @@ void APHCBlackHawkPawn::Tick(float DeltaTime)
 		if (TailBlade1) TailBlade1->SetRelativeRotation(FRotator(TailRotorAngle + 90.f, 0.f, 0.f));
 	}
 
+	// ---- Damage flash ----
+	if (DamageFlashTimer > 0.f)
+	{
+		DamageFlashTimer -= DeltaTime;
+		if (BodyMaterial)
+		{
+			BodyMaterial->SetVectorParameterValue(TEXT("EmissiveColor"),
+				DamageFlashTimer > 0.f ? FLinearColor(0.4f, 0.02f, 0.0f) : FLinearColor::Black);
+		}
+	}
+
+	// ---- Crash sequence ----
+	if (bIsCrashing)
+	{
+		CrashTimer += DeltaTime;
+
+		FVector Pos = GetActorLocation();
+		FRotator Rot = GetActorRotation();
+
+		const float FallSpeed = 800.f + CrashTimer * 200.f;
+		Pos.Z -= FallSpeed * DeltaTime;
+		Rot.Yaw += 180.f * DeltaTime;
+		Rot.Roll = FMath::FInterpTo(Rot.Roll, 45.f, DeltaTime, 1.5f);
+		Rot.Pitch = FMath::FInterpTo(Rot.Pitch, -20.f, DeltaTime, 1.0f);
+
+		SetActorLocation(Pos);
+		SetActorRotation(Rot);
+
+		if (Pos.Z <= 10.f && !IsActorBeingDestroyed())
+		{
+			bIsCrashing = false;
+			UWorld* W = GetWorld();
+			if (W)
+			{
+				FActorSpawnParameters SP;
+				SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+				W->SpawnActor<APHCNukeExplosion>(APHCNukeExplosion::StaticClass(),
+					FVector(Pos.X, Pos.Y, FMath::Max(Pos.Z, 0.f)), FRotator::ZeroRotator, SP);
+			}
+			SetActorHiddenInGame(true);
+			Destroy();
+		}
+		return;
+	}
+
 	if (!bIsOccupied) return;
 
 	// Cooldowns
@@ -611,32 +685,46 @@ void APHCBlackHawkPawn::Tick(float DeltaTime)
 	// ---- Ground-aware altitude clamp ----
 	{
 		const FVector Pos = GetActorLocation();
-		float GroundZ = 0.f;
 
-		const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 5000.f);
+		// Trace downward from slightly above the aircraft to find ground below.
+		// Start only 500 UU above (not 5000) to avoid hitting ceilings in
+		// enclosed spaces like the underground airport.
+		const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 500.f);
 		const FVector TraceEnd(Pos.X, Pos.Y, Pos.Z - 5000.f);
 		FCollisionQueryParams Params;
 		Params.AddIgnoredActor(this);
 		TArray<FHitResult> Hits;
+
+		bool bFoundGround = false;
+		float GroundZ = 0.f;
+
 		if (GetWorld()->LineTraceMultiByChannel(Hits, TraceStart, TraceEnd, ECC_WorldStatic, Params))
 		{
 			for (const FHitResult& Hit : Hits)
 			{
 				if (Hit.bStartPenetrating) continue;
-				GroundZ = Hit.ImpactPoint.Z;
-				break;
+				// Only treat hits at or below the aircraft as ground (skip ceilings).
+				if (Hit.ImpactPoint.Z <= Pos.Z + 100.f)
+				{
+					GroundZ = Hit.ImpactPoint.Z;
+					bFoundGround = true;
+					break;
+				}
 			}
 		}
 
-		const float FloorZ = GroundZ + MinAltitude;
-		if (Pos.Z < FloorZ)
+		if (bFoundGround)
 		{
-			SetActorLocation(FVector(Pos.X, Pos.Y, FloorZ));
-			FRotator Rot = GetActorRotation();
-			if (Rot.Pitch < 0.f)
+			const float FloorZ = GroundZ + MinAltitude;
+			if (Pos.Z < FloorZ)
 			{
-				Rot.Pitch = FMath::FInterpTo(Rot.Pitch, 0.f, DeltaTime, 8.f);
-				SetActorRotation(Rot);
+				SetActorLocation(FVector(Pos.X, Pos.Y, FloorZ));
+				FRotator Rot = GetActorRotation();
+				if (Rot.Pitch < 0.f)
+				{
+					Rot.Pitch = FMath::FInterpTo(Rot.Pitch, 0.f, DeltaTime, 8.f);
+					SetActorRotation(Rot);
+				}
 			}
 		}
 	}
@@ -856,7 +944,8 @@ void APHCBlackHawkPawn::SetBodyColor(const FLinearColor& Color)
 
 void APHCBlackHawkPawn::SetHeadlightsEnabled(bool bEnabled)
 {
-	// No headlights on the Black Hawk — nav lights always on.
+	if (HeadlightSpotL) HeadlightSpotL->SetVisibility(bEnabled);
+	if (HeadlightSpotR) HeadlightSpotR->SetVisibility(bEnabled);
 }
 
 FVector APHCBlackHawkPawn::GetExitLocation() const

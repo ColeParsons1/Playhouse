@@ -1,6 +1,7 @@
 // Copyright PlayhouseCity. All Rights Reserved.
 
 #include "PHCTankPawn.h"
+#include "Vehicle/PHCNukeExplosion.h"
 #include "PlayhouseCity.h"
 #include "Net/UnrealNetwork.h"
 #include "Components/BoxComponent.h"
@@ -484,6 +485,33 @@ void APHCTankPawn::BeginPlay()
 void APHCTankPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	// Damage flash
+	if (DamageFlashTimer > 0.f)
+	{
+		DamageFlashTimer -= DeltaTime;
+		if (BodyMaterial)
+		{
+			BodyMaterial->SetVectorParameterValue(TEXT("EmissiveColor"),
+				DamageFlashTimer > 0.f ? FLinearColor(0.4f, 0.02f, 0.0f) : FLinearColor::Black);
+		}
+	}
+
+	// Destruction
+	if (bIsDestroyed && !IsActorBeingDestroyed())
+	{
+		UWorld* W = GetWorld();
+		if (W)
+		{
+			FActorSpawnParameters SP;
+			SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			W->SpawnActor<APHCNukeExplosion>(APHCNukeExplosion::StaticClass(),
+				GetActorLocation(), FRotator::ZeroRotator, SP);
+		}
+		SetActorHiddenInGame(true);
+		Destroy();
+		return;
+	}
 
 	// Cooldowns tick regardless of occupancy
 	FireCooldownRemaining = FMath::Max(0.f, FireCooldownRemaining - DeltaTime);

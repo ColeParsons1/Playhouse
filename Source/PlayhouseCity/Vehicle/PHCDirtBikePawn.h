@@ -97,10 +97,10 @@ public:
 	// -- Vehicle tuning (agile, medium speed) ------------------------------
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Vehicle")
-	float MaxSpeed = 8125.f;
+	float MaxSpeed = 9344.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Vehicle")
-	float Acceleration = 5625.f;
+	float Acceleration = 6469.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Vehicle")
 	float BrakeDeceleration = 4500.f;
@@ -124,6 +124,10 @@ public:
 
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Vehicle")
 	bool bIsOccupied = false;
+
+	float VehicleHealth = 240.f;
+	bool bIsDestroyed = false;
+	float DamageFlashTimer = 0.f;
 
 	float VerticalVelocity = 0.f;
 	float PrevSurfaceZ = 0.f;
@@ -165,6 +169,13 @@ private:
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> BodyColoredMeshes;
 
 	float WheelSpinAngle = 0.f;
+
+	// PERF-OPT: Cached terrain height to avoid 15 Perlin calls every frame.
+	// Remove this block and restore direct GetTerrainHeight call in Tick to rollback.
+	float CachedTerrainZ = 0.f;
+	FVector2D CachedTerrainPos = FVector2D::ZeroVector;
+	int32 TerrainCacheFrameCounter = 0;
+	int32 WallTraceFrameCounter = 0;
 
 	/** ClearCoat material for paint. */
 	UPROPERTY(Transient) TObjectPtr<UMaterial> ClearCoatMaterial;

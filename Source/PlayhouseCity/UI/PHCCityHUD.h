@@ -11,6 +11,7 @@ class UButton;
 class UImage;
 class UBorder;
 class UCanvasPanel;
+class UVerticalBox;
 class UPHCMainHUD;
 class APHCVehiclePawn;
 class APHCDuneBuggyPawn;
@@ -19,6 +20,7 @@ class APHCTankPawn;
 class APHCDirtBikePawn;
 class APHCBlackbirdPawn;
 class APHCBlackHawkPawn;
+class APHCRollerBladesPawn;
 
 /**
  * Lightweight HUD overlay for the PlayhouseCity 3D open world.
@@ -170,6 +172,9 @@ protected:
 	TObjectPtr<UButton> SelectAK47Btn;
 
 	UPROPERTY()
+	TObjectPtr<UButton> SelectSniperBtn;
+
+	UPROPERTY()
 	TObjectPtr<UButton> WeaponFireButton;
 
 	UPROPERTY()
@@ -209,6 +214,16 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UButton> StopDisasterBtn;
 
+	// -- Lobby player list overlay ---------------------------------------------
+
+	UPROPERTY()
+	TObjectPtr<UBorder> LobbyOverlay;
+
+	UPROPERTY()
+	TObjectPtr<UVerticalBox> LobbyPlayerList;
+
+	bool bLobbyOpen = false;
+
 	// -- Vehicle selection popup -----------------------------------------------
 
 	UPROPERTY()
@@ -235,6 +250,9 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UButton> SelectBlackHawkBtn;
 
+	UPROPERTY()
+	TObjectPtr<UButton> SelectRollerBladesBtn;
+
 	// -- Multiplayer UI -------------------------------------------------------
 
 	UPROPERTY()
@@ -254,10 +272,6 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> PlayerCountText;
-
-	/** Signed-in username display at top-left of location monitor. */
-	UPROPERTY()
-	TObjectPtr<UTextBlock> UsernameText;
 
 	/** Live coordinate display at top of screen. */
 	UPROPERTY()
@@ -302,6 +316,29 @@ protected:
 
 	// -- Mobile ADS button -------------------------------------------------
 	UPROPERTY() TObjectPtr<UButton> ADSButton;
+
+	// -- Sniper scope overlay (COD-style) -----------------------------------
+	UPROPERTY() TObjectPtr<UBorder> ScopeOverlay;       // full-screen black backdrop
+	UPROPERTY() TObjectPtr<UBorder> ScopeBlackTop;      // thick black bar above scope circle
+	UPROPERTY() TObjectPtr<UBorder> ScopeBlackBottom;   // thick black bar below scope circle
+	UPROPERTY() TObjectPtr<UBorder> ScopeBlackLeft;     // thick black bar left of scope circle
+	UPROPERTY() TObjectPtr<UBorder> ScopeBlackRight;    // thick black bar right of scope circle
+	UPROPERTY() TObjectPtr<UBorder> ScopeRingBorder;    // thin ring around scope viewport
+	UPROPERTY() TObjectPtr<UBorder> ScopeCrosshairH;    // horizontal crosshair line
+	UPROPERTY() TObjectPtr<UBorder> ScopeCrosshairV;    // vertical crosshair line
+	UPROPERTY() TObjectPtr<UBorder> ScopeCrosshairDot;  // center dot
+
+	// Scope zoom buttons
+	UPROPERTY() TObjectPtr<UButton> ScopeZoomInBtn;
+	UPROPERTY() TObjectPtr<UButton> ScopeZoomOutBtn;
+	UPROPERTY() TObjectPtr<UTextBlock> ScopeZoomLabel;
+
+	UFUNCTION() void OnScopeZoomInPressed();
+	UFUNCTION() void OnScopeZoomOutPressed();
+	UFUNCTION() void OnThermalTogglePressed();
+
+	UPROPERTY() TObjectPtr<UButton> ThermalToggleBtn;
+	UPROPERTY() TObjectPtr<UTextBlock> ThermalToggleLabel;
 
 	/** The IP address string being entered by the user. */
 	FString EnteredIP;
@@ -367,6 +404,9 @@ private:
 	void OnSelectBlackHawk();
 
 	UFUNCTION()
+	void OnSelectRollerBlades();
+
+	UFUNCTION()
 	void OnDropBombClicked();
 
 	UFUNCTION()
@@ -406,6 +446,9 @@ private:
 	void OnSelectAK47();
 
 	UFUNCTION()
+	void OnSelectSniper();
+
+	UFUNCTION()
 	void OnADSPressed();
 
 	UFUNCTION()
@@ -425,6 +468,16 @@ private:
 
 	UFUNCTION()
 	void OnCameraModeButtonClicked();
+
+	UFUNCTION()
+	void OnLobbyButtonClicked();
+
+	UFUNCTION()
+	void OnLobbyCloseClicked();
+
+	void ShowLobby();
+	void HideLobby();
+	void RefreshLobbyPlayerList();
 
 	UFUNCTION()
 	void OnSelectTornado();
@@ -454,6 +507,64 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> CameraModeLabel;
+
+	UPROPERTY()
+	TObjectPtr<UButton> TorchButton;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> TorchButtonLabel;
+
+	// -- XP bar + Level display -----------------------------------------------
+
+	UPROPERTY() TObjectPtr<UBorder> XPBarBG;
+	UPROPERTY() TObjectPtr<UBorder> XPBarFill;
+	UPROPERTY() TObjectPtr<UTextBlock> LevelText;
+	UPROPERTY() TObjectPtr<UTextBlock> XPText;
+
+	// -- Kill streak display --------------------------------------------------
+
+	UPROPERTY() TObjectPtr<UTextBlock> KillStreakText;
+
+	// -- Level-up flash overlay -----------------------------------------------
+
+	UPROPERTY() TObjectPtr<UBorder> LevelUpOverlay;
+	UPROPERTY() TObjectPtr<UTextBlock> LevelUpText;
+
+	// -- Loot crate spinner overlay -------------------------------------------
+
+	UPROPERTY() TObjectPtr<UBorder> LootCrateOverlay;
+	UPROPERTY() TObjectPtr<UTextBlock> LootCrateSpinText;
+	UPROPERTY() TObjectPtr<UTextBlock> LootCrateRewardText;
+
+	// -- Achievement popup banner ---------------------------------------------
+
+	UPROPERTY() TObjectPtr<UBorder> AchievementPopupBG;
+	UPROPERTY() TObjectPtr<UTextBlock> AchievementPopupText;
+
+	// -- Limited-time event banner --------------------------------------------
+
+	UPROPERTY() TObjectPtr<UBorder> EventBannerBG;
+	UPROPERTY() TObjectPtr<UTextBlock> EventBannerText;
+	UPROPERTY() TObjectPtr<UTextBlock> EventTimerText;
+
+	// -- Daily login reward popup ---------------------------------------------
+
+	UPROPERTY() TObjectPtr<UBorder> DailyLoginOverlay;
+	UPROPERTY() TObjectPtr<UTextBlock> DailyLoginTitle;
+	UPROPERTY() TObjectPtr<UTextBlock> DailyLoginStreakText;
+	UPROPERTY() TObjectPtr<UTextBlock> DailyLoginRewardText;
+	UPROPERTY() TObjectPtr<UButton> DailyLoginClaimBtn;
+	UPROPERTY() TObjectPtr<UTextBlock> DailyLoginClaimLabel;
+	UPROPERTY() TObjectPtr<UBorder> DailyLoginDay1;
+	UPROPERTY() TObjectPtr<UBorder> DailyLoginDay2;
+	UPROPERTY() TObjectPtr<UBorder> DailyLoginDay3;
+	UPROPERTY() TObjectPtr<UBorder> DailyLoginDay4;
+	UPROPERTY() TObjectPtr<UBorder> DailyLoginDay5;
+	UPROPERTY() TObjectPtr<UBorder> DailyLoginDay6;
+	UPROPERTY() TObjectPtr<UBorder> DailyLoginDay7;
+	bool bDailyLoginShown = false;
+
+	UFUNCTION() void OnDailyLoginClaimClicked();
 
 	bool bMenuOpen = false;
 	bool bVehicleSelectOpen = false;

@@ -1,6 +1,7 @@
 // Copyright PlayhouseCity. All Rights Reserved.
 
 #include "Vehicle/PHCDirtBikePawn.h"
+#include "Vehicle/PHCNukeExplosion.h"
 #include "PlayhouseCity.h"
 #include "Net/UnrealNetwork.h"
 #include "Components/BoxComponent.h"
@@ -502,6 +503,33 @@ void APHCDirtBikePawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// Damage flash
+	if (DamageFlashTimer > 0.f)
+	{
+		DamageFlashTimer -= DeltaTime;
+		if (BodyMaterial)
+		{
+			BodyMaterial->SetVectorParameterValue(TEXT("EmissiveColor"),
+				DamageFlashTimer > 0.f ? FLinearColor(0.4f, 0.02f, 0.0f) : FLinearColor::Black);
+		}
+	}
+
+	// Destruction
+	if (bIsDestroyed && !IsActorBeingDestroyed())
+	{
+		UWorld* W = GetWorld();
+		if (W)
+		{
+			FActorSpawnParameters SP;
+			SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			W->SpawnActor<APHCNukeExplosion>(APHCNukeExplosion::StaticClass(),
+				GetActorLocation(), FRotator::ZeroRotator, SP);
+		}
+		SetActorHiddenInGame(true);
+		Destroy();
+		return;
+	}
+
 	if (!bIsOccupied) return;
 
 	// ---- Speed update (identical quadratic curve to cars) ----
@@ -565,8 +593,12 @@ void APHCDirtBikePawn::Tick(float DeltaTime)
 	}
 
 	// ---- Wall detection (line trace at chest height) ----
+	// PERF-OPT: Only run wall trace every other frame to halve line trace cost.
+	// To rollback: remove the frame counter check (WallTraceFrameCounter).
 	// Skipped inside the motocross park where the bike needs to freely
 	// approach hills at full speed for satisfying jumps.
+	WallTraceFrameCounter++;
+	if ((WallTraceFrameCounter & 1) == 0) // every other frame
 	{
 		const FVector Pos = GetActorLocation();
 		const bool bInMotocrossPark = (Pos.X > -175000.f && Pos.X < -65000.f &&
@@ -575,7 +607,8 @@ void APHCDirtBikePawn::Tick(float DeltaTime)
 		{
 			const FVector MoveDir = GetActorForwardVector();
 			const float MoveLen = FMath::Abs(CurrentSpeed) * DeltaTime;
-			const FVector TraceStart = Pos + FVector(0.f, 0.f, 200.f);
+			// Trace at 400 UU above bike to avoid hitting terrain slopes
+			const FVector TraceStart = Pos + FVector(0.f, 0.f, 400.f);
 			const FVector TraceEnd = TraceStart + FVector(MoveDir.X, MoveDir.Y, 0.f).GetSafeNormal() * (MoveLen + 120.f);
 
 			FCollisionQueryParams WallParams;
@@ -583,7 +616,9 @@ void APHCDirtBikePawn::Tick(float DeltaTime)
 			FHitResult WallHit;
 			if (GetWorld()->LineTraceSingleByChannel(WallHit, TraceStart, TraceEnd, ECC_WorldStatic, WallParams))
 			{
-				if (!WallHit.bStartPenetrating && WallHit.Distance < MoveLen + 60.f)
+				// Only count as wall if the hit surface is mostly vertical (not terrain slope)
+				if (!WallHit.bStartPenetrating && WallHit.Distance < MoveLen + 60.f
+					&& WallHit.ImpactNormal.Z < 0.5f)
 				{
 					CurrentSpeed *= 0.1f;
 				}
@@ -592,41 +627,57 @@ void APHCDirtBikePawn::Tick(float DeltaTime)
 	}
 
 	// ---- Ground following (line trace + terrain height) ----
+	// PERF-OPT: Cache GetTerrainHeight — only recalculate every 3 frames
+	// or when the bike has moved >200 UU from the cached sample position.
+	// This reduces worst-case 15 Perlin noise calls from every frame to every 3rd frame.
+	// To rollback: replace this block with the original direct GetTerrainHeight call.
 	{
 		const FVector Pos = GetActorLocation();
+		const float FootOffset = 22.f;
 		float BestZ = -1e9f;
 		bool bFoundSurface = false;
 
 		FCollisionQueryParams TraceParams;
 		TraceParams.AddIgnoredActor(this);
 		FHitResult GroundHit;
-		const FVector Start(Pos.X, Pos.Y, Pos.Z + 200.f);
-		const FVector End(Pos.X, Pos.Y, Pos.Z - 500.f);
+		const FVector Start(Pos.X, Pos.Y, Pos.Z + 500.f);
+		const FVector End(Pos.X, Pos.Y, Pos.Z - 1000.f);
 		if (GetWorld()->LineTraceSingleByChannel(GroundHit, Start, End, ECC_WorldStatic, TraceParams))
 		{
 			if (!GroundHit.bStartPenetrating)
 			{
-				BestZ = GroundHit.ImpactPoint.Z;
+				BestZ = GroundHit.ImpactPoint.Z + FootOffset;
 				bFoundSurface = true;
 			}
 		}
 
-		const float FootOffset = 22.f;
-		if (UPHCCitySubsystem* CitySub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
+		// PERF-OPT: Only call GetTerrainHeight every 3 frames or when position changed significantly
+		TerrainCacheFrameCounter++;
+		const FVector2D CurrentPos2D(Pos.X, Pos.Y);
+		const float DistFromCache = FVector2D::Distance(CurrentPos2D, CachedTerrainPos);
+		if (TerrainCacheFrameCounter >= 3 || DistFromCache > 200.f)
 		{
-			const float TerrainZ = CitySub->GetTerrainHeight(Pos.X, Pos.Y) + FootOffset;
-			if (TerrainZ > BestZ && TerrainZ < Pos.Z + 200.f)
+			TerrainCacheFrameCounter = 0;
+			CachedTerrainPos = CurrentPos2D;
+			if (UPHCCitySubsystem* CitySub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
 			{
-				BestZ = TerrainZ;
-				bFoundSurface = true;
+				CachedTerrainZ = CitySub->GetTerrainHeight(Pos.X, Pos.Y);
 			}
+		}
+
+		const float TerrainZ = CachedTerrainZ + FootOffset;
+		if (TerrainZ > BestZ)
+		{
+			BestZ = TerrainZ;
+			bFoundSurface = true;
 		}
 
 		if (bFoundSurface)
 		{
-			const float TargetZ = BestZ + FootOffset;
+			const float TargetZ = BestZ;
 			if (Pos.Z > TargetZ + 2.f)
 			{
+				// Falling — apply gravity
 				VerticalVelocity -= 980.f * DeltaTime;
 				const float NewZ = Pos.Z + VerticalVelocity * DeltaTime;
 				if (NewZ <= TargetZ)
@@ -641,7 +692,9 @@ void APHCDirtBikePawn::Tick(float DeltaTime)
 			}
 			else
 			{
-				SetActorLocation(FVector(Pos.X, Pos.Y, TargetZ));
+				// On or below ground — smoothly interpolate up to avoid jerky snapping
+				const float SmoothZ = FMath::FInterpTo(Pos.Z, TargetZ, DeltaTime, 20.f);
+				SetActorLocation(FVector(Pos.X, Pos.Y, SmoothZ));
 				VerticalVelocity = 0.f;
 			}
 		}

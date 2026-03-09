@@ -54,6 +54,9 @@ public:
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
 	virtual void Deinitialize() override;
 
+	/** Whether the city has already been generated on this machine. */
+	bool bCityGenerated = false;
+
 private:
 	void SpawnCityEnvironment();
 	void SpawnGround();
@@ -76,7 +79,6 @@ private:
 	void SpawnSandCastle();
 	void SpawnLakeAndPirateShip();
 	void SpawnStreetLabels();
-	void SpawnLightRail();
 	void SpawnLangtree();
 	void SpawnTerrainGrid();
 	void SpawnGrassSystem();
@@ -272,11 +274,6 @@ private:
 		return false;
 	}
 
-	/** LYNX Blue Line light rail. */
-	UPROPERTY(Transient) TObjectPtr<AActor> LightRailTrainActor;
-	float LightRailPosition = 0.f;
-	bool bLightRailForward = true;
-
 public:
 	/** NPC patrol helicopter (flies during daytime, damageable). */
 	void SpawnNPCHelicopter();
@@ -292,6 +289,12 @@ public:
 	bool bNPCHeliCrashing = false;
 	float NPCHeliCrashTimer = 0.f;
 	float NPCHeliRespawnTimer = -1.f;
+	bool bNPCHeliPermanentlyDestroyed = false;
+	bool bAirportBlackbirdDestroyed = false;
+
+	/** Save/load destroyed vehicle state to persist across sessions. */
+	void SaveDestroyedVehicleState();
+	void LoadDestroyedVehicleState();
 
 private:
 
@@ -300,8 +303,6 @@ private:
 	UPROPERTY(Transient) TObjectPtr<AActor> CloudLayerActor2;
 
 	/** Ocean actor reference for wave animation. */
-	UPROPERTY(Transient) TObjectPtr<AActor> OceanActor;
-	float WaterTime = 0.f;
 
 	/** Road materials for wet road effect at night. */
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> RoadMaterials;
@@ -360,6 +361,4 @@ private:
 	/** Separate random stream for building detail elements (avoids disturbing CityRandom). */
 	FRandomStream DetailRandom;
 
-	/** Whether the city has already been generated on this machine. */
-	bool bCityGenerated = false;
 };

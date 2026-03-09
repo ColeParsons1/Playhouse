@@ -20,6 +20,8 @@ class APHCTankPawn;
 class APHCDirtBikePawn;
 class APHCBlackbirdPawn;
 class APHCBlackHawkPawn;
+class APHCRollerBladesPawn;
+class STextBlock;
 
 /**
  * Top-level player controller for the PlayhouseCity lobby.
@@ -118,6 +120,10 @@ public:
 	void EquipJetpack();
 	void UnequipJetpack();
 
+	/** Equip or remove roller blades on the character. */
+	void EquipRollerBlades();
+	void UnequipRollerBlades();
+
 	/** Server RPC: spawn a vehicle on the server and enter it. */
 	UFUNCTION(Server, Reliable)
 	void ServerSpawnAndEnterVehicle(int32 VehicleType);
@@ -134,6 +140,11 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientOnVehicleExited(FVector ExitLocation);
 
+	/** Server RPC: send the local player's profile to the server so it can
+	 *  be set on the PlayerState and replicated to all clients. */
+	UFUNCTION(Server, Reliable)
+	void ServerSendPlayerProfile(const FPHCPlayerProfile& Profile);
+
 	/** Server RPC: relay vehicle input through the controller (vehicle RPCs
 	 *  don't arrive on dynamically spawned pawns). */
 	UFUNCTION(Server, Unreliable)
@@ -141,6 +152,12 @@ public:
 
 	/** Returns the currently active top-level widget (e.g. CityHUD). */
 	UUserWidget* GetActiveWidget() const { return ActiveWidget; }
+
+	/** Show a full-screen loading overlay (masks HUD construction + server connect). */
+	void ShowLoadingScreen();
+
+	/** Remove the loading overlay and reveal the game. */
+	void HideLoadingScreen();
 
 protected:
 	virtual void BeginPlay() override;
@@ -198,4 +215,19 @@ private:
 	/** Performs all client-side vehicle exit cleanup: position, input contexts,
 	 *  collision, HUD mode. Called from Tick when pawn change is detected. */
 	void HandleLocalVehicleExit();
+
+	/** Full-screen Slate loading overlay shown during world transitions. */
+	TSharedPtr<SWidget> LoadingScreenSlate;
+
+	/** Animated "Loading..." text inside the loading screen. */
+	TSharedPtr<STextBlock> LoadingDotsSlate;
+
+	/** Timer driving the dot animation on the loading screen. */
+	FTimerHandle LoadingDotsTimerHandle;
+
+	/** Current dot animation phase (0-2). */
+	int32 LoadingDotPhase = 0;
+
+	/** Whether the loading screen is currently active. */
+	bool bLoadingScreenVisible = false;
 };

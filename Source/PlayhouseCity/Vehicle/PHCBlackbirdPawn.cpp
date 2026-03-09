@@ -22,6 +22,7 @@
 #include "Vehicle/PHCMissileProjectile.h"
 #include "Components/SphereComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/SpotLightComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Vehicle/PHCNukeExplosion.h"
 
@@ -38,6 +39,11 @@ APHCBlackbirdPawn::APHCBlackbirdPawn()
 	NetUpdateFrequency = 30.f;
 	MinNetUpdateFrequency = 15.f;
 	bAlwaysRelevant = true;
+
+	// Prevent AI auto-possession — this pawn is pre-placed in the world
+	// and must remain unpossessed until a player enters it.
+	AutoPossessAI = EAutoPossessAI::Disabled;
+	AIControllerClass = nullptr;
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(
 		TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -255,6 +261,73 @@ APHCBlackbirdPawn::APHCBlackbirdPawn()
 		FVector(-460.f, 0.f, 8.f), FVector(6.f, 6.f, 4.f));
 
 	// ====================================================================
+	//  FORMATION LIGHTS (electroluminescent strips for night formation flying)
+	// ====================================================================
+
+	// Fuselage spine strip (top centerline)
+	FormationLightStrips.Add(MakeCube(TEXT("FmtSpine"),
+		FVector(0.f, 0.f, 16.f), FVector(400.f, 3.f, 1.f)));
+
+	// Wing leading edge strips
+	FormationLightStrips.Add(MakeCube(TEXT("FmtWingL"),
+		FVector(20.f, 250.f, -2.f), FVector(220.f, 2.f, 1.f)));
+	FormationLightStrips.Add(MakeCube(TEXT("FmtWingR"),
+		FVector(20.f, -250.f, -2.f), FVector(220.f, 2.f, 1.f)));
+
+	// Nacelle side strips
+	FormationLightStrips.Add(MakeCube(TEXT("FmtNacL"),
+		FVector(-80.f, 240.f, 0.f), FVector(200.f, 1.f, 1.f)));
+	FormationLightStrips.Add(MakeCube(TEXT("FmtNacR"),
+		FVector(-80.f, -240.f, 0.f), FVector(200.f, 1.f, 1.f)));
+
+	// Vertical stabilizer leading edge strips
+	FormationLightStrips.Add(MakeCube(TEXT("FmtVStabL"),
+		FVector(-280.f, 205.f, 50.f), FVector(2.f, 2.f, 55.f)));
+	FormationLightStrips.Add(MakeCube(TEXT("FmtVStabR"),
+		FVector(-280.f, -205.f, 50.f), FVector(2.f, 2.f, 55.f)));
+
+	// All strips hidden by default
+	for (UStaticMeshComponent* Strip : FormationLightStrips)
+	{
+		if (Strip) Strip->SetVisibility(false);
+	}
+
+	// Subtle ambient glow from formation lights
+	FormationGlow = CreateDefaultSubobject<UPointLightComponent>(TEXT("FormationGlow"));
+	FormationGlow->SetupAttachment(VehicleCollision);
+	FormationGlow->SetRelativeLocation(FVector(0.f, 0.f, 30.f));
+	FormationGlow->SetIntensity(3000.f);
+	FormationGlow->SetAttenuationRadius(1200.f);
+	FormationGlow->SetLightColor(FLinearColor(0.2f, 0.8f, 0.3f));
+	FormationGlow->SetCastShadows(false);
+	FormationGlow->SetVisibility(false);
+
+	// Headlight spotlights — illuminate area ahead of the jet
+	HeadlightSpotL = CreateDefaultSubobject<USpotLightComponent>(TEXT("HeadlightSpotL"));
+	HeadlightSpotL->SetupAttachment(VehicleCollision);
+	HeadlightSpotL->SetRelativeLocation(FVector(350.f, -50.f, -10.f));
+	HeadlightSpotL->SetRelativeRotation(FRotator(-5.f, 0.f, 0.f));
+	HeadlightSpotL->SetIntensity(80000.f);
+	HeadlightSpotL->SetAttenuationRadius(8000.f);
+	HeadlightSpotL->SetOuterConeAngle(30.f);
+	HeadlightSpotL->SetInnerConeAngle(18.f);
+	HeadlightSpotL->SetLightColor(FColor(255, 250, 240));
+	HeadlightSpotL->SetCastShadows(false);
+	HeadlightSpotL->SetVisibility(false);
+
+	HeadlightSpotR = CreateDefaultSubobject<USpotLightComponent>(TEXT("HeadlightSpotR"));
+	HeadlightSpotR->SetupAttachment(VehicleCollision);
+	HeadlightSpotR->SetRelativeLocation(FVector(350.f, 50.f, -10.f));
+	HeadlightSpotR->SetRelativeRotation(FRotator(-5.f, 0.f, 0.f));
+	HeadlightSpotR->SetIntensity(80000.f);
+	HeadlightSpotR->SetAttenuationRadius(8000.f);
+	HeadlightSpotR->SetOuterConeAngle(30.f);
+	HeadlightSpotR->SetInnerConeAngle(18.f);
+	HeadlightSpotR->SetLightColor(FColor(255, 250, 240));
+	HeadlightSpotR->SetCastShadows(false);
+	HeadlightSpotR->SetVisibility(false);
+
+	// ====================================================================
 	//  CAMERA
 	// ====================================================================
 
@@ -414,6 +487,13 @@ void APHCBlackbirdPawn::BeginPlay()
 	ApplyMat(NavLightL, NavRed, 0.0f, 0.1f, NavRed);
 	ApplyMat(NavLightR, NavGreen, 0.0f, 0.1f, NavGreen);
 	ApplyMat(TailLight, LightWhite, 0.0f, 0.1f, LightWhite);
+
+	// Formation light strips — green electroluminescent (initially off)
+	const FLinearColor FmtGreen(0.1f, 0.4f, 0.15f);
+	for (UStaticMeshComponent* Strip : FormationLightStrips)
+	{
+		ApplyMat(Strip, FmtGreen, 0.0f, 0.2f, FLinearColor::Black);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -541,6 +621,52 @@ void APHCBlackbirdPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// ---- Damage flash ----
+	if (DamageFlashTimer > 0.f)
+	{
+		DamageFlashTimer -= DeltaTime;
+		if (BodyMaterial)
+		{
+			BodyMaterial->SetVectorParameterValue(TEXT("EmissiveColor"),
+				DamageFlashTimer > 0.f ? FLinearColor(0.4f, 0.02f, 0.0f) : FLinearColor::Black);
+		}
+	}
+
+	// ---- Crash sequence ----
+	if (bIsCrashing)
+	{
+		CrashTimer += DeltaTime;
+
+		FVector Pos = GetActorLocation();
+		FRotator Rot = GetActorRotation();
+
+		const float FallSpeed = 800.f + CrashTimer * 200.f;
+		Pos.Z -= FallSpeed * DeltaTime;
+		Rot.Yaw += 180.f * DeltaTime;
+		Rot.Roll = FMath::FInterpTo(Rot.Roll, 45.f, DeltaTime, 1.5f);
+		Rot.Pitch = FMath::FInterpTo(Rot.Pitch, -20.f, DeltaTime, 1.0f);
+
+		SetActorLocation(Pos);
+		SetActorRotation(Rot);
+
+		if (Pos.Z <= 10.f && !IsActorBeingDestroyed())
+		{
+			bIsCrashing = false;
+			UWorld* W = GetWorld();
+			if (W)
+			{
+				FActorSpawnParameters SP;
+				SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+				W->SpawnActor<APHCNukeExplosion>(APHCNukeExplosion::StaticClass(),
+					FVector(Pos.X, Pos.Y, FMath::Max(Pos.Z, 0.f)), FRotator::ZeroRotator, SP);
+			}
+
+			SetActorHiddenInGame(true);
+			Destroy();
+		}
+		return;
+	}
+
 	if (!bIsOccupied) return;
 
 	// Cooldowns
@@ -613,32 +739,46 @@ void APHCBlackbirdPawn::Tick(float DeltaTime)
 	// ---- Ground-aware altitude clamp ----
 	{
 		const FVector Pos = GetActorLocation();
-		float GroundZ = 0.f;
 
-		const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 5000.f);
+		// Trace downward from slightly above the aircraft to find ground below.
+		// Start only 500 UU above (not 5000) to avoid hitting ceilings in
+		// enclosed spaces like the underground airport.
+		const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 500.f);
 		const FVector TraceEnd(Pos.X, Pos.Y, Pos.Z - 5000.f);
 		FCollisionQueryParams Params;
 		Params.AddIgnoredActor(this);
 		TArray<FHitResult> Hits;
+
+		bool bFoundGround = false;
+		float GroundZ = 0.f;
+
 		if (GetWorld()->LineTraceMultiByChannel(Hits, TraceStart, TraceEnd, ECC_WorldStatic, Params))
 		{
 			for (const FHitResult& Hit : Hits)
 			{
 				if (Hit.bStartPenetrating) continue;
-				GroundZ = Hit.ImpactPoint.Z;
-				break;
+				// Only treat hits at or below the aircraft as ground (skip ceilings).
+				if (Hit.ImpactPoint.Z <= Pos.Z + 100.f)
+				{
+					GroundZ = Hit.ImpactPoint.Z;
+					bFoundGround = true;
+					break;
+				}
 			}
 		}
 
-		const float FloorZ = GroundZ + MinAltitude;
-		if (Pos.Z < FloorZ)
+		if (bFoundGround)
 		{
-			SetActorLocation(FVector(Pos.X, Pos.Y, FloorZ));
-			FRotator Rot = GetActorRotation();
-			if (Rot.Pitch < 0.f)
+			const float FloorZ = GroundZ + MinAltitude;
+			if (Pos.Z < FloorZ)
 			{
-				Rot.Pitch = FMath::FInterpTo(Rot.Pitch, 0.f, DeltaTime, 8.f);
-				SetActorRotation(Rot);
+				SetActorLocation(FVector(Pos.X, Pos.Y, FloorZ));
+				FRotator Rot = GetActorRotation();
+				if (Rot.Pitch < 0.f)
+				{
+					Rot.Pitch = FMath::FInterpTo(Rot.Pitch, 0.f, DeltaTime, 8.f);
+					SetActorRotation(Rot);
+				}
 			}
 		}
 	}
@@ -869,7 +1009,21 @@ void APHCBlackbirdPawn::SetBodyColor(const FLinearColor& Color)
 
 void APHCBlackbirdPawn::SetHeadlightsEnabled(bool bEnabled)
 {
-	// No headlights on the Blackbird — nav lights always on.
+	// Toggle formation light strips visibility + emissive
+	const FLinearColor Emis = bEnabled
+		? FLinearColor(0.5f, 2.5f, 0.8f) : FLinearColor::Black;
+	for (UStaticMeshComponent* Strip : FormationLightStrips)
+	{
+		if (!Strip) continue;
+		Strip->SetVisibility(bEnabled);
+		if (UMaterialInstanceDynamic* M = Cast<UMaterialInstanceDynamic>(Strip->GetMaterial(0)))
+		{
+			M->SetVectorParameterValue(TEXT("EmissiveColor"), Emis);
+		}
+	}
+	if (FormationGlow) FormationGlow->SetVisibility(bEnabled);
+	if (HeadlightSpotL) HeadlightSpotL->SetVisibility(bEnabled);
+	if (HeadlightSpotR) HeadlightSpotR->SetVisibility(bEnabled);
 }
 
 FVector APHCBlackbirdPawn::GetExitLocation() const

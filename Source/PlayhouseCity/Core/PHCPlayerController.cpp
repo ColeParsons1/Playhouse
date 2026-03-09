@@ -45,12 +45,21 @@
 #include "Vehicle/PHCDirtBikePawn.h"
 #include "Vehicle/PHCBlackbirdPawn.h"
 #include "Vehicle/PHCBlackHawkPawn.h"
+#include "Vehicle/PHCRollerBladesPawn.h"
 #include "Player/PHCCityCharacter.h"
+#include "Player/PHCPlayerState.h"
 #include "Components/StaticMeshComponent.h"
 #include "Core/PHCCityGameMode.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "EngineUtils.h"
+#include "TimerManager.h"
+#include "Misc/Paths.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Text/STextBlock.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/SWeakWidget.h"
+#include "Engine/GameViewportClient.h"
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -101,6 +110,7 @@ void APHCPlayerController::BeginPlay()
 			if (GetPawn() != nullptr)
 			{
 				UE_LOG(LogPlayhouseCity, Log, TEXT("PHCPlayerController -- Already logged in with pawn, entering world mode."));
+				ShowLoadingScreen();
 				EnterWorldMode();
 			}
 			else
@@ -143,6 +153,7 @@ void APHCPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 
 	ClearActiveWidget();
+	HideLoadingScreen();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -162,7 +173,34 @@ void APHCPlayerController::Tick(float DeltaTime)
 		LastVehiclePosition = CurrentPawn->GetActorLocation();
 		if (SavedCharacterPawn)
 		{
-			SavedCharacterPawn->SetActorLocation(CurrentPawn->GetActorLocation());
+			// Dirt bike / roller blades: character is attached as a visible rider
+			// with a specific offset — don't flatten to vehicle origin.
+			if (Cast<APHCDirtBikePawn>(CurrentPawn))
+			{
+				SavedCharacterPawn->SetActorLocation(CurrentPawn->GetActorLocation() + FVector(10.f, 0.f, 30.f));
+			}
+			else if (Cast<APHCRollerBladesPawn>(CurrentPawn))
+			{
+				SavedCharacterPawn->SetActorLocation(CurrentPawn->GetActorLocation() + FVector(0.f, 0.f, 75.f));
+			}
+			else
+			{
+				SavedCharacterPawn->SetActorLocation(CurrentPawn->GetActorLocation());
+			}
+		}
+	}
+
+	// -- Ensure camera follows vehicle even if Possess() had a timing issue --
+	if (bWasDrivingVehicle && CurrentVehicle && PlayerCameraManager)
+	{
+		if (!CurrentPawn || CurrentPawn != CurrentVehicle)
+		{
+			// Controller didn't successfully possess the vehicle.
+			// Force camera to follow it anyway.
+			if (PlayerCameraManager->GetViewTarget() != CurrentVehicle)
+			{
+				SetViewTarget(CurrentVehicle);
+			}
 		}
 	}
 
@@ -244,7 +282,7 @@ void APHCPlayerController::EnterWorldMode()
 
 	if (CityHUDWidgetClass)
 	{
-		ActiveWidget = CreateWidget<UUserWidget>(this, CityHUDWidgetClass);
+		ActiveWidget = CreateWidget<UPHCCityHUD>(this, CityHUDWidgetClass);
 		if (ActiveWidget)
 		{
 			ActiveWidget->AddToViewport(0);
@@ -271,6 +309,29 @@ void APHCPlayerController::EnterWorldMode()
 		if (!GI->bInMultiplayerSession)
 		{
 			GI->JoinGame(TEXT("GAME_SERVER_IP"));
+		}
+		else
+		{
+			// Already connected — send our profile to the server so it's
+			// replicated on our PlayerState for other clients to see.
+			ServerSendPlayerProfile(GI->LocalPlayerProfile);
+		}
+	}
+
+	// If city generation already finished (OnWorldBeginPlay ran before us),
+	// hide the loading screen after a brief delay so the first frame renders.
+	if (bLoadingScreenVisible)
+	{
+		if (UPHCCitySubsystem* CitySub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
+		{
+			if (CitySub->bCityGenerated)
+			{
+				FTimerHandle DelayHandle;
+				GetWorldTimerManager().SetTimer(DelayHandle, [this]()
+				{
+					HideLoadingScreen();
+				}, 3.5f, false);
+			}
 		}
 	}
 }
@@ -457,6 +518,9 @@ void APHCPlayerController::OnLoginSuccess(const FPHCPlayerProfile& PlayerProfile
 		TEXT("PHCPlayerController::OnLoginSuccess -- Login succeeded for '%s'."),
 		*PlayerProfile.Username);
 
+	// Show loading screen to mask HUD construction + server connect glitch.
+	ShowLoadingScreen();
+
 	// If we have a possessed pawn, we're in the 3D city world.
 	if (GetPawn() != nullptr)
 	{
@@ -526,13 +590,14 @@ void APHCPlayerController::EnterNearestVehicle()
 		if (Dist < NearestDist) { NearestDist = Dist; NearestPawn = V; }
 	};
 
-	for (TActorIterator<APHCVehiclePawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
-	for (TActorIterator<APHCDuneBuggyPawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
-	for (TActorIterator<APHCRaptorPawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
-	for (TActorIterator<APHCTankPawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
-	for (TActorIterator<APHCDirtBikePawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
-	for (TActorIterator<APHCBlackbirdPawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
-	for (TActorIterator<APHCBlackHawkPawn> It(World); It; ++It) { TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCVehiclePawn> It(World); It; ++It) { if (!It->bIsDestroyed) TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCDuneBuggyPawn> It(World); It; ++It) { if (!It->bIsDestroyed) TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCRaptorPawn> It(World); It; ++It) { if (!It->bIsCrashing) TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCTankPawn> It(World); It; ++It) { if (!It->bIsDestroyed) TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCDirtBikePawn> It(World); It; ++It) { if (!It->bIsDestroyed) TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCBlackbirdPawn> It(World); It; ++It) { if (!It->bIsCrashing) TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCBlackHawkPawn> It(World); It; ++It) { if (!It->bIsCrashing) TryNearest(*It, It->bIsOccupied); }
+	for (TActorIterator<APHCRollerBladesPawn> It(World); It; ++It) { if (!It->bIsDestroyed) TryNearest(*It, It->bIsOccupied); }
 
 	if (!NearestPawn)
 	{
@@ -558,10 +623,11 @@ void APHCPlayerController::EnterNearestVehicle()
 		}
 	}
 
-	// Hide character (dirt bike keeps it visible as rider).
+	// Hide character (dirt bike + roller blades keep it visible as rider).
 	Character->SetActorEnableCollision(false);
 	const bool bIsDirtBike = Cast<APHCDirtBikePawn>(NearestPawn) != nullptr;
-	Character->SetActorHiddenInGame(!bIsDirtBike);
+	const bool bIsRollerBlades = Cast<APHCRollerBladesPawn>(NearestPawn) != nullptr;
+	Character->SetActorHiddenInGame(!bIsDirtBike && !bIsRollerBlades);
 
 	// Vehicle-specific entry setup.
 	if (APHCVehiclePawn* V = Cast<APHCVehiclePawn>(NearestPawn))
@@ -580,6 +646,7 @@ void APHCPlayerController::EnterNearestVehicle()
 	{
 		R->bIsOccupied = true;
 		R->CurrentSpeed = 0.f;
+		R->SetHeadlightsEnabled(true);
 	}
 	else if (APHCTankPawn* T = Cast<APHCTankPawn>(NearestPawn))
 	{
@@ -597,22 +664,50 @@ void APHCPlayerController::EnterNearestVehicle()
 	{
 		BB->bIsOccupied = true;
 		BB->CurrentSpeed = 0.f;
+		BB->SetHeadlightsEnabled(true);
 	}
 	else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(NearestPawn))
 	{
 		BH->bIsOccupied = true;
 		BH->CurrentSpeed = 0.f;
+		BH->SetHeadlightsEnabled(true);
+	}
+	else if (APHCRollerBladesPawn* RB = Cast<APHCRollerBladesPawn>(NearestPawn))
+	{
+		RB->bIsOccupied = true;
+		RB->CurrentSpeed = 0.f;
+	}
+
+	// If the vehicle already has a controller (e.g. AI auto-possession),
+	// forcibly remove it before we try to possess.
+	if (NearestPawn->Controller && NearestPawn->Controller != this)
+	{
+		NearestPawn->Controller->UnPossess();
 	}
 
 	UnPossess();
 	Possess(NearestPawn);
+	SetViewTargetWithBlend(NearestPawn, 0.f);
 
 	// Dirt bike: attach character as visible rider.
 	if (bIsDirtBike)
 	{
-		Character->AttachToActor(NearestPawn, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-		Character->SetActorRelativeLocation(FVector(10.f, 0.f, 30.f));
-		Character->SetActorRelativeRotation(FRotator::ZeroRotator);
+		Character->SetActorLocation(NearestPawn->GetActorLocation() + FVector(10.f, 0.f, 30.f));
+		Character->SetActorRotation(NearestPawn->GetActorRotation());
+		Character->AttachToActor(NearestPawn, FAttachmentTransformRules::KeepWorldTransform);
+	}
+	// Roller blades: attach character as visible rider, hide foot meshes.
+	else if (bIsRollerBlades)
+	{
+		Character->SetActorLocation(NearestPawn->GetActorLocation() + FVector(0.f, 0.f, 75.f));
+		Character->SetActorRotation(NearestPawn->GetActorRotation());
+		Character->AttachToActor(NearestPawn, FAttachmentTransformRules::KeepWorldTransform);
+		if (Character->LeftFootMesh) Character->LeftFootMesh->SetVisibility(false);
+		if (Character->RightFootMesh) Character->RightFootMesh->SetVisibility(false);
+		if (Character->LeftToeMesh) Character->LeftToeMesh->SetVisibility(false);
+		if (Character->RightToeMesh) Character->RightToeMesh->SetVisibility(false);
+		if (Character->LeftSoleMesh) Character->LeftSoleMesh->SetVisibility(false);
+		if (Character->RightSoleMesh) Character->RightSoleMesh->SetVisibility(false);
 	}
 
 	// Tell the city HUD to switch to driving controls.
@@ -630,6 +725,16 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 {
 	APHCCityCharacter* Character = Cast<APHCCityCharacter>(GetPawn());
 	if (!Character) return;
+
+	// Roller blades are an equipment mode (like jetpack), not a vehicle.
+	if (VehicleType == 7)
+	{
+		if (Character->bRollerBladesEquipped)
+			UnequipRollerBlades();
+		else
+			EquipRollerBlades();
+		return;
+	}
 
 	// Save character reference on this machine (needed for exit flow).
 	SavedCharacterPawn = Character;
@@ -669,6 +774,7 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 			Raptor->SetBodyColor(FLinearColor(0.35f, 0.37f, 0.38f));
 			Raptor->bIsOccupied = true;
 			Raptor->CurrentSpeed = 0.f;
+			Raptor->SetHeadlightsEnabled(true);
 			SpawnedVehicle = Raptor;
 		}
 	}
@@ -706,7 +812,19 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 		{
 			Hawk->bIsOccupied = true;
 			Hawk->CurrentSpeed = 0.f;
+			Hawk->SetHeadlightsEnabled(true);
 			SpawnedVehicle = Hawk;
+		}
+	}
+	else if (VehicleType == 7)
+	{
+		APHCRollerBladesPawn* Blades = World->SpawnActor<APHCRollerBladesPawn>(
+			APHCRollerBladesPawn::StaticClass(), SpawnLoc, SpawnRot, SP);
+		if (Blades)
+		{
+			Blades->bIsOccupied = true;
+			Blades->CurrentSpeed = 0.f;
+			SpawnedVehicle = Blades;
 		}
 	}
 	else if (VehicleType == 1)
@@ -751,15 +869,33 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 	CurrentVehicle = SpawnedVehicle;
 	Character->SetActorEnableCollision(false);
 
-	if (VehicleType == 4)
+	if (VehicleType == 4 || VehicleType == 7)
 	{
-		// Dirt bike: attach character visibly to the bike as rider.
+		// Dirt bike / Roller blades: attach character visibly.
 		Character->SetActorHiddenInGame(false);
 		UnPossess();
 		Possess(SpawnedVehicle);
-		Character->AttachToActor(SpawnedVehicle, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-		Character->SetActorRelativeLocation(FVector(10.f, 0.f, 30.f));
-		Character->SetActorRelativeRotation(FRotator::ZeroRotator);
+		if (VehicleType == 4)
+		{
+			// Dirt bike: pre-position then attach with KeepWorldTransform
+			Character->SetActorLocation(SpawnedVehicle->GetActorLocation() + FVector(10.f, 0.f, 30.f));
+			Character->SetActorRotation(SpawnedVehicle->GetActorRotation());
+			Character->AttachToActor(SpawnedVehicle, FAttachmentTransformRules::KeepWorldTransform);
+		}
+		else
+		{
+			// Roller blades: pre-position then attach with KeepWorldTransform
+			Character->SetActorLocation(SpawnedVehicle->GetActorLocation() + FVector(0.f, 0.f, 75.f));
+			Character->SetActorRotation(SpawnedVehicle->GetActorRotation());
+			Character->AttachToActor(SpawnedVehicle, FAttachmentTransformRules::KeepWorldTransform);
+			// Hide foot/toe/sole meshes (replaced by blade boot meshes)
+			if (Character->LeftFootMesh) Character->LeftFootMesh->SetVisibility(false);
+			if (Character->RightFootMesh) Character->RightFootMesh->SetVisibility(false);
+			if (Character->LeftToeMesh) Character->LeftToeMesh->SetVisibility(false);
+			if (Character->RightToeMesh) Character->RightToeMesh->SetVisibility(false);
+			if (Character->LeftSoleMesh) Character->LeftSoleMesh->SetVisibility(false);
+			if (Character->RightSoleMesh) Character->RightSoleMesh->SetVisibility(false);
+		}
 	}
 	else
 	{
@@ -785,6 +921,18 @@ void APHCPlayerController::UnequipJetpack()
 {
 	APHCCityCharacter* Char = Cast<APHCCityCharacter>(GetPawn());
 	if (Char) Char->UnequipJetpack();
+}
+
+void APHCPlayerController::EquipRollerBlades()
+{
+	APHCCityCharacter* Char = Cast<APHCCityCharacter>(GetPawn());
+	if (Char) Char->EquipRollerBlades();
+}
+
+void APHCPlayerController::UnequipRollerBlades()
+{
+	APHCCityCharacter* Char = Cast<APHCCityCharacter>(GetPawn());
+	if (Char) Char->UnequipRollerBlades();
 }
 
 void APHCPlayerController::OnVehicleExitRequested()
@@ -841,6 +989,7 @@ void APHCPlayerController::OnVehicleExitRequested()
 			R->SteeringInput = 0.f;
 			R->PitchInput = 0.f;
 			R->CurrentSpeed = 0.f;
+			R->SetHeadlightsEnabled(false);
 		}
 		else if (APHCTankPawn* T = Cast<APHCTankPawn>(VPawn))
 		{
@@ -866,6 +1015,7 @@ void APHCPlayerController::OnVehicleExitRequested()
 			BB->SteeringInput = 0.f;
 			BB->PitchInput = 0.f;
 			BB->CurrentSpeed = 0.f;
+			BB->SetHeadlightsEnabled(false);
 		}
 		else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(VPawn))
 		{
@@ -874,6 +1024,25 @@ void APHCPlayerController::OnVehicleExitRequested()
 			BH->SteeringInput = 0.f;
 			BH->PitchInput = 0.f;
 			BH->CurrentSpeed = 0.f;
+			BH->SetHeadlightsEnabled(false);
+		}
+		else if (APHCRollerBladesPawn* RB = Cast<APHCRollerBladesPawn>(VPawn))
+		{
+			RB->bIsOccupied = false;
+			RB->ThrottleInput = 0.f;
+			RB->SteeringInput = 0.f;
+			RB->CurrentSpeed = 0.f;
+			if (SavedCharacterPawn)
+			{
+				SavedCharacterPawn->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+				// Restore foot meshes
+				if (SavedCharacterPawn->LeftFootMesh) SavedCharacterPawn->LeftFootMesh->SetVisibility(true);
+				if (SavedCharacterPawn->RightFootMesh) SavedCharacterPawn->RightFootMesh->SetVisibility(true);
+				if (SavedCharacterPawn->LeftToeMesh) SavedCharacterPawn->LeftToeMesh->SetVisibility(true);
+				if (SavedCharacterPawn->RightToeMesh) SavedCharacterPawn->RightToeMesh->SetVisibility(true);
+				if (SavedCharacterPawn->LeftSoleMesh) SavedCharacterPawn->LeftSoleMesh->SetVisibility(true);
+				if (SavedCharacterPawn->RightSoleMesh) SavedCharacterPawn->RightSoleMesh->SetVisibility(true);
+			}
 		}
 	};
 
@@ -894,6 +1063,16 @@ void APHCPlayerController::OnVehicleExitRequested()
 
 	// Tell owning client to update HUD and set character position.
 	ClientOnVehicleExited(ExitLoc);
+
+	// Destroy the vehicle so it doesn't litter the world.
+	if (DrivenPawn && DrivenPawn != SavedCharacterPawn)
+	{
+		DrivenPawn->Destroy();
+	}
+	if (CurrentVehicle && CurrentVehicle != DrivenPawn && CurrentVehicle != SavedCharacterPawn)
+	{
+		CurrentVehicle->Destroy();
+	}
 
 	CurrentVehicle = nullptr;
 	LastVehiclePosition = FVector::ZeroVector;
@@ -923,15 +1102,40 @@ void APHCPlayerController::ClientOnVehicleEntered_Implementation(APawn* NewVehic
 		// Disable character collision on client (server already does this, but it doesn't replicate).
 		SavedCharacterPawn->SetActorEnableCollision(false);
 
-		// Dirt bike: make character body visible as rider (even in first person).
+		// Dirt bike / roller blades: attach character visibly as rider on client.
+		// Pre-position then attach with KeepWorldTransform so the offset persists.
 		if (Cast<APHCDirtBikePawn>(NewVehicle))
 		{
+			SavedCharacterPawn->SetActorHiddenInGame(false);
+			SavedCharacterPawn->SetActorLocation(NewVehicle->GetActorLocation() + FVector(10.f, 0.f, 30.f));
+			SavedCharacterPawn->SetActorRotation(NewVehicle->GetActorRotation());
+			SavedCharacterPawn->AttachToActor(NewVehicle, FAttachmentTransformRules::KeepWorldTransform);
 			TArray<UStaticMeshComponent*> Meshes;
 			SavedCharacterPawn->GetComponents<UStaticMeshComponent>(Meshes);
 			for (UStaticMeshComponent* M : Meshes)
 			{
 				if (M) M->SetVisibility(true);
 			}
+		}
+		else if (Cast<APHCRollerBladesPawn>(NewVehicle))
+		{
+			SavedCharacterPawn->SetActorHiddenInGame(false);
+			SavedCharacterPawn->SetActorLocation(NewVehicle->GetActorLocation() + FVector(0.f, 0.f, 75.f));
+			SavedCharacterPawn->SetActorRotation(NewVehicle->GetActorRotation());
+			SavedCharacterPawn->AttachToActor(NewVehicle, FAttachmentTransformRules::KeepWorldTransform);
+			TArray<UStaticMeshComponent*> Meshes;
+			SavedCharacterPawn->GetComponents<UStaticMeshComponent>(Meshes);
+			for (UStaticMeshComponent* M : Meshes)
+			{
+				if (M) M->SetVisibility(true);
+			}
+			// Hide foot meshes (replaced by blade boot meshes).
+			if (SavedCharacterPawn->LeftFootMesh) SavedCharacterPawn->LeftFootMesh->SetVisibility(false);
+			if (SavedCharacterPawn->RightFootMesh) SavedCharacterPawn->RightFootMesh->SetVisibility(false);
+			if (SavedCharacterPawn->LeftToeMesh) SavedCharacterPawn->LeftToeMesh->SetVisibility(false);
+			if (SavedCharacterPawn->RightToeMesh) SavedCharacterPawn->RightToeMesh->SetVisibility(false);
+			if (SavedCharacterPawn->LeftSoleMesh) SavedCharacterPawn->LeftSoleMesh->SetVisibility(false);
+			if (SavedCharacterPawn->RightSoleMesh) SavedCharacterPawn->RightSoleMesh->SetVisibility(false);
 		}
 	}
 
@@ -946,6 +1150,16 @@ void APHCPlayerController::ClientOnVehicleEntered_Implementation(APawn* NewVehic
 void APHCPlayerController::ServerExitVehicle_Implementation()
 {
 	OnVehicleExitRequested();
+}
+
+void APHCPlayerController::ServerSendPlayerProfile_Implementation(const FPHCPlayerProfile& Profile)
+{
+	if (APHCPlayerState* PS = GetPlayerState<APHCPlayerState>())
+	{
+		PS->SetPlayerProfile(Profile);
+		UE_LOG(LogPlayhouseCity, Log, TEXT("ServerSendPlayerProfile -- Set profile for '%s' (ID %d)."),
+			*Profile.Username, Profile.PlayerId);
+	}
 }
 
 void APHCPlayerController::ServerSetVehicleInput_Implementation(float Throttle, float Steering, float Pitch)
@@ -1000,6 +1214,11 @@ void APHCPlayerController::ServerSetVehicleInput_Implementation(float Throttle, 
 		BH->SteeringInput = Steering;
 		BH->PitchInput = Pitch;
 	}
+	else if (APHCRollerBladesPawn* RB = Cast<APHCRollerBladesPawn>(P))
+	{
+		RB->ThrottleInput = Throttle;
+		RB->SteeringInput = Steering;
+	}
 }
 
 void APHCPlayerController::HandleLocalVehicleExit()
@@ -1048,6 +1267,7 @@ void APHCPlayerController::HandleLocalVehicleExit()
 			else if (APHCDirtBikePawn* DB = Cast<APHCDirtBikePawn>(VPawn)) MC = DB->VehicleMappingContext;
 			else if (APHCBlackbirdPawn* BB = Cast<APHCBlackbirdPawn>(VPawn)) MC = BB->VehicleMappingContext;
 			else if (APHCBlackHawkPawn* BH = Cast<APHCBlackHawkPawn>(VPawn)) MC = BH->VehicleMappingContext;
+			else if (APHCRollerBladesPawn* RB = Cast<APHCRollerBladesPawn>(VPawn)) MC = RB->VehicleMappingContext;
 			if (MC) Subsystem->RemoveMappingContext(MC);
 		};
 		if (CurrentVehicle) TryRemoveVehicleMC(CurrentVehicle);
@@ -1059,10 +1279,22 @@ void APHCPlayerController::HandleLocalVehicleExit()
 		}
 	}
 
-	// Dirt bike: re-apply first person if needed.
-	if (Cast<APHCDirtBikePawn>(CurrentVehicle) && Character && Character->bFirstPersonMode)
+	// Dirt bike / roller blades: re-apply first person if needed.
+	if ((Cast<APHCDirtBikePawn>(CurrentVehicle) || Cast<APHCRollerBladesPawn>(CurrentVehicle))
+		&& Character && Character->bFirstPersonMode)
 	{
 		Character->SetFirstPersonMode(true);
+	}
+
+	// Roller blades: restore foot meshes on exit.
+	if (Cast<APHCRollerBladesPawn>(CurrentVehicle) && Character)
+	{
+		if (Character->LeftFootMesh) Character->LeftFootMesh->SetVisibility(true);
+		if (Character->RightFootMesh) Character->RightFootMesh->SetVisibility(true);
+		if (Character->LeftToeMesh) Character->LeftToeMesh->SetVisibility(true);
+		if (Character->RightToeMesh) Character->RightToeMesh->SetVisibility(true);
+		if (Character->LeftSoleMesh) Character->LeftSoleMesh->SetVisibility(true);
+		if (Character->RightSoleMesh) Character->RightSoleMesh->SetVisibility(true);
 	}
 
 	// Switch HUD back to walking mode.
@@ -1117,4 +1349,86 @@ void APHCPlayerController::SetUIOnlyInputMode()
 		SetInputMode(InputMode);
 	}
 	bShowMouseCursor = true;
+}
+
+// ---------------------------------------------------------------------------
+// Loading screen
+// ---------------------------------------------------------------------------
+
+void APHCPlayerController::ShowLoadingScreen()
+{
+	if (bLoadingScreenVisible) return; // already showing
+
+	UGameViewportClient* ViewportClient = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
+	if (!ViewportClient) return;
+
+	const FSlateFontInfo TitleFont = FSlateFontInfo(
+		FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 34);
+	const FSlateFontInfo SubFont = FSlateFontInfo(
+		FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 15);
+
+	SAssignNew(LoadingScreenSlate, SBorder)
+		.BorderBackgroundColor(FLinearColor(0.04f, 0.04f, 0.07f, 1.f))
+		.HAlign(HAlign_Center)
+		.VAlign(VAlign_Center)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.HAlign(HAlign_Center)
+			.Padding(0.f, 0.f, 0.f, 10.f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(TEXT("PlayhouseCity")))
+				.Font(TitleFont)
+				.ColorAndOpacity(FSlateColor(FLinearColor::White))
+				.Justification(ETextJustify::Center)
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.HAlign(HAlign_Center)
+			[
+				SAssignNew(LoadingDotsSlate, STextBlock)
+				.Text(FText::FromString(TEXT("Loading...")))
+				.Font(SubFont)
+				.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.62f, 1.f)))
+				.Justification(ETextJustify::Center)
+			]
+		];
+
+	ViewportClient->AddViewportWidgetContent(
+		SNew(SWeakWidget).PossiblyNullContent(LoadingScreenSlate), 100);
+
+	bLoadingScreenVisible = true;
+
+	// Animate the dots
+	LoadingDotPhase = 0;
+	GetWorldTimerManager().SetTimer(LoadingDotsTimerHandle, [this]()
+	{
+		if (!LoadingDotsSlate.IsValid()) return;
+		LoadingDotPhase = (LoadingDotPhase + 1) % 3;
+		switch (LoadingDotPhase)
+		{
+		case 0: LoadingDotsSlate->SetText(FText::FromString(TEXT("Loading."))); break;
+		case 1: LoadingDotsSlate->SetText(FText::FromString(TEXT("Loading.."))); break;
+		case 2: LoadingDotsSlate->SetText(FText::FromString(TEXT("Loading..."))); break;
+		}
+	}, 0.4f, true);
+}
+
+void APHCPlayerController::HideLoadingScreen()
+{
+	GetWorldTimerManager().ClearTimer(LoadingDotsTimerHandle);
+
+	if (bLoadingScreenVisible)
+	{
+		UGameViewportClient* ViewportClient = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
+		if (ViewportClient && LoadingScreenSlate.IsValid())
+		{
+			ViewportClient->RemoveViewportWidgetContent(LoadingScreenSlate.ToSharedRef());
+		}
+		LoadingScreenSlate.Reset();
+		LoadingDotsSlate.Reset();
+		bLoadingScreenVisible = false;
+	}
 }

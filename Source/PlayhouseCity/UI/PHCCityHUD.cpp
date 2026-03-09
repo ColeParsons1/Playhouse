@@ -26,6 +26,10 @@
 #include "Components/Border.h"
 #include "Components/Spacer.h"
 #include "Components/SizeBox.h"
+#include "Components/ScrollBox.h"
+#include "Player/PHCPlayerState.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Blueprint/WidgetTree.h"
 #include "Misc/Paths.h"
 #include "Core/PHCCitySubsystem.h"
@@ -112,12 +116,12 @@ bool UPHCCityHUD::Initialize()
 		// ============================================================
 		{
 			const FSlateFontInfo LocFont = FSlateFontInfo(
-				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 12);
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 18);
 
 			UBorder* LocBar = WidgetTree->ConstructWidget<UBorder>(
 				UBorder::StaticClass(), TEXT("LocationBar"));
-			LocBar->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.55f));
-			LocBar->SetPadding(FMargin(10.f, 4.f, 10.f, 4.f));
+			LocBar->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.75f));
+			LocBar->SetPadding(FMargin(14.f, 6.f, 14.f, 6.f));
 
 			UCanvasPanelSlot* LocSlot = RootCanvas->AddChildToCanvas(LocBar);
 			LocSlot->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f)); // top-center
@@ -129,28 +133,8 @@ bool UPHCCityHUD::Initialize()
 				UTextBlock::StaticClass(), TEXT("LocationText"));
 			LocationText->SetText(FText::FromString(TEXT("X: 0  Y: 0  Z: 0")));
 			LocationText->SetFont(LocFont);
-			LocationText->SetColorAndOpacity(FSlateColor(FLinearColor(0.8f, 1.f, 0.8f)));
+			LocationText->SetColorAndOpacity(FSlateColor(FLinearColor(0.f, 1.f, 0.f)));
 			LocBar->SetContent(LocationText);
-		}
-
-		// ============================================================
-		//  USERNAME — left of the location monitor
-		// ============================================================
-		{
-			const FSlateFontInfo UserFont = FSlateFontInfo(
-				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 10);
-
-			UsernameText = WidgetTree->ConstructWidget<UTextBlock>(
-				UTextBlock::StaticClass(), TEXT("UsernameText"));
-			UsernameText->SetText(FText::GetEmpty());
-			UsernameText->SetFont(UserFont);
-			UsernameText->SetColorAndOpacity(FSlateColor(FLinearColor(0.8f, 0.8f, 0.8f, 0.8f)));
-
-			UCanvasPanelSlot* UserSlot = RootCanvas->AddChildToCanvas(UsernameText);
-			UserSlot->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f)); // top-center anchor
-			UserSlot->SetAlignment(FVector2D(1.f, 0.f)); // right-align to anchor position
-			UserSlot->SetOffsets(FMargin(-10.f, 14.f, 0.f, 0.f)); // 10px left of center
-			UserSlot->SetAutoSize(true);
 		}
 
 		// ============================================================
@@ -234,6 +218,343 @@ bool UPHCCityHUD::Initialize()
 		}
 
 		// ============================================================
+		//  XP Progress Bar + Level Display (below health bar)
+		// ============================================================
+		{
+			const FSlateFontInfo XPFont = FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 11);
+
+			// Level badge (left of XP bar)
+			LevelText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("LevelText"));
+			LevelText->SetText(FText::FromString(TEXT("LV 1")));
+			LevelText->SetFont(FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 14));
+			LevelText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.85f, 0.f)));
+			LevelText->SetJustification(ETextJustify::Center);
+
+			UCanvasPanelSlot* LvlSlot = RootCanvas->AddChildToCanvas(LevelText);
+			LvlSlot->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f));
+			LvlSlot->SetAlignment(FVector2D(0.f, 0.f));
+			LvlSlot->SetOffsets(FMargin(210.f, 40.f, 50.f, 16.f));
+			LvlSlot->SetAutoSize(false);
+
+			// XP bar background
+			XPBarBG = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("XPBarBG"));
+			XPBarBG->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.6f));
+			XPBarBG->SetPadding(FMargin(0.f));
+
+			UCanvasPanelSlot* XPBGS = RootCanvas->AddChildToCanvas(XPBarBG);
+			XPBGS->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f));
+			XPBGS->SetAlignment(FVector2D(0.f, 0.f));
+			XPBGS->SetOffsets(FMargin(260.f, 40.f, 390.f, 16.f));
+			XPBGS->SetAutoSize(false);
+
+			// XP bar fill (resized dynamically in Tick)
+			UOverlay* XPOverlay = WidgetTree->ConstructWidget<UOverlay>(
+				UOverlay::StaticClass(), TEXT("XPOverlay"));
+			XPBarBG->SetContent(XPOverlay);
+
+			USizeBox* XPSizeBox = WidgetTree->ConstructWidget<USizeBox>(
+				USizeBox::StaticClass(), TEXT("XPSizeBox"));
+			XPSizeBox->SetWidthOverride(390.f);
+			XPSizeBox->SetHeightOverride(16.f);
+			UOverlaySlot* XPFillSlot = XPOverlay->AddChildToOverlay(XPSizeBox);
+			XPFillSlot->SetHorizontalAlignment(HAlign_Left);
+
+			XPBarFill = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("XPBarFill"));
+			XPBarFill->SetBrushColor(FLinearColor(0.2f, 0.6f, 1.f, 0.9f));
+			XPBarFill->SetPadding(FMargin(0.f));
+			XPSizeBox->AddChild(XPBarFill);
+
+			// XP text overlay on the bar
+			XPText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("XPText"));
+			XPText->SetText(FText::FromString(TEXT("0 / 100 XP")));
+			XPText->SetFont(XPFont);
+			XPText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			XPText->SetJustification(ETextJustify::Center);
+			UOverlaySlot* XPTSlot = XPOverlay->AddChildToOverlay(XPText);
+			XPTSlot->SetHorizontalAlignment(HAlign_Center);
+			XPTSlot->SetVerticalAlignment(VAlign_Center);
+		}
+
+		// ============================================================
+		//  Kill Streak text (bottom-center, above action buttons)
+		// ============================================================
+		KillStreakText = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("KillStreakText"));
+		KillStreakText->SetText(FText::FromString(TEXT("")));
+		KillStreakText->SetFont(FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 22));
+		KillStreakText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.4f, 0.1f)));
+		KillStreakText->SetJustification(ETextJustify::Center);
+		{
+			UCanvasPanelSlot* KSSlot = RootCanvas->AddChildToCanvas(KillStreakText);
+			KSSlot->SetAnchors(FAnchors(0.5f, 1.f, 0.5f, 1.f));
+			KSSlot->SetAlignment(FVector2D(0.5f, 1.f));
+			KSSlot->SetOffsets(FMargin(-100.f, -120.f, 200.f, 40.f));
+			KSSlot->SetAutoSize(false);
+		}
+
+		// ============================================================
+		//  Level-up flash overlay (full-screen golden glow)
+		// ============================================================
+		LevelUpOverlay = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("LevelUpOverlay"));
+		LevelUpOverlay->SetBrushColor(FLinearColor(1.f, 0.85f, 0.f, 0.f));
+		LevelUpOverlay->SetPadding(FMargin(0.f));
+		{
+			UCanvasPanelSlot* LUSlot = RootCanvas->AddChildToCanvas(LevelUpOverlay);
+			LUSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+			LUSlot->SetOffsets(FMargin(0.f));
+
+			LevelUpText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("LevelUpText"));
+			LevelUpText->SetText(FText::FromString(TEXT("")));
+			LevelUpText->SetFont(FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 36));
+			LevelUpText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.85f, 0.f)));
+			LevelUpText->SetJustification(ETextJustify::Center);
+
+			UCanvasPanelSlot* LUTSlot = RootCanvas->AddChildToCanvas(LevelUpText);
+			LUTSlot->SetAnchors(FAnchors(0.5f, 0.4f, 0.5f, 0.4f));
+			LUTSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			LUTSlot->SetOffsets(FMargin(-200.f, -30.f, 400.f, 60.f));
+			LUTSlot->SetAutoSize(false);
+		}
+
+		// ============================================================
+		//  Daily Login Reward Popup (centered overlay)
+		// ============================================================
+		{
+			const FSlateFontInfo PopupFont = FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 16);
+			const FSlateFontInfo PopupTitleFont = FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 22);
+
+			DailyLoginOverlay = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("DailyLoginOverlay"));
+			DailyLoginOverlay->SetBrushColor(FLinearColor(0.02f, 0.02f, 0.05f, 0.92f));
+			DailyLoginOverlay->SetPadding(FMargin(20.f));
+			DailyLoginOverlay->SetVisibility(ESlateVisibility::Collapsed);
+
+			UCanvasPanelSlot* DLSlot = RootCanvas->AddChildToCanvas(DailyLoginOverlay);
+			DLSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+			DLSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			DLSlot->SetOffsets(FMargin(-200.f, -160.f, 400.f, 320.f));
+			DLSlot->SetAutoSize(false);
+
+			// Vertical layout inside popup
+			UVerticalBox* DLVBox = WidgetTree->ConstructWidget<UVerticalBox>(
+				UVerticalBox::StaticClass(), TEXT("DLVBox"));
+			DailyLoginOverlay->SetContent(DLVBox);
+
+			// Title
+			DailyLoginTitle = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("DailyLoginTitle"));
+			DailyLoginTitle->SetText(FText::FromString(TEXT("DAILY REWARD")));
+			DailyLoginTitle->SetFont(PopupTitleFont);
+			DailyLoginTitle->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.85f, 0.f)));
+			DailyLoginTitle->SetJustification(ETextJustify::Center);
+			UVerticalBoxSlot* TSlot = DLVBox->AddChildToVerticalBox(DailyLoginTitle);
+			TSlot->SetHorizontalAlignment(HAlign_Center);
+			TSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+
+			// Streak text
+			DailyLoginStreakText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("DailyLoginStreakText"));
+			DailyLoginStreakText->SetText(FText::FromString(TEXT("Day 1 of 7")));
+			DailyLoginStreakText->SetFont(PopupFont);
+			DailyLoginStreakText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			DailyLoginStreakText->SetJustification(ETextJustify::Center);
+			UVerticalBoxSlot* SSlot = DLVBox->AddChildToVerticalBox(DailyLoginStreakText);
+			SSlot->SetHorizontalAlignment(HAlign_Center);
+			SSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+
+			// 7-day indicator row
+			UHorizontalBox* DayRow = WidgetTree->ConstructWidget<UHorizontalBox>(
+				UHorizontalBox::StaticClass(), TEXT("DayRow"));
+			UVerticalBoxSlot* DRSlot = DLVBox->AddChildToVerticalBox(DayRow);
+			DRSlot->SetHorizontalAlignment(HAlign_Center);
+			DRSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 15.f));
+
+			static const int32 DayRewards[] = { 5, 10, 20, 40, 80, 150, 300 };
+			UBorder* DayBorders[7] = {};
+			for (int32 D = 0; D < 7; ++D)
+			{
+				UBorder* DayBox = WidgetTree->ConstructWidget<UBorder>(
+					UBorder::StaticClass(), *FString::Printf(TEXT("DayBox%d"), D));
+				DayBox->SetBrushColor(FLinearColor(0.15f, 0.15f, 0.15f, 0.9f));
+				DayBox->SetPadding(FMargin(6.f, 4.f, 6.f, 4.f));
+
+				UTextBlock* DayLabel = WidgetTree->ConstructWidget<UTextBlock>(
+					UTextBlock::StaticClass(), *FString::Printf(TEXT("DayLabel%d"), D));
+				DayLabel->SetText(FText::FromString(
+					FString::Printf(TEXT("D%d\n%d"), D + 1, DayRewards[D])));
+				DayLabel->SetFont(FSlateFontInfo(
+					FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 10));
+				DayLabel->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+				DayLabel->SetJustification(ETextJustify::Center);
+				DayBox->SetContent(DayLabel);
+
+				UHorizontalBoxSlot* HSlot = DayRow->AddChildToHorizontalBox(DayBox);
+				HSlot->SetPadding(FMargin(3.f, 0.f));
+
+				DayBorders[D] = DayBox;
+			}
+			DailyLoginDay1 = DayBorders[0];
+			DailyLoginDay2 = DayBorders[1];
+			DailyLoginDay3 = DayBorders[2];
+			DailyLoginDay4 = DayBorders[3];
+			DailyLoginDay5 = DayBorders[4];
+			DailyLoginDay6 = DayBorders[5];
+			DailyLoginDay7 = DayBorders[6];
+
+			// Reward text
+			DailyLoginRewardText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("DailyLoginRewardText"));
+			DailyLoginRewardText->SetText(FText::FromString(TEXT("Claim 5 Coins + 25 XP!")));
+			DailyLoginRewardText->SetFont(PopupFont);
+			DailyLoginRewardText->SetColorAndOpacity(FSlateColor(FLinearColor(0.3f, 1.f, 0.4f)));
+			DailyLoginRewardText->SetJustification(ETextJustify::Center);
+			UVerticalBoxSlot* RSlot = DLVBox->AddChildToVerticalBox(DailyLoginRewardText);
+			RSlot->SetHorizontalAlignment(HAlign_Center);
+			RSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 15.f));
+
+			// Claim button
+			DailyLoginClaimBtn = WidgetTree->ConstructWidget<UButton>(
+				UButton::StaticClass(), TEXT("DailyLoginClaimBtn"));
+			FButtonStyle ClaimStyle = DailyLoginClaimBtn->GetStyle();
+			ClaimStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.1f, 0.6f, 0.15f, 0.95f));
+			ClaimStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.15f, 0.75f, 0.2f, 1.0f));
+			ClaimStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.08f, 0.45f, 0.1f, 1.0f));
+			DailyLoginClaimBtn->SetStyle(ClaimStyle);
+
+			DailyLoginClaimLabel = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("DailyLoginClaimLabel"));
+			DailyLoginClaimLabel->SetText(FText::FromString(TEXT("CLAIM")));
+			DailyLoginClaimLabel->SetFont(PopupTitleFont);
+			DailyLoginClaimLabel->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			DailyLoginClaimLabel->SetJustification(ETextJustify::Center);
+			DailyLoginClaimBtn->AddChild(DailyLoginClaimLabel);
+
+			UVerticalBoxSlot* BSlot = DLVBox->AddChildToVerticalBox(DailyLoginClaimBtn);
+			BSlot->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		// ============================================================
+		//  LOOT CRATE spinner overlay (centered, hidden by default)
+		// ============================================================
+		{
+			LootCrateOverlay = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("LootCrateOverlay"));
+			LootCrateOverlay->SetBrushColor(FLinearColor(0.05f, 0.02f, 0.0f, 0.88f));
+			LootCrateOverlay->SetPadding(FMargin(20.f));
+			LootCrateOverlay->SetVisibility(ESlateVisibility::Collapsed);
+
+			UCanvasPanelSlot* LCSlot = RootCanvas->AddChildToCanvas(LootCrateOverlay);
+			LCSlot->SetAnchors(FAnchors(0.5f, 0.35f, 0.5f, 0.35f));
+			LCSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			LCSlot->SetOffsets(FMargin(-120.f, -50.f, 240.f, 100.f));
+			LCSlot->SetAutoSize(false);
+
+			UVerticalBox* LCVBox = WidgetTree->ConstructWidget<UVerticalBox>(
+				UVerticalBox::StaticClass(), TEXT("LCVBox"));
+			LootCrateOverlay->SetContent(LCVBox);
+
+			LootCrateSpinText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("LootCrateSpinText"));
+			LootCrateSpinText->SetText(FText::FromString(TEXT("LOOT CRATE!")));
+			LootCrateSpinText->SetFont(FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 20));
+			LootCrateSpinText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.85f, 0.f)));
+			LootCrateSpinText->SetJustification(ETextJustify::Center);
+			UVerticalBoxSlot* LSSlot = LCVBox->AddChildToVerticalBox(LootCrateSpinText);
+			LSSlot->SetHorizontalAlignment(HAlign_Center);
+
+			LootCrateRewardText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("LootCrateRewardText"));
+			LootCrateRewardText->SetText(FText::FromString(TEXT("")));
+			LootCrateRewardText->SetFont(FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 16));
+			LootCrateRewardText->SetColorAndOpacity(FSlateColor(FLinearColor(0.3f, 1.f, 0.4f)));
+			LootCrateRewardText->SetJustification(ETextJustify::Center);
+			UVerticalBoxSlot* LRSlot = LCVBox->AddChildToVerticalBox(LootCrateRewardText);
+			LRSlot->SetHorizontalAlignment(HAlign_Center);
+			LRSlot->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
+		}
+
+		// ============================================================
+		//  ACHIEVEMENT popup banner (top-center, hidden by default)
+		// ============================================================
+		{
+			AchievementPopupBG = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("AchievementPopupBG"));
+			AchievementPopupBG->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.15f, 0.9f));
+			AchievementPopupBG->SetPadding(FMargin(16.f, 8.f));
+			AchievementPopupBG->SetVisibility(ESlateVisibility::Collapsed);
+
+			UCanvasPanelSlot* APSlot = RootCanvas->AddChildToCanvas(AchievementPopupBG);
+			APSlot->SetAnchors(FAnchors(0.5f, 0.12f, 0.5f, 0.12f));
+			APSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			APSlot->SetOffsets(FMargin(-160.f, -20.f, 320.f, 40.f));
+			APSlot->SetAutoSize(false);
+
+			AchievementPopupText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("AchievementPopupText"));
+			AchievementPopupText->SetText(FText::FromString(TEXT("")));
+			AchievementPopupText->SetFont(FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 14));
+			AchievementPopupText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.85f, 0.f)));
+			AchievementPopupText->SetJustification(ETextJustify::Center);
+			AchievementPopupBG->SetContent(AchievementPopupText);
+		}
+
+		// ============================================================
+		//  EVENT BANNER (top area, shows active limited-time event)
+		// ============================================================
+		{
+			EventBannerBG = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("EventBannerBG"));
+			EventBannerBG->SetBrushColor(FLinearColor(0.6f, 0.1f, 0.0f, 0.85f));
+			EventBannerBG->SetPadding(FMargin(12.f, 6.f));
+			EventBannerBG->SetVisibility(ESlateVisibility::Collapsed);
+
+			UCanvasPanelSlot* EBSlot = RootCanvas->AddChildToCanvas(EventBannerBG);
+			EBSlot->SetAnchors(FAnchors(0.3f, 0.02f, 0.3f, 0.02f));
+			EBSlot->SetAlignment(FVector2D(0.5f, 0.f));
+			EBSlot->SetOffsets(FMargin(-170.f, 0.f, 340.f, 50.f));
+			EBSlot->SetAutoSize(false);
+
+			UVerticalBox* EVBox = WidgetTree->ConstructWidget<UVerticalBox>(
+				UVerticalBox::StaticClass(), TEXT("EVBox"));
+			EventBannerBG->SetContent(EVBox);
+
+			EventBannerText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("EventBannerText"));
+			EventBannerText->SetText(FText::FromString(TEXT("")));
+			EventBannerText->SetFont(FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 14));
+			EventBannerText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.9f, 0.3f)));
+			EventBannerText->SetJustification(ETextJustify::Center);
+			UVerticalBoxSlot* EBTSlot = EVBox->AddChildToVerticalBox(EventBannerText);
+			EBTSlot->SetHorizontalAlignment(HAlign_Center);
+
+			EventTimerText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("EventTimerText"));
+			EventTimerText->SetText(FText::FromString(TEXT("")));
+			EventTimerText->SetFont(FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 12));
+			EventTimerText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			EventTimerText->SetJustification(ETextJustify::Center);
+			UVerticalBoxSlot* ETTSlot = EVBox->AddChildToVerticalBox(EventTimerText);
+			ETTSlot->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		// ============================================================
 		//  TOP-RIGHT (below currency): "Fire" button -- missile launcher
 		// ============================================================
 		// ============================================================
@@ -243,9 +564,9 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("MenuButton"));
 
 		FButtonStyle MenuBtnStyle = MenuButton->GetStyle();
-		MenuBtnStyle.Normal.TintColor  = FSlateColor(BarBg);
-		MenuBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.7f));
-		MenuBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.9f));
+		MenuBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.82f, 0.86f, 0.92f, 0.22f));
+		MenuBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.88f, 0.92f, 0.97f, 0.35f));
+		MenuBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.95f, 0.97f, 1.00f, 0.50f));
 		MenuButton->SetStyle(MenuBtnStyle);
 
 		UTextBlock* MenuLabel = WidgetTree->ConstructWidget<UTextBlock>(
@@ -259,7 +580,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* MenuBtnSlot = RootCanvas->AddChildToCanvas(MenuButton);
 		MenuBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f)); // top-left
 		MenuBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		MenuBtnSlot->SetOffsets(FMargin(80.f, 16.f, 80.f, 40.f));
+		MenuBtnSlot->SetOffsets(FMargin(50.f, 16.f, 130.f, 50.f));
 		MenuButton->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
@@ -269,9 +590,9 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("CarButton"));
 
 		FButtonStyle CarBtnStyle = CarButton->GetStyle();
-		CarBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.55f, 0.22f, 0.02f, 0.85f));
-		CarBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.70f, 0.28f, 0.03f, 0.95f));
-		CarBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.40f, 0.16f, 0.01f, 1.0f));
+		CarBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.82f, 0.86f, 0.92f, 0.22f));
+		CarBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.88f, 0.92f, 0.97f, 0.35f));
+		CarBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.95f, 0.97f, 1.00f, 0.50f));
 		CarButton->SetStyle(CarBtnStyle);
 
 		UTextBlock* CarLabel = WidgetTree->ConstructWidget<UTextBlock>(
@@ -285,7 +606,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* CarBtnSlot = RootCanvas->AddChildToCanvas(CarButton);
 		CarBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f)); // top-left
 		CarBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		CarBtnSlot->SetOffsets(FMargin(50.f, 64.f, 110.f, 42.f));
+		CarBtnSlot->SetOffsets(FMargin(50.f, 80.f, 130.f, 55.f));
 
 		// ============================================================
 		//  CENTER-BOTTOM: "ENTER VEHICLE" button — large, bright green
@@ -324,9 +645,9 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("WeaponsButton"));
 
 		FButtonStyle WepBtnStyle = WeaponsButton->GetStyle();
-		WepBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.6f, 0.1f, 0.1f, 0.85f));
-		WepBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.75f, 0.15f, 0.15f, 0.95f));
-		WepBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.45f, 0.07f, 0.07f, 1.0f));
+		WepBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.82f, 0.86f, 0.92f, 0.22f));
+		WepBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.88f, 0.92f, 0.97f, 0.35f));
+		WepBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.95f, 0.97f, 1.00f, 0.50f));
 		WeaponsButton->SetStyle(WepBtnStyle);
 
 		UTextBlock* WepLabel = WidgetTree->ConstructWidget<UTextBlock>(
@@ -340,7 +661,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* WepBtnSlot = RootCanvas->AddChildToCanvas(WeaponsButton);
 		WepBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		WepBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		WepBtnSlot->SetOffsets(FMargin(50.f, 112.f, 110.f, 42.f));
+		WepBtnSlot->SetOffsets(FMargin(50.f, 150.f, 130.f, 55.f));
 
 		// ============================================================
 		//  TOP-LEFT (below Weapons): "Night" toggle button
@@ -349,9 +670,9 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("NightButton"));
 
 		FButtonStyle NightBtnStyle = NightButton->GetStyle();
-		NightBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.1f, 0.1f, 0.35f, 0.85f));
-		NightBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.15f, 0.15f, 0.45f, 0.95f));
-		NightBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.07f, 0.07f, 0.25f, 1.0f));
+		NightBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.82f, 0.86f, 0.92f, 0.22f));
+		NightBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.88f, 0.92f, 0.97f, 0.35f));
+		NightBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.95f, 0.97f, 1.00f, 0.50f));
 		NightButton->SetStyle(NightBtnStyle);
 
 		NightButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(
@@ -365,7 +686,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* NightBtnSlot = RootCanvas->AddChildToCanvas(NightButton);
 		NightBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		NightBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		NightBtnSlot->SetOffsets(FMargin(170.f, 120.f, 100.f, 40.f));
+		NightBtnSlot->SetOffsets(FMargin(50.f, 220.f, 130.f, 55.f));
 		NightButton->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
@@ -375,9 +696,9 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("DisastersButton"));
 
 		FButtonStyle DisBtnStyle = DisastersButton->GetStyle();
-		DisBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.5f, 0.15f, 0.05f, 0.85f));
-		DisBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.6f, 0.20f, 0.08f, 0.95f));
-		DisBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.35f, 0.10f, 0.03f, 1.0f));
+		DisBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.82f, 0.86f, 0.92f, 0.22f));
+		DisBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.88f, 0.92f, 0.97f, 0.35f));
+		DisBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.95f, 0.97f, 1.00f, 0.50f));
 		DisastersButton->SetStyle(DisBtnStyle);
 
 		DisastersButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(
@@ -391,7 +712,8 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* DisBtnSlot = RootCanvas->AddChildToCanvas(DisastersButton);
 		DisBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		DisBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		DisBtnSlot->SetOffsets(FMargin(50.f, 160.f, 110.f, 42.f));
+		DisBtnSlot->SetOffsets(FMargin(50.f, 430.f, 130.f, 55.f));
+		DisastersButton->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
 		//  Camera mode toggle (below Disasters)
@@ -400,9 +722,9 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("CameraModeButton"));
 
 		FButtonStyle CamBtnStyle = CameraModeButton->GetStyle();
-		CamBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.05f, 0.3f, 0.35f, 0.85f));
-		CamBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.08f, 0.4f, 0.45f, 0.95f));
-		CamBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.03f, 0.2f, 0.25f, 1.0f));
+		CamBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.82f, 0.86f, 0.92f, 0.22f));
+		CamBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.88f, 0.92f, 0.97f, 0.35f));
+		CamBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.95f, 0.97f, 1.00f, 0.50f));
 		CameraModeButton->SetStyle(CamBtnStyle);
 
 		CameraModeLabel = WidgetTree->ConstructWidget<UTextBlock>(
@@ -416,7 +738,101 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* CamBtnSlot = RootCanvas->AddChildToCanvas(CameraModeButton);
 		CamBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		CamBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
-		CamBtnSlot->SetOffsets(FMargin(50.f, 208.f, 110.f, 42.f));
+		CamBtnSlot->SetOffsets(FMargin(50.f, 220.f, 130.f, 55.f));
+
+		// ============================================================
+		//  Torch toggle (below View)
+		// ============================================================
+		TorchButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("TorchButton"));
+
+		FButtonStyle TorchBtnStyle = TorchButton->GetStyle();
+		TorchBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.82f, 0.86f, 0.92f, 0.22f));
+		TorchBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.88f, 0.92f, 0.97f, 0.35f));
+		TorchBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.95f, 0.97f, 1.00f, 0.50f));
+		TorchButton->SetStyle(TorchBtnStyle);
+
+		TorchButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("TorchButtonLabel"));
+		TorchButtonLabel->SetText(FText::FromString(TEXT("Lobby")));
+		TorchButtonLabel->SetFont(BtnFont);
+		TorchButtonLabel->SetColorAndOpacity(FSlateColor(White));
+		TorchButtonLabel->SetJustification(ETextJustify::Center);
+		TorchButton->AddChild(TorchButtonLabel);
+
+		UCanvasPanelSlot* TorchBtnSlot = RootCanvas->AddChildToCanvas(TorchButton);
+		TorchBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+		TorchBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
+		TorchBtnSlot->SetOffsets(FMargin(50.f, 290.f, 130.f, 55.f));
+
+		// ============================================================
+		//  LOBBY PLAYER LIST OVERLAY
+		// ============================================================
+		{
+			const FSlateFontInfo LobbyTitleFont = FSlateFontInfo(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 18);
+
+			LobbyOverlay = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("LobbyOverlay"));
+			LobbyOverlay->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.6f));
+			LobbyOverlay->SetPadding(FMargin(0.f));
+			LobbyOverlay->SetVisibility(ESlateVisibility::Collapsed);
+
+			UCanvasPanelSlot* LobbyOvSlot = RootCanvas->AddChildToCanvas(LobbyOverlay);
+			LobbyOvSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+			LobbyOvSlot->SetOffsets(FMargin(0.f));
+
+			// Inner panel — centered card
+			UBorder* LobbyPanel = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("LobbyPanel"));
+			LobbyPanel->SetBrushColor(FLinearColor(0.08f, 0.08f, 0.14f, 0.85f));
+			LobbyPanel->SetPadding(FMargin(32.f, 28.f, 32.f, 28.f));
+			LobbyPanel->SetHorizontalAlignment(HAlign_Center);
+			LobbyPanel->SetVerticalAlignment(VAlign_Center);
+			LobbyOverlay->SetContent(LobbyPanel);
+
+			// Inner vertical layout
+			UVerticalBox* LobbyVBox = WidgetTree->ConstructWidget<UVerticalBox>(
+				UVerticalBox::StaticClass(), TEXT("LobbyVBox"));
+			LobbyPanel->SetContent(LobbyVBox);
+
+			// Header: "Players Online"
+			UTextBlock* LobbyTitle = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("LobbyTitle"));
+			LobbyTitle->SetText(FText::FromString(TEXT("Players Online")));
+			LobbyTitle->SetFont(LobbyTitleFont);
+			LobbyTitle->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			LobbyTitle->SetJustification(ETextJustify::Center);
+			UVerticalBoxSlot* TitleSlot = LobbyVBox->AddChildToVerticalBox(LobbyTitle);
+			TitleSlot->SetHorizontalAlignment(HAlign_Fill);
+			TitleSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 12.f));
+
+			// Separator line
+			USizeBox* SepSB = WidgetTree->ConstructWidget<USizeBox>(
+				USizeBox::StaticClass(), TEXT("LobbySepSB"));
+			SepSB->SetHeightOverride(1.f);
+			UBorder* SepLine = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("LobbySepLine"));
+			SepLine->SetBrushColor(FLinearColor(0.3f, 0.3f, 0.4f, 0.4f));
+			SepLine->SetPadding(FMargin(0.f));
+			SepSB->AddChild(SepLine);
+			UVerticalBoxSlot* SepSlot = LobbyVBox->AddChildToVerticalBox(SepSB);
+			SepSlot->SetHorizontalAlignment(HAlign_Fill);
+			SepSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 12.f));
+
+			// Scrollable player list container
+			UScrollBox* LobbyScroll = WidgetTree->ConstructWidget<UScrollBox>(
+				UScrollBox::StaticClass(), TEXT("LobbyScroll"));
+
+			LobbyPlayerList = WidgetTree->ConstructWidget<UVerticalBox>(
+				UVerticalBox::StaticClass(), TEXT("LobbyPlayerList"));
+			LobbyScroll->AddChild(LobbyPlayerList);
+
+			UVerticalBoxSlot* ScrollSlot = LobbyVBox->AddChildToVerticalBox(LobbyScroll);
+			ScrollSlot->SetHorizontalAlignment(HAlign_Fill);
+			ScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill)); // fill available space
+
+		}
 
 		// ============================================================
 		//  MOBILE-ONLY: On-foot action buttons (bottom-right)
@@ -597,7 +1013,7 @@ bool UPHCCityHUD::Initialize()
 		UCanvasPanelSlot* ExitSlot = RootCanvas->AddChildToCanvas(ExitVehicleButton);
 		ExitSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
 		ExitSlot->SetAlignment(FVector2D(0.f, 0.f));
-		ExitSlot->SetOffsets(FMargin(80.f, 64.f, 80.f, 40.f));
+		ExitSlot->SetOffsets(FMargin(50.f, 64.f, 130.f, 50.f));
 
 		ExitVehicleButton->SetVisibility(ESlateVisibility::Collapsed);
 
@@ -692,6 +1108,10 @@ bool UPHCCityHUD::Initialize()
 		DropBombButton->SetVisibility(ESlateVisibility::Collapsed);
 #endif
 
+		// Larger font for selection popup buttons
+		const FSlateFontInfo PopupBtnFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 22);
+
 		// ============================================================
 		//  Vehicle selection popup (shown when "Car" button is tapped)
 		// ============================================================
@@ -707,8 +1127,8 @@ bool UPHCCityHUD::Initialize()
 		// Inner panel (centered container for the two buttons).
 		UBorder* VehicleSelectPanel = WidgetTree->ConstructWidget<UBorder>(
 			UBorder::StaticClass(), TEXT("VehicleSelectPanel"));
-		VehicleSelectPanel->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.08f, 0.95f));
-		VehicleSelectPanel->SetPadding(FMargin(24.f, 16.f, 24.f, 16.f));
+		VehicleSelectPanel->SetBrushColor(FLinearColor(0.12f, 0.14f, 0.20f, 0.55f));
+		VehicleSelectPanel->SetPadding(FMargin(40.f, 28.f, 40.f, 28.f));
 		VehicleSelectPanel->SetHorizontalAlignment(HAlign_Center);
 		VehicleSelectPanel->SetVerticalAlignment(VAlign_Center);
 		VehicleSelectOverlay->SetContent(VehicleSelectPanel);
@@ -722,28 +1142,30 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectAventadorBtn"));
 		{
 			FButtonStyle Style = SelectAventadorBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.55f, 0.22f, 0.02f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.70f, 0.28f, 0.03f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.40f, 0.16f, 0.01f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectAventadorBtn->SetStyle(Style);
 		}
 		UTextBlock* AventadorLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("AventadorSelectLabel"));
 		AventadorLabel->SetText(FText::FromString(TEXT("Lamborghini")));
-		AventadorLabel->SetFont(BtnFont);
+		AventadorLabel->SetFont(PopupBtnFont);
 		AventadorLabel->SetColorAndOpacity(FSlateColor(White));
 		AventadorLabel->SetJustification(ETextJustify::Center);
 		SelectAventadorBtn->AddChild(AventadorLabel);
 
 		UHorizontalBoxSlot* AvSlot = SelectHBox->AddChildToHorizontalBox(SelectAventadorBtn);
-		AvSlot->SetPadding(FMargin(8.f));
+		AvSlot->SetPadding(FMargin(12.f));
 		AvSlot->SetVerticalAlignment(VAlign_Center);
 		AvSlot->SetHorizontalAlignment(HAlign_Center);
 
 		// Spacer between buttons.
 		USpacer* BtnSpacer = WidgetTree->ConstructWidget<USpacer>(
 			USpacer::StaticClass(), TEXT("VehicleBtnSpacer"));
-		BtnSpacer->SetSize(FVector2D(20.f, 0.f));
+		BtnSpacer->SetSize(FVector2D(8.f, 0.f));
 		SelectHBox->AddChildToHorizontalBox(BtnSpacer);
 
 		// -- Dune Buggy button (olive green) --
@@ -751,28 +1173,30 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectBuggyBtn"));
 		{
 			FButtonStyle Style = SelectBuggyBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.28f, 0.35f, 0.12f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.35f, 0.42f, 0.18f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.20f, 0.26f, 0.08f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectBuggyBtn->SetStyle(Style);
 		}
 		UTextBlock* BuggyLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("BuggySelectLabel"));
 		BuggyLabel->SetText(FText::FromString(TEXT("Dune Buggy")));
-		BuggyLabel->SetFont(BtnFont);
+		BuggyLabel->SetFont(PopupBtnFont);
 		BuggyLabel->SetColorAndOpacity(FSlateColor(White));
 		BuggyLabel->SetJustification(ETextJustify::Center);
 		SelectBuggyBtn->AddChild(BuggyLabel);
 
 		UHorizontalBoxSlot* BgSlot = SelectHBox->AddChildToHorizontalBox(SelectBuggyBtn);
-		BgSlot->SetPadding(FMargin(8.f));
+		BgSlot->SetPadding(FMargin(12.f));
 		BgSlot->SetVerticalAlignment(VAlign_Center);
 		BgSlot->SetHorizontalAlignment(HAlign_Center);
 
 		// Spacer between Buggy and Raptor buttons.
 		USpacer* BtnSpacer2 = WidgetTree->ConstructWidget<USpacer>(
 			USpacer::StaticClass(), TEXT("VehicleBtnSpacer2"));
-		BtnSpacer2->SetSize(FVector2D(20.f, 0.f));
+		BtnSpacer2->SetSize(FVector2D(8.f, 0.f));
 		SelectHBox->AddChildToHorizontalBox(BtnSpacer2);
 
 		// -- F-22 Raptor button (stealth gray) --
@@ -780,27 +1204,29 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectRaptorBtn"));
 		{
 			FButtonStyle Style = SelectRaptorBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.28f, 0.30f, 0.32f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.35f, 0.37f, 0.40f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.20f, 0.22f, 0.24f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectRaptorBtn->SetStyle(Style);
 		}
 		UTextBlock* RaptorLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("RaptorSelectLabel"));
 		RaptorLabel->SetText(FText::FromString(TEXT("F-22 Raptor")));
-		RaptorLabel->SetFont(BtnFont);
+		RaptorLabel->SetFont(PopupBtnFont);
 		RaptorLabel->SetColorAndOpacity(FSlateColor(White));
 		RaptorLabel->SetJustification(ETextJustify::Center);
 		SelectRaptorBtn->AddChild(RaptorLabel);
 
 		UHorizontalBoxSlot* RpSlot = SelectHBox->AddChildToHorizontalBox(SelectRaptorBtn);
-		RpSlot->SetPadding(FMargin(8.f));
+		RpSlot->SetPadding(FMargin(12.f));
 		RpSlot->SetVerticalAlignment(VAlign_Center);
 		RpSlot->SetHorizontalAlignment(HAlign_Center);
 
 		USpacer* VehSpacer3 = WidgetTree->ConstructWidget<USpacer>(
 			USpacer::StaticClass(), TEXT("VehBtnSpacer3"));
-		VehSpacer3->SetSize(FVector2D(20.f, 0.f));
+		VehSpacer3->SetSize(FVector2D(8.f, 0.f));
 		SelectHBox->AddChildToHorizontalBox(VehSpacer3);
 
 		// -- Jetpack button (sky blue) --
@@ -808,21 +1234,23 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectJetpackBtn"));
 		{
 			FButtonStyle Style = SelectJetpackBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.10f, 0.30f, 0.55f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.15f, 0.40f, 0.70f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.07f, 0.20f, 0.40f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectJetpackBtn->SetStyle(Style);
 		}
 		UTextBlock* JetpackLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("JetpackSelectLabel"));
 		JetpackLabel->SetText(FText::FromString(TEXT("AirBoots")));
-		JetpackLabel->SetFont(BtnFont);
+		JetpackLabel->SetFont(PopupBtnFont);
 		JetpackLabel->SetColorAndOpacity(FSlateColor(White));
 		JetpackLabel->SetJustification(ETextJustify::Center);
 		SelectJetpackBtn->AddChild(JetpackLabel);
 
 		UHorizontalBoxSlot* JpSlot = SelectHBox->AddChildToHorizontalBox(SelectJetpackBtn);
-		JpSlot->SetPadding(FMargin(8.f));
+		JpSlot->SetPadding(FMargin(12.f));
 		JpSlot->SetVerticalAlignment(VAlign_Center);
 		JpSlot->SetHorizontalAlignment(HAlign_Center);
 
@@ -831,21 +1259,23 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectTankBtn"));
 		{
 			FButtonStyle Style = SelectTankBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.22f, 0.28f, 0.14f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.30f, 0.38f, 0.20f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.15f, 0.20f, 0.10f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectTankBtn->SetStyle(Style);
 		}
 		UTextBlock* TankLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("TankSelectLabel"));
 		TankLabel->SetText(FText::FromString(TEXT("M60 Tank")));
-		TankLabel->SetFont(BtnFont);
+		TankLabel->SetFont(PopupBtnFont);
 		TankLabel->SetColorAndOpacity(FSlateColor(White));
 		TankLabel->SetJustification(ETextJustify::Center);
 		SelectTankBtn->AddChild(TankLabel);
 
 		UHorizontalBoxSlot* TankSlot = SelectHBox->AddChildToHorizontalBox(SelectTankBtn);
-		TankSlot->SetPadding(FMargin(8.f));
+		TankSlot->SetPadding(FMargin(12.f));
 		TankSlot->SetVerticalAlignment(VAlign_Center);
 		TankSlot->SetHorizontalAlignment(HAlign_Center);
 
@@ -854,21 +1284,23 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectDirtBikeBtn"));
 		{
 			FButtonStyle Style = SelectDirtBikeBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.60f, 0.10f, 0.04f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.75f, 0.15f, 0.06f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.45f, 0.07f, 0.03f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectDirtBikeBtn->SetStyle(Style);
 		}
 		UTextBlock* DirtBikeLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("DirtBikeSelectLabel"));
-		DirtBikeLabel->SetText(FText::FromString(TEXT("Dirt Bike")));
-		DirtBikeLabel->SetFont(BtnFont);
+		DirtBikeLabel->SetText(FText::FromString(TEXT("Mountain Bike")));
+		DirtBikeLabel->SetFont(PopupBtnFont);
 		DirtBikeLabel->SetColorAndOpacity(FSlateColor(White));
 		DirtBikeLabel->SetJustification(ETextJustify::Center);
 		SelectDirtBikeBtn->AddChild(DirtBikeLabel);
 
 		UHorizontalBoxSlot* BikeSlot = SelectHBox->AddChildToHorizontalBox(SelectDirtBikeBtn);
-		BikeSlot->SetPadding(FMargin(8.f));
+		BikeSlot->SetPadding(FMargin(12.f));
 		BikeSlot->SetVerticalAlignment(VAlign_Center);
 		BikeSlot->SetHorizontalAlignment(HAlign_Center);
 
@@ -877,23 +1309,50 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectBlackHawkBtn"));
 		{
 			FButtonStyle Style = SelectBlackHawkBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.25f, 0.30f, 0.25f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.32f, 0.38f, 0.32f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.18f, 0.22f, 0.18f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectBlackHawkBtn->SetStyle(Style);
 		}
 		UTextBlock* BlackHawkLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("BlackHawkSelectLabel"));
 		BlackHawkLabel->SetText(FText::FromString(TEXT("Black Hawk")));
-		BlackHawkLabel->SetFont(BtnFont);
+		BlackHawkLabel->SetFont(PopupBtnFont);
 		BlackHawkLabel->SetColorAndOpacity(FSlateColor(White));
 		BlackHawkLabel->SetJustification(ETextJustify::Center);
 		SelectBlackHawkBtn->AddChild(BlackHawkLabel);
 
 		UHorizontalBoxSlot* HawkSlot = SelectHBox->AddChildToHorizontalBox(SelectBlackHawkBtn);
-		HawkSlot->SetPadding(FMargin(8.f));
+		HawkSlot->SetPadding(FMargin(12.f));
 		HawkSlot->SetVerticalAlignment(VAlign_Center);
 		HawkSlot->SetHorizontalAlignment(HAlign_Center);
+
+		// -- Roller Blades button (matching style) --
+		SelectRollerBladesBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectRollerBladesBtn"));
+		{
+			FButtonStyle Style = SelectRollerBladesBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
+			SelectRollerBladesBtn->SetStyle(Style);
+		}
+		UTextBlock* RollerBladesLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("RollerBladesSelectLabel"));
+		RollerBladesLabel->SetText(FText::FromString(TEXT("Roller Blades")));
+		RollerBladesLabel->SetFont(PopupBtnFont);
+		RollerBladesLabel->SetColorAndOpacity(FSlateColor(White));
+		RollerBladesLabel->SetJustification(ETextJustify::Center);
+		SelectRollerBladesBtn->AddChild(RollerBladesLabel);
+
+		UHorizontalBoxSlot* BladesSlot = SelectHBox->AddChildToHorizontalBox(SelectRollerBladesBtn);
+		BladesSlot->SetPadding(FMargin(12.f));
+		BladesSlot->SetVerticalAlignment(VAlign_Center);
+		BladesSlot->SetHorizontalAlignment(HAlign_Center);
 
 		VehicleSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
@@ -911,8 +1370,8 @@ bool UPHCCityHUD::Initialize()
 
 		UBorder* WepSelectPanel = WidgetTree->ConstructWidget<UBorder>(
 			UBorder::StaticClass(), TEXT("WeaponSelectPanel"));
-		WepSelectPanel->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.08f, 0.95f));
-		WepSelectPanel->SetPadding(FMargin(24.f, 16.f, 24.f, 16.f));
+		WepSelectPanel->SetBrushColor(FLinearColor(0.12f, 0.14f, 0.20f, 0.55f));
+		WepSelectPanel->SetPadding(FMargin(40.f, 28.f, 40.f, 28.f));
 		WepSelectPanel->SetHorizontalAlignment(HAlign_Center);
 		WepSelectPanel->SetVerticalAlignment(VAlign_Center);
 		WeaponSelectOverlay->SetContent(WepSelectPanel);
@@ -926,27 +1385,29 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectGunBtn"));
 		{
 			FButtonStyle Style = SelectGunBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.35f, 0.35f, 0.40f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.45f, 0.45f, 0.50f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.25f, 0.25f, 0.30f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectGunBtn->SetStyle(Style);
 		}
 		UTextBlock* GunLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("GunSelectLabel"));
 		GunLabel->SetText(FText::FromString(TEXT("Minigun")));
-		GunLabel->SetFont(BtnFont);
+		GunLabel->SetFont(PopupBtnFont);
 		GunLabel->SetColorAndOpacity(FSlateColor(White));
 		GunLabel->SetJustification(ETextJustify::Center);
 		SelectGunBtn->AddChild(GunLabel);
 
 		UHorizontalBoxSlot* GunSlot = WepHBox->AddChildToHorizontalBox(SelectGunBtn);
-		GunSlot->SetPadding(FMargin(8.f));
+		GunSlot->SetPadding(FMargin(12.f));
 		GunSlot->SetVerticalAlignment(VAlign_Center);
 		GunSlot->SetHorizontalAlignment(HAlign_Center);
 
 		USpacer* WepSpacer1 = WidgetTree->ConstructWidget<USpacer>(
 			USpacer::StaticClass(), TEXT("WepBtnSpacer1"));
-		WepSpacer1->SetSize(FVector2D(20.f, 0.f));
+		WepSpacer1->SetSize(FVector2D(8.f, 0.f));
 		WepHBox->AddChildToHorizontalBox(WepSpacer1);
 
 		// -- RPG button (dark red) --
@@ -954,27 +1415,29 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectRPGBtn"));
 		{
 			FButtonStyle Style = SelectRPGBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.55f, 0.12f, 0.08f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.70f, 0.18f, 0.12f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.40f, 0.08f, 0.05f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectRPGBtn->SetStyle(Style);
 		}
 		UTextBlock* RPGLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("RPGSelectLabel"));
 		RPGLabel->SetText(FText::FromString(TEXT("RPG")));
-		RPGLabel->SetFont(BtnFont);
+		RPGLabel->SetFont(PopupBtnFont);
 		RPGLabel->SetColorAndOpacity(FSlateColor(White));
 		RPGLabel->SetJustification(ETextJustify::Center);
 		SelectRPGBtn->AddChild(RPGLabel);
 
 		UHorizontalBoxSlot* RPGSlot = WepHBox->AddChildToHorizontalBox(SelectRPGBtn);
-		RPGSlot->SetPadding(FMargin(8.f));
+		RPGSlot->SetPadding(FMargin(12.f));
 		RPGSlot->SetVerticalAlignment(VAlign_Center);
 		RPGSlot->SetHorizontalAlignment(HAlign_Center);
 
 		USpacer* WepSpacer2 = WidgetTree->ConstructWidget<USpacer>(
 			USpacer::StaticClass(), TEXT("WepBtnSpacer2"));
-		WepSpacer2->SetSize(FVector2D(20.f, 0.f));
+		WepSpacer2->SetSize(FVector2D(8.f, 0.f));
 		WepHBox->AddChildToHorizontalBox(WepSpacer2);
 
 		// -- Sword button (gold) --
@@ -982,27 +1445,29 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectSwordBtn"));
 		{
 			FButtonStyle Style = SelectSwordBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.55f, 0.45f, 0.08f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.70f, 0.58f, 0.12f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.40f, 0.32f, 0.05f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectSwordBtn->SetStyle(Style);
 		}
 		UTextBlock* SwordLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("SwordSelectLabel"));
-		SwordLabel->SetText(FText::FromString(TEXT("Sword")));
-		SwordLabel->SetFont(BtnFont);
+		SwordLabel->SetText(FText::FromString(TEXT("Light Saber")));
+		SwordLabel->SetFont(PopupBtnFont);
 		SwordLabel->SetColorAndOpacity(FSlateColor(White));
 		SwordLabel->SetJustification(ETextJustify::Center);
 		SelectSwordBtn->AddChild(SwordLabel);
 
 		UHorizontalBoxSlot* SwordSlot = WepHBox->AddChildToHorizontalBox(SelectSwordBtn);
-		SwordSlot->SetPadding(FMargin(8.f));
+		SwordSlot->SetPadding(FMargin(12.f));
 		SwordSlot->SetVerticalAlignment(VAlign_Center);
 		SwordSlot->SetHorizontalAlignment(HAlign_Center);
 
 		USpacer* WepSpacer3 = WidgetTree->ConstructWidget<USpacer>(
 			USpacer::StaticClass(), TEXT("WepBtnSpacer3"));
-		WepSpacer3->SetSize(FVector2D(20.f, 0.f));
+		WepSpacer3->SetSize(FVector2D(8.f, 0.f));
 		WepHBox->AddChildToHorizontalBox(WepSpacer3);
 
 		// -- Scythe button (dark purple) --
@@ -1010,27 +1475,29 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectScytheBtn"));
 		{
 			FButtonStyle Style = SelectScytheBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.30f, 0.10f, 0.40f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.40f, 0.15f, 0.55f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.20f, 0.06f, 0.28f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectScytheBtn->SetStyle(Style);
 		}
 		UTextBlock* ScytheLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("ScytheSelectLabel"));
 		ScytheLabel->SetText(FText::FromString(TEXT("Scythe")));
-		ScytheLabel->SetFont(BtnFont);
+		ScytheLabel->SetFont(PopupBtnFont);
 		ScytheLabel->SetColorAndOpacity(FSlateColor(White));
 		ScytheLabel->SetJustification(ETextJustify::Center);
 		SelectScytheBtn->AddChild(ScytheLabel);
 
 		UHorizontalBoxSlot* ScytheSlot = WepHBox->AddChildToHorizontalBox(SelectScytheBtn);
-		ScytheSlot->SetPadding(FMargin(8.f));
+		ScytheSlot->SetPadding(FMargin(12.f));
 		ScytheSlot->SetVerticalAlignment(VAlign_Center);
 		ScytheSlot->SetHorizontalAlignment(HAlign_Center);
 
 		USpacer* WepSpacer4 = WidgetTree->ConstructWidget<USpacer>(
 			USpacer::StaticClass(), TEXT("WepBtnSpacer4"));
-		WepSpacer4->SetSize(FVector2D(20.f, 0.f));
+		WepSpacer4->SetSize(FVector2D(8.f, 0.f));
 		WepHBox->AddChildToHorizontalBox(WepSpacer4);
 
 		// -- Dagger button (crimson red — 1-hit kill) --
@@ -1038,27 +1505,29 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectDaggerBtn"));
 		{
 			FButtonStyle Style = SelectDaggerBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.70f, 0.05f, 0.05f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.10f, 0.10f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.50f, 0.03f, 0.03f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectDaggerBtn->SetStyle(Style);
 		}
 		UTextBlock* DaggerLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("DaggerSelectLabel"));
 		DaggerLabel->SetText(FText::FromString(TEXT("1-Hit Dagger")));
-		DaggerLabel->SetFont(BtnFont);
+		DaggerLabel->SetFont(PopupBtnFont);
 		DaggerLabel->SetColorAndOpacity(FSlateColor(White));
 		DaggerLabel->SetJustification(ETextJustify::Center);
 		SelectDaggerBtn->AddChild(DaggerLabel);
 
 		UHorizontalBoxSlot* DaggerSlot = WepHBox->AddChildToHorizontalBox(SelectDaggerBtn);
-		DaggerSlot->SetPadding(FMargin(8.f));
+		DaggerSlot->SetPadding(FMargin(12.f));
 		DaggerSlot->SetVerticalAlignment(VAlign_Center);
 		DaggerSlot->SetHorizontalAlignment(HAlign_Center);
 
 		USpacer* WepSpacer5 = WidgetTree->ConstructWidget<USpacer>(
 			USpacer::StaticClass(), TEXT("WepBtnSpacer5"));
-		WepSpacer5->SetSize(FVector2D(20.f, 0.f));
+		WepSpacer5->SetSize(FVector2D(8.f, 0.f));
 		WepHBox->AddChildToHorizontalBox(WepSpacer5);
 
 		// -- AK-47 button (dark olive/military green) --
@@ -1066,23 +1535,57 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectAK47Btn"));
 		{
 			FButtonStyle Style = SelectAK47Btn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.25f, 0.30f, 0.10f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.35f, 0.40f, 0.15f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.15f, 0.20f, 0.05f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectAK47Btn->SetStyle(Style);
 		}
 		UTextBlock* AK47Label = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("AK47SelectLabel"));
 		AK47Label->SetText(FText::FromString(TEXT("AK-47")));
-		AK47Label->SetFont(BtnFont);
+		AK47Label->SetFont(PopupBtnFont);
 		AK47Label->SetColorAndOpacity(FSlateColor(White));
 		AK47Label->SetJustification(ETextJustify::Center);
 		SelectAK47Btn->AddChild(AK47Label);
 
 		UHorizontalBoxSlot* AK47Slot = WepHBox->AddChildToHorizontalBox(SelectAK47Btn);
-		AK47Slot->SetPadding(FMargin(8.f));
+		AK47Slot->SetPadding(FMargin(12.f));
 		AK47Slot->SetVerticalAlignment(VAlign_Center);
 		AK47Slot->SetHorizontalAlignment(HAlign_Center);
+		SelectAK47Btn->SetVisibility(ESlateVisibility::Collapsed);
+
+		// Spacer between AK-47 and Sniper
+		USpacer* WepSpacer6 = WidgetTree->ConstructWidget<USpacer>(
+			USpacer::StaticClass(), TEXT("WepBtnSpacer6"));
+		WepSpacer6->SetSize(FVector2D(8.f, 0.f));
+		WepHBox->AddChildToHorizontalBox(WepSpacer6);
+
+		// -- 50 Cal Sniper button (dark steel/black) --
+		SelectSniperBtn = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("SelectSniperBtn"));
+		{
+			FButtonStyle Style = SelectSniperBtn->GetStyle();
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
+			SelectSniperBtn->SetStyle(Style);
+		}
+		UTextBlock* SniperLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("SniperSelectLabel"));
+		SniperLabel->SetText(FText::FromString(TEXT("50 Cal Sniper")));
+		SniperLabel->SetFont(PopupBtnFont);
+		SniperLabel->SetColorAndOpacity(FSlateColor(White));
+		SniperLabel->SetJustification(ETextJustify::Center);
+		SelectSniperBtn->AddChild(SniperLabel);
+
+		UHorizontalBoxSlot* SniperSlot = WepHBox->AddChildToHorizontalBox(SelectSniperBtn);
+		SniperSlot->SetPadding(FMargin(12.f));
+		SniperSlot->SetVerticalAlignment(VAlign_Center);
+		SniperSlot->SetHorizontalAlignment(HAlign_Center);
 
 		WeaponSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
@@ -1100,8 +1603,8 @@ bool UPHCCityHUD::Initialize()
 
 		UBorder* DisSelectPanel = WidgetTree->ConstructWidget<UBorder>(
 			UBorder::StaticClass(), TEXT("DisasterSelectPanel"));
-		DisSelectPanel->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.08f, 0.95f));
-		DisSelectPanel->SetPadding(FMargin(24.f, 16.f, 24.f, 16.f));
+		DisSelectPanel->SetBrushColor(FLinearColor(0.12f, 0.14f, 0.20f, 0.55f));
+		DisSelectPanel->SetPadding(FMargin(40.f, 28.f, 40.f, 28.f));
 		DisSelectPanel->SetHorizontalAlignment(HAlign_Center);
 		DisSelectPanel->SetVerticalAlignment(VAlign_Center);
 		DisasterSelectOverlay->SetContent(DisSelectPanel);
@@ -1115,130 +1618,140 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("SelectTornadoBtn"));
 		{
 			FButtonStyle Style = SelectTornadoBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.40f, 0.40f, 0.38f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.50f, 0.50f, 0.48f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.30f, 0.30f, 0.28f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectTornadoBtn->SetStyle(Style);
 		}
 		{
 			UTextBlock* L = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TornadoLabel"));
 			L->SetText(FText::FromString(TEXT("Tornado")));
-			L->SetFont(BtnFont);
+			L->SetFont(PopupBtnFont);
 			L->SetColorAndOpacity(FSlateColor(White));
 			L->SetJustification(ETextJustify::Center);
 			SelectTornadoBtn->AddChild(L);
 		}
 		{
 			UHorizontalBoxSlot* S = DisHBox->AddChildToHorizontalBox(SelectTornadoBtn);
-			S->SetPadding(FMargin(8.f));
+			S->SetPadding(FMargin(12.f));
 			S->SetVerticalAlignment(VAlign_Center);
 			S->SetHorizontalAlignment(HAlign_Center);
 		}
 
-		{ USpacer* Sp = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("DisSp1")); Sp->SetSize(FVector2D(16.f, 0.f)); DisHBox->AddChildToHorizontalBox(Sp); }
+		{ USpacer* Sp = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("DisSp1")); Sp->SetSize(FVector2D(8.f, 0.f)); DisHBox->AddChildToHorizontalBox(Sp); }
 
 		// -- Earthquake button (brown) --
 		SelectEarthquakeBtn = WidgetTree->ConstructWidget<UButton>(
 			UButton::StaticClass(), TEXT("SelectEarthquakeBtn"));
 		{
 			FButtonStyle Style = SelectEarthquakeBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.45f, 0.30f, 0.15f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.55f, 0.38f, 0.20f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.35f, 0.22f, 0.10f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectEarthquakeBtn->SetStyle(Style);
 		}
 		{
 			UTextBlock* L = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuakeLabel"));
 			L->SetText(FText::FromString(TEXT("Quake")));
-			L->SetFont(BtnFont);
+			L->SetFont(PopupBtnFont);
 			L->SetColorAndOpacity(FSlateColor(White));
 			L->SetJustification(ETextJustify::Center);
 			SelectEarthquakeBtn->AddChild(L);
 		}
 		{
 			UHorizontalBoxSlot* S = DisHBox->AddChildToHorizontalBox(SelectEarthquakeBtn);
-			S->SetPadding(FMargin(8.f));
+			S->SetPadding(FMargin(12.f));
 			S->SetVerticalAlignment(VAlign_Center);
 			S->SetHorizontalAlignment(HAlign_Center);
 		}
 
-		{ USpacer* Sp = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("DisSp2")); Sp->SetSize(FVector2D(16.f, 0.f)); DisHBox->AddChildToHorizontalBox(Sp); }
+		{ USpacer* Sp = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("DisSp2")); Sp->SetSize(FVector2D(8.f, 0.f)); DisHBox->AddChildToHorizontalBox(Sp); }
 
 		// -- Thunderstorm button (purple) --
 		SelectThunderstormBtn = WidgetTree->ConstructWidget<UButton>(
 			UButton::StaticClass(), TEXT("SelectThunderstormBtn"));
 		{
 			FButtonStyle Style = SelectThunderstormBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.20f, 0.10f, 0.35f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.30f, 0.15f, 0.50f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.15f, 0.07f, 0.25f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectThunderstormBtn->SetStyle(Style);
 		}
 		{
 			UTextBlock* L = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ThunderLabel"));
 			L->SetText(FText::FromString(TEXT("Thunder")));
-			L->SetFont(BtnFont);
+			L->SetFont(PopupBtnFont);
 			L->SetColorAndOpacity(FSlateColor(White));
 			L->SetJustification(ETextJustify::Center);
 			SelectThunderstormBtn->AddChild(L);
 		}
 		{
 			UHorizontalBoxSlot* S = DisHBox->AddChildToHorizontalBox(SelectThunderstormBtn);
-			S->SetPadding(FMargin(8.f));
+			S->SetPadding(FMargin(12.f));
 			S->SetVerticalAlignment(VAlign_Center);
 			S->SetHorizontalAlignment(HAlign_Center);
 		}
 
-		{ USpacer* Sp = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("DisSp3")); Sp->SetSize(FVector2D(16.f, 0.f)); DisHBox->AddChildToHorizontalBox(Sp); }
+		{ USpacer* Sp = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("DisSp3")); Sp->SetSize(FVector2D(8.f, 0.f)); DisHBox->AddChildToHorizontalBox(Sp); }
 
 		// -- Meteor button (orange-red) --
 		SelectMeteorBtn = WidgetTree->ConstructWidget<UButton>(
 			UButton::StaticClass(), TEXT("SelectMeteorBtn"));
 		{
 			FButtonStyle Style = SelectMeteorBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.55f, 0.20f, 0.05f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.70f, 0.28f, 0.08f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.40f, 0.14f, 0.03f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			SelectMeteorBtn->SetStyle(Style);
 		}
 		{
 			UTextBlock* L = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MeteorLabel"));
 			L->SetText(FText::FromString(TEXT("Meteor")));
-			L->SetFont(BtnFont);
+			L->SetFont(PopupBtnFont);
 			L->SetColorAndOpacity(FSlateColor(White));
 			L->SetJustification(ETextJustify::Center);
 			SelectMeteorBtn->AddChild(L);
 		}
 		{
 			UHorizontalBoxSlot* S = DisHBox->AddChildToHorizontalBox(SelectMeteorBtn);
-			S->SetPadding(FMargin(8.f));
+			S->SetPadding(FMargin(12.f));
 			S->SetVerticalAlignment(VAlign_Center);
 			S->SetHorizontalAlignment(HAlign_Center);
 		}
 
-		{ USpacer* Sp = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("DisSp4")); Sp->SetSize(FVector2D(16.f, 0.f)); DisHBox->AddChildToHorizontalBox(Sp); }
+		{ USpacer* Sp = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("DisSp4")); Sp->SetSize(FVector2D(8.f, 0.f)); DisHBox->AddChildToHorizontalBox(Sp); }
 
 		// -- Stop button (dark gray) --
 		StopDisasterBtn = WidgetTree->ConstructWidget<UButton>(
 			UButton::StaticClass(), TEXT("StopDisasterBtn"));
 		{
 			FButtonStyle Style = StopDisasterBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.25f, 0.25f, 0.25f, 0.9f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f, 1.0f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.15f, 0.15f, 0.15f, 1.0f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+			Style.NormalPadding = FMargin(28.f, 18.f);
+			Style.PressedPadding = FMargin(28.f, 18.f);
 			StopDisasterBtn->SetStyle(Style);
 		}
 		{
 			UTextBlock* L = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StopDisLabel"));
 			L->SetText(FText::FromString(TEXT("Stop")));
-			L->SetFont(BtnFont);
+			L->SetFont(PopupBtnFont);
 			L->SetColorAndOpacity(FSlateColor(White));
 			L->SetJustification(ETextJustify::Center);
 			StopDisasterBtn->AddChild(L);
 		}
 		{
 			UHorizontalBoxSlot* S = DisHBox->AddChildToHorizontalBox(StopDisasterBtn);
-			S->SetPadding(FMargin(8.f));
+			S->SetPadding(FMargin(12.f));
 			S->SetVerticalAlignment(VAlign_Center);
 			S->SetHorizontalAlignment(HAlign_Center);
 		}
@@ -1253,9 +1766,9 @@ bool UPHCCityHUD::Initialize()
 			UButton::StaticClass(), TEXT("WeaponFireButton"));
 		{
 			FButtonStyle Style = WeaponFireButton->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.03f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(1.f, 1.f, 1.f, 0.06f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.6f, 0.1f, 1.f, 0.12f));
+			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
+			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
+			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
 			WeaponFireButton->SetStyle(Style);
 		}
 		WeaponFireButton->SetTouchMethod(EButtonTouchMethod::DownAndUp);
@@ -1544,6 +2057,178 @@ bool UPHCCityHUD::Initialize()
 		}
 #endif
 
+		// ============================================================
+		//  COD-style sniper scope overlay
+		//  4 black bars leave a viewport opening in the center.
+		//  Thin crosshair lines + center dot inside the viewport.
+		//  The viewport opening: X 0.2–0.8, Y 0.15–0.85
+		// ============================================================
+		{
+			const FLinearColor ScopeBlack(0.f, 0.f, 0.f, 1.f);
+
+			// Top black bar
+			ScopeBlackTop = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("ScopeBlackTop"));
+			ScopeBlackTop->SetBrushColor(ScopeBlack);
+			{
+				UCanvasPanelSlot* S = RootCanvas->AddChildToCanvas(ScopeBlackTop);
+				S->SetAnchors(FAnchors(0.f, 0.f, 1.f, 0.15f));
+				S->SetOffsets(FMargin(0.f));
+			}
+			ScopeBlackTop->SetVisibility(ESlateVisibility::Collapsed);
+
+			// Bottom black bar
+			ScopeBlackBottom = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("ScopeBlackBottom"));
+			ScopeBlackBottom->SetBrushColor(ScopeBlack);
+			{
+				UCanvasPanelSlot* S = RootCanvas->AddChildToCanvas(ScopeBlackBottom);
+				S->SetAnchors(FAnchors(0.f, 0.85f, 1.f, 1.f));
+				S->SetOffsets(FMargin(0.f));
+			}
+			ScopeBlackBottom->SetVisibility(ESlateVisibility::Collapsed);
+
+			// Left black bar (between top and bottom bars)
+			ScopeBlackLeft = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("ScopeBlackLeft"));
+			ScopeBlackLeft->SetBrushColor(ScopeBlack);
+			{
+				UCanvasPanelSlot* S = RootCanvas->AddChildToCanvas(ScopeBlackLeft);
+				S->SetAnchors(FAnchors(0.f, 0.15f, 0.2f, 0.85f));
+				S->SetOffsets(FMargin(0.f));
+			}
+			ScopeBlackLeft->SetVisibility(ESlateVisibility::Collapsed);
+
+			// Right black bar (between top and bottom bars)
+			ScopeBlackRight = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("ScopeBlackRight"));
+			ScopeBlackRight->SetBrushColor(ScopeBlack);
+			{
+				UCanvasPanelSlot* S = RootCanvas->AddChildToCanvas(ScopeBlackRight);
+				S->SetAnchors(FAnchors(0.8f, 0.15f, 1.f, 0.85f));
+				S->SetOffsets(FMargin(0.f));
+			}
+			ScopeBlackRight->SetVisibility(ESlateVisibility::Collapsed);
+
+			// Horizontal crosshair line — spans viewport width (bright white, 2px)
+			ScopeCrosshairH = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("ScopeCrosshairH"));
+			ScopeCrosshairH->SetBrushColor(FLinearColor(1.f, 1.f, 1.f, 0.9f));
+			{
+				UCanvasPanelSlot* S = RootCanvas->AddChildToCanvas(ScopeCrosshairH);
+				S->SetAnchors(FAnchors(0.2f, 0.5f, 0.8f, 0.5f));
+				S->SetAlignment(FVector2D(0.f, 0.5f));
+				S->SetOffsets(FMargin(0.f, 0.f, 0.f, 2.f)); // 2px height
+			}
+			ScopeCrosshairH->SetVisibility(ESlateVisibility::Collapsed);
+
+			// Vertical crosshair line — spans viewport height (bright white, 2px)
+			ScopeCrosshairV = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("ScopeCrosshairV"));
+			ScopeCrosshairV->SetBrushColor(FLinearColor(1.f, 1.f, 1.f, 0.9f));
+			{
+				UCanvasPanelSlot* S = RootCanvas->AddChildToCanvas(ScopeCrosshairV);
+				S->SetAnchors(FAnchors(0.5f, 0.15f, 0.5f, 0.85f));
+				S->SetAlignment(FVector2D(0.5f, 0.f));
+				S->SetOffsets(FMargin(0.f, 0.f, 2.f, 0.f)); // 2px width
+			}
+			ScopeCrosshairV->SetVisibility(ESlateVisibility::Collapsed);
+
+			// Center dot — red aiming point (COD style, 5x5 px)
+			ScopeCrosshairDot = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("ScopeCrosshairDot"));
+			ScopeCrosshairDot->SetBrushColor(FLinearColor(1.f, 0.1f, 0.1f, 1.f));
+			{
+				UCanvasPanelSlot* S = RootCanvas->AddChildToCanvas(ScopeCrosshairDot);
+				S->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+				S->SetAlignment(FVector2D(0.5f, 0.5f));
+				S->SetOffsets(FMargin(0.f, 0.f, 5.f, 5.f)); // 5x5 px dot
+			}
+			ScopeCrosshairDot->SetVisibility(ESlateVisibility::Collapsed);
+
+			// Scope zoom buttons (+ and - on left side, zoom level label)
+			{
+				ScopeZoomInBtn = WidgetTree->ConstructWidget<UButton>(
+					UButton::StaticClass(), TEXT("ScopeZoomInBtn"));
+				FButtonStyle ZInStyle = ScopeZoomInBtn->GetStyle();
+				ZInStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.15f, 0.15f, 0.15f, 0.8f));
+				ZInStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.25f, 0.25f, 0.25f, 0.9f));
+				ZInStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.08f, 0.08f, 0.08f, 1.f));
+				ScopeZoomInBtn->SetStyle(ZInStyle);
+				UTextBlock* ZInLabel = WidgetTree->ConstructWidget<UTextBlock>(
+					UTextBlock::StaticClass(), TEXT("ZInLabel"));
+				ZInLabel->SetText(FText::FromString(TEXT("+")));
+				ZInLabel->SetFont(BtnFont);
+				ZInLabel->SetColorAndOpacity(FSlateColor(White));
+				ZInLabel->SetJustification(ETextJustify::Center);
+				ScopeZoomInBtn->AddChild(ZInLabel);
+				UCanvasPanelSlot* ZInSlot = RootCanvas->AddChildToCanvas(ScopeZoomInBtn);
+				ZInSlot->SetAnchors(FAnchors(0.f, 0.5f, 0.f, 0.5f));
+				ZInSlot->SetAlignment(FVector2D(0.f, 1.f));
+				ZInSlot->SetOffsets(FMargin(20.f, -30.f, 60.f, 60.f));
+				ScopeZoomInBtn->SetVisibility(ESlateVisibility::Collapsed);
+
+				ScopeZoomOutBtn = WidgetTree->ConstructWidget<UButton>(
+					UButton::StaticClass(), TEXT("ScopeZoomOutBtn"));
+				FButtonStyle ZOutStyle = ScopeZoomOutBtn->GetStyle();
+				ZOutStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.15f, 0.15f, 0.15f, 0.8f));
+				ZOutStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.25f, 0.25f, 0.25f, 0.9f));
+				ZOutStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.08f, 0.08f, 0.08f, 1.f));
+				ScopeZoomOutBtn->SetStyle(ZOutStyle);
+				UTextBlock* ZOutLabel = WidgetTree->ConstructWidget<UTextBlock>(
+					UTextBlock::StaticClass(), TEXT("ZOutLabel"));
+				ZOutLabel->SetText(FText::FromString(TEXT("-")));
+				ZOutLabel->SetFont(BtnFont);
+				ZOutLabel->SetColorAndOpacity(FSlateColor(White));
+				ZOutLabel->SetJustification(ETextJustify::Center);
+				ScopeZoomOutBtn->AddChild(ZOutLabel);
+				UCanvasPanelSlot* ZOutSlot = RootCanvas->AddChildToCanvas(ScopeZoomOutBtn);
+				ZOutSlot->SetAnchors(FAnchors(0.f, 0.5f, 0.f, 0.5f));
+				ZOutSlot->SetAlignment(FVector2D(0.f, 0.f));
+				ZOutSlot->SetOffsets(FMargin(20.f, 30.f, 60.f, 60.f));
+				ScopeZoomOutBtn->SetVisibility(ESlateVisibility::Collapsed);
+
+				ScopeZoomLabel = WidgetTree->ConstructWidget<UTextBlock>(
+					UTextBlock::StaticClass(), TEXT("ScopeZoomLabel"));
+				ScopeZoomLabel->SetText(FText::FromString(TEXT("10x")));
+				ScopeZoomLabel->SetFont(BtnFont);
+				ScopeZoomLabel->SetColorAndOpacity(FSlateColor(White));
+				ScopeZoomLabel->SetJustification(ETextJustify::Center);
+				UCanvasPanelSlot* ZLabelSlot = RootCanvas->AddChildToCanvas(ScopeZoomLabel);
+				ZLabelSlot->SetAnchors(FAnchors(0.f, 0.5f, 0.f, 0.5f));
+				ZLabelSlot->SetAlignment(FVector2D(0.f, 0.5f));
+				ZLabelSlot->SetOffsets(FMargin(20.f, 0.f, 60.f, 24.f));
+				ScopeZoomLabel->SetVisibility(ESlateVisibility::Collapsed);
+			}
+
+			// Thermal scope toggle button (right side when scoped)
+			ThermalToggleBtn = WidgetTree->ConstructWidget<UButton>(
+				UButton::StaticClass(), TEXT("ThermalToggleBtn"));
+			FButtonStyle ThermStyle = ThermalToggleBtn->GetStyle();
+			ThermStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.12f, 0.18f, 0.20f, 0.8f));
+			ThermStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.18f, 0.25f, 0.28f, 0.9f));
+			ThermStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.06f, 0.10f, 0.12f, 1.f));
+			ThermalToggleBtn->SetStyle(ThermStyle);
+
+			ThermalToggleLabel = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("ThermalToggleLabel"));
+			ThermalToggleLabel->SetText(FText::FromString(TEXT("Thermal")));
+			ThermalToggleLabel->SetFont(BtnFont);
+			ThermalToggleLabel->SetColorAndOpacity(FSlateColor(White));
+			ThermalToggleLabel->SetJustification(ETextJustify::Center);
+			ThermalToggleBtn->AddChild(ThermalToggleLabel);
+
+			UCanvasPanelSlot* ThermSlot = RootCanvas->AddChildToCanvas(ThermalToggleBtn);
+			ThermSlot->SetAnchors(FAnchors(1.f, 0.5f, 1.f, 0.5f));
+			ThermSlot->SetAlignment(FVector2D(1.f, 0.5f));
+			ThermSlot->SetOffsets(FMargin(-20.f, 0.f, 110.f, 50.f));
+			ThermalToggleBtn->SetVisibility(ESlateVisibility::Collapsed);
+
+			// Unused — nulled out
+			ScopeOverlay = nullptr;
+			ScopeRingBorder = nullptr;
+		}
+
 		UE_LOG(LogPlayhouseCity, Log, TEXT("UPHCCityHUD: Widget tree built programmatically."));
 	}
 
@@ -1558,15 +2243,6 @@ void UPHCCityHUD::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	// Set the username from the logged-in profile.
-	if (UsernameText)
-	{
-		UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(this);
-		if (GI && !GI->LocalPlayerProfile.Username.IsEmpty())
-		{
-			UsernameText->SetText(FText::FromString(GI->LocalPlayerProfile.Username));
-		}
-	}
 
 	if (MenuButton)
 	{
@@ -1608,6 +2284,10 @@ void UPHCCityHUD::NativeConstruct()
 	{
 		SelectBlackHawkBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectBlackHawk);
 	}
+	if (SelectRollerBladesBtn)
+	{
+		SelectRollerBladesBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectRollerBlades);
+	}
 	if (FireButton)
 	{
 		FireButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnFireButtonPressed);
@@ -1632,6 +2312,29 @@ void UPHCCityHUD::NativeConstruct()
 	if (CameraModeButton)
 	{
 		CameraModeButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnCameraModeButtonClicked);
+	}
+	if (TorchButton)
+	{
+		TorchButton->SetTouchMethod(EButtonTouchMethod::DownAndUp);
+		TorchButton->SetPressMethod(EButtonPressMethod::ButtonPress);
+		TorchButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnLobbyButtonClicked);
+		TorchButton->OnReleased.AddDynamic(this, &UPHCCityHUD::OnLobbyCloseClicked);
+	}
+	if (DailyLoginClaimBtn)
+	{
+		DailyLoginClaimBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDailyLoginClaimClicked);
+	}
+	if (ScopeZoomInBtn)
+	{
+		ScopeZoomInBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnScopeZoomInPressed);
+	}
+	if (ScopeZoomOutBtn)
+	{
+		ScopeZoomOutBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnScopeZoomOutPressed);
+	}
+	if (ThermalToggleBtn)
+	{
+		ThermalToggleBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnThermalTogglePressed);
 	}
 	if (SelectTornadoBtn)
 	{
@@ -1676,6 +2379,10 @@ void UPHCCityHUD::NativeConstruct()
 	if (SelectAK47Btn)
 	{
 		SelectAK47Btn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectAK47);
+	}
+	if (SelectSniperBtn)
+	{
+		SelectSniperBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectSniper);
 	}
 	if (WeaponFireButton)
 	{
@@ -1975,6 +2682,233 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		}
 	}
 
+	// =====================================================================
+	//  XP Bar, Level, Kill Streak, Level-up Flash, Daily Login Popup
+	// =====================================================================
+	if (APlayerController* XPPC = GetOwningPlayer())
+	{
+		if (APHCCityCharacter* XPChar = Cast<APHCCityCharacter>(XPPC->GetPawn()))
+		{
+			// --- XP bar ---
+			if (XPBarFill && XPText && LevelText)
+			{
+				const float XPPct = (XPChar->XPToNextLevel > 0)
+					? FMath::Clamp((float)XPChar->PlayerXP / (float)XPChar->XPToNextLevel, 0.f, 1.f)
+					: 0.f;
+
+				if (USizeBox* SB = Cast<USizeBox>(XPBarFill->GetParent()))
+					SB->SetWidthOverride(390.f * XPPct);
+
+				// Color: blue shifting to brighter as it fills
+				const FLinearColor XPColor = FMath::Lerp(
+					FLinearColor(0.15f, 0.4f, 0.8f, 0.9f),
+					FLinearColor(0.3f, 0.8f, 1.f, 0.95f), XPPct);
+				XPBarFill->SetBrushColor(XPColor);
+
+				XPText->SetText(FText::FromString(
+					FString::Printf(TEXT("%d / %d XP"), XPChar->PlayerXP, XPChar->XPToNextLevel)));
+
+				LevelText->SetText(FText::FromString(
+					FString::Printf(TEXT("LV %d"), XPChar->PlayerLevel)));
+			}
+
+			// --- Kill streak display ---
+			if (KillStreakText)
+			{
+				if (XPChar->KillStreakCount >= 2 && XPChar->KillStreakTimer > 0.f)
+				{
+					FString StreakStr;
+					if (XPChar->KillStreakCount >= 10)
+						StreakStr = FString::Printf(TEXT("UNSTOPPABLE x%d  (5x XP)"), XPChar->KillStreakCount);
+					else if (XPChar->KillStreakCount >= 7)
+						StreakStr = FString::Printf(TEXT("RAMPAGE x%d  (3x XP)"), XPChar->KillStreakCount);
+					else if (XPChar->KillStreakCount >= 4)
+						StreakStr = FString::Printf(TEXT("KILLING SPREE x%d  (2x XP)"), XPChar->KillStreakCount);
+					else
+						StreakStr = FString::Printf(TEXT("DOUBLE KILL x%d  (1.5x XP)"), XPChar->KillStreakCount);
+
+					KillStreakText->SetText(FText::FromString(StreakStr));
+
+					// Pulse opacity based on timer
+					const float Pulse = 0.7f + 0.3f * FMath::Sin(GetWorld()->GetTimeSeconds() * 6.f);
+					KillStreakText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.4f, 0.1f, Pulse)));
+				}
+				else
+				{
+					KillStreakText->SetText(FText::FromString(TEXT("")));
+				}
+			}
+
+			// --- Level-up flash ---
+			if (LevelUpOverlay && LevelUpText)
+			{
+				if (XPChar->LevelUpFlashTimer > 0.f)
+				{
+					const float Alpha = FMath::Clamp(XPChar->LevelUpFlashTimer / 1.5f, 0.f, 1.f) * 0.3f;
+					LevelUpOverlay->SetBrushColor(FLinearColor(1.f, 0.85f, 0.f, Alpha));
+					LevelUpText->SetText(FText::FromString(
+						FString::Printf(TEXT("LEVEL %d!"), XPChar->PlayerLevel)));
+				}
+				else
+				{
+					LevelUpOverlay->SetBrushColor(FLinearColor(1.f, 0.85f, 0.f, 0.f));
+					LevelUpText->SetText(FText::FromString(TEXT("")));
+				}
+			}
+
+			// --- Daily login popup (show on first frame if pending) ---
+			if (DailyLoginOverlay && !bDailyLoginShown && XPChar->bDailyRewardPending)
+			{
+				bDailyLoginShown = true;
+				DailyLoginOverlay->SetVisibility(ESlateVisibility::Visible);
+
+				const int32 Streak = XPChar->LoginStreak;
+				static const int32 DayRewards[] = { 5, 10, 20, 40, 80, 150, 300 };
+				const int32 TodayReward = DayRewards[FMath::Clamp(Streak, 0, 6)];
+
+				if (DailyLoginStreakText)
+					DailyLoginStreakText->SetText(FText::FromString(
+						FString::Printf(TEXT("Day %d of 7"), Streak + 1)));
+				if (DailyLoginRewardText)
+					DailyLoginRewardText->SetText(FText::FromString(
+						FString::Printf(TEXT("Claim %d Coins + 25 XP!"), TodayReward)));
+
+				// Highlight completed days
+				UBorder* DayBorders[] = { DailyLoginDay1, DailyLoginDay2, DailyLoginDay3,
+					DailyLoginDay4, DailyLoginDay5, DailyLoginDay6, DailyLoginDay7 };
+				for (int32 D = 0; D < 7; ++D)
+				{
+					if (DayBorders[D])
+					{
+						if (D < Streak)
+							DayBorders[D]->SetBrushColor(FLinearColor(0.1f, 0.5f, 0.15f, 0.9f)); // completed
+						else if (D == Streak)
+							DayBorders[D]->SetBrushColor(FLinearColor(1.f, 0.75f, 0.f, 0.9f));   // today
+						else
+							DayBorders[D]->SetBrushColor(FLinearColor(0.15f, 0.15f, 0.15f, 0.9f)); // future
+					}
+				}
+			}
+		}
+	}
+
+	// =====================================================================
+	//  Loot Crate Spinner + Achievement Popup + Event Banner + Currency
+	// =====================================================================
+	if (APlayerController* EngPC = GetOwningPlayer())
+	{
+		if (APHCCityCharacter* EngChar = Cast<APHCCityCharacter>(EngPC->GetPawn()))
+		{
+			// --- Loot crate spinner ---
+			if (LootCrateOverlay && LootCrateSpinText && LootCrateRewardText)
+			{
+				if (EngChar->bLootCrateActive)
+				{
+					LootCrateOverlay->SetVisibility(ESlateVisibility::HitTestInvisible);
+					// Spinning coin symbols
+					static const TCHAR* SpinFrames[] = {
+						TEXT("[ $ ]"), TEXT("[ $$ ]"), TEXT("[ $$$ ]"), TEXT("[ $$$$ ]"),
+						TEXT("[ $$$$$ ]"), TEXT("[ $$$$ ]"), TEXT("[ $$$ ]"), TEXT("[ $$ ]") };
+					const int32 Frame = (int32)(EngChar->LootCrateSpinAngle / 45.f) % 8;
+					LootCrateSpinText->SetText(FText::FromString(
+						FString::Printf(TEXT("LOOT CRATE!  %s"), SpinFrames[Frame])));
+					LootCrateRewardText->SetText(FText::FromString(TEXT("...")));
+
+					// Pulse the overlay border color
+					const float P = 0.7f + 0.3f * FMath::Sin(GetWorld()->GetTimeSeconds() * 10.f);
+					LootCrateOverlay->SetBrushColor(FLinearColor(0.4f * P, 0.15f * P, 0.0f, 0.88f));
+				}
+				else if (EngChar->LootCrateReward > 0 && EngChar->LootCrateTimer < 0.01f)
+				{
+					// Brief show of reward (show for a moment after spin completes)
+					// Use a local approach: show overlay for one more frame, then hide
+					if (LootCrateOverlay->GetVisibility() != ESlateVisibility::Collapsed)
+					{
+						LootCrateRewardText->SetText(FText::FromString(
+							FString::Printf(TEXT("+%d Coins  +%d XP"),
+								EngChar->LootCrateReward, EngChar->LootCrateXPReward)));
+						LootCrateSpinText->SetText(FText::FromString(TEXT("LOOT CRATE!")));
+						LootCrateOverlay->SetBrushColor(FLinearColor(0.05f, 0.3f, 0.05f, 0.88f));
+						// Keep showing for a moment — hide on next tick when reward resets
+					}
+				}
+				else
+				{
+					LootCrateOverlay->SetVisibility(ESlateVisibility::Collapsed);
+				}
+			}
+
+			// --- Achievement popup ---
+			if (AchievementPopupBG && AchievementPopupText)
+			{
+				if (EngChar->AchievementPopupTimer > 0.f && EngChar->LastUnlockedAchievement >= 0)
+				{
+					AchievementPopupBG->SetVisibility(ESlateVisibility::HitTestInvisible);
+					const int32 Idx = EngChar->LastUnlockedAchievement;
+					AchievementPopupText->SetText(FText::FromString(
+						FString::Printf(TEXT("ACHIEVEMENT: %s"),
+							APHCCityCharacter::AchievementDefs[Idx].Name)));
+
+					// Fade out near end
+					const float Alpha = FMath::Clamp(EngChar->AchievementPopupTimer / 0.5f, 0.f, 1.f);
+					AchievementPopupBG->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.15f, 0.9f * Alpha));
+					AchievementPopupText->SetColorAndOpacity(FSlateColor(
+						FLinearColor(1.f, 0.85f, 0.f, Alpha)));
+				}
+				else
+				{
+					AchievementPopupBG->SetVisibility(ESlateVisibility::Collapsed);
+				}
+			}
+
+			// --- Event banner ---
+			if (EventBannerBG && EventBannerText && EventTimerText)
+			{
+				if (EngChar->CurrentEvent != APHCCityCharacter::EActiveEvent::None)
+				{
+					EventBannerBG->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+					FString EventName;
+					FLinearColor BannerColor;
+					switch (EngChar->CurrentEvent)
+					{
+					case APHCCityCharacter::EActiveEvent::GoldenHour:
+						EventName = TEXT("GOLDEN HOUR - 3x Coins!");
+						BannerColor = FLinearColor(0.7f, 0.5f, 0.0f, 0.85f);
+						break;
+					case APHCCityCharacter::EActiveEvent::CrabSwarm:
+						EventName = TEXT("CRAB SWARM - Double Spawns!");
+						BannerColor = FLinearColor(0.6f, 0.1f, 0.0f, 0.85f);
+						break;
+					case APHCCityCharacter::EActiveEvent::NightHunt:
+						EventName = TEXT("NIGHT HUNT - 2x Kill XP!");
+						BannerColor = FLinearColor(0.1f, 0.1f, 0.4f, 0.85f);
+						break;
+					default: break;
+					}
+
+					EventBannerBG->SetBrushColor(BannerColor);
+					EventBannerText->SetText(FText::FromString(EventName));
+
+					const int32 Mins = (int32)(EngChar->EventTimer / 60.f);
+					const int32 Secs = (int32)FMath::Fmod(EngChar->EventTimer, 60.f);
+					EventTimerText->SetText(FText::FromString(
+						FString::Printf(TEXT("%d:%02d remaining"), Mins, Secs)));
+				}
+				else
+				{
+					EventBannerBG->SetVisibility(ESlateVisibility::Collapsed);
+				}
+			}
+
+			// --- Auto-refresh currency display ---
+			if (UPHCGameInstance* AutoGI = UPHCGameInstance::GetPHCGameInstance(this))
+			{
+				UpdateCurrencyDisplay(AutoGI->LocalPlayerProfile.Coins, AutoGI->LocalPlayerProfile.Gems);
+			}
+		}
+	}
+
 	// -- Proximity-based "ENTER VEHICLE" button visibility --
 	if (EnterVehicleButton && !bDrivingMode)
 	{
@@ -1995,31 +2929,31 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 				for (TActorIterator<APHCVehiclePawn> It(W); !bNearVehicle && It; ++It)
 				{
-					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
+					if (!It->bIsOccupied && !It->bIsDestroyed && CheckRange(*It)) bNearVehicle = true;
 				}
 				for (TActorIterator<APHCDuneBuggyPawn> It(W); !bNearVehicle && It; ++It)
 				{
-					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
+					if (!It->bIsOccupied && !It->bIsDestroyed && CheckRange(*It)) bNearVehicle = true;
 				}
 				for (TActorIterator<APHCRaptorPawn> It(W); !bNearVehicle && It; ++It)
 				{
-					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
+					if (!It->bIsOccupied && !It->bIsCrashing && CheckRange(*It)) bNearVehicle = true;
 				}
 				for (TActorIterator<APHCTankPawn> It(W); !bNearVehicle && It; ++It)
 				{
-					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
+					if (!It->bIsOccupied && !It->bIsDestroyed && CheckRange(*It)) bNearVehicle = true;
 				}
 				for (TActorIterator<APHCDirtBikePawn> It(W); !bNearVehicle && It; ++It)
 				{
-					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
+					if (!It->bIsOccupied && !It->bIsDestroyed && CheckRange(*It)) bNearVehicle = true;
 				}
 				for (TActorIterator<APHCBlackbirdPawn> It(W); !bNearVehicle && It; ++It)
 				{
-					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
+					if (!It->bIsOccupied && !It->bIsCrashing && CheckRange(*It)) bNearVehicle = true;
 				}
 				for (TActorIterator<APHCBlackHawkPawn> It(W); !bNearVehicle && It; ++It)
 				{
-					if (!It->bIsOccupied && CheckRange(*It)) bNearVehicle = true;
+					if (!It->bIsOccupied && !It->bIsCrashing && CheckRange(*It)) bNearVehicle = true;
 				}
 			}
 		}
@@ -2116,6 +3050,13 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 					TouchY >= DropCenterY - DropBtnRadius && TouchY <= DropCenterY + DropBtnRadius)
 				{
 					bDropTouched = true;
+					continue;
+				}
+
+				// Skip touches on the Exit button (top-left area)
+				if (TouchX >= 50.f && TouchX <= 180.f &&
+					TouchY >= 64.f && TouchY <= 114.f)
+				{
 					continue;
 				}
 
@@ -2255,7 +3196,13 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 				}
 
 				// Skip top 25% of screen where HUD buttons live
-				if (TouchY < ButtonZoneY) { continue; }
+				// But keep tracking the finger so it isn't lost
+				if (TouchY < ButtonZoneY)
+				{
+					if (i == WalkMoveFingerIdx) bMoveFingStillDown = true;
+					if (i == WalkLookFingerIdx) bLookFingStillDown = true;
+					continue;
+				}
 
 				// Skip touches on the Enter Vehicle button area
 				if (EnterVehicleButton &&
@@ -2264,48 +3211,54 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 					TouchY >= EnterBtnTop && TouchY <= EnterBtnBot)
 				{
 					bEnterTouched = true;
+					if (i == WalkMoveFingerIdx) bMoveFingStillDown = true;
+					if (i == WalkLookFingerIdx) bLookFingStillDown = true;
 					continue;
 				}
 
 				const FVector2D TouchPos(TouchX, TouchY);
 
-				if (TouchX < ScreenMidX)
+				// If this finger is already tracked, keep tracking it
+				// regardless of which side of the screen it drifted to
+				if (i == WalkMoveFingerIdx)
 				{
-					// --- Left half: movement joystick ---
+					bMoveFingStillDown = true;
+					const FVector2D Offset = TouchPos - WalkMoveOrigin;
+					const float Dist = Offset.Size();
+					if (Dist > DeadZone)
+					{
+						FVector2D Normalized = Offset / JoystickMaxRadius;
+						if (Normalized.Size() > 1.f) { Normalized = Normalized.GetSafeNormal(); }
+						MoveX = Normalized.X;
+						MoveY = -Normalized.Y; // screen Y is inverted
+					}
+				}
+				else if (i == WalkLookFingerIdx)
+				{
+					bLookFingStillDown = true;
+					const FVector2D Delta = (TouchPos - WalkLookPrev) * LookSensitivity;
+					LookDeltaX = Delta.X;
+					LookDeltaY = Delta.Y;
+					WalkLookPrev = TouchPos;
+				}
+				else if (TouchX < ScreenMidX)
+				{
+					// --- Left half: new movement joystick finger ---
 					if (WalkMoveFingerIdx < 0)
 					{
 						WalkMoveFingerIdx = i;
 						WalkMoveOrigin = TouchPos;
-					}
-					if (i == WalkMoveFingerIdx)
-					{
 						bMoveFingStillDown = true;
-						const FVector2D Offset = TouchPos - WalkMoveOrigin;
-						const float Dist = Offset.Size();
-						if (Dist > DeadZone)
-						{
-							FVector2D Normalized = Offset / JoystickMaxRadius;
-							if (Normalized.Size() > 1.f) { Normalized = Normalized.GetSafeNormal(); }
-							MoveX = Normalized.X;
-							MoveY = -Normalized.Y; // screen Y is inverted
-						}
 					}
 				}
 				else
 				{
-					// --- Right half: camera look ---
+					// --- Right half: new camera look finger ---
 					if (WalkLookFingerIdx < 0)
 					{
 						WalkLookFingerIdx = i;
 						WalkLookPrev = TouchPos;
-					}
-					if (i == WalkLookFingerIdx)
-					{
 						bLookFingStillDown = true;
-						const FVector2D Delta = (TouchPos - WalkLookPrev) * LookSensitivity;
-						LookDeltaX = Delta.X;
-						LookDeltaY = Delta.Y;
-						WalkLookPrev = TouchPos;
 					}
 				}
 			}
@@ -2367,11 +3320,48 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		}
 
 		const bool bRangedWeapon = Char &&
-			(Char->CurrentWeaponType == 0 || Char->CurrentWeaponType == 1 || Char->CurrentWeaponType == 5);
+			(Char->CurrentWeaponType == 0 || Char->CurrentWeaponType == 1 || Char->CurrentWeaponType == 5 || Char->CurrentWeaponType == 6);
 		const bool bFPRangedWeapon = bRangedWeapon && Char->bFirstPersonMode;
 
-		// Crosshair visibility: show with ranged weapon in any camera mode
-		const ESlateVisibility CrossVis = bRangedWeapon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+		// COD-style sniper scope: full black overlay with viewport opening
+		const bool bSniperScoped = Char && Char->CurrentWeaponType == 6 && Char->ADSAlpha > 0.01f;
+		const ESlateVisibility ScopeVis = bSniperScoped ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+		if (ScopeOverlay) ScopeOverlay->SetVisibility(ScopeVis);
+		if (ScopeBlackTop) ScopeBlackTop->SetVisibility(ScopeVis);
+		if (ScopeBlackBottom) ScopeBlackBottom->SetVisibility(ScopeVis);
+		if (ScopeBlackLeft) ScopeBlackLeft->SetVisibility(ScopeVis);
+		if (ScopeBlackRight) ScopeBlackRight->SetVisibility(ScopeVis);
+		if (ScopeRingBorder) ScopeRingBorder->SetVisibility(ScopeVis);
+		if (ScopeCrosshairH) ScopeCrosshairH->SetVisibility(ScopeVis);
+		if (ScopeCrosshairV) ScopeCrosshairV->SetVisibility(ScopeVis);
+		if (ScopeCrosshairDot) ScopeCrosshairDot->SetVisibility(ScopeVis);
+
+		// Scope zoom buttons — visible only when scoped
+		const ESlateVisibility ZoomBtnVis = bSniperScoped ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
+		if (ScopeZoomInBtn) ScopeZoomInBtn->SetVisibility(ZoomBtnVis);
+		if (ScopeZoomOutBtn) ScopeZoomOutBtn->SetVisibility(ZoomBtnVis);
+		if (ScopeZoomLabel)
+		{
+			ScopeZoomLabel->SetVisibility(ZoomBtnVis);
+			if (bSniperScoped)
+			{
+				const int32 ZoomX = FMath::RoundToInt(90.f / Char->SniperZoomFOV);
+				ScopeZoomLabel->SetText(FText::FromString(FString::Printf(TEXT("%dx"), ZoomX)));
+			}
+		}
+
+		// Thermal toggle button
+		if (ThermalToggleBtn) ThermalToggleBtn->SetVisibility(ZoomBtnVis);
+		if (ThermalToggleLabel && bSniperScoped)
+		{
+			ThermalToggleLabel->SetText(FText::FromString(
+				Char->bThermalScope ? TEXT("Thermal ON") : TEXT("Thermal")));
+		}
+
+		// Hide normal crosshair when scoped (sniper scope has its own crosshair)
+		// Show normal crosshair for other ranged weapons
+		const bool bShowNormalCrosshair = bRangedWeapon && !bSniperScoped;
+		const ESlateVisibility CrossVis = bShowNormalCrosshair ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
 		if (CrosshairDot) CrosshairDot->SetVisibility(CrossVis);
 		if (CrosshairTop) CrosshairTop->SetVisibility(CrossVis);
 		if (CrosshairBottom) CrosshairBottom->SetVisibility(CrossVis);
@@ -2717,6 +3707,37 @@ void UPHCCityHUD::ShowVehicleSelection()
 	{
 		VehicleSelectOverlay->SetVisibility(ESlateVisibility::Visible);
 		bVehicleSelectOpen = true;
+
+		// Update button labels with lock status
+		APHCCityCharacter* Char = nullptr;
+		if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+			Char = Cast<APHCCityCharacter>(PC->GetPawn());
+
+		auto UpdateVehLabel = [&](UButton* Btn, int32 VehType, const TCHAR* Name)
+		{
+			if (!Btn || Btn->GetChildrenCount() == 0) return;
+			UTextBlock* Lbl = Cast<UTextBlock>(Btn->GetChildAt(0));
+			if (!Lbl) return;
+			if (Char && !Char->IsVehicleUnlocked(VehType))
+			{
+				const int32 Req = APHCCityCharacter::VehicleUnlockLevel(VehType);
+				Lbl->SetText(FText::FromString(FString::Printf(TEXT("%s\nLV %d"), Name, Req)));
+				Lbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)));
+			}
+			else
+			{
+				Lbl->SetText(FText::FromString(Name));
+				Lbl->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			}
+		};
+
+		UpdateVehLabel(SelectAventadorBtn, 0, TEXT("Lamborghini"));
+		UpdateVehLabel(SelectBuggyBtn, 1, TEXT("Dune Buggy"));
+		UpdateVehLabel(SelectRaptorBtn, 2, TEXT("F-22 Raptor"));
+		UpdateVehLabel(SelectTankBtn, 3, TEXT("M60 Tank"));
+		UpdateVehLabel(SelectDirtBikeBtn, 4, TEXT("Mountain Bike"));
+		UpdateVehLabel(SelectBlackHawkBtn, 5, TEXT("Black Hawk"));
+		UpdateVehLabel(SelectRollerBladesBtn, 7, TEXT("Roller Blades"));
 	}
 }
 
@@ -2734,6 +3755,11 @@ void UPHCCityHUD::OnSelectAventador()
 	HideVehicleSelection();
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
+		if (APHCCityCharacter* C = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			if (!C->IsVehicleUnlocked(0)) return; // Level 1
+			C->VehiclesUsed |= (1 << 0);
+		}
 		PC->SpawnAndEnterVehicle(0);
 	}
 }
@@ -2743,6 +3769,11 @@ void UPHCCityHUD::OnSelectBuggy()
 	HideVehicleSelection();
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
+		if (APHCCityCharacter* C = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			if (!C->IsVehicleUnlocked(1)) return; // Level 3
+			C->VehiclesUsed |= (1 << 1);
+		}
 		PC->SpawnAndEnterVehicle(1);
 	}
 }
@@ -2752,6 +3783,11 @@ void UPHCCityHUD::OnSelectRaptor()
 	HideVehicleSelection();
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
+		if (APHCCityCharacter* C = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			if (!C->IsVehicleUnlocked(2)) return; // Level 12
+			C->VehiclesUsed |= (1 << 2);
+		}
 		PC->SpawnAndEnterVehicle(2);
 	}
 }
@@ -2775,6 +3811,11 @@ void UPHCCityHUD::OnSelectTank()
 	HideVehicleSelection();
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
+		if (APHCCityCharacter* C = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			if (!C->IsVehicleUnlocked(3)) return; // Level 8
+			C->VehiclesUsed |= (1 << 3);
+		}
 		PC->SpawnAndEnterVehicle(3);
 	}
 }
@@ -2784,6 +3825,11 @@ void UPHCCityHUD::OnSelectDirtBike()
 	HideVehicleSelection();
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
+		if (APHCCityCharacter* C = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			if (!C->IsVehicleUnlocked(4)) return; // Level 5
+			C->VehiclesUsed |= (1 << 4);
+		}
 		PC->SpawnAndEnterVehicle(4);
 	}
 }
@@ -2793,8 +3839,30 @@ void UPHCCityHUD::OnSelectBlackHawk()
 	HideVehicleSelection();
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
+		if (APHCCityCharacter* C = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			if (!C->IsVehicleUnlocked(5)) return; // Level 18
+			C->VehiclesUsed |= (1 << 5);
+		}
 		PC->SpawnAndEnterVehicle(5);
 	}
+}
+
+void UPHCCityHUD::OnSelectRollerBlades()
+{
+	HideVehicleSelection();
+	APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer());
+	if (!PC) return;
+	APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn());
+	if (!Char) return;
+
+	if (!Char->IsVehicleUnlocked(7)) return; // Level 2
+	Char->VehiclesUsed |= (1 << 7);
+
+	if (Char->bRollerBladesEquipped)
+		PC->UnequipRollerBlades();
+	else
+		PC->EquipRollerBlades();
 }
 
 void UPHCCityHUD::OnDropBombClicked()
@@ -3145,6 +4213,23 @@ void UPHCCityHUD::OnSelectAK47()
 	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
 }
 
+void UPHCCityHUD::OnSelectSniper()
+{
+	HideWeaponSelection();
+	EquippedWeaponType = 6;
+
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->CurrentWeaponType = 6;
+		}
+	}
+
+	if (WeaponFireLabel) WeaponFireLabel->SetText(FText::FromString(TEXT("FIRE")));
+	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
+}
+
 void UPHCCityHUD::OnWeaponFirePressed()
 {
 	bWeaponFireHeld = true;
@@ -3194,24 +4279,211 @@ void UPHCCityHUD::OnCameraModeButtonClicked()
 	}
 }
 
+void UPHCCityHUD::OnLobbyButtonClicked()
+{
+	ShowLobby();
+}
+
+void UPHCCityHUD::OnLobbyCloseClicked()
+{
+	HideLobby();
+}
+
+void UPHCCityHUD::ShowLobby()
+{
+	RefreshLobbyPlayerList();
+	if (LobbyOverlay)
+	{
+		LobbyOverlay->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+	bLobbyOpen = true;
+}
+
+void UPHCCityHUD::HideLobby()
+{
+	if (LobbyOverlay)
+	{
+		LobbyOverlay->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	bLobbyOpen = false;
+}
+
+void UPHCCityHUD::RefreshLobbyPlayerList()
+{
+	if (!LobbyPlayerList) return;
+
+	// Clear existing rows.
+	LobbyPlayerList->ClearChildren();
+
+	const FSlateFontInfo NameFont = FSlateFontInfo(
+		FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 16);
+	const FSlateFontInfo LevelFont = FSlateFontInfo(
+		FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 14);
+	const FSlateFontInfo XPFont = FSlateFontInfo(
+		FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 12);
+
+	// Lambda to add a player row.
+	auto AddPlayerRow = [&](const FString& Name, int32 Level, int32 XP, int32 Coins)
+	{
+		UBorder* Row = NewObject<UBorder>(this);
+		Row->SetBrushColor(FLinearColor(0.12f, 0.12f, 0.18f, 0.5f));
+		Row->SetPadding(FMargin(16.f, 12.f, 16.f, 12.f));
+
+		UHorizontalBox* HBox = NewObject<UHorizontalBox>(this);
+		Row->SetContent(HBox);
+
+		// Username
+		UTextBlock* NameTB = NewObject<UTextBlock>(this);
+		NameTB->SetText(FText::FromString(Name));
+		NameTB->SetFont(NameFont);
+		NameTB->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+		UHorizontalBoxSlot* NameSlot = HBox->AddChildToHorizontalBox(NameTB);
+		NameSlot->SetVerticalAlignment(VAlign_Center);
+		NameSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill)); // fill
+
+		// Level
+		UTextBlock* LvlTB = NewObject<UTextBlock>(this);
+		LvlTB->SetText(FText::FromString(FString::Printf(TEXT("Lv. %d"), Level)));
+		LvlTB->SetFont(LevelFont);
+		LvlTB->SetColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.8f, 1.0f, 1.f)));
+		UHorizontalBoxSlot* LvlSlot = HBox->AddChildToHorizontalBox(LvlTB);
+		LvlSlot->SetVerticalAlignment(VAlign_Center);
+		LvlSlot->SetPadding(FMargin(12.f, 0.f, 0.f, 0.f));
+
+		// XP
+		UTextBlock* XPTB = NewObject<UTextBlock>(this);
+		XPTB->SetText(FText::FromString(FString::Printf(TEXT("XP: %d"), XP)));
+		XPTB->SetFont(XPFont);
+		XPTB->SetColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.6f, 1.f)));
+		UHorizontalBoxSlot* XPSlot = HBox->AddChildToHorizontalBox(XPTB);
+		XPSlot->SetVerticalAlignment(VAlign_Center);
+		XPSlot->SetPadding(FMargin(12.f, 0.f, 0.f, 0.f));
+
+		// Coins
+		UTextBlock* CoinsTB = NewObject<UTextBlock>(this);
+		CoinsTB->SetText(FText::FromString(FString::Printf(TEXT("%d coins"), Coins)));
+		CoinsTB->SetFont(XPFont);
+		CoinsTB->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.85f, 0.3f, 1.f)));
+		UHorizontalBoxSlot* CoinsSlot = HBox->AddChildToHorizontalBox(CoinsTB);
+		CoinsSlot->SetVerticalAlignment(VAlign_Center);
+		CoinsSlot->SetPadding(FMargin(12.f, 0.f, 0.f, 0.f));
+
+		UVerticalBoxSlot* RowSlot = LobbyPlayerList->AddChildToVerticalBox(Row);
+		RowSlot->SetHorizontalAlignment(HAlign_Fill);
+		RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+	};
+
+	// Get the local player's controller to identify which PlayerState is ours.
+	APlayerController* LocalPC = GetOwningPlayer();
+	UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(this);
+
+	bool bAddedLocal = false;
+
+	// Always add the local player first, using LocalPlayerProfile (most up-to-date data).
+	if (GI)
+	{
+		const FPHCPlayerProfile& P = GI->LocalPlayerProfile;
+		FString Name = P.DisplayName.IsEmpty() ? P.Username : P.DisplayName;
+		if (Name.IsEmpty()) Name = TEXT("Player");
+		AddPlayerRow(Name, P.Level, P.XP, P.Coins);
+		bAddedLocal = true;
+	}
+
+	// Add other connected players from GameState->PlayerArray.
+	if (UWorld* World = GetWorld())
+	{
+		if (AGameStateBase* GS = World->GetGameState())
+		{
+			for (APlayerState* PS : GS->PlayerArray)
+			{
+				// Skip the local player — already added above from LocalPlayerProfile.
+				if (LocalPC && PS == LocalPC->PlayerState)
+					continue;
+
+				if (APHCPlayerState* PHCState = Cast<APHCPlayerState>(PS))
+				{
+					const FPHCPlayerProfile& P = PHCState->GetPlayerProfile();
+					FString Name = P.DisplayName.IsEmpty() ? P.Username : P.DisplayName;
+					if (Name.IsEmpty()) Name = PS->GetPlayerName();
+					if (Name.IsEmpty()) Name = TEXT("Player");
+					AddPlayerRow(Name, P.Level, P.XP, P.Coins);
+				}
+			}
+		}
+	}
+}
+
+void UPHCCityHUD::OnScopeZoomInPressed()
+{
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->SniperZoomFOV = FMath::Clamp(Char->SniperZoomFOV * 0.7f,
+				APHCCityCharacter::SniperZoomMin, APHCCityCharacter::SniperZoomMax);
+		}
+	}
+}
+
+void UPHCCityHUD::OnScopeZoomOutPressed()
+{
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->SniperZoomFOV = FMath::Clamp(Char->SniperZoomFOV / 0.7f,
+				APHCCityCharacter::SniperZoomMin, APHCCityCharacter::SniperZoomMax);
+		}
+	}
+}
+
+void UPHCCityHUD::OnThermalTogglePressed()
+{
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->bThermalScope = !Char->bThermalScope;
+		}
+	}
+}
+
 void UPHCCityHUD::OnADSPressed()
 {
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
 		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
 		{
-			Char->SetADS(true);
+			// Toggle ADS on press (tap to scope in, tap again to scope out)
+			Char->SetADS(!Char->bADS);
 		}
 	}
 }
 
 void UPHCCityHUD::OnADSReleased()
 {
+	// No-op: ADS is now toggled on press, not held
+}
+
+void UPHCCityHUD::OnDailyLoginClaimClicked()
+{
 	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
 	{
 		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
 		{
-			Char->SetADS(false);
+			const int32 CoinsAwarded = Char->ClaimDailyReward();
+
+			// Update HUD currency display
+			if (UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(this))
+			{
+				UpdateCurrencyDisplay(GI->LocalPlayerProfile.Coins, GI->LocalPlayerProfile.Gems);
+			}
+
+			// Hide the popup
+			if (DailyLoginOverlay)
+			{
+				DailyLoginOverlay->SetVisibility(ESlateVisibility::Collapsed);
+			}
 		}
 	}
 }

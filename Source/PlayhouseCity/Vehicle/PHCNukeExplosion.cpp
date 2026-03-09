@@ -187,6 +187,15 @@ void APHCNukeExplosion::Tick(float DeltaTime)
 	ElapsedTime += DeltaTime;
 	const float t = ElapsedTime;
 
+	// Force destroy when animation is complete
+	if (t >= TotalDuration)
+	{
+		SetActorHiddenInGame(true);
+		SetActorTickEnabled(false);
+		Destroy();
+		return;
+	}
+
 	// Phase helper: 0..1 ramp between Start and End
 	auto Phase = [](float Current, float Start, float End) -> float
 	{
@@ -306,6 +315,8 @@ void APHCNukeExplosion::Tick(float DeltaTime)
 				SmokePlume->SetRelativeScale3D(FVector(Width, Width, ScaleZ));
 				SmokePlume->SetRelativeLocation(FVector(0.f, 0.f, Height * 0.5f));
 			}
+
+			if (SmokePlume && FadeA >= 1.f) SmokePlume->SetVisibility(false);
 
 			if (SmokePlumeMat)
 			{

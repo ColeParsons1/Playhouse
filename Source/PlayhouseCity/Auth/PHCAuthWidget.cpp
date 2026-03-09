@@ -18,6 +18,7 @@
 #include "Components/Spacer.h"
 #include "Components/Border.h"
 #include "Blueprint/WidgetTree.h"
+#include "Misc/Paths.h"
 
 // ===========================================================================
 // Helpers -- widget construction
@@ -48,29 +49,45 @@ namespace PHCAuthWidgetLocal
 		const FString& LabelText,
 		FLinearColor ButtonColor,
 		FLinearColor TextColor,
+		const FSlateFontInfo& LabelFont,
+		FMargin InNormalPadding = FMargin(32.f, 24.f),
 		TObjectPtr<UTextBlock>* OutLabel = nullptr)
 	{
 		UButton* Btn = CreateWidget<UButton>(Tree, Outer, ButtonName);
 
-		// Button tint / style.
+		// Button tint / style with hover + pressed feedback.
 		FButtonStyle Style = Btn->GetStyle();
+
 		FSlateBrush NormalBrush;
 		NormalBrush.TintColor = FSlateColor(ButtonColor);
 		Style.SetNormal(NormalBrush);
-		Style.SetHovered(NormalBrush);
-		Style.SetPressed(NormalBrush);
-		Style.NormalPadding = FMargin(20.f, 18.f);
-		Style.PressedPadding = FMargin(20.f, 18.f);
+
+		FSlateBrush HoveredBrush;
+		HoveredBrush.TintColor = FSlateColor(FLinearColor(
+			FMath::Min(ButtonColor.R + 0.08f, 1.f),
+			FMath::Min(ButtonColor.G + 0.08f, 1.f),
+			FMath::Min(ButtonColor.B + 0.08f, 1.f),
+			ButtonColor.A));
+		Style.SetHovered(HoveredBrush);
+
+		FSlateBrush PressedBrush;
+		PressedBrush.TintColor = FSlateColor(FLinearColor(
+			FMath::Max(ButtonColor.R - 0.03f, 0.f),
+			FMath::Max(ButtonColor.G - 0.03f, 0.f),
+			FMath::Max(ButtonColor.B - 0.03f, 0.f),
+			ButtonColor.A));
+		Style.SetPressed(PressedBrush);
+
+		Style.NormalPadding = InNormalPadding;
+		Style.PressedPadding = FMargin(InNormalPadding.Left, InNormalPadding.Top + 1.f,
+			InNormalPadding.Right, InNormalPadding.Bottom - 1.f);
 		Btn->SetStyle(Style);
 
 		// Child label.
 		FName LabelName = *FString::Printf(TEXT("%sLabel"), *ButtonName.ToString());
 		UTextBlock* Label = CreateWidget<UTextBlock>(Tree, Outer, LabelName);
 		Label->SetText(FText::FromString(LabelText));
-
-		FSlateFontInfo Font = Label->GetFont();
-		Font.Size = 24;
-		Label->SetFont(Font);
+		Label->SetFont(LabelFont);
 		Label->SetColorAndOpacity(FSlateColor(TextColor));
 		Label->SetJustification(ETextJustify::Center);
 
@@ -122,14 +139,28 @@ bool UPHCAuthWidget::Initialize()
 		UWidgetTree* Tree = WidgetTree;
 		UObject* Outer = this;
 
+		// -- Fonts ---------------------------------------------------------
+		const FSlateFontInfo TitleFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 34);
+		const FSlateFontInfo SubtitleFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 15);
+		const FSlateFontInfo BtnFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 20);
+		const FSlateFontInfo SmallBtnFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 15);
+		const FSlateFontInfo ErrorFontInfo = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 12);
+		const FSlateFontInfo DevLabelFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 11);
+
 		// ---------------------------------------------------------------
 		// Root canvas -- fills the entire viewport.
 		// ---------------------------------------------------------------
 		UCanvasPanel* RootCanvas = CreateWidget<UCanvasPanel>(Tree, Outer, FName("RootCanvas"));
 
-		// Dark background using a Border that fills the canvas.
+		// Deep navy-black background.
 		UBorder* Background = CreateWidget<UBorder>(Tree, Outer, FName("Background"));
-		Background->SetBrushColor(FLinearColor(0.051f, 0.051f, 0.102f, 1.0f)); // #0D0D1A
+		Background->SetBrushColor(FLinearColor(0.04f, 0.04f, 0.07f, 1.0f));
 		Background->SetPadding(FMargin(0.0f));
 
 		RootCanvas->AddChild(Background);
@@ -143,11 +174,11 @@ bool UPHCAuthWidget::Initialize()
 		// Centred card wrapper: SizeBox -> Border (card bg) -> VerticalBox
 		// ---------------------------------------------------------------
 		USizeBox* CardSizeBox = CreateWidget<USizeBox>(Tree, Outer, FName("CardSizeBox"));
-		CardSizeBox->SetWidthOverride(400.0f);
+		CardSizeBox->SetWidthOverride(420.0f);
 
 		UBorder* CardBorder = CreateWidget<UBorder>(Tree, Outer, FName("CardBorder"));
-		CardBorder->SetBrushColor(FLinearColor(0.102f, 0.102f, 0.180f, 1.0f)); // #1A1A2E
-		CardBorder->SetPadding(FMargin(30.0f, 40.0f, 30.0f, 40.0f));
+		CardBorder->SetBrushColor(FLinearColor(0.08f, 0.08f, 0.14f, 0.95f));
+		CardBorder->SetPadding(FMargin(36.0f, 48.0f, 36.0f, 40.0f));
 
 		UVerticalBox* FormBox = CreateWidget<UVerticalBox>(Tree, Outer, FName("FormBox"));
 
@@ -157,22 +188,17 @@ bool UPHCAuthWidget::Initialize()
 		RootCanvas->AddChild(CardSizeBox);
 		if (UCanvasPanelSlot* CardSlot = Cast<UCanvasPanelSlot>(CardSizeBox->Slot))
 		{
-			// Centre the card in the viewport.
 			CardSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
 			CardSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 			CardSlot->SetAutoSize(true);
 		}
 
 		// ---------------------------------------------------------------
-		// Title: "Playhouse City"
+		// Title: "PlayhouseCity"
 		// ---------------------------------------------------------------
 		UTextBlock* TitleText = CreateWidget<UTextBlock>(Tree, Outer, FName("TitleText"));
-		TitleText->SetText(FText::FromString(TEXT("Playhouse City")));
-		{
-			FSlateFontInfo TitleFont = TitleText->GetFont();
-			TitleFont.Size = 32;
-			TitleText->SetFont(TitleFont);
-		}
+		TitleText->SetText(FText::FromString(TEXT("PlayhouseCity")));
+		TitleText->SetFont(TitleFont);
 		TitleText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 		TitleText->SetJustification(ETextJustify::Center);
 
@@ -180,20 +206,16 @@ bool UPHCAuthWidget::Initialize()
 		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(TitleText->Slot))
 		{
 			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
 		}
 
 		// ---------------------------------------------------------------
-		// Subtitle: "Welcome"
+		// Subtitle: "Sign in to continue"
 		// ---------------------------------------------------------------
 		UTextBlock* SubtitleText = CreateWidget<UTextBlock>(Tree, Outer, FName("SubtitleText"));
-		SubtitleText->SetText(FText::FromString(TEXT("Welcome")));
-		{
-			FSlateFontInfo SubFont = SubtitleText->GetFont();
-			SubFont.Size = 16;
-			SubtitleText->SetFont(SubFont);
-		}
-		SubtitleText->SetColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f, 1.0f)));
+		SubtitleText->SetText(FText::FromString(TEXT("Sign in to continue")));
+		SubtitleText->SetFont(SubtitleFont);
+		SubtitleText->SetColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.62f, 1.0f)));
 		SubtitleText->SetJustification(ETextJustify::Center);
 
 		FormBox->AddChild(SubtitleText);
@@ -204,10 +226,10 @@ bool UPHCAuthWidget::Initialize()
 		}
 
 		// ---------------------------------------------------------------
-		// Spacer (30px)
+		// Spacer (36px)
 		// ---------------------------------------------------------------
 		USpacer* Spacer1 = CreateWidget<USpacer>(Tree, Outer, FName("Spacer1"));
-		Spacer1->SetSize(FVector2D(0.0f, 30.0f));
+		Spacer1->SetSize(FVector2D(0.0f, 36.0f));
 		FormBox->AddChild(Spacer1);
 
 		// ---------------------------------------------------------------
@@ -215,12 +237,8 @@ bool UPHCAuthWidget::Initialize()
 		// ---------------------------------------------------------------
 		ErrorText = CreateWidget<UTextBlock>(Tree, Outer, FName("ErrorText"));
 		ErrorText->SetText(FText::GetEmpty());
-		{
-			FSlateFontInfo ErrFont = ErrorText->GetFont();
-			ErrFont.Size = 13;
-			ErrorText->SetFont(ErrFont);
-		}
-		ErrorText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.25f, 0.25f, 1.0f)));
+		ErrorText->SetFont(ErrorFontInfo);
+		ErrorText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.30f, 0.30f, 1.0f)));
 		ErrorText->SetJustification(ETextJustify::Center);
 		ErrorText->SetVisibility(ESlateVisibility::Collapsed);
 
@@ -228,7 +246,7 @@ bool UPHCAuthWidget::Initialize()
 		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(ErrorText->Slot))
 		{
 			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
 		}
 
 		// ---------------------------------------------------------------
@@ -241,7 +259,7 @@ bool UPHCAuthWidget::Initialize()
 		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(LoadingSpinner->Slot))
 		{
 			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Center);
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
 		}
 
 		// ---------------------------------------------------------------
@@ -252,83 +270,129 @@ bool UPHCAuthWidget::Initialize()
 		FormBox->AddChild(Spacer2);
 
 		// ---------------------------------------------------------------
-		// AppleSignInButton (black with white text, Apple HIG)
+		// AppleSignInButton (black, Apple HIG)
 		// ---------------------------------------------------------------
 		AppleSignInButton = MakeButton(
 			Tree, Outer, FName("AppleSignInButton"),
-			TEXT("\xEF\xA3\xBF  Sign in with Apple"),  // Apple logo U+F8FF
-			FLinearColor(0.0f, 0.0f, 0.0f, 1.0f),     // black
-			FLinearColor::White);
+			TEXT("\xEF\xA3\xBF  Sign in with Apple"),
+			FLinearColor(0.0f, 0.0f, 0.0f, 1.0f),
+			FLinearColor::White, BtnFont);
 
 		FormBox->AddChild(AppleSignInButton);
 		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(AppleSignInButton->Slot))
 		{
 			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 14.0f));
 		}
 
 		// ---------------------------------------------------------------
-		// WalkerButton — sign in as Walker
-		// ---------------------------------------------------------------
-		WalkerButton = MakeButton(
-			Tree, Outer, FName("WalkerButton"),
-			TEXT("Sign in as Walker"),
-			FLinearColor(0.12f, 0.38f, 0.18f, 1.0f),  // green (shirt color)
-			FLinearColor::White);
-
-		FormBox->AddChild(WalkerButton);
-		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(WalkerButton->Slot))
-		{
-			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
-		}
-
-		// ---------------------------------------------------------------
-		// LayneButton — sign in as Layne
-		// ---------------------------------------------------------------
-		LayneButton = MakeButton(
-			Tree, Outer, FName("LayneButton"),
-			TEXT("Sign in as Layne"),
-			FLinearColor(0.18f, 0.22f, 0.55f, 1.0f),  // blue-purple
-			FLinearColor::White);
-
-		FormBox->AddChild(LayneButton);
-		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(LayneButton->Slot))
-		{
-			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
-		}
-
-		// ---------------------------------------------------------------
-		// DevButton — sign in as Dev
-		// ---------------------------------------------------------------
-		DevButton = MakeButton(
-			Tree, Outer, FName("DevButton"),
-			TEXT("Sign in as Dev"),
-			FLinearColor(0.55f, 0.12f, 0.12f, 1.0f),  // dark red
-			FLinearColor::White);
-
-		FormBox->AddChild(DevButton);
-		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(DevButton->Slot))
-		{
-			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
-		}
-
-		// ---------------------------------------------------------------
-		// GuestButton — continue as anonymous guest
+		// GuestButton — secondary CTA, directly below Apple
 		// ---------------------------------------------------------------
 		GuestButton = MakeButton(
 			Tree, Outer, FName("GuestButton"),
 			TEXT("Continue as Guest"),
-			FLinearColor(0.15f, 0.15f, 0.15f, 1.0f),  // dark grey
-			FLinearColor(0.5f, 0.5f, 0.5f, 1.0f));     // grey text
+			FLinearColor(0.18f, 0.18f, 0.22f, 1.0f),
+			FLinearColor(0.75f, 0.75f, 0.80f, 1.0f), BtnFont);
 
 		FormBox->AddChild(GuestButton);
 		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(GuestButton->Slot))
 		{
 			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 0.0f));
+		}
+
+		// ---------------------------------------------------------------
+		// Separator — thin line + "Developer" label
+		// ---------------------------------------------------------------
+		USpacer* DevSpacer1 = CreateWidget<USpacer>(Tree, Outer, FName("DevSpacer1"));
+		DevSpacer1->SetSize(FVector2D(0.0f, 24.0f));
+		FormBox->AddChild(DevSpacer1);
+
+		UBorder* Separator = CreateWidget<UBorder>(Tree, Outer, FName("Separator"));
+		Separator->SetBrushColor(FLinearColor(0.25f, 0.25f, 0.35f, 0.4f));
+		Separator->SetPadding(FMargin(0.0f));
+		FormBox->AddChild(Separator);
+		if (UVerticalBoxSlot* SepSlot = Cast<UVerticalBoxSlot>(Separator->Slot))
+		{
+			SepSlot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
+			SepSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 0.0f));
+		}
+
+		// Force 1px height via a SizeBox wrapper for the separator
+		USizeBox* SepSizeBox = CreateWidget<USizeBox>(Tree, Outer, FName("SepSizeBox"));
+		SepSizeBox->SetHeightOverride(1.0f);
+		UBorder* SepLine = CreateWidget<UBorder>(Tree, Outer, FName("SepLine"));
+		SepLine->SetBrushColor(FLinearColor(0.25f, 0.25f, 0.35f, 0.4f));
+		SepLine->SetPadding(FMargin(0.0f));
+		SepSizeBox->AddChild(SepLine);
+
+		// Remove the unsized separator, add the sized one
+		Separator->RemoveFromParent();
+		FormBox->AddChild(SepSizeBox);
+		if (UVerticalBoxSlot* SepSlot2 = Cast<UVerticalBoxSlot>(SepSizeBox->Slot))
+		{
+			SepSlot2->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
+			SepSlot2->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 0.0f));
+		}
+
+		USpacer* DevSpacer2 = CreateWidget<USpacer>(Tree, Outer, FName("DevSpacer2"));
+		DevSpacer2->SetSize(FVector2D(0.0f, 16.0f));
+		FormBox->AddChild(DevSpacer2);
+
+		UTextBlock* DevLabel = CreateWidget<UTextBlock>(Tree, Outer, FName("DevLabel"));
+		DevLabel->SetText(FText::FromString(TEXT("Developer")));
+		DevLabel->SetFont(DevLabelFont);
+		DevLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.35f, 0.35f, 0.42f, 1.0f)));
+		DevLabel->SetJustification(ETextJustify::Center);
+		FormBox->AddChild(DevLabel);
+		if (UVerticalBoxSlot* DLSlot = Cast<UVerticalBoxSlot>(DevLabel->Slot))
+		{
+			DLSlot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
+			DLSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+		}
+
+		// ---------------------------------------------------------------
+		// Dev buttons — small, muted
+		// ---------------------------------------------------------------
+		const FMargin DevBtnPad(24.f, 16.f);
+
+		WalkerButton = MakeButton(
+			Tree, Outer, FName("WalkerButton"),
+			TEXT("Sign in as Walker"),
+			FLinearColor(0.10f, 0.28f, 0.14f, 1.0f),
+			FLinearColor::White, SmallBtnFont, DevBtnPad);
+
+		FormBox->AddChild(WalkerButton);
+		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(WalkerButton->Slot))
+		{
+			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+		}
+
+		LayneButton = MakeButton(
+			Tree, Outer, FName("LayneButton"),
+			TEXT("Sign in as Layne"),
+			FLinearColor(0.14f, 0.17f, 0.40f, 1.0f),
+			FLinearColor::White, SmallBtnFont, DevBtnPad);
+
+		FormBox->AddChild(LayneButton);
+		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(LayneButton->Slot))
+		{
+			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+		}
+
+		DevButton = MakeButton(
+			Tree, Outer, FName("DevButton"),
+			TEXT("Sign in as Dev"),
+			FLinearColor(0.40f, 0.10f, 0.10f, 1.0f),
+			FLinearColor::White, SmallBtnFont, DevBtnPad);
+
+		FormBox->AddChild(DevButton);
+		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(DevButton->Slot))
+		{
+			Slot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Fill);
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 0.0f));
 		}
 
 		// ---------------------------------------------------------------

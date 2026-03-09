@@ -11,6 +11,7 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/StaticMesh.h"
 #include "Components/PointLightComponent.h"
+#include "Components/SpotLightComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -20,10 +21,19 @@
 #include "Engine/LocalPlayer.h"
 #include "Core/PHCPlayerController.h"
 #include "Core/PHCCitySubsystem.h"
+#include "Core/PHCGameInstance.h"
 #include "Vehicle/PHCMissileProjectile.h"
+#include "Vehicle/PHCRaptorPawn.h"
+#include "Vehicle/PHCBlackbirdPawn.h"
+#include "Vehicle/PHCBlackHawkPawn.h"
+#include "Vehicle/PHCVehiclePawn.h"
+#include "Vehicle/PHCDuneBuggyPawn.h"
+#include "Vehicle/PHCDirtBikePawn.h"
+#include "Vehicle/PHCTankPawn.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Kismet/GameplayStatics.h"
 #include "Components/TextRenderComponent.h"
 #include "GameFramework/PlayerState.h"
 #include "Player/PHCPlayerState.h"
@@ -247,6 +257,15 @@ APHCCityCharacter::APHCCityCharacter()
 	RightSoleMesh  = MakeCube(TEXT("RSole"), FVector(4.f, 11.f, -73.f), FVector(22.f, 12.f, 2.5f));
 
 	// ================================================================
+	//  LIGHTSABER — Obi-Wan Kenobi style hilt + blue plasma blade
+	// ================================================================
+	SaberHiltMesh    = MakeCyl(TEXT("SaberHilt"),    FVector(0.f, 26.f, 10.f), 1.8f, 22.f);
+	SaberEmitterMesh = MakeCyl(TEXT("SaberEmitter"), FVector(0.f, 26.f, 22.f), 2.2f, 4.f);
+	SaberPommelMesh  = MakeSph(TEXT("SaberPommel"),  FVector(0.f, 26.f, -1.f), 2.4f);
+	SaberBladeMesh   = MakeCyl(TEXT("SaberBlade"),   FVector(0.f, 26.f, 60.f), 1.2f, 70.f);
+	SaberCoreMesh    = MakeCyl(TEXT("SaberCore"),     FVector(0.f, 26.f, 60.f), 0.5f, 70.f);
+
+	// ================================================================
 	//  SCYTHE WEAPON — handle + blade + edge (default equipped)
 	// ================================================================
 	ScytheHandleMesh = MakeCyl(TEXT("ScytheHandle"), FVector(0.f, 26.f, 56.f), 1.5f, 100.f);
@@ -286,6 +305,18 @@ APHCCityCharacter::APHCCityCharacter()
 	AK47MagMesh    = MakeCube(TEXT("AK47Mag"),    FVector(0.f, 26.f, 30.f), FVector(4.f, 2.5f, 16.f));
 	AK47StockMesh  = MakeCube(TEXT("AK47Stock"),  FVector(0.f, 26.f, 38.f), FVector(24.f, 3.f, 4.f));
 	AK47MuzzleMesh = MakeSph(TEXT("AK47Muzzle"),  FVector(0.f, 26.f, 100.f), 5.f);
+
+	// ================================================================
+	//  50 CAL SNIPER RIFLE — long receiver + barrel + scope + stock + mag + muzzle
+	// ================================================================
+	SniperBodyMesh   = MakeCube(TEXT("SniperBody"),   FVector(0.f, 26.f, 40.f), FVector(44.f, 3.f, 4.5f));
+	SniperBarrelMesh = MakeCyl(TEXT("SniperBarrel"),  FVector(0.f, 26.f, 80.f), 1.4f, 80.f);
+	SniperScopeMesh  = MakeCyl(TEXT("SniperScope"),   FVector(0.f, 26.f, 55.f), 2.f, 20.f);
+	SniperStockMesh  = MakeCube(TEXT("SniperStock"),  FVector(0.f, 26.f, 34.f), FVector(30.f, 3.f, 5.f));
+	SniperMagMesh    = MakeCube(TEXT("SniperMag"),    FVector(0.f, 26.f, 28.f), FVector(4.f, 2.5f, 14.f));
+	SniperMuzzleMesh = MakeSph(TEXT("SniperMuzzle"),  FVector(0.f, 26.f, 125.f), 6.f);
+
+	// (Flashlight spotlight created in BeginPlay)
 
 	// Enable shadows on major body parts for visual depth and grounding
 	auto Shadow = [](UStaticMeshComponent* C) { if (C) C->CastShadow = true; };
@@ -474,6 +505,23 @@ void APHCCityCharacter::BeginPlay()
 		}
 	}
 
+	// ---- Daily login check ----
+	if (IsLocallyControlled())
+	{
+		CheckDailyLogin();
+
+		// Dev account: max out level
+		if (UPHCGameInstance* DevGI = Cast<UPHCGameInstance>(GetWorld()->GetGameInstance()))
+		{
+			if (DevGI->LocalPlayerProfile.Username == TEXT("Dev"))
+			{
+				PlayerLevel = 18;
+				XPToNextLevel = 100 * PlayerLevel;
+				PlayerXP = 0;
+			}
+		}
+	}
+
 	// ---- PBR Materials — production quality character rendering ----------
 	UMaterial* ColorMat = LoadObject<UMaterial>(nullptr,
 		TEXT("/Game/Materials/M_PHCColor.M_PHCColor"));
@@ -588,7 +636,7 @@ void APHCCityCharacter::BeginPlay()
 	ApplyColor(BeltMesh,       Belt, 0.35f);
 	ApplyColor(BeltBuckleMesh, Buckle, 0.30f, 0.6f);
 
-	// Shoes
+	// Shoes — standard white
 	ApplyColor(LeftFootMesh,   Shoe, 0.50f);
 	ApplyColor(RightFootMesh,  Shoe, 0.50f);
 	ApplyColor(LeftToeMesh,    ShoeToe, 0.45f);
@@ -603,6 +651,42 @@ void APHCCityCharacter::BeginPlay()
 	ApplyColor(ScytheHandleMesh,    ScytheWood,  0.75f);
 	ApplyColor(ScytheBladeMesh,     ScytheSteel, 0.30f, 0.85f);
 	ApplyColor(ScytheBladeEdgeMesh, ScytheEdge,  0.15f, 0.95f);
+
+	// Lightsaber materials — Darth Vader style (vivid red)
+	{
+		// Hilt: dark gunmetal with black grip
+		ApplyColor(SaberHiltMesh, FLinearColor(0.18f, 0.18f, 0.20f), 0.30f, 0.85f);
+		// Emitter ring: dark chrome accent
+		ApplyColor(SaberEmitterMesh, FLinearColor(0.25f, 0.22f, 0.22f), 0.25f, 0.90f);
+		// Pommel: black
+		ApplyColor(SaberPommelMesh, FLinearColor(0.08f, 0.08f, 0.10f), 0.35f, 0.80f);
+		// Blade: vivid red plasma (heavy emissive glow)
+		if (SaberBladeMesh && SaberBladeMesh->GetStaticMesh() && ColorMat)
+		{
+			UMaterialInstanceDynamic* BladeMID = UMaterialInstanceDynamic::Create(ColorMat, SaberBladeMesh);
+			if (BladeMID)
+			{
+				BladeMID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(1.0f, 0.02f, 0.02f));
+				BladeMID->SetScalarParameterValue(TEXT("Roughness"), 0.1f);
+				BladeMID->SetScalarParameterValue(TEXT("Metallic"), 0.0f);
+				BladeMID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(12.0f, 0.4f, 0.2f));
+				SaberBladeMesh->SetMaterial(0, BladeMID);
+			}
+		}
+		// Core: white-hot center of blade (slight pink tint)
+		if (SaberCoreMesh && SaberCoreMesh->GetStaticMesh() && ColorMat)
+		{
+			UMaterialInstanceDynamic* CoreMID = UMaterialInstanceDynamic::Create(ColorMat, SaberCoreMesh);
+			if (CoreMID)
+			{
+				CoreMID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(1.0f, 0.75f, 0.75f));
+				CoreMID->SetScalarParameterValue(TEXT("Roughness"), 0.0f);
+				CoreMID->SetScalarParameterValue(TEXT("Metallic"), 0.0f);
+				CoreMID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(16.0f, 4.0f, 3.0f));
+				SaberCoreMesh->SetMaterial(0, CoreMID);
+			}
+		}
+	}
 
 	// Minigun materials
 	const FLinearColor Gunmetal(0.12f, 0.12f, 0.14f);
@@ -666,24 +750,62 @@ void APHCCityCharacter::BeginPlay()
 		}
 	}
 
+	// Sniper materials — dark gunmetal with cyan glow
+	const FLinearColor SniperMetal(0.15f, 0.15f, 0.18f);
+	const FLinearColor SniperStock(0.10f, 0.08f, 0.06f);
+	const FLinearColor SniperScope(0.05f, 0.05f, 0.08f);
+	ApplyColor(SniperBodyMesh,   SniperMetal, 0.30f, 0.9f);
+	ApplyColor(SniperBarrelMesh, SniperMetal, 0.20f, 0.95f);
+	ApplyColor(SniperScopeMesh,  SniperScope, 0.15f, 0.8f);
+	ApplyColor(SniperStockMesh,  SniperStock, 0.75f, 0.0f);
+	ApplyColor(SniperMagMesh,    SniperMetal, 0.65f, 0.3f);
+	// Sniper muzzle flash: bright emissive (hidden when not firing)
+	if (SniperMuzzleMesh && SniperMuzzleMesh->GetStaticMesh() && ColorMat)
+	{
+		UMaterialInstanceDynamic* SnMuzMID = UMaterialInstanceDynamic::Create(ColorMat, SniperMuzzleMesh);
+		if (SnMuzMID)
+		{
+			SnMuzMID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(1.f, 0.6f, 0.1f));
+			SnMuzMID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(10.f, 6.f, 2.f));
+			SnMuzMID->SetScalarParameterValue(TEXT("Metallic"), 0.f);
+			SnMuzMID->SetScalarParameterValue(TEXT("Roughness"), 0.5f);
+			SniperMuzzleMesh->SetMaterial(0, SnMuzMID);
+		}
+	}
+
 	// Mark as grounded immediately — ground plane has no collision.
 	bHasBeenGrounded = true;
 
+	// ---- Flashlight spotlight (created here, starts hidden) ----
+	{
+		FlashlightSpot = NewObject<USpotLightComponent>(this, TEXT("FlashlightSpot"));
+		FlashlightSpot->SetupAttachment(RootComponent);
+		FlashlightSpot->SetRelativeLocation(FVector(0.f, 0.f, 80.f));
+		FlashlightSpot->SetRelativeRotation(FRotator(-10.f, 0.f, 0.f));
+		FlashlightSpot->SetLightColor(FLinearColor(1.0f, 0.6f, 0.15f));
+		FlashlightSpot->SetIntensity(480000.f);
+		FlashlightSpot->SetAttenuationRadius(20000.f);
+		FlashlightSpot->SetOuterConeAngle(40.f);
+		FlashlightSpot->SetInnerConeAngle(25.f);
+		FlashlightSpot->SetCastShadows(false);
+		FlashlightSpot->SetVisibility(false);
+		FlashlightSpot->RegisterComponent();
+	}
+
+	// ---- Lightsaber point light (red glow) ----
+	{
+		SaberGlow = NewObject<UPointLightComponent>(this, TEXT("SaberGlow"));
+		SaberGlow->SetupAttachment(RootComponent);
+		SaberGlow->SetLightColor(FLinearColor(1.0f, 0.1f, 0.05f));
+		SaberGlow->SetIntensity(5000.f);
+		SaberGlow->SetAttenuationRadius(800.f);
+		SaberGlow->SetCastShadows(false);
+		SaberGlow->SetVisibility(false);
+		SaberGlow->RegisterComponent();
+	}
+
 	// ---- 5% taller ----
 	SetActorScale3D(FVector(1.05f));
-
-	// ---- Cyan underglow (visible to other players, helps spot each other) ----
-	{
-		UPointLightComponent* GlowLight = NewObject<UPointLightComponent>(this, TEXT("CyanUnderglow"));
-		GlowLight->SetupAttachment(RootComponent);
-		GlowLight->SetRelativeLocation(FVector(0.f, 0.f, -85.f));
-		GlowLight->SetLightColor(FLinearColor(0.f, 1.f, 1.f));
-		GlowLight->SetIntensity(8000.f);
-		GlowLight->SetAttenuationRadius(600.f);
-		GlowLight->SetCastShadows(false);
-		GlowLight->MaxDrawDistance = 15000.f;
-		GlowLight->RegisterComponent();
-	}
 
 	// ---- Floating player name above head ----
 	{
@@ -727,6 +849,11 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				FString Name = Prof.bIsGuest ? TEXT("Guest") : Prof.Username;
 				if (Name.IsEmpty()) Name = TEXT("Guest");
 				NameTextComp->SetText(FText::FromString(Name));
+				// Only show the floating name to other players, not to the local player.
+				if (IsLocallyControlled())
+				{
+					NameTextComp->SetVisibility(false);
+				}
 				bNameTextSet = true;
 			}
 		}
@@ -739,7 +866,8 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		ADSAlpha = FMath::FInterpTo(ADSAlpha, ADSTarget, DeltaTime, ADSInterpSpeed);
 		if (FollowCamera)
 		{
-			FollowCamera->SetFieldOfView(FMath::Lerp(ADSFOVHip, ADSFOVAim, ADSAlpha));
+			const float ScopedFOV = (CurrentWeaponType == 6) ? SniperZoomFOV : ADSFOVAim;
+			FollowCamera->SetFieldOfView(FMath::Lerp(ADSFOVHip, ScopedFOV, ADSAlpha));
 		}
 	}
 	else
@@ -747,6 +875,138 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		ADSAlpha = 0.f;
 		bADS = false;
 		if (FollowCamera) FollowCamera->SetFieldOfView(90.f);
+	}
+
+	// ---- Thermal scope post-process (MW2 style) -------------------------
+	if (FollowCamera)
+	{
+		const bool bThermalActive = bThermalScope && CurrentWeaponType == 6
+			&& bFirstPersonMode && ADSAlpha > 0.5f;
+
+		FPostProcessSettings& PP = FollowCamera->PostProcessSettings;
+		FollowCamera->PostProcessBlendWeight = bThermalActive ? 1.f : 0.f;
+
+		if (bThermalActive)
+		{
+			// Desaturate scene to near-grayscale with cool blue-green tint
+			PP.bOverride_ColorSaturation = true;
+			PP.ColorSaturation = FVector4(0.08f, 0.08f, 0.08f, 1.f);
+
+			PP.bOverride_ColorContrast = true;
+			PP.ColorContrast = FVector4(1.3f, 1.3f, 1.3f, 1.f);
+
+			PP.bOverride_ColorGain = true;
+			PP.ColorGain = FVector4(0.7f, 0.85f, 0.9f, 1.f);
+
+			PP.bOverride_SceneColorTint = true;
+			PP.SceneColorTint = FLinearColor(0.6f, 0.75f, 0.8f);
+
+			PP.bOverride_FilmSlope = true;
+			PP.FilmSlope = 1.0f;
+		}
+		else
+		{
+			PP.bOverride_ColorSaturation = false;
+			PP.bOverride_ColorContrast = false;
+			PP.bOverride_ColorGain = false;
+			PP.bOverride_SceneColorTint = false;
+			PP.bOverride_FilmSlope = false;
+		}
+
+		// Thermal glow on heat sources
+		// Only set emissive when thermal is active; on deactivation, save & restore
+		// original emissive values so taillights/headlights aren't wiped out.
+		{
+			static bool bThermalWasActive = false;
+			static TMap<UMaterialInstanceDynamic*, FLinearColor> SavedEmissive;
+
+			auto SetThermalOnActor = [&](AActor* A, const FLinearColor& Emis)
+			{
+				if (!A) return;
+				TArray<UStaticMeshComponent*> Meshes;
+				A->GetComponents<UStaticMeshComponent>(Meshes);
+				for (UStaticMeshComponent* M : Meshes)
+				{
+					if (!M) continue;
+					if (UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(M->GetMaterial(0)))
+					{
+						// Save original emissive on first thermal activation
+						if (!SavedEmissive.Contains(MID))
+						{
+							FLinearColor Orig;
+							MID->GetVectorParameterValue(TEXT("EmissiveColor"), Orig);
+							SavedEmissive.Add(MID, Orig);
+						}
+						MID->SetVectorParameterValue(TEXT("EmissiveColor"), Emis);
+					}
+				}
+			};
+
+			auto RestoreEmissiveOnActor = [&](AActor* A)
+			{
+				if (!A) return;
+				TArray<UStaticMeshComponent*> Meshes;
+				A->GetComponents<UStaticMeshComponent>(Meshes);
+				for (UStaticMeshComponent* M : Meshes)
+				{
+					if (!M) continue;
+					if (UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(M->GetMaterial(0)))
+					{
+						if (FLinearColor* Orig = SavedEmissive.Find(MID))
+						{
+							MID->SetVectorParameterValue(TEXT("EmissiveColor"), *Orig);
+						}
+					}
+				}
+			};
+
+			auto GatherHeatSources = [&](TArray<AActor*>& Out)
+			{
+				UGameplayStatics::GetAllActorsWithTag(GetWorld(), FName("NPCPlayer"), Out);
+				TArray<AActor*> Crabs;
+				UGameplayStatics::GetAllActorsWithTag(GetWorld(), FName("GiantCrab"), Crabs);
+				Out.Append(Crabs);
+				TArray<AActor*> NPCHelis;
+				UGameplayStatics::GetAllActorsWithTag(GetWorld(), FName("NPCHelicopter"), NPCHelis);
+				Out.Append(NPCHelis);
+				for (TActorIterator<APHCCityCharacter> It(GetWorld()); It; ++It)
+					if (*It != this) Out.Add(*It);
+				for (TActorIterator<APHCVehiclePawn> It(GetWorld()); It; ++It)
+					Out.AddUnique(*It);
+				for (TActorIterator<APHCDuneBuggyPawn> It(GetWorld()); It; ++It)
+					Out.AddUnique(*It);
+				for (TActorIterator<APHCRaptorPawn> It(GetWorld()); It; ++It)
+					Out.AddUnique(*It);
+				for (TActorIterator<APHCTankPawn> It(GetWorld()); It; ++It)
+					Out.AddUnique(*It);
+				for (TActorIterator<APHCDirtBikePawn> It(GetWorld()); It; ++It)
+					Out.AddUnique(*It);
+				for (TActorIterator<APHCBlackbirdPawn> It(GetWorld()); It; ++It)
+					Out.AddUnique(*It);
+				for (TActorIterator<APHCBlackHawkPawn> It(GetWorld()); It; ++It)
+					Out.AddUnique(*It);
+			};
+
+			if (bThermalActive)
+			{
+				const FLinearColor ThermalEmis(6.f, 5.5f, 4.f);
+				TArray<AActor*> HeatSources;
+				GatherHeatSources(HeatSources);
+				for (AActor* A : HeatSources)
+					SetThermalOnActor(A, ThermalEmis);
+			}
+			else if (bThermalWasActive)
+			{
+				// Transitioning off — restore original emissive values
+				TArray<AActor*> HeatSources;
+				GatherHeatSources(HeatSources);
+				for (AActor* A : HeatSources)
+					RestoreEmissiveOnActor(A);
+				SavedEmissive.Empty();
+			}
+
+			bThermalWasActive = bThermalActive;
+		}
 	}
 
 	// ---- Recoil recovery (COD-style: pull back toward zero) -------------
@@ -776,7 +1036,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	{
 		CameraShakeTimer -= DeltaTime;
 		const FVector BaseOffset = bFirstPersonMode
-			? FVector(0.f, 0.f, 76.f)
+			? FVector(0.f, 0.f, 96.f)
 			: FVector(0.f, 75.f, 60.f);
 		const float Decay = FMath::Max(CameraShakeTimer / 0.35f, 0.f);
 		const float ShakeX = FMath::RandRange(-CameraShakeIntensity, CameraShakeIntensity) * Decay;
@@ -839,7 +1099,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	}
 	PendingMoveInput = FVector::ZeroVector;
 
-	const float Speed = bJetpackEquipped ? 3576.f : (bIsSprinting ? SprintSpeed : WalkSpeed);
+	const float Speed = bJetpackEquipped ? 3576.f : bRollerBladesEquipped ? (WalkSpeed * 3.f) : (bIsSprinting ? SprintSpeed : WalkSpeed);
 
 	// ---- Jetpack hover mode ---------------------------------------------
 	if (bJetpackEquipped)
@@ -954,7 +1214,8 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			bHasBeenGrounded = true;
 			bWasGrounded = true;
 			ManualVelocityZ = 0.f;
-			const float NewZ = FMath::FInterpTo(Pos.Z, TargetZ, DeltaTime, 12.f);
+			const float TerrainInterp = bRollerBladesEquipped ? 25.f : 12.f;
+			const float NewZ = FMath::FInterpTo(Pos.Z, TargetZ, DeltaTime, TerrainInterp);
 			SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 		}
 		else
@@ -996,7 +1257,8 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				{
 					bHasBeenGrounded = true;
 					ManualVelocityZ = 0.f;
-					const float NewZ = FMath::FInterpTo(Pos.Z, BestZ, DeltaTime, 12.f);
+					const float GndInterp = bRollerBladesEquipped ? 25.f : 12.f;
+					const float NewZ = FMath::FInterpTo(Pos.Z, BestZ, DeltaTime, GndInterp);
 					SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 				}
 			}
@@ -1035,7 +1297,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 
 		if (bMoving)
 		{
-			const float CycleSpeed = bIsSprinting ? 16.f : 13.f;
+			const float CycleSpeed = bRollerBladesEquipped ? 4.f : (bIsSprinting ? 16.f : 15.f);
 			WalkCyclePhase += CycleSpeed * DeltaTime;
 			IdleTimer = 0.f;
 		}
@@ -1054,12 +1316,12 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			return FMath::Sin(P) + 0.12f * FMath::Sin(2.f * P) + 0.05f * FMath::Sin(3.f * P - 0.4f);
 		};
 
-		const float ThighAmp    = bIsSprinting ? 45.f : 35.f;
-		const float UpperArmAmp = bIsSprinting ? 40.f : 30.f;
-		const float KneeBendMax = bIsSprinting ? 55.f : 40.f;
-		const float ElbowBendMax= bIsSprinting ? 50.f : 35.f;
-		const float LeanAmp     = bIsSprinting ? 10.f :  6.f;
-		const float BobAmp      = bIsSprinting ?  3.f :  2.f;
+		const float ThighAmp    = bIsSprinting ? 45.f : 42.f;
+		const float UpperArmAmp = bIsSprinting ? 40.f : 36.f;
+		const float KneeBendMax = bIsSprinting ? 55.f : 48.f;
+		const float ElbowBendMax= bIsSprinting ? 50.f : 42.f;
+		const float LeanAmp     = bIsSprinting ? 10.f :  8.f;
+		const float BobAmp      = bIsSprinting ?  3.f :  2.5f;
 
 		const float Phase = WalkCyclePhase;
 		const float Blend = WalkAnimBlend;
@@ -1343,7 +1605,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		const float FPCamPitch = (bFirstPersonMode && GetController())
 			? GetController()->GetControlRotation().Pitch
 			: 0.f;
-		const FVector FPCamOrigin(0.f, 0.f, 76.f); // matches CameraBoom SocketOffset
+		const FVector FPCamOrigin(0.f, 0.f, 96.f); // matches CameraBoom SocketOffset
 		const FRotator FPPitchRot(-FPCamPitch, 0.f, 0.f);
 
 		// ---- FP Weapon Bob (figure-8 using WalkCyclePhase) ----
@@ -1383,6 +1645,74 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			);
 		}
 		// Usage: GripPt = FPCamOrigin + FPPitchRot.RotateVector(CamLocalOffset)
+
+		// ---- Lightsaber: held in right hand, swing animation ----
+		if (SaberHiltMesh && SaberBladeMesh && SaberCoreMesh)
+		{
+			const bool bShowSaber = (CurrentWeaponType == 2);
+			SaberHiltMesh->SetVisibility(bShowSaber);
+			SaberEmitterMesh->SetVisibility(bShowSaber);
+			SaberPommelMesh->SetVisibility(bShowSaber);
+			SaberBladeMesh->SetVisibility(bShowSaber);
+			SaberCoreMesh->SetVisibility(bShowSaber);
+			if (SaberGlow) SaberGlow->SetVisibility(bShowSaber);
+
+			if (bShowSaber)
+			{
+				const FVector RHand = bFirstPersonMode
+					? FPCamOrigin + FPPitchRot.RotateVector(FVector(25.f, 12.f, -18.f) + FPWeaponOffset)
+					: (RightHandMesh
+						? RightHandMesh->GetRelativeLocation()
+						: FVector(0.f, 26.f, 6.f));
+
+				float HoldPitch = -15.f;
+
+				// Swing animation
+				if (SaberSwingTimer > 0.f)
+				{
+					SaberSwingTimer -= DeltaTime;
+					const float MaxSwingTime = 0.35f;
+					float Progress = 1.f - FMath::Max(SaberSwingTimer, 0.f) / MaxSwingTime;
+					Progress = FMath::InterpEaseOut(0.f, 1.f, Progress, 2.5f);
+					HoldPitch = FMath::Lerp(-15.f, -220.f, Progress);
+				}
+
+				const FRotator HRot(HoldPitch, 0.f, 0.f);
+
+				// Hilt at hand
+				const FVector HiltOff = HRot.RotateVector(FVector(0.f, 0.f, 11.f));
+				SaberHiltMesh->SetRelativeLocation(RHand + HiltOff);
+				SaberHiltMesh->SetRelativeRotation(HRot);
+
+				// Emitter ring at top of hilt
+				const FVector EmitOff = HRot.RotateVector(FVector(0.f, 0.f, 22.f));
+				SaberEmitterMesh->SetRelativeLocation(RHand + EmitOff);
+				SaberEmitterMesh->SetRelativeRotation(HRot);
+
+				// Pommel at bottom of hilt
+				const FVector PomOff = HRot.RotateVector(FVector(0.f, 0.f, -1.f));
+				SaberPommelMesh->SetRelativeLocation(RHand + PomOff);
+				SaberPommelMesh->SetRelativeRotation(HRot);
+
+				// Blade extends from emitter
+				const FVector BladeOff = HRot.RotateVector(FVector(0.f, 0.f, 60.f));
+				SaberBladeMesh->SetRelativeLocation(RHand + BladeOff);
+				SaberBladeMesh->SetRelativeRotation(HRot);
+
+				// Core (white-hot center) same position as blade
+				SaberCoreMesh->SetRelativeLocation(RHand + BladeOff);
+				SaberCoreMesh->SetRelativeRotation(HRot);
+
+				// Glow light follows blade center
+				if (SaberGlow)
+				{
+					SaberGlow->SetRelativeLocation(RHand + BladeOff);
+					// Subtle flicker
+					float Flicker = 4500.f + FMath::Sin(GetWorld()->GetTimeSeconds() * 15.f) * 500.f;
+					SaberGlow->SetIntensity(Flicker);
+				}
+			}
+		}
 
 		// ---- Dagger: held in right hand, stab animation ----
 		if (DaggerHandleMesh && DaggerBladeMesh && DaggerGuardMesh)
@@ -1706,6 +2036,73 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			}
 		}
 
+		// ---- 50 Cal Sniper Rifle visibility + positioning ----
+		if (SniperBodyMesh)
+		{
+			const bool bShowSniper = (CurrentWeaponType == 6);
+			const bool bScoped = bShowSniper && bFirstPersonMode && ADSAlpha > 0.5f;
+			const bool bShowMeshes = bShowSniper && !bScoped;
+			SniperBodyMesh->SetVisibility(bShowMeshes);
+			SniperBarrelMesh->SetVisibility(bShowMeshes);
+			SniperScopeMesh->SetVisibility(bShowMeshes);
+			SniperStockMesh->SetVisibility(bShowMeshes);
+			SniperMagMesh->SetVisibility(bShowMeshes);
+			SniperMuzzleMesh->SetVisibility(bShowMeshes && SniperFireTimer > 1.6f);
+
+			if (bShowSniper)
+			{
+				if (SniperFireTimer > 0.f) SniperFireTimer -= DeltaTime;
+
+				const FVector SniperHip(35.f, 10.f, -22.f);
+				const FVector SniperADS(25.f, 0.f, -14.f);
+				const FVector GripPt = bFirstPersonMode
+					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(SniperHip, SniperADS, ADSAlpha) + FPWeaponOffset)
+					: (RightHandMesh
+						? RightHandMesh->GetRelativeLocation()
+						: FVector(0.f, 26.f, 6.f));
+
+				const float AimPitch = FPCamPitch;
+				const FRotator AimRot(-AimPitch, 0.f, 0.f);
+				const FRotator BarrelRot(90.f - AimPitch, 0.f, 0.f);
+
+				// Body/receiver
+				SniperBodyMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(10.f, 0.f, 0.f)));
+				SniperBodyMesh->SetRelativeRotation(AimRot);
+
+				// Long barrel
+				SniperBarrelMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(55.f, 0.f, 0.f)));
+				SniperBarrelMesh->SetRelativeRotation(BarrelRot);
+
+				// Scope mounted on top of body
+				SniperScopeMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(15.f, 0.f, 6.f)));
+				SniperScopeMesh->SetRelativeRotation(BarrelRot);
+
+				// Stock extends behind
+				SniperStockMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(-26.f, 0.f, -1.f)));
+				SniperStockMesh->SetRelativeRotation(AimRot);
+
+				// Magazine below body
+				SniperMagMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(4.f, 0.f, -12.f)));
+				SniperMagMesh->SetRelativeRotation(FRotator(5.f - AimPitch, 0.f, 0.f));
+
+				// Muzzle flash at barrel tip
+				SniperMuzzleMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(100.f, 0.f, 0.f)));
+
+				// Muzzle flash emissive
+				if (SniperFireTimer > 1.6f && SniperMuzzleMesh->GetNumMaterials() > 0)
+				{
+					UMaterialInstanceDynamic* MuzzleMID = Cast<UMaterialInstanceDynamic>(
+						SniperMuzzleMesh->GetMaterial(0));
+					if (MuzzleMID)
+					{
+						const float Flicker = FMath::RandRange(0.6f, 1.0f);
+						MuzzleMID->SetVectorParameterValue(TEXT("EmissiveColor"),
+							FLinearColor(12.f * Flicker, 8.f * Flicker, 2.f * Flicker));
+					}
+				}
+			}
+		}
+
 		// ---- Muzzle flash dynamic light (shared by all ranged weapons) ----
 		if (bFirstPersonMode && MuzzleFlashLight)
 		{
@@ -1721,6 +2118,8 @@ void APHCCityCharacter::Tick(float DeltaTime)
 					MuzzleFlashLight->SetRelativeLocation(MinigunMuzzleMesh->GetRelativeLocation());
 				else if (CurrentWeaponType == 1 && BazookaMuzzleMesh)
 					MuzzleFlashLight->SetRelativeLocation(BazookaMuzzleMesh->GetRelativeLocation());
+				else if (CurrentWeaponType == 6 && SniperMuzzleMesh)
+					MuzzleFlashLight->SetRelativeLocation(SniperMuzzleMesh->GetRelativeLocation());
 			}
 			else
 			{
@@ -1731,6 +2130,113 @@ void APHCCityCharacter::Tick(float DeltaTime)
 
 		// ---- Hit marker timer decay ----
 		if (HitMarkerTimer > 0.f) HitMarkerTimer -= DeltaTime;
+	}
+
+	// =====================================================================
+	//  Flashlight — toggle visibility, aim forward with character
+	// =====================================================================
+	if (FlashlightSpot)
+	{
+		FlashlightSpot->SetVisibility(bFlashlightOn);
+	}
+
+	// =====================================================================
+	//  XP / Kill Streak / Level-up timers
+	// =====================================================================
+	if (IsLocallyControlled())
+	{
+		// Passive XP: 1 XP per second while walking
+		if (PendingMoveInput.SizeSquared() > 0.01f)
+		{
+			XPAccumTimer += DeltaTime;
+			if (XPAccumTimer >= 1.f)
+			{
+				AddXP(1);
+				XPAccumTimer -= 1.f;
+			}
+		}
+
+		// Kill streak decay
+		if (KillStreakTimer > 0.f)
+		{
+			KillStreakTimer -= DeltaTime;
+			if (KillStreakTimer <= 0.f)
+			{
+				KillStreakCount = 0;
+			}
+		}
+
+		// Level-up flash timer decay
+		if (LevelUpFlashTimer > 0.f)
+		{
+			LevelUpFlashTimer -= DeltaTime;
+		}
+
+		// Achievement popup timer
+		if (AchievementPopupTimer > 0.f)
+		{
+			AchievementPopupTimer -= DeltaTime;
+		}
+
+		// Distance tracking for achievements
+		if (PrevTickLocation != FVector::ZeroVector)
+		{
+			TotalDistanceWalked += FVector::Dist(GetActorLocation(), PrevTickLocation);
+		}
+		PrevTickLocation = GetActorLocation();
+
+		// Loot crate spin animation
+		if (bLootCrateActive)
+		{
+			LootCrateTimer += DeltaTime;
+			LootCrateSpinAngle += DeltaTime * 720.f; // fast spin
+			if (LootCrateSpinAngle >= 360.f) LootCrateSpinAngle -= 360.f;
+
+			if (LootCrateTimer >= 2.f) // spin complete after 2s
+			{
+				bLootCrateActive = false;
+				// Award the reward
+				AddXP(LootCrateXPReward);
+				TotalCoinsCollected += LootCrateReward;
+				WeeklyCoins += LootCrateReward;
+				if (UWorld* W = GetWorld())
+				{
+					if (UPHCGameInstance* GI = Cast<UPHCGameInstance>(W->GetGameInstance()))
+					{
+						GI->LocalPlayerProfile.Coins += LootCrateReward;
+						GI->SaveCoinsToBackend();
+					}
+				}
+				CheckAchievements();
+			}
+		}
+
+		// Limited-time event rotation
+		if (CurrentEvent != EActiveEvent::None)
+		{
+			EventTimer -= DeltaTime;
+			if (EventTimer <= 0.f)
+			{
+				CurrentEvent = EActiveEvent::None;
+				EventCooldown = 120.f; // 2 min gap
+			}
+		}
+		else
+		{
+			EventCooldown -= DeltaTime;
+			if (EventCooldown <= 0.f)
+			{
+				// Pick a random event
+				const int32 Pick = FMath::RandRange(0, 2);
+				if (Pick == 0) CurrentEvent = EActiveEvent::GoldenHour;
+				else if (Pick == 1) CurrentEvent = EActiveEvent::CrabSwarm;
+				else CurrentEvent = EActiveEvent::NightHunt;
+				EventTimer = 600.f; // 10 min event
+			}
+		}
+
+		// Periodically check achievements
+		CheckAchievements();
 	}
 
 	// =====================================================================
@@ -1796,10 +2302,28 @@ void APHCCityCharacter::HandleLook(const FInputActionValue& Value)
 {
 	if (!GetController()) return;
 	const FVector2D LookVector = Value.Get<FVector2D>();
+	const float ADSSens = (CurrentWeaponType == 6) ? 0.12f : ADSSensitivityMult;
 	const float SensMult = (bFirstPersonMode && ADSAlpha > 0.01f)
-		? FMath::Lerp(1.f, ADSSensitivityMult, ADSAlpha) : 1.f;
-	AddControllerYawInput(LookVector.X * SensMult);
-	AddControllerPitchInput(LookVector.Y * SensMult);
+		? FMath::Lerp(1.f, ADSSens, ADSAlpha) : 1.f;
+
+	float YawIn = LookVector.X * SensMult;
+	float PitchIn = LookVector.Y * SensMult;
+
+	// Smooth input when scoped with sniper for precise aiming
+	if (CurrentWeaponType == 6 && ADSAlpha > 0.5f)
+	{
+		ScopedLookSmooth = FMath::Vector2DInterpTo(ScopedLookSmooth, FVector2D(YawIn, PitchIn),
+			GetWorld()->GetDeltaSeconds(), 8.f);
+		YawIn = ScopedLookSmooth.X;
+		PitchIn = ScopedLookSmooth.Y;
+	}
+	else
+	{
+		ScopedLookSmooth = FVector2D::ZeroVector;
+	}
+
+	AddControllerYawInput(YawIn);
+	AddControllerPitchInput(PitchIn);
 }
 
 void APHCCityCharacter::HandleJumpStarted(const FInputActionValue& /*Value*/)
@@ -1882,14 +2406,23 @@ void APHCCityCharacter::FireWeapon()
 		SpawnLoc = MinigunMuzzleMesh->GetComponentLocation();
 	else if (CurrentWeaponType == 1 && BazookaMuzzleMesh)
 		SpawnLoc = BazookaMuzzleMesh->GetComponentLocation();
+	else if (CurrentWeaponType == 6 && SniperMuzzleMesh)
+		SpawnLoc = SniperMuzzleMesh->GetComponentLocation();
 	else
 		SpawnLoc = GetActorLocation() + AimDir * 40.f + FVector(0.f, 0.f, 60.f);
 
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	if (CurrentWeaponType == 0 || CurrentWeaponType == 5) // Minigun / AK-47 — hitscan
+	if (CurrentWeaponType == 0 || CurrentWeaponType == 5 || CurrentWeaponType == 6) // Minigun / AK-47 / Sniper — hitscan
 	{
+		// Sniper: bolt-action cooldown
+		if (CurrentWeaponType == 6)
+		{
+			if (SniperFireTimer > 0.f) return;
+			SniperFireTimer = 1.8f;
+		}
+
 		// No spread — bullets go exactly where you aim
 		const FVector ShotDir = AimDir;
 
@@ -1897,7 +2430,8 @@ void APHCCityCharacter::FireWeapon()
 		const FVector TraceStart = FollowCamera
 			? FollowCamera->GetComponentLocation()
 			: (GetActorLocation() + FVector(0.f, 0.f, 76.f));
-		const FVector TraceEnd = TraceStart + ShotDir * 50000.f;
+		const float TraceRange = (CurrentWeaponType == 6) ? 500000.f : 50000.f;
+		const FVector TraceEnd = TraceStart + ShotDir * TraceRange;
 
 		FCollisionQueryParams TraceParams;
 		TraceParams.AddIgnoredActor(this);
@@ -1906,7 +2440,7 @@ void APHCCityCharacter::FireWeapon()
 
 		if (bHit && HitResult.GetActor() && HitResult.GetActor()->ActorHasTag(FName("GiantCrab")))
 		{
-			const float BulletDamage = (CurrentWeaponType == 5) ? 12.f : 7.f;
+			const float BulletDamage = (CurrentWeaponType == 6) ? 999.f : (CurrentWeaponType == 5) ? 12.f : 7.f;
 			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
 			if (CitySub)
 			{
@@ -1920,6 +2454,9 @@ void APHCCityCharacter::FireWeapon()
 						if (CitySub->Crabs[CI].Health <= 0.f)
 						{
 							CrabKills++;
+							KillStreakCount++; KillStreakTimer = 5.f;
+							AddXP(50);
+							StartLootCrate();
 							const FVector CrabLoc = HitResult.GetActor()->GetActorLocation();
 							APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
 								APHCMissileProjectile::StaticClass(), CrabLoc, FRotator::ZeroRotator);
@@ -1935,7 +2472,7 @@ void APHCCityCharacter::FireWeapon()
 		// Check NPC helicopter hit
 		if (bHit && HitResult.GetActor() && HitResult.GetActor()->ActorHasTag(FName("NPCHelicopter")))
 		{
-			const float BulletDamage = (CurrentWeaponType == 5) ? 12.f : 7.f;
+			const float BulletDamage = (CurrentWeaponType == 6) ? 999.f : (CurrentWeaponType == 5) ? 12.f : 7.f;
 			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
 			if (CitySub && CitySub->NPCHelicopter && !CitySub->bNPCHeliCrashing)
 			{
@@ -1955,7 +2492,7 @@ void APHCCityCharacter::FireWeapon()
 			APHCCityCharacter* HitPlayer = Cast<APHCCityCharacter>(HitResult.GetActor());
 			if (HitPlayer)
 			{
-				const float BulletDmg = (CurrentWeaponType == 5) ? 12.f : 7.f;
+				const float BulletDmg = (CurrentWeaponType == 6) ? 999.f : (CurrentWeaponType == 5) ? 12.f : 7.f;
 				ServerInflictDamage(HitPlayer, BulletDmg);
 				HitMarkerTimer = 0.25f;
 			}
@@ -1964,7 +2501,7 @@ void APHCCityCharacter::FireWeapon()
 		// Check NPC player hit
 		if (bHit && HitResult.GetActor() && HitResult.GetActor()->ActorHasTag(FName("NPCPlayer")))
 		{
-			const float BulletDamage = (CurrentWeaponType == 5) ? 12.f : 7.f;
+			const float BulletDamage = (CurrentWeaponType == 6) ? 999.f : (CurrentWeaponType == 5) ? 12.f : 7.f;
 			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
 			if (CitySub)
 			{
@@ -1989,28 +2526,140 @@ void APHCCityCharacter::FireWeapon()
 			}
 		}
 
+		// Check aircraft hit (Raptor, Blackbird, Black Hawk)
+		if (bHit && HitResult.GetActor())
+		{
+			const float AircraftDmg = (CurrentWeaponType == 6) ? 999.f : (CurrentWeaponType == 5) ? 12.f : 7.f;
+			AActor* HitActor = HitResult.GetActor();
+
+			// Try each aircraft type
+			APHCRaptorPawn* HitRaptor = Cast<APHCRaptorPawn>(HitActor);
+			APHCBlackbirdPawn* HitBlackbird = Cast<APHCBlackbirdPawn>(HitActor);
+			APHCBlackHawkPawn* HitBlackHawk = Cast<APHCBlackHawkPawn>(HitActor);
+
+			auto DamageAircraft = [&](auto* Aircraft)
+			{
+				if (!Aircraft || Aircraft->bIsCrashing) return;
+				Aircraft->VehicleHealth -= AircraftDmg;
+				Aircraft->DamageFlashTimer = 0.15f;
+				HitMarkerTimer = 0.25f;
+				if (Aircraft->VehicleHealth <= 0.f)
+				{
+					// Eject player if occupied
+					if (AController* AC = Aircraft->GetController())
+					{
+						if (APHCPlayerController* PC = Cast<APHCPlayerController>(AC))
+						{
+							PC->OnVehicleExitRequested();
+						}
+					}
+					Aircraft->bIsCrashing = true;
+					Aircraft->bIsOccupied = false;
+				}
+			};
+
+			if (HitRaptor) DamageAircraft(HitRaptor);
+			else if (HitBlackbird) DamageAircraft(HitBlackbird);
+			else if (HitBlackHawk) DamageAircraft(HitBlackHawk);
+		}
+
+		// Check ground vehicle hit (Aventador, Dune Buggy, Dirt Bike, Tank)
+		if (bHit && HitResult.GetActor())
+		{
+			const float VehDmg = (CurrentWeaponType == 6) ? 999.f : (CurrentWeaponType == 5) ? 12.f : 7.f;
+			AActor* HitActor = HitResult.GetActor();
+
+			auto DamageGroundVehicle = [&](auto* Vehicle)
+			{
+				if (!Vehicle || Vehicle->bIsDestroyed) return;
+				Vehicle->VehicleHealth -= VehDmg;
+				Vehicle->DamageFlashTimer = 0.15f;
+				HitMarkerTimer = 0.25f;
+				if (Vehicle->VehicleHealth <= 0.f)
+				{
+					if (AController* AC = Vehicle->GetController())
+					{
+						if (APHCPlayerController* PC = Cast<APHCPlayerController>(AC))
+						{
+							PC->OnVehicleExitRequested();
+						}
+					}
+					Vehicle->bIsDestroyed = true;
+					Vehicle->bIsOccupied = false;
+				}
+			};
+
+			if (APHCVehiclePawn* HitCar = Cast<APHCVehiclePawn>(HitActor)) DamageGroundVehicle(HitCar);
+			else if (APHCDuneBuggyPawn* HitBuggy = Cast<APHCDuneBuggyPawn>(HitActor)) DamageGroundVehicle(HitBuggy);
+			else if (APHCDirtBikePawn* HitBike = Cast<APHCDirtBikePawn>(HitActor)) DamageGroundVehicle(HitBike);
+			else if (APHCTankPawn* HitTank = Cast<APHCTankPawn>(HitActor)) DamageGroundVehicle(HitTank);
+		}
+
 		// Visual tracer projectile (cosmetic only)
 		APHCMissileProjectile* Bullet = World->SpawnActor<APHCMissileProjectile>(
 			APHCMissileProjectile::StaticClass(), SpawnLoc, ShotDir.Rotation(), SP);
 		if (Bullet)
 		{
 			Bullet->OwnerVehicle = this;
+
+			// Minigun: lava-orange bullet color
+			if (CurrentWeaponType == 0 && Bullet->ProjectileMesh)
+			{
+				UMaterialInstanceDynamic* BulletMat = Cast<UMaterialInstanceDynamic>(
+					Bullet->ProjectileMesh->GetMaterial(0));
+				if (BulletMat)
+				{
+					BulletMat->SetVectorParameterValue(TEXT("BaseColor"),
+						FLinearColor(0.4f, 0.06f, 0.01f));
+					BulletMat->SetVectorParameterValue(TEXT("EmissiveColor"),
+						FLinearColor(3.f, 0.5f, 0.05f));
+				}
+			}
+
+			// Sniper: fast elongated bullet with smoke trail
+			if (CurrentWeaponType == 6 && Bullet->ProjectileMesh)
+			{
+				// Long tapered bullet shape (stretched along forward axis)
+				Bullet->ProjectileMesh->SetRelativeScale3D(FVector(8.f, 0.5f, 0.5f));
+				Bullet->Speed = 150000.f; // .50 cal muzzle velocity
+				Bullet->SetLifeSpan(4.f); // long enough to cross entire map
+				UMaterialInstanceDynamic* BulletMat = Cast<UMaterialInstanceDynamic>(
+					Bullet->ProjectileMesh->GetMaterial(0));
+				if (BulletMat)
+				{
+					BulletMat->SetVectorParameterValue(TEXT("BaseColor"),
+						FLinearColor(0.85f, 0.75f, 0.45f)); // brass/copper
+					BulletMat->SetVectorParameterValue(TEXT("EmissiveColor"),
+						FLinearColor(6.f, 4.f, 1.f)); // hot tracer glow
+					BulletMat->SetScalarParameterValue(TEXT("Metallic"), 0.9f);
+					BulletMat->SetScalarParameterValue(TEXT("Roughness"), 0.1f);
+				}
+				Bullet->TrailDotScale = 0.3f;
+				Bullet->TrailDotLifespan = 0.8f;
+				Bullet->TrailDotInterval = 0.005f;
+				Bullet->TrailDotRandomSpread = 2.f;
+				Bullet->StartTrail(FLinearColor(0.5f, 0.5f, 0.45f));
+			}
 		}
 
 		// COD recoil: per-shot pitch kick + yaw scatter
 		if (bFirstPersonMode && GetController())
 		{
 			const float RecoilMult = FMath::Lerp(1.f, 0.5f, ADSAlpha);
-			const float PitchKick = FMath::RandRange(0.04f, 0.08f) * RecoilMult;
+			const float PitchKick = (CurrentWeaponType == 6)
+				? FMath::RandRange(0.25f, 0.35f) * RecoilMult
+				: FMath::RandRange(0.04f, 0.08f) * RecoilMult;
 			AddControllerPitchInput(PitchKick);
 			RecoilPitchAccum += PitchKick;
 
-			const float YawKick = FMath::RandRange(-0.03f, 0.03f) * RecoilMult;
+			const float YawKick = (CurrentWeaponType == 6)
+				? FMath::RandRange(-0.08f, 0.08f) * RecoilMult
+				: FMath::RandRange(-0.03f, 0.03f) * RecoilMult;
 			AddControllerYawInput(YawKick);
 			RecoilYawAccum += YawKick;
 
 			// Viewmodel kick impulse
-			const float KickScale = (CurrentWeaponType == 5) ? 1.f : 0.5f;
+			const float KickScale = (CurrentWeaponType == 6) ? 2.5f : (CurrentWeaponType == 5) ? 1.f : 0.5f;
 			WeaponKickZ.Vel += 2.f * RecoilMult * KickScale;
 			WeaponKickX.Vel += -1.f * RecoilMult * KickScale;
 
@@ -2048,8 +2697,9 @@ void APHCCityCharacter::FireWeapon()
 			Proj->StartTrail(FLinearColor(0.5f, 0.5f, 0.45f));
 		}
 	}
-	else if (CurrentWeaponType == 2) // Sword — 50 damage per hit (2 hits to kill)
+	else if (CurrentWeaponType == 2) // Light Saber — 50 damage per hit (2 hits to kill)
 	{
+		SaberSwingTimer = 0.35f;
 		const FVector MyLoc = GetActorLocation();
 		const FVector Forward = GetActorForwardVector();
 		const float SwingRange = 600.f;
@@ -2080,6 +2730,9 @@ void APHCCityCharacter::FireWeapon()
 						if (CitySub->Crabs[CI].Health <= 0.f)
 						{
 							CrabKills++;
+							KillStreakCount++; KillStreakTimer = 5.f;
+							AddXP(50);
+							StartLootCrate();
 							APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
 								APHCMissileProjectile::StaticClass(), CrabLoc, FRotator::ZeroRotator);
 							if (TempProj) { TempProj->SpawnExplosion(CrabLoc); TempProj->Destroy(); }
@@ -2176,6 +2829,9 @@ void APHCCityCharacter::FireWeapon()
 						if (CitySub->Crabs[CI].Health <= 0.f)
 						{
 							CrabKills++;
+							KillStreakCount++; KillStreakTimer = 5.f;
+							AddXP(50);
+							StartLootCrate();
 							APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
 								APHCMissileProjectile::StaticClass(), CrabLoc, FRotator::ZeroRotator);
 							if (TempProj) { TempProj->SpawnExplosion(CrabLoc); TempProj->Destroy(); }
@@ -2265,6 +2921,9 @@ void APHCCityCharacter::FireWeapon()
 
 			// 1-hit kill: explode and respawn at origin
 			CrabKills++;
+			KillStreakCount++; KillStreakTimer = 5.f;
+			AddXP(50);
+			StartLootCrate();
 
 			APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
 				APHCMissileProjectile::StaticClass(), CrabLoc, FRotator::ZeroRotator);
@@ -2542,6 +3201,22 @@ void APHCCityCharacter::UnequipJetpack()
 }
 
 // ---------------------------------------------------------------------------
+// Roller Blades
+// ---------------------------------------------------------------------------
+
+void APHCCityCharacter::EquipRollerBlades()
+{
+	if (bRollerBladesEquipped) return;
+	bRollerBladesEquipped = true;
+}
+
+void APHCCityCharacter::UnequipRollerBlades()
+{
+	if (!bRollerBladesEquipped) return;
+	bRollerBladesEquipped = false;
+}
+
+// ---------------------------------------------------------------------------
 // SetFirstPersonMode — Toggle between FP and TP camera
 // ---------------------------------------------------------------------------
 
@@ -2562,7 +3237,7 @@ void APHCCityCharacter::SetFirstPersonMode(bool bFirstPerson)
 	if (bFirstPerson)
 	{
 		CameraBoom->TargetArmLength = 0.f;
-		CameraBoom->SocketOffset = FVector(0.f, 0.f, 76.f);
+		CameraBoom->SocketOffset = FVector(0.f, 0.f, 96.f);
 		CameraBoom->bEnableCameraLag = false;
 		CameraBoom->bEnableCameraRotationLag = false;
 		bUseControllerRotationYaw = true;
@@ -2617,4 +3292,291 @@ void APHCCityCharacter::SetFirstPersonMode(bool bFirstPerson)
 	SetVis(JetpackBodyMesh); SetVis(JetpackNozzleL); SetVis(JetpackNozzleR);
 	SetVis(JetpackFlameL); SetVis(JetpackFlameR);
 	SetVis(JetpackStrapL); SetVis(JetpackStrapR);
+}
+
+// ---------------------------------------------------------------------------
+// XP / Leveling System
+// ---------------------------------------------------------------------------
+
+bool APHCCityCharacter::AddXP(int32 Amount)
+{
+	if (Amount <= 0) return false;
+
+	// Apply kill streak multiplier
+	const float Mult = KillStreakMultiplier();
+	Amount = FMath::RoundToInt(Amount * Mult);
+
+	PlayerXP += Amount;
+	bool bLeveledUp = false;
+
+	while (PlayerXP >= XPToNextLevel)
+	{
+		PlayerXP -= XPToNextLevel;
+		PlayerLevel++;
+		XPToNextLevel = 100 * PlayerLevel;
+		bLeveledUp = true;
+	}
+
+	if (bLeveledUp)
+	{
+		LevelUpFlashTimer = 1.5f; // triggers HUD level-up animation
+
+		// Award coins on level-up (10 * level)
+		if (UWorld* World = GetWorld())
+		{
+			if (UPHCGameInstance* GI = Cast<UPHCGameInstance>(World->GetGameInstance()))
+			{
+				GI->LocalPlayerProfile.Coins += 10 * PlayerLevel;
+				GI->SaveCoinsToBackend();
+			}
+		}
+	}
+
+	return bLeveledUp;
+}
+
+// ---------------------------------------------------------------------------
+// Kill Streak
+// ---------------------------------------------------------------------------
+
+float APHCCityCharacter::KillStreakMultiplier() const
+{
+	if (KillStreakCount < 2) return 1.f;
+	if (KillStreakCount < 4) return 1.5f;
+	if (KillStreakCount < 7) return 2.f;
+	if (KillStreakCount < 10) return 3.f;
+	return 5.f;
+}
+
+// ---------------------------------------------------------------------------
+// Daily Login Reward
+// ---------------------------------------------------------------------------
+
+void APHCCityCharacter::CheckDailyLogin()
+{
+	// Compute a simple Julian day number from real-world date
+	const FDateTime Now = FDateTime::UtcNow();
+	const int32 TodayJulian = Now.GetYear() * 400 + Now.GetDayOfYear();
+
+	if (TodayJulian != LastLoginJulianDay)
+	{
+		// Check if streak continues (consecutive day)
+		if (TodayJulian == LastLoginJulianDay + 1)
+		{
+			// Streak continues — don't increment yet, wait for claim
+		}
+		else if (LastLoginJulianDay == 0)
+		{
+			// First ever login
+			LoginStreak = 0;
+		}
+		else
+		{
+			// Streak broken — reset
+			LoginStreak = 0;
+		}
+
+		LastLoginJulianDay = TodayJulian;
+		bDailyRewardPending = true;
+		bDailyRewardClaimed = false;
+	}
+}
+
+int32 APHCCityCharacter::ClaimDailyReward()
+{
+	if (bDailyRewardClaimed || !bDailyRewardPending) return 0;
+
+	// 7-day escalating rewards: 5, 10, 20, 40, 80, 150, 300
+	static const int32 DailyRewards[] = { 5, 10, 20, 40, 80, 150, 300 };
+	const int32 RewardIndex = FMath::Clamp(LoginStreak, 0, 6);
+	const int32 CoinsReward = DailyRewards[RewardIndex];
+
+	// Advance streak (wraps after day 7)
+	LoginStreak = (LoginStreak + 1) % 7;
+
+	bDailyRewardClaimed = true;
+	bDailyRewardPending = false;
+
+	// Award coins
+	if (UWorld* World = GetWorld())
+	{
+		if (UPHCGameInstance* GI = Cast<UPHCGameInstance>(World->GetGameInstance()))
+		{
+			GI->LocalPlayerProfile.Coins += CoinsReward;
+			GI->SaveCoinsToBackend();
+		}
+	}
+
+	// Also award XP for logging in
+	AddXP(25);
+
+	return CoinsReward;
+}
+
+// ---------------------------------------------------------------------------
+// Loot Crate System
+// ---------------------------------------------------------------------------
+
+void APHCCityCharacter::StartLootCrate()
+{
+	if (bLootCrateActive) return;
+	bLootCrateActive = true;
+	LootCrateTimer = 0.f;
+	LootCrateSpinAngle = 0.f;
+
+	// Weighted random reward: common=5/10, uncommon=20/50, rare=100, epic=200
+	const float Roll = FMath::FRand();
+	if (Roll < 0.30f)       { LootCrateReward = 5;   LootCrateXPReward = 10; }
+	else if (Roll < 0.55f)  { LootCrateReward = 10;  LootCrateXPReward = 20; }
+	else if (Roll < 0.75f)  { LootCrateReward = 20;  LootCrateXPReward = 30; }
+	else if (Roll < 0.90f)  { LootCrateReward = 50;  LootCrateXPReward = 50; }
+	else if (Roll < 0.97f)  { LootCrateReward = 100; LootCrateXPReward = 75; }
+	else                    { LootCrateReward = 200; LootCrateXPReward = 150; }
+
+	// Apply event multiplier
+	const float Mult = EventCoinMultiplier();
+	LootCrateReward = FMath::RoundToInt(LootCrateReward * Mult);
+}
+
+// ---------------------------------------------------------------------------
+// Achievement System
+// ---------------------------------------------------------------------------
+
+const APHCCityCharacter::FAchievement APHCCityCharacter::AchievementDefs[NumAchievements] = {
+	{ TEXT("First Blood"),        TEXT("Kill 1 crab"),           1 },
+	{ TEXT("Crab Hunter"),        TEXT("Kill 10 crabs"),         10 },
+	{ TEXT("Crab Slayer"),        TEXT("Kill 50 crabs"),         50 },
+	{ TEXT("Exterminator"),       TEXT("Kill 100 crabs"),        100 },
+	{ TEXT("Crab Legend"),        TEXT("Kill 500 crabs"),        500 },
+	{ TEXT("Coin Collector"),     TEXT("Collect 50 coins"),      50 },
+	{ TEXT("Gold Rush"),          TEXT("Collect 200 coins"),     200 },
+	{ TEXT("Treasure Hunter"),    TEXT("Collect 500 coins"),     500 },
+	{ TEXT("Leveling Up"),        TEXT("Reach Level 5"),         5 },
+	{ TEXT("Getting Serious"),    TEXT("Reach Level 10"),        10 },
+	{ TEXT("Veteran"),            TEXT("Reach Level 25"),        25 },
+	{ TEXT("Elite"),              TEXT("Reach Level 50"),        50 },
+	{ TEXT("Road Warrior"),       TEXT("Drive 3 vehicle types"), 3 },
+	{ TEXT("Gearhead"),           TEXT("Drive all 7 vehicles"),  7 },
+	{ TEXT("Marathon"),           TEXT("Walk 50,000 UU"),        50000 },
+	{ TEXT("Explorer"),           TEXT("Walk 200,000 UU"),       200000 },
+	{ TEXT("Globetrotter"),       TEXT("Walk 1,000,000 UU"),     1000000 },
+	{ TEXT("Survivor"),           TEXT("Die 10 times"),          10 },
+	{ TEXT("Kill Streak x5"),     TEXT("Get a 5-kill streak"),   5 },
+	{ TEXT("Unstoppable"),        TEXT("Get a 10-kill streak"),  10 },
+};
+
+void APHCCityCharacter::CheckAchievements()
+{
+	auto TryUnlock = [&](int32 Idx, int32 CurrentVal)
+	{
+		if (!AchievementUnlocked[Idx] && CurrentVal >= AchievementDefs[Idx].Target)
+		{
+			AchievementUnlocked[Idx] = true;
+			LastUnlockedAchievement = Idx;
+			AchievementPopupTimer = 3.f;
+			AddXP(50 + Idx * 10); // escalating XP reward
+
+			// Award coins for achievement
+			if (UWorld* W = GetWorld())
+			{
+				if (UPHCGameInstance* GI = Cast<UPHCGameInstance>(W->GetGameInstance()))
+				{
+					GI->LocalPlayerProfile.Coins += 25 + Idx * 5;
+					GI->SaveCoinsToBackend();
+				}
+			}
+		}
+	};
+
+	// Count bits set in VehiclesUsed
+	int32 VehicleCount = 0;
+	for (int32 B = 0; B < 7; ++B)
+		if (VehiclesUsed & (1 << B)) VehicleCount++;
+
+	TryUnlock(0, CrabKills);       // 1 kill
+	TryUnlock(1, CrabKills);       // 10 kills
+	TryUnlock(2, CrabKills);       // 50 kills
+	TryUnlock(3, CrabKills);       // 100 kills
+	TryUnlock(4, CrabKills);       // 500 kills
+	TryUnlock(5, TotalCoinsCollected);  // 50 coins
+	TryUnlock(6, TotalCoinsCollected);  // 200 coins
+	TryUnlock(7, TotalCoinsCollected);  // 500 coins
+	TryUnlock(8, PlayerLevel);     // Level 5
+	TryUnlock(9, PlayerLevel);     // Level 10
+	TryUnlock(10, PlayerLevel);    // Level 25
+	TryUnlock(11, PlayerLevel);    // Level 50
+	TryUnlock(12, VehicleCount);   // 3 vehicles
+	TryUnlock(13, VehicleCount);   // 7 vehicles
+	TryUnlock(14, (int32)TotalDistanceWalked);
+	TryUnlock(15, (int32)TotalDistanceWalked);
+	TryUnlock(16, (int32)TotalDistanceWalked);
+	TryUnlock(17, Deaths);         // 10 deaths
+	TryUnlock(18, KillStreakCount); // 5 streak
+	TryUnlock(19, KillStreakCount); // 10 streak
+}
+
+// ---------------------------------------------------------------------------
+// Limited-Time Events
+// ---------------------------------------------------------------------------
+
+float APHCCityCharacter::EventCoinMultiplier() const
+{
+	return (CurrentEvent == EActiveEvent::GoldenHour) ? 3.f : 1.f;
+}
+
+// ---------------------------------------------------------------------------
+// Vehicle Unlock Progression
+// ---------------------------------------------------------------------------
+
+int32 APHCCityCharacter::VehicleUnlockLevel(int32 VehicleType)
+{
+	switch (VehicleType)
+	{
+	case 0: return 1;   // Aventador
+	case 1: return 3;   // Dune Buggy
+	case 4: return 5;   // Dirt Bike
+	case 3: return 8;   // Tank
+	case 2: return 12;  // Raptor
+	case 5: return 18;  // Black Hawk
+	case 6: return 25;  // Blackbird (SR-71 uses type 6 in HUD mapping? we'll use index)
+	case 7: return 2;   // Roller Blades
+	default: return 1;
+	}
+}
+
+bool APHCCityCharacter::IsVehicleUnlocked(int32 VehicleType) const
+{
+	// Dev account bypasses level requirements
+	if (UWorld* W = GetWorld())
+	{
+		if (UPHCGameInstance* GI = Cast<UPHCGameInstance>(W->GetGameInstance()))
+		{
+			if (GI->LocalPlayerProfile.Username == TEXT("Dev"))
+				return true;
+		}
+	}
+	return PlayerLevel >= VehicleUnlockLevel(VehicleType);
+}
+
+// ---------------------------------------------------------------------------
+// Weekly Stats Reset
+// ---------------------------------------------------------------------------
+
+void APHCCityCharacter::CheckWeeklyReset()
+{
+	const FDateTime Now = FDateTime::UtcNow();
+	// Simple week key: year * 100 + ISO week
+	int32 Year, Month, Day;
+	Now.GetDate(Year, Month, Day);
+	const int32 DayOfYear = Now.GetDayOfYear();
+	const int32 WeekNum = (DayOfYear - 1) / 7;
+	const int32 ThisWeek = Year * 100 + WeekNum;
+
+	if (ThisWeek != LastResetWeek)
+	{
+		WeeklyXP = 0;
+		WeeklyKills = 0;
+		WeeklyCoins = 0;
+		LastResetWeek = ThisWeek;
+	}
 }
