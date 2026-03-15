@@ -27,6 +27,9 @@
 #include "Components/Spacer.h"
 #include "Components/SizeBox.h"
 #include "Components/ScrollBox.h"
+#include "Components/Image.h"
+#include "Engine/Texture2D.h"
+#include "TextureResource.h"
 #include "Player/PHCPlayerState.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -2641,6 +2644,53 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		}
 	}
 
+	// Animate trip mandala overlays — spinning layers with breathing opacity
+	if (APlayerController* TripPC = GetOwningPlayer())
+	{
+		if (UPHCCitySubsystem* Sub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
+		{
+			const float TripInt = Sub->TripIntensity;
+			if (TripInt > 0.f)
+			{
+				if (!bTripOverlaysCreated) CreateTripOverlays();
+				if (!bTripOverlaysVisible)
+				{
+					bTripOverlaysVisible = true;
+					if (TripOverlay0) TripOverlay0->SetVisibility(ESlateVisibility::HitTestInvisible);
+					if (TripOverlay1) TripOverlay1->SetVisibility(ESlateVisibility::HitTestInvisible);
+					if (TripOverlay2) TripOverlay2->SetVisibility(ESlateVisibility::HitTestInvisible);
+				}
+
+				const float GT = GetWorld()->GetTimeSeconds();
+				const float Breath = FMath::Sin(GT * 0.5f) * 0.5f + 0.5f;
+				const float BaseAlpha = TripInt * FMath::Lerp(0.25f, 0.55f, Breath);
+
+				if (TripOverlay0)
+				{
+					TripOverlay0->SetRenderTransformAngle(GT * 6.f);
+					TripOverlay0->SetColorAndOpacity(FLinearColor(1, 1, 1, BaseAlpha * 0.85f));
+				}
+				if (TripOverlay1)
+				{
+					TripOverlay1->SetRenderTransformAngle(-GT * 4.f);
+					TripOverlay1->SetColorAndOpacity(FLinearColor(1, 1, 1, BaseAlpha * 0.75f));
+				}
+				if (TripOverlay2)
+				{
+					TripOverlay2->SetRenderTransformAngle(GT * 2.5f);
+					TripOverlay2->SetColorAndOpacity(FLinearColor(1, 1, 1, BaseAlpha * 0.65f));
+				}
+			}
+			else if (bTripOverlaysVisible)
+			{
+				bTripOverlaysVisible = false;
+				if (TripOverlay0) TripOverlay0->SetColorAndOpacity(FLinearColor(1, 1, 1, 0));
+				if (TripOverlay1) TripOverlay1->SetColorAndOpacity(FLinearColor(1, 1, 1, 0));
+				if (TripOverlay2) TripOverlay2->SetColorAndOpacity(FLinearColor(1, 1, 1, 0));
+			}
+		}
+	}
+
 	// Update K/D display
 	if (KDText)
 	{
@@ -3190,9 +3240,41 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 				if (!bPressed)
 				{
+					// Tap-to-jump: detect quick taps on release
+					if (WalkFingerWasDown[i])
+					{
+						const double Duration = FPlatformTime::Seconds() - WalkTapStartTime[i];
+						const float TapDist = FVector2D::Distance(FVector2D(TouchX, TouchY), WalkTapStartPos[i]);
+						if (Duration < 0.25 && TapDist < VPWidth * 0.03f)
+						{
+							// Quick tap detected — trigger jump
+							if (Char->bClimbingGearEquipped)
+							{
+								Char->ClimbingVerticalInput = 1.f;
+							}
+							else if (Char->bJetpackEquipped)
+							{
+								Char->JetpackVerticalInput = 1.f;
+							}
+							else if (Char->bHasBeenGrounded)
+							{
+								Char->ManualVelocityZ = 420.f;
+								Char->bWasGrounded = false;
+							}
+						}
+					}
+					WalkFingerWasDown[i] = false;
 					if (i == WalkMoveFingerIdx)  { WalkMoveFingerIdx = -1; WalkMoveOrigin = FVector2D::ZeroVector; }
 					if (i == WalkLookFingerIdx)  { WalkLookFingerIdx = -1; WalkLookPrev = FVector2D::ZeroVector; }
 					continue;
+				}
+
+				// Tap-to-jump: record start position on new press
+				if (!WalkFingerWasDown[i])
+				{
+					WalkTapStartPos[i] = FVector2D(TouchX, TouchY);
+					WalkTapStartTime[i] = FPlatformTime::Seconds();
+					WalkFingerWasDown[i] = true;
 				}
 
 				// Skip top 25% of screen where HUD buttons live
@@ -3865,6 +3947,8 @@ void UPHCCityHUD::OnSelectRollerBlades()
 		PC->EquipRollerBlades();
 }
 
+
+
 void UPHCCityHUD::OnDropBombClicked()
 {
 	// Try cached DrivenVehicle first, fall back to current pawn
@@ -4486,4 +4570,359 @@ void UPHCCityHUD::OnDailyLoginClaimClicked()
 			}
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Psychedelic trip overlay — procedural DeepDream-style textures
+// ---------------------------------------------------------------------------
+
+static FLinearColor HSVToLinear(float H, float S, float V, float A = 1.f)
+{
+	// H in 0..1
+	H = FMath::Frac(H);
+	const float C = V * S;
+	const float X = C * (1.f - FMath::Abs(FMath::Fmod(H * 6.f, 2.f) - 1.f));
+	const float M = V - C;
+	float R, G, B;
+	if (H < 1.f / 6.f)      { R = C; G = X; B = 0; }
+	else if (H < 2.f / 6.f) { R = X; G = C; B = 0; }
+	else if (H < 3.f / 6.f) { R = 0; G = C; B = X; }
+	else if (H < 4.f / 6.f) { R = 0; G = X; B = C; }
+	else if (H < 5.f / 6.f) { R = X; G = 0; B = C; }
+	else                     { R = C; G = 0; B = X; }
+	return FLinearColor(R + M, G + M, B + M, A);
+}
+
+UTexture2D* UPHCCityHUD::GenerateTripTexture(int32 Pattern, int32 Size)
+{
+	UTexture2D* Tex = UTexture2D::CreateTransient(Size, Size, PF_B8G8R8A8);
+	if (!Tex) return nullptr;
+
+	FTexture2DMipMap& Mip = Tex->GetPlatformData()->Mips[0];
+	Mip.BulkData.Lock(LOCK_READ_WRITE);
+	uint8* Data = static_cast<uint8*>(Mip.BulkData.Realloc(Size * Size * 4));
+
+	// Psychedelic palette (DMT hyperspace — neon, electric, self-luminous)
+	static const FLinearColor Palette[] = {
+		FLinearColor(0.00f, 0.27f, 1.00f),  // 0: hyperspace blue
+		FLinearColor(0.61f, 0.19f, 1.00f),  // 1: neon purple
+		FLinearColor(1.00f, 0.40f, 0.00f),  // 2: deep orange
+		FLinearColor(1.00f, 0.84f, 0.00f),  // 3: shimmering gold
+		FLinearColor(0.00f, 1.00f, 0.50f),  // 4: emerald green
+		FLinearColor(1.00f, 0.00f, 1.00f),  // 5: electric magenta
+		FLinearColor(0.00f, 0.40f, 0.80f),  // 6: dark electric blue
+		FLinearColor(1.00f, 0.55f, 0.00f),  // 7: chrysanthemum orange
+		FLinearColor(0.40f, 0.00f, 0.80f),  // 8: void purple
+		FLinearColor(0.00f, 0.90f, 0.90f),  // 9: electric teal
+	};
+	constexpr int32 PalN = 10;
+
+	// Helper: sample palette with smooth interpolation
+	auto SamplePalette = [&](float T, float Alpha) -> FLinearColor
+	{
+		T = FMath::Frac(T) * PalN;
+		const int32 I0 = FMath::FloorToInt32(T) % PalN;
+		const int32 I1 = (I0 + 1) % PalN;
+		const float F = T - FMath::FloorToFloat(T);
+		FLinearColor C = FMath::Lerp(Palette[I0], Palette[I1], F);
+		C.A = Alpha;
+		return C;
+	};
+
+	const float InvSize = 1.f / static_cast<float>(Size);
+
+	for (int32 Y = 0; Y < Size; ++Y)
+	{
+		for (int32 X = 0; X < Size; ++X)
+		{
+			const float U = X * InvSize;
+			const float V = Y * InvSize;
+			FLinearColor Col(0, 0, 0, 0);
+
+			// Use periodic coordinates so patterns tile seamlessly
+			// (all trig functions are inherently periodic over 0-1)
+			const float TU = U * PI * 2.f;
+			const float TV = V * PI * 2.f;
+
+			// All 3 patterns are radial mandalas centered at (0.5, 0.5)
+			const float CX = U - 0.5f;
+			const float CY = V - 0.5f;
+			const float Dist = FMath::Sqrt(CX * CX + CY * CY);
+			const float Angle = FMath::Atan2(CY, CX);
+			const float MaxR = 0.5f * 1.414f; // corner distance
+
+			if (Pattern == 0)
+			{
+				// --- MANDALA 0: TRIBAL CHEVRON RINGS ---
+				// Concentric rings filled with zigzag chevron teeth + radial spokes
+				float Val = 0.f;
+				const int32 NRings = 8;
+				for (int32 R = 1; R <= NRings; ++R)
+				{
+					const float Radius = R * (MaxR / NRings);
+					const float RDist = FMath::Abs(Dist - Radius);
+					// Ring line
+					Val = FMath::Max(Val, FMath::Exp(-RDist * RDist / 0.00015f) * 0.9f);
+
+					// Chevron teeth along each ring (zigzag radially)
+					if (Dist > Radius - MaxR / NRings * 0.45f && Dist < Radius)
+					{
+						const int32 NTeeth = 8 + R * 4;
+						const float ToothAngle = FMath::Frac(Angle / (PI * 2.f) * NTeeth);
+						const float ToothPeak = FMath::Abs(ToothAngle - 0.5f) * 2.f;
+						const float BandPos = 1.f - (Radius - Dist) / (MaxR / NRings * 0.45f);
+						const float ToothDist = FMath::Abs(BandPos - ToothPeak * 0.7f);
+						Val = FMath::Max(Val, FMath::Exp(-ToothDist * ToothDist / 0.015f) * 0.7f);
+					}
+				}
+
+				// Main radial spokes (12)
+				const int32 NSpokes = 12;
+				for (int32 S = 0; S < NSpokes; ++S)
+				{
+					const float SA = S * PI * 2.f / NSpokes;
+					float AD = FMath::Fmod(Angle - SA + PI * 4.f, PI * 2.f) - PI;
+					const float SpokeW = 0.03f + 0.015f * FMath::Sin(Dist * 80.f); // notched edges
+					Val = FMath::Max(Val, FMath::Exp(-AD * AD / (SpokeW * SpokeW) * 5.f) * 0.75f *
+						FMath::Clamp(Dist / 0.03f, 0.f, 1.f));
+				}
+
+				// Diamond dots at ring-spoke intersections
+				for (int32 R = 1; R <= NRings; R += 2)
+				{
+					const float Radius = R * (MaxR / NRings);
+					for (int32 S = 0; S < NSpokes; ++S)
+					{
+						const float SA = (S + 0.5f) * PI * 2.f / NSpokes;
+						const float DotX = 0.5f + FMath::Cos(SA) * Radius;
+						const float DotY = 0.5f + FMath::Sin(SA) * Radius;
+						const float DD = FMath::Abs(U - DotX) + FMath::Abs(V - DotY); // diamond metric
+						Val = FMath::Max(Val, FMath::Exp(-DD * DD / 0.0004f) * 0.65f);
+					}
+				}
+
+				// Center ornament
+				Val = FMath::Max(Val, FMath::Exp(-Dist * Dist / 0.0004f) * 0.95f);
+
+				Val = FMath::Clamp(Val, 0.f, 1.f);
+				float PalT = FMath::Frac(Angle / (PI * 2.f) * 0.4f + Dist * 3.f);
+				Col = SamplePalette(PalT, Val * 0.75f);
+			}
+			else if (Pattern == 1)
+			{
+				// --- MANDALA 1: PETAL & SACRED GEOMETRY ---
+				// Layered petal rings with inner star geometry
+				float Val = 0.f;
+
+				// Outer petal rings (3 nested rings of petals)
+				const int32 PetalCounts[] = {16, 10, 6};
+				const float PetalRadii[] = {0.42f, 0.28f, 0.15f};
+				const float PetalLengths[] = {0.18f, 0.14f, 0.10f};
+				for (int32 Ring = 0; Ring < 3; ++Ring)
+				{
+					const int32 NP = PetalCounts[Ring];
+					const float PR = PetalRadii[Ring];
+					const float PL = PetalLengths[Ring];
+					const float Offset = Ring * 0.3f; // angular offset between rings
+					for (int32 P = 0; P < NP; ++P)
+					{
+						const float PA = P * PI * 2.f / NP + Offset;
+						float AD = FMath::Fmod(Angle - PA + PI * 4.f, PI * 2.f) - PI;
+						const float PetalW = PI / NP * 0.55f;
+						if (FMath::Abs(AD) < PetalW && Dist > PR - PL && Dist < PR + PL * 0.3f)
+						{
+							const float Along = (Dist - (PR - PL)) / (PL * 1.3f);
+							const float Across = AD / PetalW;
+							// Petal shape: widest at middle, pointed at tips
+							const float Width = FMath::Sin(Along * PI);
+							if (FMath::Abs(Across) < Width)
+							{
+								const float Edge = FMath::Abs(Across) / FMath::Max(Width, 0.01f);
+								const float PVal = (1.f - Edge * Edge) * 0.85f;
+								Val = FMath::Max(Val, PVal);
+							}
+						}
+					}
+					// Ring circle
+					const float RDist = FMath::Abs(Dist - PR);
+					Val = FMath::Max(Val, FMath::Exp(-RDist * RDist / 0.0001f) * 0.7f);
+				}
+
+				// Inner star (6-pointed)
+				const int32 StarPoints = 6;
+				for (int32 S = 0; S < StarPoints; ++S)
+				{
+					const float SA = S * PI * 2.f / StarPoints;
+					float AD = FMath::Fmod(Angle - SA + PI * 4.f, PI * 2.f) - PI;
+					// Star spoke: thin line radiating out
+					if (Dist < 0.20f)
+						Val = FMath::Max(Val, FMath::Exp(-AD * AD / 0.001f) * 0.7f *
+							FMath::Clamp(Dist / 0.02f, 0.f, 1.f));
+					// Triangular point at tip
+					const float PointR = 0.18f;
+					if (Dist > 0.12f && Dist < PointR && FMath::Abs(AD) < 0.15f)
+					{
+						const float Taper = 1.f - (Dist - 0.12f) / (PointR - 0.12f);
+						if (FMath::Abs(AD) < Taper * 0.15f)
+							Val = FMath::Max(Val, 0.6f);
+					}
+				}
+
+				// Concentric accent rings
+				for (int32 R = 1; R <= 5; ++R)
+				{
+					const float Radius = R * 0.09f;
+					const float RDist = FMath::Abs(Dist - Radius);
+					Val = FMath::Max(Val, FMath::Exp(-RDist * RDist / 0.00006f) * 0.45f);
+				}
+
+				// Center
+				Val = FMath::Max(Val, FMath::Exp(-Dist * Dist / 0.0003f) * 0.9f);
+
+				Val = FMath::Clamp(Val, 0.f, 1.f);
+				float PalT = FMath::Frac(Dist * 4.f + Angle / (PI * 2.f) * 0.3f);
+				Col = SamplePalette(PalT, Val * 0.7f);
+			}
+			else
+			{
+				// --- MANDALA 2: TRIBAL MAZE RINGS ---
+				// Concentric bands filled with step-fret / maze patterns
+				float Val = 0.f;
+				const int32 NBands = 6;
+				const float BandW = MaxR / NBands;
+
+				for (int32 B = 0; B < NBands; ++B)
+				{
+					const float InnerR = B * BandW;
+					const float OuterR = (B + 1) * BandW;
+					if (Dist < InnerR || Dist > OuterR) continue;
+
+					const float BandPos = (Dist - InnerR) / BandW; // 0-1 within band
+
+					// Band border rings
+					const float InDist = FMath::Abs(Dist - InnerR);
+					const float OutDist = FMath::Abs(Dist - OuterR);
+					Val = FMath::Max(Val, FMath::Exp(-InDist * InDist / 0.00008f) * 0.8f);
+					Val = FMath::Max(Val, FMath::Exp(-OutDist * OutDist / 0.00008f) * 0.8f);
+
+					// Divide band into angular cells
+					const int32 NCells = 8 + B * 6;
+					const float CellAngle = PI * 2.f / NCells;
+					const float AngleInCell = FMath::Fmod(Angle + PI * 4.f, CellAngle) / CellAngle; // 0-1
+					const int32 CellIdx = FMath::FloorToInt32(FMath::Fmod(Angle + PI * 4.f, PI * 2.f) / CellAngle);
+					const float CSeed = FMath::Frac(FMath::Sin(B * 127.1f + CellIdx * 311.7f) * 43758.5f);
+
+					// Cell divider spokes
+					const float SpokeDist = FMath::Min(AngleInCell, 1.f - AngleInCell) * CellAngle * Dist;
+					Val = FMath::Max(Val, FMath::Exp(-SpokeDist * SpokeDist / 0.00015f) * 0.6f);
+
+					// Step-fret pattern within each cell
+					const int32 StepType = FMath::FloorToInt32(CSeed * 3.f);
+					if (StepType == 0)
+					{
+						// Zigzag across band
+						const float ZigX = 0.5f + FMath::Sin(BandPos * PI * 3.f) * 0.3f;
+						const float ZigDist = FMath::Abs(AngleInCell - ZigX);
+						Val = FMath::Max(Val, FMath::Exp(-ZigDist * ZigDist / 0.003f) * 0.75f);
+					}
+					else if (StepType == 1)
+					{
+						// Concentric arcs (inner crescents)
+						for (int32 A = 0; A < 3; ++A)
+						{
+							const float ArcR = InnerR + (A + 1) * BandW * 0.25f;
+							const float ARDist = FMath::Abs(Dist - ArcR);
+							if (AngleInCell > 0.15f && AngleInCell < 0.85f)
+								Val = FMath::Max(Val, FMath::Exp(-ARDist * ARDist / 0.00006f) * 0.6f);
+						}
+					}
+					else
+					{
+						// Diamond lattice
+						const float DU = FMath::Frac(AngleInCell * 3.f);
+						const float DV = FMath::Frac(BandPos * 3.f);
+						const float DiamondDist = FMath::Abs(DU - 0.5f) + FMath::Abs(DV - 0.5f);
+						Val = FMath::Max(Val, FMath::Exp(-FMath::Pow(DiamondDist - 0.35f, 2.f) / 0.003f) * 0.7f);
+					}
+				}
+
+				// Central ornament — small starburst
+				const int32 NRays = 8;
+				for (int32 R = 0; R < NRays; ++R)
+				{
+					const float RA = R * PI * 2.f / NRays;
+					float AD = FMath::Fmod(Angle - RA + PI * 4.f, PI * 2.f) - PI;
+					if (Dist < 0.06f)
+						Val = FMath::Max(Val, FMath::Exp(-AD * AD / 0.002f) * 0.8f *
+							FMath::Clamp(Dist / 0.01f, 0.f, 1.f));
+				}
+				Val = FMath::Max(Val, FMath::Exp(-Dist * Dist / 0.0002f) * 0.9f);
+
+				Val = FMath::Clamp(Val, 0.f, 1.f);
+				float PalT = FMath::Frac(Angle / (PI * 2.f) * 0.5f + Dist * 2.5f);
+				Col = SamplePalette(PalT, Val * 0.7f);
+			}
+
+			// Cut out center — clear everything inside the smallest ring
+			const float CenterCutoff = 0.18f;
+			if (Dist < CenterCutoff)
+				Col.A = 0.f;
+
+			const int32 Idx = (Y * Size + X) * 4;
+			Data[Idx + 0] = static_cast<uint8>(FMath::Clamp(Col.B * 255.f, 0.f, 255.f)); // B
+			Data[Idx + 1] = static_cast<uint8>(FMath::Clamp(Col.G * 255.f, 0.f, 255.f)); // G
+			Data[Idx + 2] = static_cast<uint8>(FMath::Clamp(Col.R * 255.f, 0.f, 255.f)); // R
+			Data[Idx + 3] = static_cast<uint8>(FMath::Clamp(Col.A * 255.f, 0.f, 255.f)); // A
+		}
+	}
+
+	Mip.BulkData.Unlock();
+	Tex->UpdateResource();
+	return Tex;
+}
+
+void UPHCCityHUD::CreateTripOverlays()
+{
+	if (bTripOverlaysCreated) return;
+	bTripOverlaysCreated = true;
+
+	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+	if (!RootCanvas) return;
+
+	// Generate 3 mandala textures at 1024x1024 for detail
+	TripTex0 = GenerateTripTexture(0, 1024);
+	TripTex1 = GenerateTripTexture(1, 1024);
+	TripTex2 = GenerateTripTexture(2, 1024);
+
+	// Single centered image per layer — no tiling. Sized large enough to cover
+	// screen even when rotated (diagonal coverage).
+	auto MakeOverlay = [&](UTexture2D* Tex, const TCHAR* Name) -> UImage*
+	{
+		UImage* Img = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), Name);
+		if (!Img || !Tex) return nullptr;
+
+		FSlateBrush Brush;
+		Brush.SetResourceObject(Tex);
+		Brush.ImageSize = FVector2D(1024.f, 1024.f);
+		Brush.Tiling = ESlateBrushTileType::NoTile;
+		Brush.DrawAs = ESlateBrushDrawType::Image;
+		Img->SetBrush(Brush);
+		Img->SetColorAndOpacity(FLinearColor(1, 1, 1, 0));
+		Img->SetVisibility(ESlateVisibility::HitTestInvisible);
+		// Pivot at center so rotation spins in place
+		Img->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+
+		UCanvasPanelSlot* Slot = RootCanvas->AddChildToCanvas(Img);
+		// Center-anchored, oversized so corners are covered during rotation
+		// Screen diagonal ~2x height, so ±800 overflow on each side is plenty
+		Slot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+		Slot->SetAlignment(FVector2D(0.5f, 0.5f));
+		Slot->SetOffsets(FMargin(0.f, 0.f, 2400.f, 2400.f));
+
+		return Img;
+	};
+
+	TripOverlay0 = MakeOverlay(TripTex0, TEXT("TripOverlay0"));
+	TripOverlay1 = MakeOverlay(TripTex1, TEXT("TripOverlay1"));
+	TripOverlay2 = MakeOverlay(TripTex2, TEXT("TripOverlay2"));
 }

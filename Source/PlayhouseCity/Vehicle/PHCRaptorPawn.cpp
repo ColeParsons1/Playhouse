@@ -323,10 +323,10 @@ APHCRaptorPawn::APHCRaptorPawn()
 	FormationLightStrips.Add(MakeCube(TEXT("FmtHStabR"),
 		FVector(-360.f, -130.f, 2.f), FVector(100.f, 2.f, 1.f)));
 
-	// All strips hidden by default
+	// All strips visible by default (wing tip glow always on)
 	for (UStaticMeshComponent* Strip : FormationLightStrips)
 	{
-		if (Strip) Strip->SetVisibility(false);
+		if (Strip) Strip->SetVisibility(true);
 	}
 
 	// Subtle ambient glow from formation lights
@@ -350,7 +350,7 @@ APHCRaptorPawn::APHCRaptorPawn()
 	HeadlightSpotL->SetInnerConeAngle(18.f);
 	HeadlightSpotL->SetLightColor(FColor(255, 250, 240));
 	HeadlightSpotL->SetCastShadows(false);
-	HeadlightSpotL->SetVisibility(false);
+	HeadlightSpotL->SetVisibility(true);
 
 	HeadlightSpotR = CreateDefaultSubobject<USpotLightComponent>(TEXT("HeadlightSpotR"));
 	HeadlightSpotR->SetupAttachment(VehicleCollision);
@@ -362,7 +362,7 @@ APHCRaptorPawn::APHCRaptorPawn()
 	HeadlightSpotR->SetInnerConeAngle(18.f);
 	HeadlightSpotR->SetLightColor(FColor(255, 250, 240));
 	HeadlightSpotR->SetCastShadows(false);
-	HeadlightSpotR->SetVisibility(false);
+	HeadlightSpotR->SetVisibility(true);
 
 	// ====================================================================
 	//  CAMERA
@@ -530,11 +530,12 @@ void APHCRaptorPawn::BeginPlay()
 	ApplyMat(NavLightR, NavGreen, 0.0f, 0.1f, NavGreen);
 	ApplyMat(TailLight, LightWhite, 0.0f, 0.1f, LightWhite);
 
-	// Formation light strips — green electroluminescent (initially off)
+	// Formation light strips — green electroluminescent (always glowing)
 	const FLinearColor FmtGreen(0.1f, 0.4f, 0.15f);
+	const FLinearColor FmtEmis(0.5f, 2.5f, 0.8f);
 	for (UStaticMeshComponent* Strip : FormationLightStrips)
 	{
-		ApplyMat(Strip, FmtGreen, 0.0f, 0.2f, FLinearColor::Black);
+		ApplyMat(Strip, FmtGreen, 0.0f, 0.2f, FmtEmis);
 	}
 }
 
@@ -1117,7 +1118,7 @@ void APHCRaptorPawn::SetHeadlightsEnabled(bool bEnabled)
 			M->SetVectorParameterValue(TEXT("EmissiveColor"), Emis);
 		}
 	}
-	if (FormationGlow) FormationGlow->SetVisibility(bEnabled);
+	// FormationGlow stays hidden (center light removed per design)
 	if (HeadlightSpotL) HeadlightSpotL->SetVisibility(bEnabled);
 	if (HeadlightSpotR) HeadlightSpotR->SetVisibility(bEnabled);
 }

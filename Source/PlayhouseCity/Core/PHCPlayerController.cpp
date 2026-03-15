@@ -935,6 +935,18 @@ void APHCPlayerController::UnequipRollerBlades()
 	if (Char) Char->UnequipRollerBlades();
 }
 
+void APHCPlayerController::EquipClimbingGear()
+{
+	APHCCityCharacter* Char = Cast<APHCCityCharacter>(GetPawn());
+	if (Char) Char->EquipClimbingGear();
+}
+
+void APHCPlayerController::UnequipClimbingGear()
+{
+	APHCCityCharacter* Char = Cast<APHCCityCharacter>(GetPawn());
+	if (Char) Char->UnequipClimbingGear();
+}
+
 void APHCPlayerController::OnVehicleExitRequested()
 {
 	if (!HasAuthority())

@@ -124,6 +124,10 @@ public:
 	void EquipRollerBlades();
 	void UnequipRollerBlades();
 
+	/** Equip or remove climbing gear on the character. */
+	void EquipClimbingGear();
+	void UnequipClimbingGear();
+
 	/** Server RPC: spawn a vehicle on the server and enter it. */
 	UFUNCTION(Server, Reliable)
 	void ServerSpawnAndEnterVehicle(int32 VehicleType);

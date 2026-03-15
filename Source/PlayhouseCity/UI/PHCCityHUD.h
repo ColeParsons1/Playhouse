@@ -358,6 +358,11 @@ protected:
 	int32 WalkLookFingerIdx = -1;
 	FVector2D WalkLookPrev = FVector2D::ZeroVector;
 
+	// Tap-to-jump tracking per finger
+	bool WalkFingerWasDown[5] = {};
+	FVector2D WalkTapStartPos[5];
+	double WalkTapStartTime[5] = {};
+
 private:
 	UFUNCTION()
 	void OnMenuButtonClicked();
@@ -565,6 +570,22 @@ private:
 	bool bDailyLoginShown = false;
 
 	UFUNCTION() void OnDailyLoginClaimClicked();
+
+	// -- Psychedelic trip overlay (DeepDream-style patterns) ------------------
+
+	UPROPERTY() TObjectPtr<UImage> TripOverlay0;
+	UPROPERTY() TObjectPtr<UImage> TripOverlay1;
+	UPROPERTY() TObjectPtr<UImage> TripOverlay2;
+
+	UPROPERTY() TObjectPtr<UTexture2D> TripTex0;
+	UPROPERTY() TObjectPtr<UTexture2D> TripTex1;
+	UPROPERTY() TObjectPtr<UTexture2D> TripTex2;
+
+	bool bTripOverlaysCreated = false;
+	bool bTripOverlaysVisible = false;
+
+	void CreateTripOverlays();
+	UTexture2D* GenerateTripTexture(int32 Pattern, int32 Size = 256);
 
 	bool bMenuOpen = false;
 	bool bVehicleSelectOpen = false;

@@ -17,6 +17,7 @@ class UPointLightComponent;
 class APostProcessVolume;
 class APHCBlackbirdPawn;
 class APHCBlackHawkPawn;
+class UProceduralMeshComponent;
 
 /** City district types for zone-based procedural generation. */
 enum class ECityDistrict : uint8
@@ -85,6 +86,8 @@ private:
 	void SpawnDirtBikePark();
 	void SpawnGoldCoins();
 	void SpawnJungle();
+	void SpawnOakGrove();
+	void SpawnVisualPolish();
 	void UpdateGrassInstances(const FVector& PlayerLoc);
 
 	/** Spawn a single building with optional window lights. */
@@ -169,6 +172,28 @@ public:
 	/** When true, DayNightTime is frozen (Night mode from HUD button). */
 	bool bNightModeLocked = false;
 
+	/** Mushroom psychedelic trip effect. */
+	float MushroomTripTimer = -1.f;          // <0 = inactive, >=0 = elapsed seconds
+	float MushroomTripDuration = 180.f;      // base 3 minutes, extended by re-doses
+	int32 TripDoseCount = 0;                 // how many mushrooms collected this trip
+	float TripIntensityMultiplier = 1.f;     // grows with re-doses
+	float TripBaseFOV = 90.f;                // cached camera FOV before trip
+	FRotator TripLastCameraRot = FRotator::ZeroRotator;  // for fixation detection
+	float TripFixationAlpha = 0.f;           // 0=moving, 1=staring (ramps up/down)
+	float TripIntensity = 0.f;               // current computed intensity (0-1), readable by HUD
+
+	/** World-space hallucination — ground shadow tiles + mandala. */
+	UPROPERTY(Transient) TObjectPtr<AActor> TripHallucinationActor;
+
+	/** Ground overlay — triangle tiles covering the area around the player. */
+	static constexpr int32 TripGridN = 20;
+	static constexpr float TripTileSize = 500.f;
+	int32 TripTriCount = 0;
+	UPROPERTY(Transient) TObjectPtr<UProceduralMeshComponent> TripGroundMesh;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> TripGroundMID;
+
+	bool bTripHallucinationsSpawned = false;
+
 	/** Natural disaster system. */
 	enum class EDisasterType : uint8 { None, Tornado, Earthquake, Thunderstorm, MeteorShower };
 	EDisasterType ActiveDisaster = EDisasterType::None;
@@ -229,6 +254,20 @@ public:
 	};
 
 	FGoldCoinData GoldCoins[NumGoldCoins];
+
+	/** Collectible mushrooms in the jungle (original 12 + decorative clusters). */
+	struct FMushroomData
+	{
+		TObjectPtr<AActor> Actor;
+		TObjectPtr<UPointLightComponent> GlowLight;
+		FVector OriginalSpawnPos = FVector::ZeroVector;
+		FVector CurrentPos = FVector::ZeroVector;
+		float PickupAnimTimer = -1.f;
+		float RespawnTimer = -1.f;
+		float BobPhase = 0.f;
+	};
+	TArray<FMushroomData> CollectibleMushrooms;
+	void SpawnCollectibleMushrooms();
 
 	/** NPC player characters — wander city during daytime, damageable. */
 	static constexpr int32 NumNPCPlayers = 5;
@@ -301,8 +340,16 @@ private:
 	/** Cloud layer actors for parallax drift. */
 	UPROPERTY(Transient) TObjectPtr<AActor> CloudLayerActor;
 	UPROPERTY(Transient) TObjectPtr<AActor> CloudLayerActor2;
+	UPROPERTY(Transient) TObjectPtr<AActor> CloudLayerActor3;
+
+	/** Atmospheric dust motes near camera. */
+	UPROPERTY(Transient) TObjectPtr<AActor> DustMoteActor;
+	TArray<TObjectPtr<UStaticMeshComponent>> DustMotes;
 
 	/** Ocean actor reference for wave animation. */
+
+	/** Ground slab MID for trip color morphing. */
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> GroundSlabMID;
 
 	/** Road materials for wet road effect at night. */
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> RoadMaterials;

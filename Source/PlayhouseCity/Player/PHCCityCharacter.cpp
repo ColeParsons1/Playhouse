@@ -559,11 +559,11 @@ void APHCCityCharacter::BeginPlay()
 			MID->SetScalarParameterValue(TEXT("Metallic"), 0.f);
 			// SSS params (effective with M_PHCSkin, ignored by M_PHCColor)
 			MID->SetVectorParameterValue(TEXT("SubsurfaceColor"),
-				FLinearColor(0.82f, 0.22f, 0.12f));
-			MID->SetScalarParameterValue(TEXT("Opacity"), 0.35f);
-			// Subtle warm emissive for skin warmth
+				FLinearColor(0.90f, 0.18f, 0.08f));  // Richer blood-warm SSS
+			MID->SetScalarParameterValue(TEXT("Opacity"), 0.45f);  // Stronger translucency
+			// Subtle warm emissive for lifelike skin warmth
 			MID->SetVectorParameterValue(TEXT("EmissiveColor"),
-				FLinearColor(0.012f, 0.006f, 0.003f));
+				FLinearColor(0.015f, 0.007f, 0.003f));
 			Comp->SetMaterial(0, MID);
 			BodyMIDs.Add(MID);
 		}
@@ -838,6 +838,21 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	if (GetAttachParentActor() != nullptr)
 		return;
 
+	// ---- Trip invisibility: hide this character for non-owning clients ----
+	if (!IsLocallyControlled())
+	{
+		if (bIsTripping && !bTripHiddenLocally)
+		{
+			SetActorHiddenInGame(true);
+			bTripHiddenLocally = true;
+		}
+		else if (!bIsTripping && bTripHiddenLocally)
+		{
+			SetActorHiddenInGame(false);
+			bTripHiddenLocally = false;
+		}
+	}
+
 	// ---- Floating name: set from PlayerState profile once available ------
 	if (!bNameTextSet && NameTextComp)
 	{
@@ -1061,6 +1076,50 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		}
 	}
 
+	// ---- Camera ground clamp (prevent seeing under the map) -------------
+	if (!bFirstPersonMode && CameraBoom && FollowCamera && GetController())
+	{
+		const FVector CamPos = FollowCamera->GetComponentLocation();
+		float GroundZ = 0.f;
+		if (UPHCCitySubsystem* CitySub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
+		{
+			GroundZ = CitySub->GetTerrainHeight(CamPos.X, CamPos.Y);
+		}
+		const float MinCamZ = GroundZ + 50.f;
+		if (CamPos.Z < MinCamZ)
+		{
+			// Camera is below terrain — clamp controller pitch upward
+			FRotator CtrlRot = GetController()->GetControlRotation();
+			// Normalize pitch to -180..180 range
+			float Pitch = CtrlRot.Pitch;
+			if (Pitch > 180.f) Pitch -= 360.f;
+			// Positive pitch = looking down; reduce it to pull camera up
+			if (Pitch > -10.f)
+			{
+				Pitch = FMath::FInterpTo(Pitch, -10.f, DeltaTime, 8.f);
+				CtrlRot.Pitch = Pitch;
+				GetController()->SetControlRotation(CtrlRot);
+			}
+		}
+	}
+
+	// =====================================================================
+	//  Simulated proxy (remote player): skip all local movement, ground
+	//  following, and input.  Position comes from UE's movement replication.
+	// =====================================================================
+	const bool bIsSimProxy = !IsLocallyControlled() && !HasAuthority();
+
+	// MoveDir: captures the local movement direction for the animation section.
+	// For simulated proxies, stays zero (movement comes from replication).
+	FVector MoveDir = FVector::ZeroVector;
+	// Speed: used by walk animation momentum lean. Computed for locals below,
+	// estimated from position delta for sim proxies.
+	float Speed = 0.f;
+
+	// ---- Local-only movement, input, and ground following ---------------
+	if (!bIsSimProxy)
+	{
+
 	// ---- Process deferred vehicle interaction ---------------------------
 	if (bPendingVehicleInteract)
 	{
@@ -1091,7 +1150,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	}
 
 	// ---- Build horizontal movement direction ----------------------------
-	FVector MoveDir = PendingMoveInput;
+	MoveDir = PendingMoveInput;
 	MoveDir.Z = 0.f;
 	if (!MoveDir.IsNearlyZero())
 	{
@@ -1099,7 +1158,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	}
 	PendingMoveInput = FVector::ZeroVector;
 
-	const float Speed = bJetpackEquipped ? 3576.f : bRollerBladesEquipped ? (WalkSpeed * 3.f) : (bIsSprinting ? SprintSpeed : WalkSpeed);
+	Speed = bJetpackEquipped ? 3576.f : bClimbingGearEquipped ? 1500.f : bRollerBladesEquipped ? (WalkSpeed * 3.f) : (bIsSprinting ? SprintSpeed : WalkSpeed);
 
 	// ---- Jetpack hover mode ---------------------------------------------
 	if (bJetpackEquipped)
@@ -1140,6 +1199,121 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		}
 
 		// don't return — weapon/animation code runs below
+	}
+	else if (bClimbingGearEquipped)
+	{
+		// ---- Climbing gear mode ------------------------------------------------
+		const float ClimbSpeed = 1200.f;
+		const float ClimbHorizSpeed = 1500.f;
+
+		FVector Pos = GetActorLocation();
+		FCollisionQueryParams ClimbParams;
+		ClimbParams.AddIgnoredActor(this);
+
+		// 8-directional horizontal ray cast for omni-directional surface detection
+		const float TraceLen = 1000.f;
+		const float ChestZ = Pos.Z + 80.f;
+		const FVector TraceOrigin(Pos.X, Pos.Y, ChestZ);
+
+		FHitResult BestHit;
+		bool bFoundSurface = false;
+		float BestDist = TraceLen;
+
+		for (int32 D = 0; D < 8; ++D)
+		{
+			const float Angle = D * 45.f;
+			const float AR = FMath::DegreesToRadians(Angle);
+			const FVector Dir(FMath::Cos(AR), FMath::Sin(AR), 0.f);
+			FHitResult Hit;
+			if (GetWorld()->LineTraceSingleByChannel(Hit, TraceOrigin,
+				TraceOrigin + Dir * TraceLen, ECC_WorldStatic, ClimbParams))
+			{
+				if (!Hit.bStartPenetrating && Hit.Distance < BestDist)
+				{
+					BestDist = Hit.Distance;
+					BestHit = Hit;
+					bFoundSurface = true;
+				}
+			}
+		}
+
+		// Check floor below — extend well past one platform gap (400 UU spacing)
+		{
+			FHitResult FloorHit;
+			if (GetWorld()->LineTraceSingleByChannel(FloorHit,
+				FVector(Pos.X, Pos.Y, Pos.Z + 20.f),
+				FVector(Pos.X, Pos.Y, Pos.Z - 600.f),
+				ECC_WorldStatic, ClimbParams))
+			{
+				if (!FloorHit.bStartPenetrating)
+					bFoundSurface = true;
+			}
+		}
+
+		// Check ceiling above — detect platforms above while climbing between them
+		{
+			FHitResult CeilHit;
+			if (GetWorld()->LineTraceSingleByChannel(CeilHit,
+				FVector(Pos.X, Pos.Y, Pos.Z + 100.f),
+				FVector(Pos.X, Pos.Y, Pos.Z + 600.f),
+				ECC_WorldStatic, ClimbParams))
+			{
+				if (!CeilHit.bStartPenetrating)
+					bFoundSurface = true;
+			}
+		}
+
+		bIsClinging = bFoundSurface;
+
+		if (bIsClinging)
+		{
+			// Mobile: use look-Y for altitude
+			float VertInput = ClimbingVerticalInput;
+			if (bHUDTouchActive && FMath::Abs(TouchLookY) > 0.01f)
+			{
+				VertInput = FMath::Clamp(-TouchLookY * 3.f, -1.f, 1.f);
+			}
+
+			// Vertical movement
+			float NewZ = Pos.Z + VertInput * ClimbSpeed * DeltaTime;
+			if (NewZ < 58.f) NewZ = 58.f;
+
+			// Horizontal movement — slide along surface
+			if (!MoveDir.IsNearlyZero())
+			{
+				FVector HorizDelta = MoveDir * ClimbHorizSpeed * DeltaTime;
+				if (BestDist < 800.f && !BestHit.Normal.IsNearlyZero())
+				{
+					HorizDelta = FVector::VectorPlaneProject(HorizDelta, BestHit.Normal);
+				}
+				AddActorWorldOffset(FVector(HorizDelta.X, HorizDelta.Y, 0.f), false);
+			}
+
+			// Push toward wall to maintain contact
+			if (BestDist < 800.f && BestDist > 40.f)
+			{
+				const FVector ToWall = -BestHit.Normal * 80.f * DeltaTime;
+				AddActorWorldOffset(FVector(ToWall.X, ToWall.Y, 0.f), false);
+			}
+
+			SetActorLocation(FVector(GetActorLocation().X, GetActorLocation().Y, NewZ));
+			ManualVelocityZ = 0.f;
+			bHasBeenGrounded = true;
+		}
+		else
+		{
+			// Not near surface — normal gravity
+			if (!MoveDir.IsNearlyZero())
+			{
+				const FVector Delta = MoveDir * WalkSpeed * DeltaTime;
+				AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), false);
+			}
+
+			ManualVelocityZ -= 980.f * DeltaTime;
+			float NewZ = Pos.Z + ManualVelocityZ * DeltaTime;
+			if (NewZ <= 58.f) { NewZ = 58.f; ManualVelocityZ = 0.f; bHasBeenGrounded = true; }
+			SetActorLocation(FVector(GetActorLocation().X, GetActorLocation().Y, NewZ));
+		}
 	}
 	else
 	{
@@ -1285,13 +1459,38 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		SetActorRotation(FRotator(0.f, NewRot.Yaw, 0.f));
 	}
 
+	} // end if (!bIsSimProxy) — local movement/ground following
+
 	// =====================================================================
 	//  Walk Animation — natural human gait with spring-damped physics
 	//  Features: harmonic sine, torso twist, hip sway, head stabilization,
 	//  momentum lean, idle animation, hand/hair spring lag, breathing
 	// =====================================================================
 	{
-		const bool bMoving = !MoveDir.IsNearlyZero() && !bJetpackEquipped;
+		// For simulated proxies: detect movement from replicated position deltas.
+		bool bMoving;
+		if (bIsSimProxy)
+		{
+			const FVector CurPos = GetActorLocation();
+			const FVector PosDelta = CurPos - PrevTickLocation;
+			const FVector HorizDelta(PosDelta.X, PosDelta.Y, 0.f);
+			const float HorizSpeed = HorizDelta.Size() / FMath::Max(DeltaTime, 0.001f);
+			bMoving = HorizSpeed > 50.f;
+			Speed = HorizSpeed;
+			MoveDir = HorizDelta.GetSafeNormal();
+
+			// Orient remote character body toward movement direction.
+			if (bMoving && !MoveDir.IsNearlyZero())
+			{
+				const FRotator DesiredRot = MoveDir.Rotation();
+				const FRotator NewRot = FMath::RInterpTo(GetActorRotation(), DesiredRot, DeltaTime, 10.f);
+				SetActorRotation(FRotator(0.f, NewRot.Yaw, 0.f));
+			}
+		}
+		else
+		{
+			bMoving = !MoveDir.IsNearlyZero() && !bJetpackEquipped;
+		}
 		const float TargetBlend = bMoving ? 1.f : 0.f;
 		WalkAnimBlend = bJetpackEquipped ? 0.f : FMath::FInterpTo(WalkAnimBlend, TargetBlend, DeltaTime, 8.f);
 
@@ -2328,6 +2527,11 @@ void APHCCityCharacter::HandleLook(const FInputActionValue& Value)
 
 void APHCCityCharacter::HandleJumpStarted(const FInputActionValue& /*Value*/)
 {
+	if (bClimbingGearEquipped)
+	{
+		ClimbingVerticalInput = 1.f;
+		return;
+	}
 	if (bJetpackEquipped)
 	{
 		JetpackVerticalInput = 1.f; // ascend
@@ -2343,11 +2547,17 @@ void APHCCityCharacter::HandleJumpStarted(const FInputActionValue& /*Value*/)
 
 void APHCCityCharacter::HandleJumpCompleted(const FInputActionValue& /*Value*/)
 {
+	if (bClimbingGearEquipped) ClimbingVerticalInput = 0.f;
 	if (bJetpackEquipped) JetpackVerticalInput = 0.f;
 }
 
 void APHCCityCharacter::HandleSprintStarted(const FInputActionValue& /*Value*/)
 {
+	if (bClimbingGearEquipped)
+	{
+		ClimbingVerticalInput = -1.f;
+		return;
+	}
 	if (bJetpackEquipped)
 	{
 		JetpackVerticalInput = -1.f; // descend
@@ -2358,6 +2568,7 @@ void APHCCityCharacter::HandleSprintStarted(const FInputActionValue& /*Value*/)
 
 void APHCCityCharacter::HandleSprintCompleted(const FInputActionValue& /*Value*/)
 {
+	if (bClimbingGearEquipped) { ClimbingVerticalInput = 0.f; return; }
 	if (bJetpackEquipped) { JetpackVerticalInput = 0.f; return; }
 	bIsSprinting = false;
 }
@@ -3010,6 +3221,7 @@ void APHCCityCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(APHCCityCharacter, bIsSprinting);
+	DOREPLIFETIME(APHCCityCharacter, bIsTripping);
 }
 
 void APHCCityCharacter::ServerUpdateMovement_Implementation(FVector_NetQuantize NewLocation, FRotator NewRotation)
@@ -3071,6 +3283,7 @@ void APHCCityCharacter::ClientOnKilled_Implementation()
 void APHCCityCharacter::EquipJetpack()
 {
 	if (bJetpackEquipped) return;
+	if (bClimbingGearEquipped) UnequipClimbingGear();
 	bJetpackEquipped = true;
 
 	UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -3214,6 +3427,102 @@ void APHCCityCharacter::UnequipRollerBlades()
 {
 	if (!bRollerBladesEquipped) return;
 	bRollerBladesEquipped = false;
+}
+
+// ---------------------------------------------------------------------------
+// Climbing Gear
+// ---------------------------------------------------------------------------
+
+void APHCCityCharacter::EquipClimbingGear()
+{
+	if (bClimbingGearEquipped) return;
+	if (bJetpackEquipped) UnequipJetpack();
+	bClimbingGearEquipped = true;
+
+	UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	UStaticMesh* CylMesh  = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	UMaterial* ColorMat   = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCColor.M_PHCColor"));
+	if (!CubeMesh || !CylMesh || !ColorMat) return;
+
+	auto MakePart = [&](UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot,
+		const FVector& Scale, const FLinearColor& Col, float Metal, float Rough,
+		const FName& Name) -> UStaticMeshComponent*
+	{
+		auto* C = NewObject<UStaticMeshComponent>(this, Name);
+		C->SetStaticMesh(Mesh);
+		C->SetRelativeLocation(Loc);
+		C->SetRelativeRotation(Rot);
+		C->SetRelativeScale3D(Scale);
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->SetCastShadow(false);
+		auto* Mat = UMaterialInstanceDynamic::Create(ColorMat, C);
+		Mat->SetVectorParameterValue(TEXT("BaseColor"), Col);
+		Mat->SetScalarParameterValue(TEXT("Metallic"), Metal);
+		Mat->SetScalarParameterValue(TEXT("Roughness"), Rough);
+		C->SetMaterial(0, Mat);
+		C->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+		C->RegisterComponent();
+		return C;
+	};
+
+	const FLinearColor HarnessCol(0.10f, 0.10f, 0.10f);
+	const FLinearColor StrapCol(0.35f, 0.18f, 0.02f);
+	const FLinearColor CarabinerCol(0.70f, 0.72f, 0.68f);
+	const FLinearColor RopeCol(0.55f, 0.50f, 0.35f);
+
+	ClimbHarnessFrontMesh = MakePart(CubeMesh,
+		FVector(14.f, 0.f, 8.f), FRotator::ZeroRotator,
+		FVector(0.04f, 0.18f, 0.22f), HarnessCol, 0.2f, 0.75f, TEXT("ClimbHarnessFront"));
+
+	ClimbHarnessBackMesh = MakePart(CubeMesh,
+		FVector(-14.f, 0.f, 8.f), FRotator::ZeroRotator,
+		FVector(0.04f, 0.18f, 0.22f), HarnessCol, 0.2f, 0.75f, TEXT("ClimbHarnessBack"));
+
+	ClimbHarnessStrapL = MakePart(CubeMesh,
+		FVector(0.f, -10.f, 25.f), FRotator(15.f, 0.f, 0.f),
+		FVector(0.14f, 0.03f, 0.18f), StrapCol, 0.1f, 0.80f, TEXT("ClimbStrapL"));
+
+	ClimbHarnessStrapR = MakePart(CubeMesh,
+		FVector(0.f, 10.f, 25.f), FRotator(15.f, 0.f, 0.f),
+		FVector(0.14f, 0.03f, 0.18f), StrapCol, 0.1f, 0.80f, TEXT("ClimbStrapR"));
+
+	ClimbCarabinerL = MakePart(CylMesh,
+		FVector(6.f, -14.f, -10.f), FRotator(0.f, 0.f, 90.f),
+		FVector(0.025f, 0.025f, 0.03f), CarabinerCol, 0.90f, 0.25f, TEXT("ClimbCarabinerL"));
+
+	ClimbCarabinerR = MakePart(CylMesh,
+		FVector(6.f, 14.f, -10.f), FRotator(0.f, 0.f, 90.f),
+		FVector(0.025f, 0.025f, 0.03f), CarabinerCol, 0.90f, 0.25f, TEXT("ClimbCarabinerR"));
+
+	ClimbRopeCoilL = MakePart(CylMesh,
+		FVector(-8.f, -16.f, -6.f), FRotator(0.f, 0.f, 15.f),
+		FVector(0.06f, 0.06f, 0.04f), RopeCol, 0.0f, 0.85f, TEXT("ClimbRopeCoilL"));
+
+	ClimbRopeCoilR = MakePart(CylMesh,
+		FVector(-8.f, 16.f, -6.f), FRotator(0.f, 0.f, -15.f),
+		FVector(0.06f, 0.06f, 0.04f), RopeCol, 0.0f, 0.85f, TEXT("ClimbRopeCoilR"));
+}
+
+void APHCCityCharacter::UnequipClimbingGear()
+{
+	if (!bClimbingGearEquipped) return;
+	bClimbingGearEquipped = false;
+	bIsClinging = false;
+	ClimbingVerticalInput = 0.f;
+
+	auto Destroy = [](TObjectPtr<UStaticMeshComponent>& C)
+	{
+		if (C) { C->DestroyComponent(); C = nullptr; }
+	};
+
+	Destroy(ClimbHarnessFrontMesh);
+	Destroy(ClimbHarnessBackMesh);
+	Destroy(ClimbHarnessStrapL);
+	Destroy(ClimbHarnessStrapR);
+	Destroy(ClimbCarabinerL);
+	Destroy(ClimbCarabinerR);
+	Destroy(ClimbRopeCoilL);
+	Destroy(ClimbRopeCoilR);
 }
 
 // ---------------------------------------------------------------------------

@@ -150,6 +150,15 @@ public:
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Movement")
 	bool bIsSprinting = false;
 
+	/** True while the player is on a mushroom trip — replicated so other
+	 *  clients can hide this character (invisible to others while tripping). */
+	UPROPERTY(Replicated)
+	bool bIsTripping = false;
+
+	/** Local tracking: true when we've hidden this pawn because it's tripping
+	 *  (only set on non-owning clients to avoid re-setting visibility each frame). */
+	bool bTripHiddenLocally = false;
+
 	bool bPendingVehicleInteract = false;
 
 	/** Accumulated movement direction from HandleMove (camera-relative). */
@@ -195,6 +204,24 @@ public:
 
 	void EquipRollerBlades();
 	void UnequipRollerBlades();
+
+	// -- Climbing Gear --------------------------------------------------------
+
+	bool bClimbingGearEquipped = false;
+	float ClimbingVerticalInput = 0.f;  // +1 = ascend, -1 = descend
+	bool bIsClinging = false;           // true when surface detected nearby
+
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> ClimbHarnessFrontMesh;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> ClimbHarnessBackMesh;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> ClimbHarnessStrapL;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> ClimbHarnessStrapR;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> ClimbCarabinerL;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> ClimbCarabinerR;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> ClimbRopeCoilL;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> ClimbRopeCoilR;
+
+	void EquipClimbingGear();
+	void UnequipClimbingGear();
 
 	// -- Dagger weapon mesh ---------------------------------------------------
 

@@ -27,6 +27,8 @@
 #include "Components/TextRenderComponent.h"
 #include "Vehicle/PHCMissileProjectile.h"
 #include "Player/PHCCityCharacter.h"
+#include "Camera/CameraComponent.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "EngineUtils.h"
 #include "Engine/Texture2D.h"
 #include "TextureResource.h"
@@ -421,8 +423,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		const float DawnDuskFactor = 1.f - FMath::Abs(SunSine);
 		const float Elevation = FMath::Max(0.f, SunSine);
 
-		PP.BloomThreshold = FMath::Lerp(1.0f, 0.2f, NF);
-		PP.BloomIntensity = FMath::Lerp(0.8f, 1.2f, NF);
+		PP.BloomThreshold = FMath::Lerp(1.5f, 0.3f, NF);
+		PP.BloomIntensity = FMath::Lerp(0.7f, 1.0f, NF);
 
 		// GTA V 4-phase color grading (ColorGain + ColorOffset)
 		// Determine time-of-day phase: dawn (T~0), day (T~0.25), sunset (T~0.5), night (T~0.75)
@@ -430,27 +432,27 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		FVector4 TargetOffset;
 		if (T < 0.125f || T >= 0.875f)
 		{
-			// Dawn: warm pink-amber
-			TargetGain = FVector4(1.15f, 0.95f, 0.85f, 1.0f);
-			TargetOffset = FVector4(0.02f, 0.005f, -0.01f, 0.0f);
+			// Dawn: rose-gold highlights with warm lifted shadows
+			TargetGain = FVector4(1.18f, 0.93f, 0.82f, 1.0f);
+			TargetOffset = FVector4(0.025f, 0.008f, -0.012f, 0.0f);
 		}
 		else if (T < 0.375f)
 		{
-			// Day: subtle warm
-			TargetGain = FVector4(1.02f, 1.00f, 0.96f, 1.0f);
-			TargetOffset = FVector4(0.0f, 0.0f, 0.0f, 0.0f);
+			// Day: clean neutral with subtle warmth
+			TargetGain = FVector4(1.04f, 1.02f, 0.97f, 1.0f);
+			TargetOffset = FVector4(0.002f, 0.001f, -0.003f, 0.0f);
 		}
 		else if (T < 0.625f)
 		{
-			// Sunset: golden amber
-			TargetGain = FVector4(1.20f, 0.90f, 0.70f, 1.0f);
-			TargetOffset = FVector4(0.03f, 0.01f, -0.02f, 0.0f);
+			// Sunset: deep golden amber with crushed blue channel
+			TargetGain = FVector4(1.25f, 0.88f, 0.65f, 1.0f);
+			TargetOffset = FVector4(0.04f, 0.012f, -0.025f, 0.0f);
 		}
 		else
 		{
-			// Night: darker desaturated blue
-			TargetGain = FVector4(0.28f, 0.31f, 0.38f, 1.0f);
-			TargetOffset = FVector4(-0.02f, -0.015f, 0.003f, 0.0f);
+			// Night: moody blue with crushed shadows
+			TargetGain = FVector4(0.24f, 0.28f, 0.40f, 1.0f);
+			TargetOffset = FVector4(-0.025f, -0.012f, 0.008f, 0.0f);
 		}
 		// Smooth interpolation to target
 		PP.ColorGain = FMath::Lerp(PP.ColorGain, TargetGain, FMath::Min(1.f, DeltaTime * 2.f));
@@ -462,10 +464,25 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		const float WarmB = FMath::Lerp(0.92f, 1.02f, NF);
 		PP.ColorGamma = FVector4(WarmR, WarmG, WarmB, 1.0f);
 
-		PP.VignetteIntensity = FMath::Lerp(0.25f, 0.32f, DawnDuskFactor);
+		PP.VignetteIntensity = FMath::Lerp(0.35f, 0.42f, DawnDuskFactor);
 
-		PP.AutoExposureMinBrightness = FMath::Lerp(0.5f, 0.01f, NF);
-		PP.AutoExposureMaxBrightness = FMath::Lerp(3.0f, 0.48f, NF);
+		// Dynamic saturation — boost during golden hour, desaturate at night
+		{
+			float TargetSat;
+			if (T < 0.125f || T >= 0.875f || (T >= 0.375f && T < 0.625f))
+				TargetSat = 1.08f;  // golden hour boost
+			else if (T >= 0.625f && T < 0.875f)
+				TargetSat = 0.85f;  // night desaturate
+			else
+				TargetSat = 1.0f;   // day neutral
+			PP.bOverride_ColorSaturation = true;
+			PP.ColorSaturation = FMath::Lerp(PP.ColorSaturation,
+				FVector4(TargetSat, TargetSat, TargetSat, 1.0f),
+				FMath::Min(1.f, DeltaTime * 2.f));
+		}
+
+		PP.AutoExposureMinBrightness = FMath::Lerp(0.08f, 0.005f, NF);
+		PP.AutoExposureMaxBrightness = FMath::Lerp(4.0f, 0.6f, NF);
 
 		// ---- Depth of Field: sharper when walking, blurry background when driving ----
 		// Check if any local player is currently possessing a vehicle
@@ -478,8 +495,10 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 					PC->GetPawn()->GetClass()->GetName().Contains(TEXT("Vehicle")));
 			}
 		}
-		const float TargetFstop = 22.0f; // keep sharp always (DOF disabled for mobile perf)
+		const float TargetFstop = bDriving ? 8.f : 11.f;
+		const float TargetFocal = bDriving ? 6000.f : 4000.f;
 		PP.DepthOfFieldFstop = FMath::FInterpTo(PP.DepthOfFieldFstop, TargetFstop, DeltaTime, 3.f);
+		PP.DepthOfFieldFocalDistance = FMath::FInterpTo(PP.DepthOfFieldFocalDistance, TargetFocal, DeltaTime, 3.f);
 	}
 
 	// ---- God ray toggle (disable when sun below horizon) ----
@@ -513,6 +532,39 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		{
 			// Second layer drifts slower for parallax
 			CloudLayerActor2->AddActorWorldOffset(FVector(CloudDrift * 0.6f, CloudDrift * 0.15f, 0.f));
+		}
+		if (CloudLayerActor3)
+		{
+			// Third layer drifts slowest for deep parallax depth
+			CloudLayerActor3->AddActorWorldOffset(FVector(CloudDrift * 0.35f, -CloudDrift * 0.1f, 0.f));
+		}
+	}
+
+	// ---- Atmospheric dust motes — follow camera with gentle drift ----
+	if (DustMoteActor && DustMotes.Num() > 0)
+	{
+		FVector CamPos = FVector::ZeroVector;
+		if (UWorld* W = GetWorld())
+		{
+			if (APlayerController* PC = W->GetFirstPlayerController())
+			{
+				if (APawn* P = PC->GetPawn())
+					CamPos = P->GetActorLocation();
+			}
+		}
+		DustMoteActor->SetActorLocation(CamPos);
+
+		const float GT = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+		for (int32 i = 0; i < DustMotes.Num(); ++i)
+		{
+			if (DustMotes[i])
+			{
+				FVector Drift(
+					FMath::Sin(GT * 0.3f + i * 1.7f) * 15.f,
+					FMath::Cos(GT * 0.25f + i * 2.3f) * 15.f,
+					FMath::Sin(GT * 0.4f + i * 0.9f) * 8.f);
+				DustMotes[i]->AddRelativeLocation(Drift * DeltaTime);
+			}
 		}
 	}
 
@@ -969,12 +1021,16 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			}
 		}
 
-		// Get player location once
+		// Get player location once (invisible to NPCs while tripping)
 		FVector PlayerLoc = FVector::ZeroVector;
+		bool bPlayerTripping = false;
 		if (APlayerController* PC = World->GetFirstPlayerController())
 		{
-			if (APawn* Pawn = PC->GetPawn())
-				PlayerLoc = Pawn->GetActorLocation();
+			if (APHCCityCharacter* PChar = Cast<APHCCityCharacter>(PC->GetPawn()))
+			{
+				PlayerLoc = PChar->GetActorLocation();
+				bPlayerTripping = PChar->bIsTripping;
+			}
 		}
 
 		if (bCrabsNightVisible)
@@ -991,11 +1047,22 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 
 			// --- Movement: approach player but keep distance ---
 			FVector CPos = CD.Actor->GetActorLocation();
+
+			FVector MoveDir;
+			if (bPlayerTripping)
+			{
+				// Player is tripping — crabs wander randomly instead of chasing
+				float WanderAngle = (CI * 137.f + GetWorld()->GetTimeSeconds() * 0.3f);
+				WanderAngle = FMath::Fmod(WanderAngle, 360.f);
+				float WR = FMath::DegreesToRadians(WanderAngle);
+				MoveDir = FVector(FMath::Cos(WR), FMath::Sin(WR), 0.f);
+			}
+			else
+			{
 			FVector ToPlayer = PlayerLoc - CPos;
 			ToPlayer.Z = 0;
 			const float DistToPlayer = ToPlayer.Size2D();
 
-			FVector MoveDir;
 			if (DistToPlayer > MinPlayerDist)
 			{
 				// Far away — walk toward player
@@ -1012,6 +1079,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 				FVector Outward = -ToPlayer.GetSafeNormal2D();
 				float InwardBias = (DistToPlayer < PaceRadius) ? 0.4f : -0.1f;
 				MoveDir = (Tangent + Outward * InwardBias).GetSafeNormal2D();
+			}
 			}
 
 			FVector NewPos = CPos + MoveDir * CrabSpeed * DeltaTime;
@@ -1161,8 +1229,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			// NPC player proximity damage — removed (no more NPC players)
 		}
 
-		// --- Crab contact damage to player ---
-		if (PlayerChar && PlayerChar->Health > 0.f)
+		// --- Crab contact damage to player (immune while tripping) ---
+		if (PlayerChar && PlayerChar->Health > 0.f && !bPlayerTripping)
 		{
 			const float ContactRadius = 450.f;
 			const float ContactDamage = 25.f;
@@ -1514,6 +1582,488 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		}
 	}
 
+	// ---- Mushroom Psychedelic Trip Effect ----
+	if (MushroomTripTimer >= 0.f && PostProcessVolume)
+	{
+		MushroomTripTimer += DeltaTime;
+
+		if (MushroomTripTimer >= MushroomTripDuration)
+		{
+			// Trip ended — reset everything
+			MushroomTripTimer = -1.f;
+			MushroomTripDuration = 180.f;
+			TripDoseCount = 0;
+			TripIntensityMultiplier = 1.f;
+			TripIntensity = 0.f;
+			TripFixationAlpha = 0.f;
+			if (UWorld* W = GetWorld())
+			{
+				if (APlayerController* PC = W->GetFirstPlayerController())
+				{
+					if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+					{
+						Char->FollowCamera->SetFieldOfView(TripBaseFOV);
+						Char->CameraBoom->TargetArmLength = 450.f;
+						Char->CameraBoom->SocketOffset = FVector(0.f, 75.f, 60.f);
+						FRotator R = Char->GetActorRotation();
+						Char->SetActorRotation(FRotator(R.Pitch, R.Yaw, 0.f));
+						Char->bIsTripping = false;
+					}
+				}
+			}
+			static IConsoleVariable* TAAWeightCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.TemporalAACurrentFrameWeight"));
+			if (TAAWeightCVar) TAAWeightCVar->Set(0.1f);
+
+			// Destroy world-space hallucination actor
+			if (TripHallucinationActor)
+			{
+				TripHallucinationActor->Destroy();
+				TripHallucinationActor = nullptr;
+			}
+			TripGroundMesh = nullptr;
+			TripGroundMID = nullptr;
+			TripTriCount = 0;
+			bTripHallucinationsSpawned = false;
+
+			// Restore sun and fog colors
+			if (SunLightComp)
+				SunLightComp->SetLightColor(FLinearColor::White);
+			if (FogComp)
+			{
+				FogComp->SetFogInscatteringColor(FLinearColor(0.45f, 0.55f, 0.65f));
+				FogComp->SetFogHeightFalloff(0.08f);
+				// Density will be restored by day/night cycle on next tick
+			}
+
+			// Restore world materials from trip morphing
+			if (GroundSlabMID)
+			{
+				GroundSlabMID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.12f, 0.18f, 0.08f));
+				GroundSlabMID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
+			}
+			for (auto& RoadMat : RoadMaterials)
+			{
+				if (!RoadMat) continue;
+				RoadMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.04f, 0.04f, 0.05f));
+				RoadMat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
+			}
+			for (auto& WinMat : NightWindowMaterials)
+			{
+				if (!WinMat) continue;
+				// Window emissive will be restored by day/night cycle on next tick
+				WinMat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
+			}
+			if (SkyLightComp)
+				SkyLightComp->SetLightColor(FLinearColor(0.6f, 0.7f, 1.0f));
+		}
+		else
+		{
+			FPostProcessSettings& PP = PostProcessVolume->Settings;
+			const float TT = MushroomTripTimer;
+			const float GT = GetWorld() ? GetWorld()->GetTimeSeconds() : TT;
+
+			// === TRIP ENVELOPE (scales with dynamic duration) ===
+			const float FadeInEnd = 30.f;
+			const float FadeOutStart = MushroomTripDuration - 40.f;
+			float Envelope;
+			if (TT < FadeInEnd)
+			{
+				float A = TT / FadeInEnd;
+				Envelope = A * A * A;
+			}
+			else if (TT < FadeOutStart)
+			{
+				Envelope = 1.f;
+			}
+			else
+			{
+				float A = (TT - FadeOutStart) / 40.f;
+				Envelope = FMath::Max(1.f - A * A, 0.f);
+			}
+
+			// === MACRO WAVE INTENSITY ===
+			const float MacroWave =
+				0.55f * FMath::Sin(GT * 0.0503f) +
+				0.30f * FMath::Sin(GT * 0.0311f + 1.7f) +
+				0.15f * FMath::Sin(GT * 0.0171f + 3.9f);
+			const float WaveIntensity = 0.65f + 0.35f * MacroWave;
+			const float BaseIntensity = Envelope * WaveIntensity;
+			const float Intensity = FMath::Min(BaseIntensity * TripIntensityMultiplier, 1.f);
+			TripIntensity = Intensity; // store for HUD access
+			// Overdrive allows select effects to exceed normal peak (capped at 2x)
+			const float Overdrive = FMath::Min(BaseIntensity * TripIntensityMultiplier, 2.f);
+
+			// === FIXATION DETECTION ===
+			float FixationTarget = 0.f;
+			if (UWorld* W = GetWorld())
+			{
+				if (APlayerController* PC = W->GetFirstPlayerController())
+				{
+					FRotator CamRot = PC->GetControlRotation();
+					FRotator RotDiff = (CamRot - TripLastCameraRot).GetNormalized();
+					float RotDelta = FMath::Abs(RotDiff.Pitch) + FMath::Abs(RotDiff.Yaw) + FMath::Abs(RotDiff.Roll);
+					TripLastCameraRot = CamRot;
+					FixationTarget = (RotDelta < 0.5f) ? 1.f : 0.f;
+				}
+			}
+			const float FixationSpeed = (FixationTarget > TripFixationAlpha) ? 0.5f : 3.3f;
+			TripFixationAlpha = FMath::FInterpTo(TripFixationAlpha, FixationTarget, DeltaTime, FixationSpeed);
+			const float FixMul = 0.5f + 0.5f * TripFixationAlpha;
+
+			// === WORLD-SPACE HALLUCINATIONS ===
+			{
+				FVector PlayerPos = FVector::ZeroVector;
+				if (UWorld* W = GetWorld())
+				{
+					if (APlayerController* PC = W->GetFirstPlayerController())
+					{
+						if (APawn* P = PC->GetPawn())
+							PlayerPos = P->GetActorLocation();
+					}
+				}
+
+				// 10-color palette (DMT hyperspace — neon, electric, self-luminous)
+				static const FLinearColor TripPalette[] = {
+					FLinearColor(0.00f, 0.27f, 1.00f),  // hyperspace blue
+					FLinearColor(0.61f, 0.19f, 1.00f),  // neon purple
+					FLinearColor(1.00f, 0.40f, 0.00f),  // deep orange
+					FLinearColor(1.00f, 0.84f, 0.00f),  // shimmering gold
+					FLinearColor(0.00f, 1.00f, 0.50f),  // emerald green
+					FLinearColor(1.00f, 0.00f, 1.00f),  // electric magenta
+					FLinearColor(0.00f, 0.40f, 0.80f),  // dark electric blue
+					FLinearColor(1.00f, 0.55f, 0.00f),  // chrysanthemum orange
+					FLinearColor(0.40f, 0.00f, 0.80f),  // void purple
+					FLinearColor(0.00f, 0.90f, 0.90f),  // electric teal
+				};
+				constexpr int32 PalSize = 10;
+
+				auto SamplePal = [&](float PalT) -> FLinearColor
+				{
+					PalT = FMath::Frac(PalT) * PalSize;
+					const int32 I0 = FMath::FloorToInt32(PalT) % PalSize;
+					const int32 I1 = (I0 + 1) % PalSize;
+					return FMath::Lerp(TripPalette[I0], TripPalette[I1],
+						PalT - FMath::FloorToFloat(PalT));
+				};
+
+				// Spawn ground shadow tiles on first frame
+				if (!bTripHallucinationsSpawned && GetWorld())
+				{
+					bTripHallucinationsSpawned = true;
+					FActorSpawnParameters SpawnParams;
+					SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+					TripHallucinationActor = GetWorld()->SpawnActor<AActor>(
+						AActor::StaticClass(), PlayerPos, FRotator::ZeroRotator, SpawnParams);
+					if (TripHallucinationActor)
+					{
+						TripHallucinationActor->SetRootComponent(
+							NewObject<USceneComponent>(TripHallucinationActor, TEXT("TripRoot")));
+						TripHallucinationActor->GetRootComponent()->RegisterComponent();
+					}
+
+					// Spawn triangular floor shadows — dark tessellated triangles on ground
+					if (ColorMaterial && TripHallucinationActor)
+					{
+						const int32 GN = TripGridN;
+						const float TS = TripTileSize;
+						const float Half = GN * TS * 0.5f;
+						TripTriCount = GN * GN * 2;
+						const int32 NumVerts = TripTriCount * 3;
+
+						TArray<FVector> Verts;
+						TArray<int32> Tris;
+						TArray<FVector> Normals;
+						TArray<FVector2D> UVs;
+						TArray<FColor> Colors;
+						TArray<FProcMeshTangent> Tangents;
+
+						Verts.Reserve(NumVerts);
+						Tris.Reserve(NumVerts);
+						Normals.Reserve(NumVerts);
+						UVs.Reserve(NumVerts);
+						Colors.Reserve(NumVerts);
+
+						int32 VI = 0;
+						const FVector Up(0.f, 0.f, 1.f);
+
+						for (int32 gy = 0; gy < GN; ++gy)
+						{
+							for (int32 gx = 0; gx < GN; ++gx)
+							{
+								const float X0 = -Half + gx * TS;
+								const float Y0 = -Half + gy * TS;
+								const float X1 = X0 + TS;
+								const float Y1 = Y0 + TS;
+
+								const float CX = (X0 + X1) * 0.5f;
+								const float CY = (Y0 + Y1) * 0.5f;
+								const float Shrink = 0.80f;
+								const float SX0 = CX + (X0 - CX) * Shrink;
+								const float SY0 = CY + (Y0 - CY) * Shrink;
+								const float SX1 = CX + (X1 - CX) * Shrink;
+								const float SY1 = CY + (Y1 - CY) * Shrink;
+
+								// Triangle A
+								Verts.Add(FVector(SX0, SY0, 8.f));
+								Verts.Add(FVector(SX1, SY0, 8.f));
+								Verts.Add(FVector(SX0, SY1, 8.f));
+								Normals.Add(Up); Normals.Add(Up); Normals.Add(Up);
+								UVs.Add(FVector2D(0,0)); UVs.Add(FVector2D(1,0)); UVs.Add(FVector2D(0,1));
+								Colors.Add(FColor::Black); Colors.Add(FColor::Black); Colors.Add(FColor::Black);
+								Tris.Add(VI); Tris.Add(VI+1); Tris.Add(VI+2);
+								VI += 3;
+
+								// Triangle B
+								Verts.Add(FVector(SX1, SY0, 8.f));
+								Verts.Add(FVector(SX1, SY1, 8.f));
+								Verts.Add(FVector(SX0, SY1, 8.f));
+								Normals.Add(Up); Normals.Add(Up); Normals.Add(Up);
+								UVs.Add(FVector2D(1,0)); UVs.Add(FVector2D(1,1)); UVs.Add(FVector2D(0,1));
+								Colors.Add(FColor::Black); Colors.Add(FColor::Black); Colors.Add(FColor::Black);
+								Tris.Add(VI); Tris.Add(VI+1); Tris.Add(VI+2);
+								VI += 3;
+							}
+						}
+
+						TripGroundMesh = NewObject<UProceduralMeshComponent>(
+							TripHallucinationActor, TEXT("TripGroundPMC"));
+						TripGroundMesh->AttachToComponent(
+							TripHallucinationActor->GetRootComponent(),
+							FAttachmentTransformRules::KeepRelativeTransform);
+						TripGroundMesh->CreateMeshSection(0, Verts, Tris, Normals, UVs, Colors, Tangents, false);
+						TripGroundMesh->SetWorldLocation(FVector(PlayerPos.X, PlayerPos.Y, 0.f));
+						TripGroundMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+						TripGroundMesh->CastShadow = false;
+						TripGroundMesh->RegisterComponent();
+
+						TripGroundMID = UMaterialInstanceDynamic::Create(ColorMaterial, TripGroundMesh);
+						TripGroundMID->SetScalarParameterValue(TEXT("Roughness"), 1.f);
+						TripGroundMID->SetScalarParameterValue(TEXT("Metallic"), 0.f);
+						TripGroundMID->SetVectorParameterValue(TEXT("BaseColor"),
+							FLinearColor(0.03f, 0.03f, 0.03f));
+						TripGroundMesh->SetMaterial(0, TripGroundMID);
+					}
+				}
+
+				// Animate fog + sun + ground tiles
+				if (bTripHallucinationsSpawned && TripHallucinationActor)
+				{
+					if (SunLightComp)
+					{
+						FLinearColor SunTint = SamplePal(GT * 0.04f);
+						SunLightComp->SetLightColor(FMath::Lerp(
+							FLinearColor::White, SunTint, Intensity));
+					}
+
+					if (FogComp)
+					{
+						FLinearColor FogTint = SamplePal(GT * 0.03f + 0.5f);
+						FogComp->SetFogInscatteringColor(FMath::Lerp(
+							FLinearColor(0.45f, 0.55f, 0.65f), FogTint, Intensity));
+					}
+
+					// Animate triangular floor shadows — follow player
+					if (TripGroundMesh && TripTriCount > 0)
+					{
+						TripGroundMesh->SetWorldLocation(FVector(PlayerPos.X, PlayerPos.Y, 0.f));
+					}
+
+					// === WORLD MORPHING — Full mandala palette colors + intensity ===
+
+					// Ground — pure palette color with strong emissive glow
+					if (GroundSlabMID)
+					{
+						FLinearColor GroundCol = SamplePal(GT * 0.05f + 0.3f);
+						GroundSlabMID->SetVectorParameterValue(TEXT("BaseColor"),
+							FMath::Lerp(FLinearColor(0.12f, 0.18f, 0.08f), GroundCol, Intensity));
+						GroundSlabMID->SetVectorParameterValue(TEXT("EmissiveColor"),
+							GroundCol * 2.f * Intensity);
+					}
+
+					// Roads — pure palette color with strong emissive glow
+					for (int32 i = 0; i < RoadMaterials.Num(); ++i)
+					{
+						if (!RoadMaterials[i]) continue;
+						FLinearColor RoadCol = SamplePal(GT * 0.04f + i * 0.07f);
+						RoadMaterials[i]->SetVectorParameterValue(TEXT("BaseColor"),
+							FMath::Lerp(FLinearColor(0.04f, 0.04f, 0.05f), RoadCol, Intensity));
+						RoadMaterials[i]->SetVectorParameterValue(TEXT("EmissiveColor"),
+							RoadCol * 3.f * Intensity);
+					}
+
+					// Windows — vivid palette emissive matching mandala brightness
+					for (int32 i = 0; i < NightWindowMaterials.Num(); ++i)
+					{
+						if (!NightWindowMaterials[i]) continue;
+						FLinearColor WinCol = SamplePal(GT * 0.06f + i * 0.05f);
+						NightWindowMaterials[i]->SetVectorParameterValue(TEXT("EmissiveColor"),
+							WinCol * 8.f * Intensity);
+					}
+
+					// Fog — vivid colored mist at mandala intensity
+					if (FogComp)
+					{
+						const float BaseDensity = FMath::Lerp(0.0004f, 0.0015f,
+							FMath::Clamp(FMath::Sin(DayNightTime * PI * 2.f) * -0.5f + 0.5f, 0.f, 1.f));
+						const float TripDensity = FMath::Lerp(BaseDensity,
+							0.008f + 0.004f * FMath::Sin(GT * 0.2f), Intensity);
+						FogComp->SetFogDensity(TripDensity);
+						FogComp->SetFogHeightFalloff(FMath::Lerp(0.08f, 0.01f, Intensity));
+					}
+
+					// Sky light — full palette color
+					if (SkyLightComp)
+					{
+						FLinearColor SkyCol = SamplePal(GT * 0.03f + 0.7f);
+						SkyLightComp->SetLightColor(FMath::Lerp(
+							FLinearColor(0.6f, 0.7f, 1.0f), SkyCol, Intensity));
+					}
+
+				}
+			}
+
+			// === 1. COLOR — impossibly vivid, self-luminous (DMT-accurate) ===
+			// Extreme saturation — "brighter than bright", colors beyond normal vision
+			const float SatBoost = 1.f + 1.50f * Overdrive;
+			PP.bOverride_ColorSaturation = true;
+			PP.ColorSaturation = FVector4(SatBoost, SatBoost, SatBoost, 1.0f);
+
+			// Aggressive hue cycling — electric color shifts, emotionally reactive
+			const float WarmCool = FMath::Sin(GT * 0.15f);
+			const float ColorAmp = 0.25f * Intensity;
+			PP.bOverride_ColorGain = true;
+			PP.ColorGain.X = 1.f + ColorAmp * (0.7f * WarmCool + 0.5f * FMath::Sin(GT * 0.31f));
+			PP.ColorGain.Y = 1.f + ColorAmp * (0.4f * FMath::Sin(GT * 0.23f + 1.5f));
+			PP.ColorGain.Z = 1.f + ColorAmp * (-0.6f * WarmCool + 0.6f * FMath::Sin(GT * 0.19f + 3.f));
+			// Electric magenta/purple pulses — DMT signature colors
+			const float MagentaPulse = 0.15f * Intensity * FixMul;
+			PP.ColorGain.X += MagentaPulse * FMath::Abs(FMath::Sin(GT * 0.41f + 0.8f));
+			PP.ColorGain.Z += MagentaPulse * FMath::Abs(FMath::Sin(GT * 0.41f + 0.8f));
+
+			// Color contrast boost — hyper-vivid, synthetic look (DMT "plastic" effect)
+			PP.bOverride_ColorContrast = true;
+			PP.ColorContrast = FVector4(1.f + 0.25f * Intensity, 1.f + 0.25f * Intensity,
+				1.f + 0.25f * Intensity, 1.f);
+
+			// === 2. BLOOM — self-luminous glow, everything radiates light (DMT) ===
+			const float BloomBreath = 0.20f * FMath::Sin(GT * 1.885f);
+			PP.BloomIntensity += (2.5f + BloomBreath) * Intensity;
+			PP.BloomThreshold = FMath::Max(PP.BloomThreshold - 0.8f * Intensity, 0.f);
+			PP.bOverride_BloomSizeScale = true;
+			PP.BloomSizeScale = 1.f + 3.f * Intensity;
+
+			// === 3. CHROMATIC ABERRATION — rainbow color blending, re-doses push harder ===
+			const float ChromaBreath = FMath::Sin(GT * 1.257f);
+			const float Chroma = Overdrive * (6.f + 3.f * ChromaBreath * FixMul);
+			PP.SceneFringeIntensity = FMath::Max(PP.SceneFringeIntensity, Chroma);
+
+			// === 4. VIGNETTE ===
+			const float VigPulse = 0.10f * Intensity * FMath::Sin(GT * 1.257f);
+			PP.VignetteIntensity += 0.15f * Intensity + VigPulse;
+
+			// === 5. DEPTH OF FIELD — heavy focus swimming ===
+			const float FocalDrift = 3000.f * Intensity * FixMul * (
+				0.50f * FMath::Sin(GT * 0.131f) +
+				0.30f * FMath::Sin(GT * 0.217f + 1.4f) +
+				0.20f * FMath::Sin(GT * 0.073f + 3.8f));
+			PP.DepthOfFieldFstop = FMath::Lerp(PP.DepthOfFieldFstop, 1.8f, Intensity * 0.5f);
+			PP.DepthOfFieldFocalDistance = 3000.f + FocalDrift;
+
+			// === 6. FILM GRAIN ===
+			PP.bOverride_FilmGrainIntensity = true;
+			PP.FilmGrainIntensity = 0.08f * Intensity;
+
+			// === 7. TRACERS — moderate (won't desaturate) ===
+			PP.bOverride_MotionBlurAmount = true;
+			PP.MotionBlurAmount = 2.5f * Intensity;
+			PP.bOverride_MotionBlurMax = true;
+			PP.MotionBlurMax = 10.f * Intensity;
+			PP.bOverride_MotionBlurTargetFPS = true;
+			PP.MotionBlurTargetFPS = FMath::Lerp(60, 24, Intensity);
+			{
+				static IConsoleVariable* TAAWeightCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.TemporalAACurrentFrameWeight"));
+				if (TAAWeightCVar)
+					TAAWeightCVar->Set(FMath::Lerp(0.1f, 0.05f, Intensity));
+			}
+
+			// === 8. AUTO EXPOSURE — subtle pupil dilation ===
+			const float ExpShift = 0.3f * Intensity;
+			PP.AutoExposureMinBrightness *= (1.f + ExpShift * FMath::Sin(GT * 0.23f));
+			PP.AutoExposureMaxBrightness *= (1.f + ExpShift * FMath::Sin(GT * 0.14f + 1.f));
+
+			// === 9. CAMERA DISTORTION ===
+			if (UWorld* W = GetWorld())
+			{
+				if (APlayerController* PC = W->GetFirstPlayerController())
+				{
+					if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+					{
+						if (TT < DeltaTime * 2.f)
+							TripBaseFOV = Char->FollowCamera->FieldOfView;
+
+						const float I = Overdrive * FixMul;
+
+						// Breathing: FOV + boom arm — heavy morphing
+						const float BreathPhase = GT * 1.257f;
+						const float FOVBreath =
+							FMath::Sin(BreathPhase) * 10.f +
+							FMath::Sin(GT * 0.628f + 2.1f) * 6.f +
+							FMath::Sin(GT * 1.885f + 0.7f) * 4.f;
+						const float BoomBreathVal =
+							FMath::Sin(BreathPhase + 1.571f) * 70.f +
+							FMath::Sin(GT * 0.628f + 2.1f + 1.571f) * 45.f +
+							FMath::Sin(GT * 1.885f + 0.7f + 1.571f) * 25.f;
+
+						Char->FollowCamera->SetFieldOfView(TripBaseFOV + FOVBreath * I);
+						Char->CameraBoom->TargetArmLength = 450.f + BoomBreathVal * I;
+
+						// Camera roll — heavy swirl
+						const float SwirlSpeed = 0.21f;
+						const float SwirlAngle = GT * SwirlSpeed * 57.296f;
+						const float SwirlDeg = FMath::Fmod(SwirlAngle, 360.f);
+						const float SwirlAmp = 5.f + 3.f * FMath::Sin(GT * 0.311f);
+						const float SwirlVal = SwirlAmp * FMath::Sin(FMath::DegreesToRadians(SwirlDeg));
+						const float TiltVal =
+							FMath::Sin(GT * 0.197f + 2.8f) * 2.f +
+							FMath::Sin(GT * 0.523f + 5.1f) * 1.2f;
+						const float Roll = SwirlVal + TiltVal;
+						FRotator CurrentRot = Char->GetActorRotation();
+						Char->SetActorRotation(FRotator(CurrentRot.Pitch, CurrentRot.Yaw, Roll * I));
+
+						// Pitch/yaw wobble — stronger drift
+						const float YawWobble =
+							FMath::Sin(GT * 3.17f) * 0.18f +
+							FMath::Sin(GT * 5.23f + 1.3f) * 0.12f +
+							FMath::Sin(GT * 7.91f + 4.1f) * 0.07f +
+							FMath::Sin(GT * 1.41f + 2.7f) * 0.25f;
+						const float PitchWobble =
+							FMath::Sin(GT * 2.83f + 0.5f) * 0.18f +
+							FMath::Sin(GT * 4.71f + 3.6f) * 0.12f +
+							FMath::Sin(GT * 6.67f + 1.9f) * 0.07f +
+							FMath::Sin(GT * 1.13f + 5.2f) * 0.25f;
+						PC->AddYawInput(YawWobble * I);
+						PC->AddPitchInput(PitchWobble * I);
+
+						// Socket offset drift — wider orbit
+						const float OrbitPhase = GT * SwirlSpeed;
+						const float OrbitRadius = 50.f;
+						const float CircY = FMath::Cos(OrbitPhase) * OrbitRadius;
+						const float CircZ = FMath::Sin(OrbitPhase) * OrbitRadius;
+						const float DriftY =
+							FMath::Sin(GT * 0.341f + 0.8f) * 35.f +
+							FMath::Sin(GT * 0.197f + 3.2f) * 22.f;
+						const float DriftZ =
+							FMath::Sin(GT * 0.271f + 2.5f) * 28.f +
+							FMath::Sin(GT * 0.157f + 5.7f) * 18.f;
+						Char->CameraBoom->SocketOffset = FVector(0.f,
+							75.f + (CircY + DriftY) * I,
+							60.f + (CircZ + DriftZ) * I);
+					}
+				}
+			}
+		}
+	}
+
 	// ---- Gold Coin Spin / Pickup / Respawn ----
 	{
 		// Get pawn location (works for both character and vehicle)
@@ -1619,6 +2169,113 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 									CityHUD->UpdateCurrencyDisplay(GI->LocalPlayerProfile.Coins, GI->LocalPlayerProfile.Gems);
 								}
 							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// ---- Collectible Mushroom Bob / Pickup / Respawn / Trip ----
+	{
+		FVector PawnLoc2 = FVector::ZeroVector;
+		bool bHasPawn2 = false;
+		if (World)
+		{
+			if (APlayerController* PC = World->GetFirstPlayerController())
+			{
+				if (APawn* Pawn = PC->GetPawn())
+				{
+					PawnLoc2 = Pawn->GetActorLocation();
+					bHasPawn2 = true;
+				}
+			}
+		}
+
+		const float GT = World ? World->GetTimeSeconds() : 0.f;
+
+		for (int32 MI = 0; MI < CollectibleMushrooms.Num(); ++MI)
+		{
+			FMushroomData& MD = CollectibleMushrooms[MI];
+			if (!MD.Actor) continue;
+
+			// --- Pickup animation in progress ---
+			if (MD.PickupAnimTimer >= 0.f)
+			{
+				MD.PickupAnimTimer += DeltaTime;
+				const float AnimDuration = 0.5f;
+				const float Alpha = FMath::Clamp(MD.PickupAnimTimer / AnimDuration, 0.f, 1.f);
+				const float Scale = FMath::Lerp(1.f, 0.f, Alpha);
+
+				MD.Actor->SetActorScale3D(FVector(Scale));
+				MD.Actor->SetActorLocation(FVector(MD.CurrentPos.X, MD.CurrentPos.Y,
+					MD.CurrentPos.Z + Alpha * 80.f));
+
+				if (MD.PickupAnimTimer >= AnimDuration)
+				{
+					MD.Actor->SetActorHiddenInGame(true);
+					if (MD.GlowLight) MD.GlowLight->SetVisibility(false);
+					MD.PickupAnimTimer = -1.f;
+					MD.RespawnTimer = 60.f; // respawn after 60s
+				}
+				continue;
+			}
+
+			// --- Respawn timer ---
+			if (MD.RespawnTimer >= 0.f)
+			{
+				MD.RespawnTimer -= DeltaTime;
+				if (MD.RespawnTimer <= 0.f)
+				{
+					MD.Actor->SetActorLocation(MD.OriginalSpawnPos);
+					MD.CurrentPos = MD.OriginalSpawnPos;
+					MD.Actor->SetActorScale3D(FVector(1.f));
+					MD.Actor->SetActorHiddenInGame(false);
+					if (MD.GlowLight) MD.GlowLight->SetVisibility(true);
+					MD.RespawnTimer = -1.f;
+				}
+				continue;
+			}
+
+			// --- Active: bob animation + light pulse ---
+			const float Bob = FMath::Sin(GT * 2.f + MD.BobPhase) * 8.f;
+			MD.Actor->SetActorLocation(FVector(MD.CurrentPos.X, MD.CurrentPos.Y,
+				MD.CurrentPos.Z + Bob));
+
+			// Pulse the glow light
+			if (MD.GlowLight)
+			{
+				const float Pulse = 0.7f + 0.3f * FMath::Sin(GT * 3.f + MD.BobPhase);
+				MD.GlowLight->SetIntensity(8000.f * Pulse);
+			}
+
+			// --- Proximity pickup ---
+			if (bHasPawn2 && FVector::Dist(PawnLoc2, MD.CurrentPos) < 350.f)
+			{
+				MD.PickupAnimTimer = 0.f;
+
+				if (MushroomTripTimer >= 0.f)
+				{
+					// Re-dose — extend trip and increase intensity
+					TripDoseCount++;
+					MushroomTripDuration += 120.f;  // +120s per re-dose
+					TripIntensityMultiplier = FMath::Min(TripIntensityMultiplier + 0.70f, 3.f);
+				}
+				else
+				{
+					// First dose — start the trip
+					MushroomTripTimer = 0.f;
+					MushroomTripDuration = 180.f;
+					TripDoseCount = 1;
+					TripIntensityMultiplier = 1.f;
+
+					// Mark character as tripping (replicated — hides from other players/NPCs)
+					if (UWorld* TW = GetWorld())
+					{
+						if (APlayerController* TPC = TW->GetFirstPlayerController())
+						{
+							if (APHCCityCharacter* TChar = Cast<APHCCityCharacter>(TPC->GetPawn()))
+								TChar->bIsTripping = true;
 						}
 					}
 				}
@@ -2483,6 +3140,83 @@ void UPHCCitySubsystem::SpawnGoldCoins()
 	UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnGoldCoins -- Spawned %d gold coins."), NumGoldCoins);
 }
 
+void UPHCCitySubsystem::SpawnCollectibleMushrooms()
+{
+	UWorld* W = GetWorld();
+	if (!W || !SphereMesh || !CylinderMesh || !ColorMaterial) return;
+
+	// Jungle bounds
+	const float JMinX = -45000.f, JMaxX = 75000.f;
+	const float JMinY = -162000.f, JMaxY = -106000.f;
+
+	FRandomStream MushRand(7777);
+	const int32 NumOriginalMushrooms = 12;
+
+	for (int32 MI = 0; MI < NumOriginalMushrooms; ++MI)
+	{
+		CollectibleMushrooms.AddDefaulted();
+		FMushroomData& MD = CollectibleMushrooms.Last();
+
+		const float X = MushRand.FRandRange(JMinX + 3000.f, JMaxX - 3000.f);
+		const float Y = MushRand.FRandRange(JMinY + 3000.f, JMaxY - 3000.f);
+		const float Z = GetTerrainHeight(X, Y) + 40.f;
+		const FVector SpawnPos(X, Y, Z);
+
+		MD.OriginalSpawnPos = SpawnPos;
+		MD.CurrentPos = SpawnPos;
+		MD.BobPhase = MushRand.FRand() * PI * 2.f;
+
+		AActor* MA = W->SpawnActor<AActor>(AActor::StaticClass(),
+			SpawnPos, FRotator::ZeroRotator);
+		if (!MA) continue;
+		MD.Actor = MA;
+
+#if WITH_EDITOR
+		MA->SetActorLabel(*FString::Printf(TEXT("CollectMushroom_%d"), MI));
+#endif
+
+		// Stem
+		UStaticMeshComponent* Stem = NewObject<UStaticMeshComponent>(MA,
+			*FString::Printf(TEXT("MStem_%d"), MI));
+		Stem->SetStaticMesh(CylinderMesh);
+		Stem->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Stem->SetWorldLocation(SpawnPos + FVector(0.f, 0.f, 20.f));
+		Stem->SetWorldScale3D(FVector(0.12f, 0.12f, 0.40f));
+		Stem->RegisterComponent();
+		MA->SetRootComponent(Stem);
+		ApplyPBR(Stem, FLinearColor(0.75f, 0.70f, 0.80f), 0.f, 0.75f,
+			FLinearColor(0.20f, 0.05f, 0.35f)); // faint purple emissive
+
+		// Cap
+		UStaticMeshComponent* Cap = NewObject<UStaticMeshComponent>(MA,
+			*FString::Printf(TEXT("MCap_%d"), MI));
+		Cap->SetStaticMesh(SphereMesh);
+		Cap->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Cap->SetWorldLocation(SpawnPos + FVector(0.f, 0.f, 55.f));
+		Cap->SetWorldScale3D(FVector(0.45f, 0.45f, 0.20f));
+		Cap->AttachToComponent(Stem, FAttachmentTransformRules::KeepWorldTransform);
+		Cap->RegisterComponent();
+		const FLinearColor CapColor(0.55f, 0.10f, 0.75f);
+		ApplyPBR(Cap, CapColor, 0.f, 0.70f,
+			CapColor * 4.f); // strong purple emissive glow
+
+		// Point light — bioluminescent purple beacon
+		UPointLightComponent* PL = NewObject<UPointLightComponent>(MA,
+			*FString::Printf(TEXT("MLight_%d"), MI));
+		PL->SetWorldLocation(SpawnPos + FVector(0.f, 0.f, 60.f));
+		PL->SetIntensity(8000.f);
+		PL->SetAttenuationRadius(900.f);
+		PL->SetLightColor(FLinearColor(0.50f, 0.08f, 0.80f));
+		PL->CastShadows = false;
+		PL->AttachToComponent(Stem, FAttachmentTransformRules::KeepWorldTransform);
+		PL->RegisterComponent();
+		MD.GlowLight = PL;
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnCollectibleMushrooms -- Spawned %d mushrooms."),
+		CollectibleMushrooms.Num());
+}
+
 void UPHCCitySubsystem::SpawnGrassSystem()
 {
 	UWorld* World = GetWorld();
@@ -2606,6 +3340,59 @@ void UPHCCitySubsystem::UpdateGrassInstances(const FVector& PlayerLoc)
 }
 
 // ---------------------------------------------------------------------------
+// Visual Polish — atmospheric dust motes near camera
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::SpawnVisualPolish()
+{
+	UWorld* World = GetWorld();
+	if (!World || !SphereMesh || !GlassMaterial) return;
+
+	// Atmospheric dust motes — 40 tiny translucent spheres that follow the camera
+	DustMoteActor = World->SpawnActor<AActor>(AActor::StaticClass(),
+		FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!DustMoteActor) return;
+#if WITH_EDITOR
+	DustMoteActor->SetActorLabel(TEXT("DustMotes"));
+#endif
+
+	USceneComponent* Root = NewObject<USceneComponent>(DustMoteActor, TEXT("DustRoot"));
+	Root->RegisterComponent();
+	DustMoteActor->SetRootComponent(Root);
+
+	FRandomStream DustRand(9999);
+	const int32 NumMotes = 40;
+	DustMotes.Reserve(NumMotes);
+
+	for (int32 i = 0; i < NumMotes; ++i)
+	{
+		UStaticMeshComponent* Mote = NewObject<UStaticMeshComponent>(
+			DustMoteActor, *FString::Printf(TEXT("Dust_%d"), i));
+		Mote->SetStaticMesh(SphereMesh);
+		Mote->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Mote->SetCastShadow(false);
+		const float S = DustRand.FRandRange(0.005f, 0.015f);
+		Mote->SetWorldScale3D(FVector(S));
+		Mote->SetRelativeLocation(FVector(
+			DustRand.FRandRange(-800.f, 800.f),
+			DustRand.FRandRange(-800.f, 800.f),
+			DustRand.FRandRange(50.f, 400.f)));
+		Mote->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+
+		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(GlassMaterial, Mote);
+		if (Mat)
+		{
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.9f, 0.9f, 0.85f));
+			Mat->SetScalarParameterValue(TEXT("Opacity"), DustRand.FRandRange(0.08f, 0.20f));
+			Mat->SetScalarParameterValue(TEXT("Roughness"), 1.f);
+			Mote->SetMaterial(0, Mat);
+		}
+		Mote->RegisterComponent();
+		DustMotes.Add(Mote);
+	}
+}
+
+// ---------------------------------------------------------------------------
 void UPHCCitySubsystem::SpawnCityEnvironment()
 {
 	LoadDestroyedVehicleState();
@@ -2632,7 +3419,9 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnUndergroundCavern();
 	SpawnGiantCrab();
 	SpawnGoldCoins();
+	SpawnCollectibleMushrooms();
 	SpawnGrassSystem();
+	SpawnVisualPolish();
 	SpawnNPCHelicopter();
 	// SpawnNPCPlayers(); // Removed — real players only
 
@@ -2672,11 +3461,11 @@ void UPHCCitySubsystem::SpawnGround()
 	// ScaleZ=0.02 → 2 UU thick, half-height=1.  Center at TopZ-3 so terrain
 	// chunks (at Z=0) always render on top without z-fighting.
 	auto SpawnGroundSlab = [&](float TopZ, const FVector& XYLoc,
-		const FVector& XYScale, const TCHAR* Label)
+		const FVector& XYScale, const TCHAR* Label) -> UMaterialInstanceDynamic*
 	{
 		const FVector Loc(XYLoc.X, XYLoc.Y, TopZ - 3.f);
 		AActor* GA = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
-		if (!GA) return;
+		if (!GA) return nullptr;
 #if WITH_EDITOR
 		GA->SetActorLabel(Label);
 #endif
@@ -2699,11 +3488,12 @@ void UPHCCitySubsystem::SpawnGround()
 			MC->SetMaterial(0, Mat);
 		}
 		GA->AddInstanceComponent(MC);
+		return Mat;
 	};
 
 	// Main city ground: doubled map — covers ±126,000 UU.
 	// Coastline zone starts at 126k where ocean ramps begin.
-	SpawnGroundSlab(0.f, FVector(0.f, 0.f, 0.f), FVector(2520.f, 2520.f, 1.f), TEXT("CityGround"));
+	GroundSlabMID = SpawnGroundSlab(0.f, FVector(0.f, 0.f, 0.f), FVector(2520.f, 2520.f, 1.f), TEXT("CityGround"));
 
 	// Northwest fill: extends ground beyond north edge
 	SpawnGroundSlab(0.f, FVector(-30000.f, 75000.f, 0.f), FVector(700.f, 200.f, 1.f), TEXT("NorthwestFill"));
@@ -6714,7 +7504,7 @@ void UPHCCitySubsystem::SpawnJungle()
 	}
 
 	// ================================================================
-	// LAYER 15: Mushroom clusters
+	// LAYER 15: Mushroom clusters — collectible (added to CollectibleMushrooms)
 	// ================================================================
 	for (int32 mc = 0; mc < 40; ++mc)
 	{
@@ -6725,30 +7515,88 @@ void UPHCCitySubsystem::SpawnJungle()
 		float MCTZ = GetTerrainHeight(MCX, MCY);
 		int32 NM = CityRandom.RandRange(3, 6);
 
+		// Bioluminescent purple palette for mushroom caps
 		FLinearColor MushroomCol[] = {
-			FLinearColor(0.80f, 0.15f, 0.08f), FLinearColor(0.85f, 0.75f, 0.20f),
-			FLinearColor(0.90f, 0.85f, 0.75f), FLinearColor(0.55f, 0.30f, 0.15f),
+			FLinearColor(0.45f, 0.05f, 0.65f), FLinearColor(0.55f, 0.10f, 0.80f),
+			FLinearColor(0.35f, 0.08f, 0.55f), FLinearColor(0.60f, 0.15f, 0.70f),
 		};
 		FLinearColor MCol = MushroomCol[CityRandom.RandRange(0, 3)];
 
+		const FVector ClusterPos(MCX, MCY, MCTZ + 40.f);
+
+		// Spawn a collectible actor for this cluster
+		AActor* MA = W->SpawnActor<AActor>(AActor::StaticClass(),
+			ClusterPos, FRotator::ZeroRotator);
+		if (!MA) continue;
+#if WITH_EDITOR
+		MA->SetActorLabel(*FString::Printf(TEXT("JungleMushroom_%d"), mc));
+#endif
+
+		// First stem is root component
+		UStaticMeshComponent* RootStem = nullptr;
+
 		for (int32 mi = 0; mi < NM; ++mi)
 		{
-			float MX = MCX + CityRandom.FRandRange(-80.f, 80.f);
-			float MY = MCY + CityRandom.FRandRange(-80.f, 80.f);
+			float MX = CityRandom.FRandRange(-80.f, 80.f);
+			float MY = CityRandom.FRandRange(-80.f, 80.f);
 			float MH = CityRandom.FRandRange(25.f, 60.f);
 			float MR = CityRandom.FRandRange(8.f, 20.f);
 
 			// Stem
-			JC(CylinderMesh, FVector(MX, MY, MCTZ + MH * 0.5f),
-				FRotator::ZeroRotator,
-				FVector(MR * 0.4f / 50.f, MR * 0.4f / 50.f, MH / 100.f),
-				FLinearColor(0.85f, 0.80f, 0.70f), 0.75f);
+			auto* StemC = NewObject<UStaticMeshComponent>(MA,
+				*FString::Printf(TEXT("JS_%d_%d"), mc, mi));
+			StemC->SetStaticMesh(CylinderMesh);
+			StemC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			StemC->SetRelativeLocation(FVector(MX, MY, MH * 0.5f));
+			StemC->SetWorldScale3D(FVector(MR * 0.4f / 50.f, MR * 0.4f / 50.f, MH / 100.f));
+			StemC->SetCastShadow(false);
+			if (mi == 0)
+			{
+				MA->SetRootComponent(StemC);
+				RootStem = StemC;
+			}
+			else if (RootStem)
+			{
+				StemC->AttachToComponent(RootStem, FAttachmentTransformRules::KeepRelativeTransform);
+			}
+			StemC->RegisterComponent();
+			ApplyPBR(StemC, FLinearColor(0.70f, 0.65f, 0.75f), 0.f, 0.75f,
+				FLinearColor(0.15f, 0.02f, 0.25f));
 
 			// Cap
-			JC(SphereMesh, FVector(MX, MY, MCTZ + MH),
-				FRotator::ZeroRotator,
-				FVector(MR / 50.f, MR / 50.f, MR * 0.4f / 50.f), MCol, 0.70f);
+			auto* CapC = NewObject<UStaticMeshComponent>(MA,
+				*FString::Printf(TEXT("JC_%d_%d"), mc, mi));
+			CapC->SetStaticMesh(SphereMesh);
+			CapC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			CapC->SetRelativeLocation(FVector(MX, MY, MH));
+			CapC->SetWorldScale3D(FVector(MR / 50.f, MR / 50.f, MR * 0.4f / 50.f));
+			CapC->SetCastShadow(false);
+			if (RootStem)
+				CapC->AttachToComponent(RootStem, FAttachmentTransformRules::KeepRelativeTransform);
+			CapC->RegisterComponent();
+			ApplyPBR(CapC, MCol, 0.f, 0.70f, MCol * 3.f);
 		}
+
+		// Point light — purple bioluminescent glow
+		UPointLightComponent* PL = NewObject<UPointLightComponent>(MA,
+			*FString::Printf(TEXT("JML_%d"), mc));
+		PL->SetWorldLocation(ClusterPos + FVector(0.f, 0.f, 20.f));
+		PL->SetIntensity(5000.f);
+		PL->SetAttenuationRadius(600.f);
+		PL->SetLightColor(FLinearColor(0.50f, 0.08f, 0.75f));
+		PL->CastShadows = false;
+		if (RootStem)
+			PL->AttachToComponent(RootStem, FAttachmentTransformRules::KeepWorldTransform);
+		PL->RegisterComponent();
+
+		// Register as collectible
+		FMushroomData MD;
+		MD.Actor = MA;
+		MD.GlowLight = PL;
+		MD.OriginalSpawnPos = ClusterPos;
+		MD.CurrentPos = ClusterPos;
+		MD.BobPhase = CityRandom.FRand() * PI * 2.f;
+		CollectibleMushrooms.Add(MD);
 	}
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: spawned %d components + palm trees"), CI);
@@ -7924,6 +8772,7 @@ void UPHCCitySubsystem::SpawnCloudLayer()
 
 	CloudLayerActor = SpawnCloudPlane(15000.f, 0.10f, TEXT("CloudLayer1"));
 	CloudLayerActor2 = SpawnCloudPlane(16500.f, 0.08f, TEXT("CloudLayer2"));
+	CloudLayerActor3 = SpawnCloudPlane(30000.f, 0.05f, TEXT("CloudLayer3"));
 }
 
 // ---------------------------------------------------------------------------
