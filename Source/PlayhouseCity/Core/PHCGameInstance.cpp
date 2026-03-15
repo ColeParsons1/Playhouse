@@ -19,6 +19,10 @@
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
 #include "Serialization/JsonSerializer.h"
+#include "Misc/CoreDelegates.h"
+#if PLATFORM_IOS
+#import <UserNotifications/UserNotifications.h>
+#endif
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -56,11 +60,15 @@ void UPHCGameInstance::Init()
 	bPendingServerConnect = true;
 
 	CreateSubsystems();
+
+	SetupPushNotifications();
 }
 
 void UPHCGameInstance::Shutdown()
 {
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCGameInstance::Shutdown -- Tearing down PlayhouseCity game instance."));
+
+	FCoreDelegates::ApplicationRegisteredForRemoteNotificationsDelegate.RemoveAll(this);
 
 	DestroySubsystems();
 
@@ -102,6 +110,11 @@ void UPHCGameInstance::HandleLoginSuccess(const FString& InToken, const FPHCPlay
 		*InProfile.Username, InProfile.PlayerId);
 
 	OnLoginSuccess.Broadcast(LocalPlayerProfile);
+
+	if (!APNsDeviceToken.IsEmpty() && !bDeviceTokenRegistered)
+	{
+		RegisterDeviceTokenWithBackend();
+	}
 }
 
 void UPHCGameInstance::SaveCoinsToBackend()
@@ -134,6 +147,8 @@ void UPHCGameInstance::HandleLogout()
 	LocalPlayerProfile = FPHCPlayerProfile();
 
 	OnLogoutComplete.Broadcast();
+
+	bDeviceTokenRegistered = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +244,89 @@ void UPHCGameInstance::LeaveGame()
 
 	bInMultiplayerSession = false;
 	bIsHost = false;
+}
+
+// ---------------------------------------------------------------------------
+// Push Notifications
+// ---------------------------------------------------------------------------
+
+void UPHCGameInstance::SetupPushNotifications()
+{
+#if PLATFORM_IOS
+	FCoreDelegates::ApplicationRegisteredForRemoteNotificationsDelegate.AddUObject(
+		this, &UPHCGameInstance::OnRegisteredForRemoteNotifications);
+
+	dispatch_async(dispatch_get_main_queue(), ^{
+		UNUserNotificationCenter* Center = [UNUserNotificationCenter currentNotificationCenter];
+		[Center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound | UNAuthorizationOptionBadge)
+			completionHandler:^(BOOL granted, NSError* _Nullable error) {
+				if (granted)
+				{
+					dispatch_async(dispatch_get_main_queue(), ^{
+						[[UIApplication sharedApplication] registerForRemoteNotifications];
+					});
+				}
+			}];
+	});
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("SetupPushNotifications -- Requested iOS notification permission."));
+#endif
+}
+
+void UPHCGameInstance::OnRegisteredForRemoteNotifications(TArray<uint8> InToken)
+{
+	FString HexToken;
+	for (uint8 Byte : InToken)
+	{
+		HexToken += FString::Printf(TEXT("%02x"), Byte);
+	}
+
+	APNsDeviceToken = HexToken;
+	UE_LOG(LogPlayhouseCity, Log, TEXT("APNs device token received: %s"), *APNsDeviceToken);
+
+	if (bIsLoggedIn && !bDeviceTokenRegistered)
+	{
+		RegisterDeviceTokenWithBackend();
+	}
+}
+
+void UPHCGameInstance::RegisterDeviceTokenWithBackend()
+{
+	if (APNsDeviceToken.IsEmpty() || LocalPlayerProfile.PlayerId <= 0)
+	{
+		return;
+	}
+
+	TSharedPtr<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("device_token"), APNsDeviceToken);
+	Body->SetNumberField(TEXT("player_id"), LocalPlayerProfile.PlayerId);
+	Body->SetStringField(TEXT("platform"), TEXT("ios"));
+
+	FString BodyStr;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&BodyStr);
+	FJsonSerializer::Serialize(Body.ToSharedRef(), Writer);
+
+	const FString Url = ServerBaseUrl / TEXT("api/push/register-device/");
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetURL(Url);
+	Request->SetVerb(TEXT("POST"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetContentAsString(BodyStr);
+	Request->OnProcessRequestComplete().BindLambda(
+		[this](FHttpRequestPtr Req, FHttpResponsePtr Resp, bool bSuccess)
+		{
+			if (bSuccess && Resp.IsValid() && Resp->GetResponseCode() >= 200 && Resp->GetResponseCode() < 300)
+			{
+				bDeviceTokenRegistered = true;
+				UE_LOG(LogPlayhouseCity, Log, TEXT("Device token registered with backend."));
+			}
+			else
+			{
+				UE_LOG(LogPlayhouseCity, Warning, TEXT("Failed to register device token. HTTP %d"),
+					Resp.IsValid() ? Resp->GetResponseCode() : 0);
+			}
+		});
+	Request->ProcessRequest();
 }
 
 // ---------------------------------------------------------------------------

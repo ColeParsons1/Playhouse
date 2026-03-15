@@ -152,6 +152,23 @@ public:
 	 *  since ClientTravel will reload the map anyway. */
 	bool bPendingServerConnect = false;
 
+	// -- Push Notifications ---------------------------------------------------
+
+	/** APNs device token (hex string), captured on iOS. */
+	FString APNsDeviceToken;
+
+	/** True once the device token has been POSTed to the backend. */
+	bool bDeviceTokenRegistered = false;
+
+	/** Request notification permission and bind the token delegate. */
+	void SetupPushNotifications();
+
+	/** Called when iOS provides the APNs device token. */
+	void OnRegisteredForRemoteNotifications(TArray<uint8> InToken);
+
+	/** POST the device token to the Django backend. */
+	void RegisterDeviceTokenWithBackend();
+
 private:
 	// -- Owned subsystem instances (outer = this) -----------------------------
 

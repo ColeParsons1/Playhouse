@@ -36,4 +36,8 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+
+private:
+	/** Notify Django backend that a player joined, triggering push notifications. */
+	void NotifyBackendPlayerJoined(int32 PlayerId, const FString& Username);
 };

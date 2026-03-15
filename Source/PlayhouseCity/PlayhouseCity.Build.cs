@@ -44,6 +44,7 @@ public class PlayhouseCity : ModuleRules
 		if (Target.Platform == UnrealTargetPlatform.IOS)
 		{
 			PublicFrameworks.Add("AuthenticationServices");
+			PublicFrameworks.Add("UserNotifications");
 		}
 
 		DynamicallyLoadedModuleNames.AddRange(new string[]
