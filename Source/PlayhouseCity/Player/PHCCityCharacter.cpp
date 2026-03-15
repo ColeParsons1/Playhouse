@@ -3860,7 +3860,8 @@ bool APHCCityCharacter::IsVehicleUnlocked(int32 VehicleType) const
 	{
 		if (UPHCGameInstance* GI = Cast<UPHCGameInstance>(W->GetGameInstance()))
 		{
-			if (GI->LocalPlayerProfile.Username == TEXT("Dev"))
+			if (GI->LocalPlayerProfile.Username == TEXT("Dev")
+				|| GI->LocalPlayerProfile.Username == TEXT("Walker"))
 				return true;
 		}
 	}
