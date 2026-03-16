@@ -115,6 +115,177 @@ bool UPHCCityHUD::Initialize()
 		GemSlot->SetVerticalAlignment(VAlign_Center);
 
 		// ============================================================
+		//  TOP-RIGHT: Military PPI Radar
+		// ============================================================
+		{
+			const float Half = MinimapSize * 0.5f;
+			const FLinearColor RadarGreen(0.0f, 1.0f, 0.3f, 1.f);
+			const FLinearColor RadarGreenDim(0.0f, 0.6f, 0.15f, 0.35f);
+			const FLinearColor RadarBG(0.02f, 0.06f, 0.02f, 0.85f);
+			const FSlateFontInfo RadarFont(
+				FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 10);
+
+			// Dark green-black background
+			MinimapBorder = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("MinimapBorder"));
+			MinimapBorder->SetBrushColor(RadarBG);
+			MinimapBorder->SetPadding(FMargin(0.f));
+
+			UCanvasPanelSlot* MmSlot = RootCanvas->AddChildToCanvas(MinimapBorder);
+			MmSlot->SetAnchors(FAnchors(1.f, 0.f, 1.f, 0.f));
+			MmSlot->SetAlignment(FVector2D(1.f, 0.f));
+			MmSlot->SetAutoSize(false);
+			MmSlot->SetPosition(FVector2D(-10.f, 82.f));
+			MmSlot->SetSize(FVector2D(MinimapSize, MinimapSize));
+
+			MinimapCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(
+				UCanvasPanel::StaticClass(), TEXT("MinimapCanvas"));
+			MinimapBorder->SetContent(MinimapCanvas);
+
+			// Outer ring (bright green border)
+			RadarRingOuter = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("RadarRingOuter"));
+			RadarRingOuter->SetBrushColor(FLinearColor(0.0f, 0.8f, 0.2f, 0.5f));
+			RadarRingOuter->SetPadding(FMargin(1.f));
+			{
+				UBorder* RingClear = WidgetTree->ConstructWidget<UBorder>(
+					UBorder::StaticClass(), TEXT("RadarRingOuterClear"));
+				RingClear->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.f)); // transparent center
+				RingClear->SetPadding(FMargin(0.f));
+				RadarRingOuter->SetContent(RingClear);
+			}
+			UCanvasPanelSlot* OutSlot = MinimapCanvas->AddChildToCanvas(RadarRingOuter);
+			OutSlot->SetSize(FVector2D(MinimapSize, MinimapSize));
+			OutSlot->SetPosition(FVector2D(0.f, 0.f));
+			OutSlot->SetAutoSize(false);
+
+			// Inner range ring (50% radius)
+			RadarRingInner = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("RadarRingInner"));
+			RadarRingInner->SetBrushColor(RadarGreenDim);
+			RadarRingInner->SetPadding(FMargin(1.f));
+			{
+				UBorder* InClear = WidgetTree->ConstructWidget<UBorder>(
+					UBorder::StaticClass(), TEXT("RadarRingInnerClear"));
+				InClear->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
+				InClear->SetPadding(FMargin(0.f));
+				RadarRingInner->SetContent(InClear);
+			}
+			const float InnerDiam = MinimapSize * 0.5f;
+			UCanvasPanelSlot* InSlot = MinimapCanvas->AddChildToCanvas(RadarRingInner);
+			InSlot->SetSize(FVector2D(InnerDiam, InnerDiam));
+			InSlot->SetPosition(FVector2D(Half - InnerDiam * 0.5f, Half - InnerDiam * 0.5f));
+			InSlot->SetAutoSize(false);
+
+			// Crosshair lines (horizontal)
+			RadarCrossH = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("RadarCrossH"));
+			RadarCrossH->SetBrushColor(RadarGreenDim);
+			RadarCrossH->SetPadding(FMargin(0.f));
+			UCanvasPanelSlot* CHSlot = MinimapCanvas->AddChildToCanvas(RadarCrossH);
+			CHSlot->SetSize(FVector2D(MinimapSize, 1.f));
+			CHSlot->SetPosition(FVector2D(0.f, Half));
+			CHSlot->SetAutoSize(false);
+
+			// Crosshair lines (vertical)
+			RadarCrossV = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("RadarCrossV"));
+			RadarCrossV->SetBrushColor(RadarGreenDim);
+			RadarCrossV->SetPadding(FMargin(0.f));
+			UCanvasPanelSlot* CVSlot = MinimapCanvas->AddChildToCanvas(RadarCrossV);
+			CVSlot->SetSize(FVector2D(1.f, MinimapSize));
+			CVSlot->SetPosition(FVector2D(Half, 0.f));
+			CVSlot->SetAutoSize(false);
+
+			// Sweep line (animated rotating line from center)
+			RadarSweepLine = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("RadarSweepLine"));
+			RadarSweepLine->SetBrushColor(FLinearColor(0.0f, 1.0f, 0.3f, 0.6f));
+			RadarSweepLine->SetPadding(FMargin(0.f));
+			UCanvasPanelSlot* SwSlot = MinimapCanvas->AddChildToCanvas(RadarSweepLine);
+			SwSlot->SetSize(FVector2D(2.f, Half));
+			SwSlot->SetPosition(FVector2D(Half - 1.f, 0.f)); // starts pointing up
+			SwSlot->SetAutoSize(false);
+
+			// Cardinal direction labels — N
+			RadarLabelN = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("RadarN"));
+			RadarLabelN->SetText(FText::FromString(TEXT("N")));
+			RadarLabelN->SetFont(RadarFont);
+			RadarLabelN->SetColorAndOpacity(FSlateColor(RadarGreen));
+			UCanvasPanelSlot* NSlot = MinimapCanvas->AddChildToCanvas(RadarLabelN);
+			NSlot->SetPosition(FVector2D(Half - 5.f, 2.f));
+			NSlot->SetAutoSize(true);
+
+			// S
+			RadarLabelS = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("RadarS"));
+			RadarLabelS->SetText(FText::FromString(TEXT("S")));
+			RadarLabelS->SetFont(RadarFont);
+			RadarLabelS->SetColorAndOpacity(FSlateColor(RadarGreen));
+			UCanvasPanelSlot* SSlot = MinimapCanvas->AddChildToCanvas(RadarLabelS);
+			SSlot->SetPosition(FVector2D(Half - 4.f, MinimapSize - 16.f));
+			SSlot->SetAutoSize(true);
+
+			// E
+			RadarLabelE = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("RadarE"));
+			RadarLabelE->SetText(FText::FromString(TEXT("E")));
+			RadarLabelE->SetFont(RadarFont);
+			RadarLabelE->SetColorAndOpacity(FSlateColor(RadarGreen));
+			UCanvasPanelSlot* ESlot = MinimapCanvas->AddChildToCanvas(RadarLabelE);
+			ESlot->SetPosition(FVector2D(MinimapSize - 14.f, Half - 7.f));
+			ESlot->SetAutoSize(true);
+
+			// W
+			RadarLabelW = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), TEXT("RadarW"));
+			RadarLabelW->SetText(FText::FromString(TEXT("W")));
+			RadarLabelW->SetFont(RadarFont);
+			RadarLabelW->SetColorAndOpacity(FSlateColor(RadarGreen));
+			UCanvasPanelSlot* WSlot = MinimapCanvas->AddChildToCanvas(RadarLabelW);
+			WSlot->SetPosition(FVector2D(3.f, Half - 7.f));
+			WSlot->SetAutoSize(true);
+
+			// Local player blip (bright green triangle-like dot at center)
+			MinimapLocalDot = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("MinimapLocalDot"));
+			MinimapLocalDot->SetBrushColor(RadarGreen);
+			MinimapLocalDot->SetPadding(FMargin(0.f));
+			UCanvasPanelSlot* LocalDotSlot = MinimapCanvas->AddChildToCanvas(MinimapLocalDot);
+			LocalDotSlot->SetSize(FVector2D(6.f, 6.f));
+			LocalDotSlot->SetPosition(FVector2D(Half - 3.f, Half - 3.f));
+			LocalDotSlot->SetAutoSize(false);
+
+			// Direction indicator (heading line from center)
+			MinimapDirectionIndicator = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), TEXT("MinimapDirIndicator"));
+			MinimapDirectionIndicator->SetBrushColor(FLinearColor(1.f, 1.f, 1.f, 0.9f));
+			MinimapDirectionIndicator->SetPadding(FMargin(0.f));
+			UCanvasPanelSlot* DirSlot = MinimapCanvas->AddChildToCanvas(MinimapDirectionIndicator);
+			DirSlot->SetSize(FVector2D(2.f, 16.f));
+			DirSlot->SetPosition(FVector2D(Half - 1.f, Half - 22.f));
+			DirSlot->SetAutoSize(false);
+
+			// Pre-create 8 blip widgets (reused from pool)
+			for (int32 i = 0; i < 8; ++i)
+			{
+				UBorder* Dot = WidgetTree->ConstructWidget<UBorder>(
+					UBorder::StaticClass(), *FString::Printf(TEXT("MinimapDot%d"), i));
+				Dot->SetBrushColor(RadarGreen);
+				Dot->SetPadding(FMargin(0.f));
+				Dot->SetVisibility(ESlateVisibility::Collapsed);
+
+				UCanvasPanelSlot* DotSlot = MinimapCanvas->AddChildToCanvas(Dot);
+				DotSlot->SetSize(FVector2D(6.f, 6.f));
+				DotSlot->SetPosition(FVector2D(0.f, 0.f));
+				DotSlot->SetAutoSize(false);
+
+				MinimapPlayerDots.Add(Dot);
+			}
+		}
+
+		// ============================================================
 		//  TOP-CENTER: Live location monitor (X, Y, Z coordinates)
 		// ============================================================
 		{
@@ -2490,6 +2661,9 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
+	// Update minimap radar with player positions
+	UpdateMinimap(InDeltaTime);
+
 	// Update speedometer + live location monitor
 	if (LocationText)
 	{
@@ -2644,52 +2818,53 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		}
 	}
 
-	// Animate trip mandala overlays — spinning layers with breathing opacity
-	if (APlayerController* TripPC = GetOwningPlayer())
-	{
-		if (UPHCCitySubsystem* Sub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
-		{
-			const float TripInt = Sub->TripIntensity;
-			if (TripInt > 0.f)
-			{
-				if (!bTripOverlaysCreated) CreateTripOverlays();
-				if (!bTripOverlaysVisible)
-				{
-					bTripOverlaysVisible = true;
-					if (TripOverlay0) TripOverlay0->SetVisibility(ESlateVisibility::HitTestInvisible);
-					if (TripOverlay1) TripOverlay1->SetVisibility(ESlateVisibility::HitTestInvisible);
-					if (TripOverlay2) TripOverlay2->SetVisibility(ESlateVisibility::HitTestInvisible);
-				}
-
-				const float GT = GetWorld()->GetTimeSeconds();
-				const float Breath = FMath::Sin(GT * 0.5f) * 0.5f + 0.5f;
-				const float BaseAlpha = TripInt * FMath::Lerp(0.25f, 0.55f, Breath);
-
-				if (TripOverlay0)
-				{
-					TripOverlay0->SetRenderTransformAngle(GT * 6.f);
-					TripOverlay0->SetColorAndOpacity(FLinearColor(1, 1, 1, BaseAlpha * 0.85f));
-				}
-				if (TripOverlay1)
-				{
-					TripOverlay1->SetRenderTransformAngle(-GT * 4.f);
-					TripOverlay1->SetColorAndOpacity(FLinearColor(1, 1, 1, BaseAlpha * 0.75f));
-				}
-				if (TripOverlay2)
-				{
-					TripOverlay2->SetRenderTransformAngle(GT * 2.5f);
-					TripOverlay2->SetColorAndOpacity(FLinearColor(1, 1, 1, BaseAlpha * 0.65f));
-				}
-			}
-			else if (bTripOverlaysVisible)
-			{
-				bTripOverlaysVisible = false;
-				if (TripOverlay0) TripOverlay0->SetColorAndOpacity(FLinearColor(1, 1, 1, 0));
-				if (TripOverlay1) TripOverlay1->SetColorAndOpacity(FLinearColor(1, 1, 1, 0));
-				if (TripOverlay2) TripOverlay2->SetColorAndOpacity(FLinearColor(1, 1, 1, 0));
-			}
-		}
-	}
+	// COMMENTED OUT — mandala HUD overlay (kept for later use)
+	// // Animate trip mandala overlays — spinning layers with breathing opacity
+	// if (APlayerController* TripPC = GetOwningPlayer())
+	// {
+	// 	if (UPHCCitySubsystem* Sub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
+	// 	{
+	// 		const float TripInt = Sub->TripIntensity;
+	// 		if (TripInt > 0.f)
+	// 		{
+	// 			if (!bTripOverlaysCreated) CreateTripOverlays();
+	// 			if (!bTripOverlaysVisible)
+	// 			{
+	// 				bTripOverlaysVisible = true;
+	// 				if (TripOverlay0) TripOverlay0->SetVisibility(ESlateVisibility::HitTestInvisible);
+	// 				if (TripOverlay1) TripOverlay1->SetVisibility(ESlateVisibility::HitTestInvisible);
+	// 				if (TripOverlay2) TripOverlay2->SetVisibility(ESlateVisibility::HitTestInvisible);
+	// 			}
+	//
+	// 			const float GT = GetWorld()->GetTimeSeconds();
+	// 			const float Breath = FMath::Sin(GT * 0.5f) * 0.5f + 0.5f;
+	// 			const float BaseAlpha = TripInt * FMath::Lerp(0.25f, 0.55f, Breath) * 0.1f;
+	//
+	// 			if (TripOverlay0)
+	// 			{
+	// 				TripOverlay0->SetRenderTransformAngle(GT * 6.f);
+	// 				TripOverlay0->SetColorAndOpacity(FLinearColor(1, 1, 1, BaseAlpha * 0.85f));
+	// 			}
+	// 			if (TripOverlay1)
+	// 			{
+	// 				TripOverlay1->SetRenderTransformAngle(-GT * 4.f);
+	// 				TripOverlay1->SetColorAndOpacity(FLinearColor(1, 1, 1, BaseAlpha * 0.75f));
+	// 			}
+	// 			if (TripOverlay2)
+	// 			{
+	// 				TripOverlay2->SetRenderTransformAngle(GT * 2.5f);
+	// 				TripOverlay2->SetColorAndOpacity(FLinearColor(1, 1, 1, BaseAlpha * 0.65f));
+	// 			}
+	// 		}
+	// 		else if (bTripOverlaysVisible)
+	// 		{
+	// 			bTripOverlaysVisible = false;
+	// 			if (TripOverlay0) TripOverlay0->SetColorAndOpacity(FLinearColor(1, 1, 1, 0));
+	// 			if (TripOverlay1) TripOverlay1->SetColorAndOpacity(FLinearColor(1, 1, 1, 0));
+	// 			if (TripOverlay2) TripOverlay2->SetColorAndOpacity(FLinearColor(1, 1, 1, 0));
+	// 		}
+	// 	}
+	// }
 
 	// Update K/D display
 	if (KDText)
@@ -3646,6 +3821,147 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("UPHCCityHUD: Driving mode %s."),
 		bDriving ? TEXT("ON") : TEXT("OFF"));
+}
+
+// ---------------------------------------------------------------------------
+// Minimap radar
+// ---------------------------------------------------------------------------
+
+void UPHCCityHUD::UpdateMinimap(float DeltaTime)
+{
+	if (!MinimapCanvas || !MinimapBorder) return;
+
+	APlayerController* PC = GetOwningPlayer();
+	if (!PC) return;
+
+	APawn* LocalPawn = PC->GetPawn();
+	if (!LocalPawn) return;
+
+	const FVector LocalPos = LocalPawn->GetActorLocation();
+	const float PlayerYaw = LocalPawn->GetActorRotation().Yaw;
+	const float Half = MinimapSize * 0.5f;
+	const FLinearColor RadarGreen(0.0f, 1.0f, 0.3f, 1.f);
+
+	// ---- Animate radar sweep (full rotation every 3 seconds) ----
+	RadarSweepAngle += DeltaTime * 120.f; // 120 deg/s = 3s per revolution
+	if (RadarSweepAngle >= 360.f) RadarSweepAngle -= 360.f;
+
+	if (RadarSweepLine)
+	{
+		if (UCanvasPanelSlot* SwSlot = Cast<UCanvasPanelSlot>(RadarSweepLine->Slot))
+		{
+			const float SwRad = FMath::DegreesToRadians(RadarSweepAngle);
+			const float EndX = Half + FMath::Sin(SwRad) * Half;
+			const float EndY = Half - FMath::Cos(SwRad) * Half;
+			// Position the sweep line — 2px wide from center toward edge
+			SwSlot->SetPosition(FVector2D(
+				Half - 1.f + FMath::Sin(SwRad) * Half * 0.5f,
+				Half - FMath::Cos(SwRad) * Half * 0.5f));
+		}
+
+		// Pulse the sweep line brightness
+		const float Pulse = 0.4f + 0.2f * FMath::Sin(RadarSweepAngle * 0.1f);
+		RadarSweepLine->SetBrushColor(FLinearColor(0.0f, 1.0f, 0.3f, Pulse));
+	}
+
+	// ---- Direction indicator (heading line from center outward) ----
+	if (MinimapDirectionIndicator)
+	{
+		const float YawRad = FMath::DegreesToRadians(-PlayerYaw + 90.f);
+		const float DirDist = 20.f;
+		const float DirX = Half - 1.f + FMath::Cos(YawRad) * DirDist;
+		const float DirY = Half - 8.f - FMath::Sin(YawRad) * DirDist;
+
+		if (UCanvasPanelSlot* DirSlot = Cast<UCanvasPanelSlot>(MinimapDirectionIndicator->Slot))
+		{
+			DirSlot->SetPosition(FVector2D(DirX, DirY));
+		}
+	}
+
+	// ---- Place blips for other players and NPC helis ----
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	AGameStateBase* GS = World->GetGameState();
+	if (!GS) return;
+
+	int32 DotIndex = 0;
+
+	// Lambda to place a blip at a world position with a given color
+	auto PlaceBlip = [&](const FVector& WorldPos, const FLinearColor& Color, float DotSize)
+	{
+		const FVector RelPos = WorldPos - LocalPos;
+		float MmX = RelPos.X / MinimapRadius * Half;
+		float MmY = -RelPos.Y / MinimapRadius * Half;
+
+		const float Dist = FMath::Sqrt(MmX * MmX + MmY * MmY);
+		if (Dist > Half - 4.f)
+		{
+			const float Sc = (Half - 4.f) / Dist;
+			MmX *= Sc;
+			MmY *= Sc;
+		}
+
+		const float SX = Half + MmX - DotSize * 0.5f;
+		const float SY = Half + MmY - DotSize * 0.5f;
+
+		if (DotIndex >= MinimapPlayerDots.Num())
+		{
+			UBorder* NewDot = WidgetTree->ConstructWidget<UBorder>(
+				UBorder::StaticClass(), *FString::Printf(TEXT("MinimapDot%d"), DotIndex));
+			NewDot->SetBrushColor(Color);
+			NewDot->SetPadding(FMargin(0.f));
+
+			UCanvasPanelSlot* DS = MinimapCanvas->AddChildToCanvas(NewDot);
+			DS->SetSize(FVector2D(DotSize, DotSize));
+			DS->SetAutoSize(false);
+
+			MinimapPlayerDots.Add(NewDot);
+		}
+
+		UBorder* Dot = MinimapPlayerDots[DotIndex];
+		Dot->SetBrushColor(Color);
+		Dot->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+		if (UCanvasPanelSlot* DS = Cast<UCanvasPanelSlot>(Dot->Slot))
+		{
+			DS->SetPosition(FVector2D(SX, SY));
+			DS->SetSize(FVector2D(DotSize, DotSize));
+		}
+
+		DotIndex++;
+	};
+
+	// Other players — bright green blips
+	for (APlayerState* PS : GS->PlayerArray)
+	{
+		if (!PS) continue;
+		APawn* OtherPawn = PS->GetPawn();
+		if (!OtherPawn || OtherPawn == LocalPawn) continue;
+
+		APHCCityCharacter* OtherChar = Cast<APHCCityCharacter>(OtherPawn);
+		if (OtherChar && OtherChar->bIsTripping) continue;
+
+		PlaceBlip(OtherPawn->GetActorLocation(), RadarGreen, 6.f);
+	}
+
+	// NPC helicopters — large pulsing red blips
+	UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+	if (CitySub)
+	{
+		const float Pulse = 0.6f + 0.4f * FMath::Sin(GetWorld()->GetTimeSeconds() * 4.f);
+		const FLinearColor HeliRed(1.f, 0.15f, 0.1f, Pulse);
+		if (CitySub->NPCHelicopter && CitySub->bNPCHeliVisible)
+			PlaceBlip(CitySub->NPCHelicopter->GetActorLocation(), HeliRed, 12.f);
+		if (CitySub->NPCHelicopter2 && CitySub->bNPCHeliVisible2)
+			PlaceBlip(CitySub->NPCHelicopter2->GetActorLocation(), HeliRed, 12.f);
+	}
+
+	// Hide unused dots
+	for (int32 i = DotIndex; i < MinimapPlayerDots.Num(); ++i)
+	{
+		MinimapPlayerDots[i]->SetVisibility(ESlateVisibility::Collapsed);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -4609,7 +4925,7 @@ UTexture2D* UPHCCityHUD::GenerateTripTexture(int32 Pattern, int32 Size)
 		FLinearColor(1.00f, 0.40f, 0.00f),  // 2: deep orange
 		FLinearColor(1.00f, 0.84f, 0.00f),  // 3: shimmering gold
 		FLinearColor(0.00f, 1.00f, 0.50f),  // 4: emerald green
-		FLinearColor(1.00f, 0.00f, 1.00f),  // 5: electric magenta
+		FLinearColor(0.81f, 0.75f, 1.00f),  // 5: lavender (#cfc0ff)
 		FLinearColor(0.00f, 0.40f, 0.80f),  // 6: dark electric blue
 		FLinearColor(1.00f, 0.55f, 0.00f),  // 7: chrysanthemum orange
 		FLinearColor(0.40f, 0.00f, 0.80f),  // 8: void purple

@@ -821,6 +821,38 @@ void APHCCityCharacter::BeginPlay()
 		bNameTextSet = false;
 	}
 
+	// ---- Liquid glass arrow indicator (visible to other players only) ----
+	{
+		UStaticMesh* ConeMeshAsset = LoadObject<UStaticMesh>(nullptr,
+			TEXT("/Engine/BasicShapes/Cone.Cone"));
+		UMaterial* GlassMat = LoadObject<UMaterial>(nullptr,
+			TEXT("/Game/Materials/M_PHCGlass.M_PHCGlass"));
+
+		if (ConeMeshAsset && GlassMat)
+		{
+			ArrowIndicator = NewObject<UStaticMeshComponent>(this, TEXT("ArrowIndicator"));
+			ArrowIndicator->SetupAttachment(RootComponent);
+			ArrowIndicator->SetStaticMesh(ConeMeshAsset);
+			ArrowIndicator->SetRelativeLocation(FVector(0.f, 0.f, 160.f));
+			ArrowIndicator->SetRelativeRotation(FRotator(180.f, 0.f, 0.f));
+			ArrowIndicator->SetRelativeScale3D(FVector(0.6f, 0.6f, 0.8f));
+			ArrowIndicator->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			ArrowIndicator->SetCastShadow(false);
+			ArrowIndicator->bOwnerNoSee = true;
+
+			ArrowMID = UMaterialInstanceDynamic::Create(GlassMat, this);
+			ArrowMID->SetVectorParameterValue(TEXT("BaseColor"),
+				FLinearColor(0.5f, 0.8f, 1.0f));
+			ArrowMID->SetScalarParameterValue(TEXT("Opacity"), 0.7f);
+			ArrowMID->SetScalarParameterValue(TEXT("Metallic"), 0.3f);
+			ArrowMID->SetScalarParameterValue(TEXT("Roughness"), 0.05f);
+			ArrowMID->SetVectorParameterValue(TEXT("EmissiveColor"),
+				FLinearColor(3.0f, 5.0f, 10.0f));
+			ArrowIndicator->SetMaterial(0, ArrowMID);
+			ArrowIndicator->RegisterComponent();
+		}
+	}
+
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCityCharacter::BeginPlay -- Pawn at %s"),
 		*GetActorLocation().ToString());
 }
@@ -2680,19 +2712,34 @@ void APHCCityCharacter::FireWeapon()
 			}
 		}
 
-		// Check NPC helicopter hit
+		// Check NPC helicopter hit (either heli 1 or heli 2)
 		if (bHit && HitResult.GetActor() && HitResult.GetActor()->ActorHasTag(FName("NPCHelicopter")))
 		{
 			const float BulletDamage = (CurrentWeaponType == 6) ? 999.f : (CurrentWeaponType == 5) ? 12.f : 7.f;
 			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
-			if (CitySub && CitySub->NPCHelicopter && !CitySub->bNPCHeliCrashing)
+			if (CitySub)
 			{
-				CitySub->NPCHeliHealth -= BulletDamage;
-				CitySub->NPCHeliDamageFlashTimer = 0.15f;
-				HitMarkerTimer = 0.25f;
-				if (CitySub->NPCHeliHealth <= 0.f)
+				AActor* HitActor = HitResult.GetActor();
+
+				if (HitActor == CitySub->NPCHelicopter && !CitySub->bNPCHeliCrashing)
 				{
-					CitySub->OnNPCHeliDestroyed();
+					CitySub->NPCHeliHealth -= BulletDamage;
+					CitySub->NPCHeliDamageFlashTimer = 0.15f;
+					HitMarkerTimer = 0.25f;
+					if (CitySub->NPCHeliHealth <= 0.f)
+					{
+						CitySub->OnNPCHeliDestroyed();
+					}
+				}
+				else if (HitActor == CitySub->NPCHelicopter2 && !CitySub->bNPCHeliCrashing2)
+				{
+					CitySub->NPCHeliHealth2 -= BulletDamage;
+					CitySub->NPCHeliDamageFlashTimer2 = 0.15f;
+					HitMarkerTimer = 0.25f;
+					if (CitySub->NPCHeliHealth2 <= 0.f)
+					{
+						CitySub->OnNPCHeli2Destroyed();
+					}
 				}
 			}
 		}
@@ -2813,7 +2860,7 @@ void APHCCityCharacter::FireWeapon()
 		{
 			Bullet->OwnerVehicle = this;
 
-			// Minigun: lava-orange bullet color
+			// Minigun: lavender (#cfc0ff) bullet color
 			if (CurrentWeaponType == 0 && Bullet->ProjectileMesh)
 			{
 				UMaterialInstanceDynamic* BulletMat = Cast<UMaterialInstanceDynamic>(
@@ -2821,9 +2868,9 @@ void APHCCityCharacter::FireWeapon()
 				if (BulletMat)
 				{
 					BulletMat->SetVectorParameterValue(TEXT("BaseColor"),
-						FLinearColor(0.4f, 0.06f, 0.01f));
+						FLinearColor(0.81f, 0.75f, 1.0f));
 					BulletMat->SetVectorParameterValue(TEXT("EmissiveColor"),
-						FLinearColor(3.f, 0.5f, 0.05f));
+						FLinearColor(4.05f, 3.75f, 5.0f));
 				}
 			}
 
@@ -2839,9 +2886,9 @@ void APHCCityCharacter::FireWeapon()
 				if (BulletMat)
 				{
 					BulletMat->SetVectorParameterValue(TEXT("BaseColor"),
-						FLinearColor(0.85f, 0.75f, 0.45f)); // brass/copper
+						FLinearColor(0.61f, 0.19f, 1.0f)); // neon purple
 					BulletMat->SetVectorParameterValue(TEXT("EmissiveColor"),
-						FLinearColor(6.f, 4.f, 1.f)); // hot tracer glow
+						FLinearColor(3.f, 1.f, 5.f)); // neon purple glow
 					BulletMat->SetScalarParameterValue(TEXT("Metallic"), 0.9f);
 					BulletMat->SetScalarParameterValue(TEXT("Roughness"), 0.1f);
 				}
@@ -2849,7 +2896,7 @@ void APHCCityCharacter::FireWeapon()
 				Bullet->TrailDotLifespan = 0.8f;
 				Bullet->TrailDotInterval = 0.005f;
 				Bullet->TrailDotRandomSpread = 2.f;
-				Bullet->StartTrail(FLinearColor(0.5f, 0.5f, 0.45f));
+				Bullet->StartTrail(FLinearColor(0.4f, 0.0f, 0.8f));
 			}
 		}
 

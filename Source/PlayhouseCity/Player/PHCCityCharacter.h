@@ -54,6 +54,13 @@ public:
 	UPROPERTY()
 	TObjectPtr<UTextRenderComponent> NameTextComp;
 
+	/** Liquid glass arrow floating above head — visible to other players only. */
+	UPROPERTY()
+	TObjectPtr<UStaticMeshComponent> ArrowIndicator;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInstanceDynamic> ArrowMID;
+
 	// -- Fortnite-Quality Character (45 components) --------------------------
 	// Sphere-based organic body, facial features, overlapping shapes for
 	// smooth silhouette. All /Engine/BasicShapes/ primitives.

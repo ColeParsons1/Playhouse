@@ -593,4 +593,30 @@ private:
 	bool bDisasterSelectOpen = false;
 	bool bWeaponFireHeld = false;
 	int32 EquippedWeaponType = 3;
+
+	// -- Military Radar -------------------------------------------------------
+
+	UPROPERTY() TObjectPtr<UBorder> MinimapBorder;
+	UPROPERTY() TObjectPtr<UCanvasPanel> MinimapCanvas;
+	UPROPERTY() TObjectPtr<UBorder> MinimapLocalDot;
+	UPROPERTY() TObjectPtr<UBorder> MinimapDirectionIndicator;
+	TArray<TObjectPtr<UBorder>> MinimapPlayerDots;
+
+	// Radar decorations
+	UPROPERTY() TObjectPtr<UBorder> RadarSweepLine;
+	UPROPERTY() TObjectPtr<UTextBlock> RadarLabelN;
+	UPROPERTY() TObjectPtr<UTextBlock> RadarLabelS;
+	UPROPERTY() TObjectPtr<UTextBlock> RadarLabelE;
+	UPROPERTY() TObjectPtr<UTextBlock> RadarLabelW;
+	UPROPERTY() TObjectPtr<UBorder> RadarRingInner;
+	UPROPERTY() TObjectPtr<UBorder> RadarRingOuter;
+	UPROPERTY() TObjectPtr<UBorder> RadarCrossH;
+	UPROPERTY() TObjectPtr<UBorder> RadarCrossV;
+
+	float RadarSweepAngle = 0.f;
+
+	static constexpr float MinimapSize = 180.f;
+	static constexpr float MinimapRadius = 50000.f;
+
+	void UpdateMinimap(float DeltaTime);
 };

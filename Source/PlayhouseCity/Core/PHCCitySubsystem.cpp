@@ -13,6 +13,7 @@
 #include "Components/SpotLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/BoxComponent.h"
+#include "Components/DecalComponent.h"
 #include "Misc/FileHelper.h"
 #include "HAL/PlatformFileManager.h"
 #include "Engine/DirectionalLight.h"
@@ -159,6 +160,8 @@ void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	// creating it inline if the asset hasn't been saved yet.
 	ColorMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCColor.M_PHCColor"));
 	GlassMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCGlass.M_PHCGlass"));
+	ChromaAberrationMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCChromaAberration.M_PHCChromaAberration"));
+	DecalMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCDecal.M_PHCDecal"));
 
 #if WITH_EDITORONLY_DATA
 	if (!ColorMaterial)
@@ -581,119 +584,107 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		SaveDestroyedVehicleState();
 	}
 
-	// ---- NPC patrol helicopter (daytime, damageable, crash + respawn) ----
-	if (NPCHelicopter)
+	// ---- NPC patrol helicopters (2x, daytime, damageable, crash + pair respawn) ----
+	// Pair respawn timer — both must be down, then 60s wait
+	if (NPCHeliPairRespawnTimer >= 0.f)
 	{
-		// ---- Respawn timer (helicopter destroyed, waiting to come back) ----
-		if (NPCHeliRespawnTimer >= 0.f)
+		NPCHeliPairRespawnTimer -= DeltaTime;
+		if (NPCHeliPairRespawnTimer <= 0.f)
 		{
-			NPCHeliRespawnTimer -= DeltaTime;
-			if (NPCHeliRespawnTimer <= 0.f)
-			{
-				RespawnNPCHelicopter();
-			}
+			RespawnNPCHelicopter();
 		}
-		// ---- Crash spiral (helicopter falling) ----
-		else if (bNPCHeliCrashing)
+	}
+
+	// Lambda to tick a single NPC helicopter
+	auto TickNPCHeli = [&](APHCBlackHawkPawn* Heli, bool& bVisible, bool& bCrashing, float& CrashTimer,
+		float& PatrolAngle, float& DmgFlash, bool bDown,
+		TArray<TObjectPtr<UMaterialInstanceDynamic>>& MIDs)
+	{
+		if (!Heli) return;
+
+		// ---- Crash spiral ----
+		if (bCrashing)
 		{
-			NPCHeliCrashTimer += DeltaTime;
+			CrashTimer += DeltaTime;
+			FVector Pos = Heli->GetActorLocation();
+			FRotator Rot = Heli->GetActorRotation();
 
-			FVector Pos = NPCHelicopter->GetActorLocation();
-			FRotator Rot = NPCHelicopter->GetActorRotation();
-
-			// Descend — accelerates over time
-			const float FallSpeed = 800.f + NPCHeliCrashTimer * 200.f;
+			const float FallSpeed = 800.f + CrashTimer * 200.f;
 			Pos.Z -= FallSpeed * DeltaTime;
-
-			// Spin yaw (rotating)
 			Rot.Yaw += 180.f * DeltaTime;
-
-			// Increasing roll tilt
 			Rot.Roll = FMath::FInterpTo(Rot.Roll, 45.f, DeltaTime, 1.5f);
-
-			// Nose down pitch
 			Rot.Pitch = FMath::FInterpTo(Rot.Pitch, -20.f, DeltaTime, 1.0f);
 
-			NPCHelicopter->SetActorLocation(Pos);
-			NPCHelicopter->SetActorRotation(Rot);
+			Heli->SetActorLocation(Pos);
+			Heli->SetActorRotation(Rot);
+			Heli->bIsOccupied = false;
 
-			// Slow the rotors during crash (set bIsOccupied false so they wind down)
-			NPCHelicopter->bIsOccupied = false;
-
-			// Ground impact — large fiery nuke explosion and hide
 			if (Pos.Z <= 10.f)
 			{
 				const FVector CrashLoc(Pos.X, Pos.Y, FMath::Max(Pos.Z, 0.f));
-
-				// Spawn nuke explosion (large fireball + smoke plume + shockwave)
 				FActorSpawnParameters ExpSP;
 				ExpSP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 				World->SpawnActor<APHCNukeExplosion>(APHCNukeExplosion::StaticClass(), CrashLoc, FRotator::ZeroRotator, ExpSP);
 
-				NPCHelicopter->SetActorHiddenInGame(true);
-				bNPCHeliVisible = false;
-				bNPCHeliCrashing = false;
-				NPCHeliRespawnTimer = bNPCHeliPermanentlyDestroyed ? -1.f : 60.f;
+				Heli->SetActorHiddenInGame(true);
+				bVisible = false;
+				bCrashing = false;
 			}
 		}
-		// ---- Normal patrol ----
-		else
+		// ---- Normal patrol (skip if down/crashed) ----
+		else if (!bDown)
 		{
-			// Visible during daytime: T in [0.02 .. 0.48]
 			const bool bShouldBeVisible = (T > 0.02f && T < 0.48f);
-			if (bShouldBeVisible != bNPCHeliVisible)
+			if (bShouldBeVisible != bVisible)
 			{
-				bNPCHeliVisible = bShouldBeVisible;
-				NPCHelicopter->SetActorHiddenInGame(!bNPCHeliVisible);
+				bVisible = bShouldBeVisible;
+				Heli->SetActorHiddenInGame(!bVisible);
 			}
 
-			if (bNPCHeliVisible)
+			if (bVisible)
 			{
-				NPCHelicopter->bIsOccupied = true;
+				Heli->bIsOccupied = true;
 
-				// Circular patrol over city center
-				const float PatrolRadius = 18000.f;
-				const float PatrolAltitude = 3500.f;
-				const float PatrolSpeed = 0.015f; // radians/sec
-				NPCHeliPatrolAngle += PatrolSpeed * DeltaTime;
-				if (NPCHeliPatrolAngle > 2.f * UE_PI) NPCHeliPatrolAngle -= 2.f * UE_PI;
+				const float PatrolRadius = 8000.f;
+				const float PatrolAltitude = 2500.f;
+				const float PatrolCenterX = -10000.f;
+				const float PatrolCenterY = -10000.f;
+				const float PatrolSpeed = 0.015f;
+				PatrolAngle += PatrolSpeed * DeltaTime;
+				if (PatrolAngle > 2.f * UE_PI) PatrolAngle -= 2.f * UE_PI;
 
 				const FVector HeliPos(
-					PatrolRadius * FMath::Cos(NPCHeliPatrolAngle),
-					PatrolRadius * FMath::Sin(NPCHeliPatrolAngle),
+					PatrolCenterX + PatrolRadius * FMath::Cos(PatrolAngle),
+					PatrolCenterY + PatrolRadius * FMath::Sin(PatrolAngle),
 					PatrolAltitude);
-				NPCHelicopter->SetActorLocation(HeliPos);
+				Heli->SetActorLocation(HeliPos);
 
-				const float HeadingDeg = FMath::RadiansToDegrees(NPCHeliPatrolAngle) + 90.f;
-				NPCHelicopter->SetActorRotation(FRotator(0.f, HeadingDeg, 0.f));
+				const float HeadingDeg = FMath::RadiansToDegrees(PatrolAngle) + 90.f;
+				Heli->SetActorRotation(FRotator(0.f, HeadingDeg, 0.f));
 			}
 			else
 			{
-				NPCHelicopter->bIsOccupied = false;
+				Heli->bIsOccupied = false;
 			}
 		}
 
-		// ---- Damage flash (red emissive on hit, resets after 0.15s) ----
-		if (NPCHeliDamageFlashTimer > 0.f)
+		// ---- Damage flash ----
+		if (DmgFlash > 0.f)
 		{
-			NPCHeliDamageFlashTimer -= DeltaTime;
-			if (NPCHeliDamageFlashTimer > 0.f)
+			DmgFlash -= DeltaTime;
+			const FLinearColor FlashColor = (DmgFlash > 0.f) ? FLinearColor(4.f, 0.f, 0.f) : FLinearColor::Black;
+			for (UMaterialInstanceDynamic* MID : MIDs)
 			{
-				const FLinearColor RedFlash(4.0f, 0.0f, 0.0f);
-				for (UMaterialInstanceDynamic* MID : NPCHeliBodyMIDs)
-				{
-					if (MID) MID->SetVectorParameterValue(TEXT("EmissiveColor"), RedFlash);
-				}
-			}
-			else
-			{
-				for (UMaterialInstanceDynamic* MID : NPCHeliBodyMIDs)
-				{
-					if (MID) MID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
-				}
+				if (MID) MID->SetVectorParameterValue(TEXT("EmissiveColor"), FlashColor);
 			}
 		}
-	}
+	};
+
+	TickNPCHeli(NPCHelicopter, bNPCHeliVisible, bNPCHeliCrashing, NPCHeliCrashTimer,
+		NPCHeliPatrolAngle, NPCHeliDamageFlashTimer, bNPCHeli1Down, NPCHeliBodyMIDs);
+
+	TickNPCHeli(NPCHelicopter2, bNPCHeliVisible2, bNPCHeliCrashing2, NPCHeliCrashTimer2,
+		NPCHeliPatrolAngle2, NPCHeliDamageFlashTimer2, bNPCHeli2Down, NPCHeliBodyMIDs2);
 
 	// ---- NPC player characters — REMOVED (real players only) ----
 	if (false)
@@ -1226,6 +1217,22 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 				}
 			}
 
+			// NPC helicopter 2 proximity damage
+			if (NPCHelicopter2 && bNPCHeliVisible2 && !bNPCHeliCrashing2 && Proj && IsValid(Proj))
+			{
+				const FVector HLoc2 = NPCHelicopter2->GetActorLocation();
+				if (FVector::Dist(PLoc, HLoc2) < HitRadius)
+				{
+					NPCHeliHealth2 -= BulletDamage;
+					NPCHeliDamageFlashTimer2 = 0.15f;
+					if (NPCHeliHealth2 <= 0.f)
+					{
+						OnNPCHeli2Destroyed();
+					}
+					Proj->Destroy();
+				}
+			}
+
 			// NPC player proximity damage — removed (no more NPC players)
 		}
 
@@ -1591,7 +1598,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		{
 			// Trip ended — reset everything
 			MushroomTripTimer = -1.f;
-			MushroomTripDuration = 180.f;
+			MushroomTripDuration = 60.f;
 			TripDoseCount = 0;
 			TripIntensityMultiplier = 1.f;
 			TripIntensity = 0.f;
@@ -1620,10 +1627,25 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 				TripHallucinationActor->Destroy();
 				TripHallucinationActor = nullptr;
 			}
-			TripGroundMesh = nullptr;
-			TripGroundMID = nullptr;
-			TripTriCount = 0;
+			TripTileHISM = nullptr;
+			TripBarHISM = nullptr;
+			TripDotHISM = nullptr;
+			TripTileMID = nullptr;
+			TripDecalMID = nullptr;
+			TripDecals.Empty();
+			TripGlowLights.Empty();
 			bTripHallucinationsSpawned = false;
+
+			// Remove custom chromatic aberration blendable
+			if (TripChromaMID && PostProcessVolume)
+			{
+				auto& Blendables = PostProcessVolume->Settings.WeightedBlendables.Array;
+				Blendables.RemoveAll([this](const FWeightedBlendable& WB)
+				{
+					return WB.Object == TripChromaMID;
+				});
+				TripChromaMID = nullptr;
+			}
 
 			// Restore sun and fog colors
 			if (SunLightComp)
@@ -1663,8 +1685,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			const float GT = GetWorld() ? GetWorld()->GetTimeSeconds() : TT;
 
 			// === TRIP ENVELOPE (scales with dynamic duration) ===
-			const float FadeInEnd = 30.f;
-			const float FadeOutStart = MushroomTripDuration - 40.f;
+			const float FadeInEnd = FMath::Min(10.f, MushroomTripDuration * 0.15f);
+			const float FadeOutStart = MushroomTripDuration - FMath::Min(15.f, MushroomTripDuration * 0.25f);
 			float Envelope;
 			if (TT < FadeInEnd)
 			{
@@ -1690,8 +1712,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			const float BaseIntensity = Envelope * WaveIntensity;
 			const float Intensity = FMath::Min(BaseIntensity * TripIntensityMultiplier, 1.f);
 			TripIntensity = Intensity; // store for HUD access
-			// Overdrive allows select effects to exceed normal peak (capped at 2x)
-			const float Overdrive = FMath::Min(BaseIntensity * TripIntensityMultiplier, 2.f);
+			// Overdrive allows select effects to exceed normal peak (capped at 4x)
+			const float Overdrive = FMath::Min(BaseIntensity * TripIntensityMultiplier, 4.f);
 
 			// === FIXATION DETECTION ===
 			float FixationTarget = 0.f;
@@ -1729,7 +1751,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 					FLinearColor(1.00f, 0.40f, 0.00f),  // deep orange
 					FLinearColor(1.00f, 0.84f, 0.00f),  // shimmering gold
 					FLinearColor(0.00f, 1.00f, 0.50f),  // emerald green
-					FLinearColor(1.00f, 0.00f, 1.00f),  // electric magenta
+					FLinearColor(0.81f, 0.75f, 1.00f),  // lavender (#cfc0ff)
 					FLinearColor(0.00f, 0.40f, 0.80f),  // dark electric blue
 					FLinearColor(1.00f, 0.55f, 0.00f),  // chrysanthemum orange
 					FLinearColor(0.40f, 0.00f, 0.80f),  // void purple
@@ -1746,7 +1768,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 						PalT - FMath::FloorToFloat(PalT));
 				};
 
-				// Spawn ground shadow tiles on first frame
+				// Spawn ground shadow tiles + custom CA on first frame
 				if (!bTripHallucinationsSpawned && GetWorld())
 				{
 					bTripHallucinationsSpawned = true;
@@ -1761,87 +1783,370 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 						TripHallucinationActor->GetRootComponent()->RegisterComponent();
 					}
 
-					// Spawn triangular floor shadows — dark tessellated triangles on ground
-					if (ColorMaterial && TripHallucinationActor)
+					// Add custom mandala-colored chromatic aberration
+					if (ChromaAberrationMaterial && PostProcessVolume)
 					{
-						const int32 GN = TripGridN;
-						const float TS = TripTileSize;
-						const float Half = GN * TS * 0.5f;
-						TripTriCount = GN * GN * 2;
-						const int32 NumVerts = TripTriCount * 3;
+						TripChromaMID = UMaterialInstanceDynamic::Create(ChromaAberrationMaterial, this);
+						TripChromaMID->SetScalarParameterValue(TEXT("ChromaOffset"), 0.f);
+						TripChromaMID->SetVectorParameterValue(TEXT("TintA"), FLinearColor::White);
+						TripChromaMID->SetVectorParameterValue(TEXT("TintB"), FLinearColor::White);
+						TripChromaMID->SetVectorParameterValue(TEXT("TintC"), FLinearColor::White);
+						PostProcessVolume->Settings.WeightedBlendables.Array.Add(
+							FWeightedBlendable(1.f, TripChromaMID));
+					}
 
-						TArray<FVector> Verts;
-						TArray<int32> Tris;
-						TArray<FVector> Normals;
-						TArray<FVector2D> UVs;
-						TArray<FColor> Colors;
-						TArray<FProcMeshTangent> Tangents;
-
-						Verts.Reserve(NumVerts);
-						Tris.Reserve(NumVerts);
-						Normals.Reserve(NumVerts);
-						UVs.Reserve(NumVerts);
-						Colors.Reserve(NumVerts);
-
-						int32 VI = 0;
-						const FVector Up(0.f, 0.f, 1.f);
-
-						for (int32 gy = 0; gy < GN; ++gy)
+					// Spawn floral DMT floor pattern using 3 HISMs
+					if (ColorMaterial && SphereMesh && CubeMesh && CylinderMesh && TripHallucinationActor)
+					{
+						const FVector FloorOrigin(PlayerPos.X, PlayerPos.Y, 0.f);
+						auto MakeHISM = [&](UStaticMesh* Mesh, const TCHAR* Name)
+							-> UHierarchicalInstancedStaticMeshComponent*
 						{
-							for (int32 gx = 0; gx < GN; ++gx)
+							auto* H = NewObject<UHierarchicalInstancedStaticMeshComponent>(
+								TripHallucinationActor, Name);
+							H->SetStaticMesh(Mesh);
+							H->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+							H->CastShadow = false;
+							H->SetWorldLocation(FloorOrigin);
+							return H;
+						};
+
+						// Spheres = smooth organic petals, Cylinders = flower centers, Cubes = vine stems
+						TripTileHISM = MakeHISM(SphereMesh, TEXT("TripPetalHISM"));
+						TripBarHISM  = MakeHISM(CubeMesh, TEXT("TripVineHISM"));
+						TripDotHISM  = MakeHISM(CylinderMesh, TEXT("TripCenterHISM"));
+
+						const float Z = 25.f;
+
+						// =============================================================
+						// FLOWER CENTERS (Cylinders) — pistils and seed pods
+						// =============================================================
+
+						// Large center flower pistil
+						TripDotHISM->AddInstance(FTransform(
+							FRotator::ZeroRotator, FVector(0, 0, Z),
+							FVector(3.5f, 3.5f, 0.04f)), false);
+
+						// Inner stamen ring — 8 small discs around center
+						for (int32 i = 0; i < 8; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 8.f;
+							TripDotHISM->AddInstance(FTransform(
+								FRotator::ZeroRotator,
+								FVector(100.f * FMath::Cos(A), 100.f * FMath::Sin(A), Z),
+								FVector(0.8f, 0.8f, 0.03f)), false);
+						}
+
+						// R=600 — 6 secondary flower centers (sub-blooms)
+						for (int32 i = 0; i < 6; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 6.f;
+							TripDotHISM->AddInstance(FTransform(
+								FRotator::ZeroRotator,
+								FVector(600.f * FMath::Cos(A), 600.f * FMath::Sin(A), Z),
+								FVector(1.5f, 1.5f, 0.03f)), false);
+						}
+
+						// R=1400 — 12 tertiary flower centers
+						for (int32 i = 0; i < 12; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 12.f;
+							TripDotHISM->AddInstance(FTransform(
+								FRotator::ZeroRotator,
+								FVector(1400.f * FMath::Cos(A), 1400.f * FMath::Sin(A), Z),
+								FVector(1.2f, 1.2f, 0.03f)), false);
+						}
+
+						// R=2400 — 18 seed pod dots
+						for (int32 i = 0; i < 18; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 18.f;
+							TripDotHISM->AddInstance(FTransform(
+								FRotator::ZeroRotator,
+								FVector(2400.f * FMath::Cos(A), 2400.f * FMath::Sin(A), Z),
+								FVector(1.0f, 1.0f, 0.03f)), false);
+						}
+
+						// R=3500 — 24 outer bud dots
+						for (int32 i = 0; i < 24; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 24.f;
+							TripDotHISM->AddInstance(FTransform(
+								FRotator::ZeroRotator,
+								FVector(3500.f * FMath::Cos(A), 3500.f * FMath::Sin(A), Z),
+								FVector(0.8f, 0.8f, 0.03f)), false);
+						}
+
+						// R=4500 — 36 outermost pollen dots
+						for (int32 i = 0; i < 36; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 36.f;
+							TripDotHISM->AddInstance(FTransform(
+								FRotator::ZeroRotator,
+								FVector(4500.f * FMath::Cos(A), 4500.f * FMath::Sin(A), Z),
+								FVector(0.5f, 0.5f, 0.03f)), false);
+						}
+
+						// =============================================================
+						// PETALS (Spheres) — flattened elliptical organic petals
+						// Sphere scaled: X=radial length, Y=lateral width, Z=flat
+						// Yaw rotates long axis to point outward from center
+						// =============================================================
+
+						// R=200 — 8 inner petals (tight daisy)
+						for (int32 i = 0; i < 8; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 8.f;
+							TripTileHISM->AddInstance(FTransform(
+								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
+								FVector(200.f * FMath::Cos(A), 200.f * FMath::Sin(A), Z),
+								FVector(2.5f, 1.0f, 0.04f)), false);
+						}
+
+						// R=380 — 8 interleaved petals (offset 22.5°)
+						for (int32 i = 0; i < 8; ++i)
+						{
+							const float A = FMath::DegreesToRadians(22.5f) + i * 2.f * UE_PI / 8.f;
+							TripTileHISM->AddInstance(FTransform(
+								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
+								FVector(380.f * FMath::Cos(A), 380.f * FMath::Sin(A), Z),
+								FVector(3.0f, 1.2f, 0.04f)), false);
+						}
+
+						// R=700 — 12 petals around each sub-bloom
+						for (int32 i = 0; i < 12; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 12.f;
+							TripTileHISM->AddInstance(FTransform(
+								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
+								FVector(700.f * FMath::Cos(A), 700.f * FMath::Sin(A), Z),
+								FVector(3.5f, 1.3f, 0.04f)), false);
+						}
+
+						// R=950 — 12 interleaved (offset 15°)
+						for (int32 i = 0; i < 12; ++i)
+						{
+							const float A = FMath::DegreesToRadians(15.f) + i * 2.f * UE_PI / 12.f;
+							TripTileHISM->AddInstance(FTransform(
+								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
+								FVector(950.f * FMath::Cos(A), 950.f * FMath::Sin(A), Z),
+								FVector(3.8f, 1.4f, 0.04f)), false);
+						}
+
+						// R=1500 — 18 petals (third bloom ring)
+						for (int32 i = 0; i < 18; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 18.f;
+							TripTileHISM->AddInstance(FTransform(
+								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
+								FVector(1500.f * FMath::Cos(A), 1500.f * FMath::Sin(A), Z),
+								FVector(4.0f, 1.5f, 0.04f)), false);
+						}
+
+						// R=1900 — 18 interleaved (offset 10°)
+						for (int32 i = 0; i < 18; ++i)
+						{
+							const float A = FMath::DegreesToRadians(10.f) + i * 2.f * UE_PI / 18.f;
+							TripTileHISM->AddInstance(FTransform(
+								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
+								FVector(1900.f * FMath::Cos(A), 1900.f * FMath::Sin(A), Z),
+								FVector(4.5f, 1.6f, 0.04f)), false);
+						}
+
+						// R=2600 — 24 petals (fourth ring)
+						for (int32 i = 0; i < 24; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 24.f;
+							TripTileHISM->AddInstance(FTransform(
+								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
+								FVector(2600.f * FMath::Cos(A), 2600.f * FMath::Sin(A), Z),
+								FVector(5.0f, 1.8f, 0.04f)), false);
+						}
+
+						// R=3300 — 30 petals
+						for (int32 i = 0; i < 30; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 30.f;
+							TripTileHISM->AddInstance(FTransform(
+								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
+								FVector(3300.f * FMath::Cos(A), 3300.f * FMath::Sin(A), Z),
+								FVector(5.5f, 2.0f, 0.04f)), false);
+						}
+
+						// R=4200 — 36 outer petals
+						for (int32 i = 0; i < 36; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 36.f;
+							TripTileHISM->AddInstance(FTransform(
+								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
+								FVector(4200.f * FMath::Cos(A), 4200.f * FMath::Sin(A), Z),
+								FVector(6.0f, 2.2f, 0.04f)), false);
+						}
+
+						// R=4600 — 36 interleaved outer petals (offset half-step)
+						for (int32 i = 0; i < 36; ++i)
+						{
+							const float A = (UE_PI / 36.f) + i * 2.f * UE_PI / 36.f;
+							TripTileHISM->AddInstance(FTransform(
+								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
+								FVector(4600.f * FMath::Cos(A), 4600.f * FMath::Sin(A), Z),
+								FVector(5.5f, 2.0f, 0.04f)), false);
+						}
+
+						// =============================================================
+						// VINES (Cubes) — thin organic stem lines connecting flowers
+						// =============================================================
+
+						// R=400 — 6 main vine stems radiating outward
+						for (int32 i = 0; i < 6; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 6.f;
+							const float Deg = FMath::RadiansToDegrees(A);
+							TripBarHISM->AddInstance(FTransform(
+								FRotator(0.f, Deg, 0.f),
+								FVector(400.f * FMath::Cos(A), 400.f * FMath::Sin(A), Z),
+								FVector(6.0f, 0.08f, 0.03f)), false);
+						}
+
+						// R=1000 — 12 secondary vine stems
+						for (int32 i = 0; i < 12; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 12.f;
+							const float Deg = FMath::RadiansToDegrees(A);
+							TripBarHISM->AddInstance(FTransform(
+								FRotator(0.f, Deg, 0.f),
+								FVector(1000.f * FMath::Cos(A), 1000.f * FMath::Sin(A), Z),
+								FVector(5.0f, 0.06f, 0.03f)), false);
+						}
+
+						// R=1800 — 18 tendril vines with slight curve (angled ±15°)
+						for (int32 i = 0; i < 18; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 18.f;
+							const float Deg = FMath::RadiansToDegrees(A);
+							const float Curl = (i % 2 == 0) ? 15.f : -15.f;
+							TripBarHISM->AddInstance(FTransform(
+								FRotator(0.f, Deg + Curl, 0.f),
+								FVector(1800.f * FMath::Cos(A), 1800.f * FMath::Sin(A), Z),
+								FVector(4.5f, 0.06f, 0.03f)), false);
+						}
+
+						// R=2800 — 24 outer vines
+						for (int32 i = 0; i < 24; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 24.f;
+							const float Deg = FMath::RadiansToDegrees(A);
+							TripBarHISM->AddInstance(FTransform(
+								FRotator(0.f, Deg, 0.f),
+								FVector(2800.f * FMath::Cos(A), 2800.f * FMath::Sin(A), Z),
+								FVector(5.0f, 0.06f, 0.03f)), false);
+						}
+
+						// R=3800 — 30 outermost vine tendrils
+						for (int32 i = 0; i < 30; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 30.f;
+							const float Deg = FMath::RadiansToDegrees(A);
+							const float Curl = (i % 2 == 0) ? 12.f : -12.f;
+							TripBarHISM->AddInstance(FTransform(
+								FRotator(0.f, Deg + Curl, 0.f),
+								FVector(3800.f * FMath::Cos(A), 3800.f * FMath::Sin(A), Z),
+								FVector(5.5f, 0.06f, 0.03f)), false);
+						}
+
+						// Register all, then apply shared dark shadow material
+						TripTileHISM->RegisterComponent();
+						TripHallucinationActor->AddInstanceComponent(TripTileHISM);
+						TripBarHISM->RegisterComponent();
+						TripHallucinationActor->AddInstanceComponent(TripBarHISM);
+						TripDotHISM->RegisterComponent();
+						TripHallucinationActor->AddInstanceComponent(TripDotHISM);
+
+						TripTileMID = UMaterialInstanceDynamic::Create(ColorMaterial, TripTileHISM);
+						TripTileMID->SetVectorParameterValue(TEXT("BaseColor"),
+							FLinearColor(0.02f, 0.02f, 0.03f));
+						TripTileMID->SetScalarParameterValue(TEXT("Roughness"), 0.95f);
+						TripTileMID->SetScalarParameterValue(TEXT("Metallic"), 0.0f);
+						TripTileMID->SetVectorParameterValue(TEXT("EmissiveColor"),
+							FLinearColor(0.f, 0.f, 0.f));
+						TripTileHISM->SetMaterial(0, TripTileMID);
+						TripBarHISM->SetMaterial(0, TripTileMID);
+						TripDotHISM->SetMaterial(0, TripTileMID);
+
+						// Spawn deferred decals to project pattern onto walls/terrain
+						if (DecalMaterial)
+						{
+							TripDecalMID = UMaterialInstanceDynamic::Create(DecalMaterial, TripHallucinationActor);
+							TripDecalMID->SetVectorParameterValue(TEXT("BaseColor"),
+								FLinearColor(0.02f, 0.02f, 0.03f));
+							TripDecalMID->SetScalarParameterValue(TEXT("Opacity"), 0.85f);
+							TripDecalMID->SetVectorParameterValue(TEXT("EmissiveColor"),
+								FLinearColor(0.f, 0.f, 0.f));
+
+							// Decal ring layout — project dark shapes onto all surfaces
+							struct FDecalRing { int32 Count; float Radius; float Size; };
+							static const FDecalRing DRings[] = {
+								{  1,    0.f, 200.f },  // center
+								{  6,  300.f, 150.f },
+								{ 12,  800.f, 180.f },
+								{ 12, 1500.f, 220.f },
+								{ 16, 2200.f, 250.f },
+								{ 18, 3000.f, 280.f },
+								{ 24, 4000.f, 300.f },
+							};
+
+							for (const auto& DR : DRings)
 							{
-								const float X0 = -Half + gx * TS;
-								const float Y0 = -Half + gy * TS;
-								const float X1 = X0 + TS;
-								const float Y1 = Y0 + TS;
-
-								const float CX = (X0 + X1) * 0.5f;
-								const float CY = (Y0 + Y1) * 0.5f;
-								const float Shrink = 0.80f;
-								const float SX0 = CX + (X0 - CX) * Shrink;
-								const float SY0 = CY + (Y0 - CY) * Shrink;
-								const float SX1 = CX + (X1 - CX) * Shrink;
-								const float SY1 = CY + (Y1 - CY) * Shrink;
-
-								// Triangle A
-								Verts.Add(FVector(SX0, SY0, 8.f));
-								Verts.Add(FVector(SX1, SY0, 8.f));
-								Verts.Add(FVector(SX0, SY1, 8.f));
-								Normals.Add(Up); Normals.Add(Up); Normals.Add(Up);
-								UVs.Add(FVector2D(0,0)); UVs.Add(FVector2D(1,0)); UVs.Add(FVector2D(0,1));
-								Colors.Add(FColor::Black); Colors.Add(FColor::Black); Colors.Add(FColor::Black);
-								Tris.Add(VI); Tris.Add(VI+1); Tris.Add(VI+2);
-								VI += 3;
-
-								// Triangle B
-								Verts.Add(FVector(SX1, SY0, 8.f));
-								Verts.Add(FVector(SX1, SY1, 8.f));
-								Verts.Add(FVector(SX0, SY1, 8.f));
-								Normals.Add(Up); Normals.Add(Up); Normals.Add(Up);
-								UVs.Add(FVector2D(1,0)); UVs.Add(FVector2D(1,1)); UVs.Add(FVector2D(0,1));
-								Colors.Add(FColor::Black); Colors.Add(FColor::Black); Colors.Add(FColor::Black);
-								Tris.Add(VI); Tris.Add(VI+1); Tris.Add(VI+2);
-								VI += 3;
+								const float AngleStep = (DR.Count > 1) ? (2.f * UE_PI / DR.Count) : 0.f;
+								for (int32 di = 0; di < DR.Count; ++di)
+								{
+									const float DA = di * AngleStep;
+									UDecalComponent* Decal = NewObject<UDecalComponent>(TripHallucinationActor);
+									Decal->SetDecalMaterial(TripDecalMID);
+									// DecalSize: X=projection depth, Y/Z=surface coverage
+									Decal->DecalSize = FVector(500.f, DR.Size, DR.Size);
+									Decal->SetRelativeLocation(FVector(
+										DR.Radius * FMath::Cos(DA),
+										DR.Radius * FMath::Sin(DA), 250.f));
+									// Point downward to project onto ground + wrap onto walls
+									Decal->SetRelativeRotation(FRotator(-90.f, FMath::RadiansToDegrees(DA), 0.f));
+									Decal->RegisterComponent();
+									TripHallucinationActor->AddInstanceComponent(Decal);
+									TripDecals.Add(Decal);
+								}
 							}
 						}
 
-						TripGroundMesh = NewObject<UProceduralMeshComponent>(
-							TripHallucinationActor, TEXT("TripGroundPMC"));
-						TripGroundMesh->AttachToComponent(
-							TripHallucinationActor->GetRootComponent(),
-							FAttachmentTransformRules::KeepRelativeTransform);
-						TripGroundMesh->CreateMeshSection(0, Verts, Tris, Normals, UVs, Colors, Tangents, false);
-						TripGroundMesh->SetWorldLocation(FVector(PlayerPos.X, PlayerPos.Y, 0.f));
-						TripGroundMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-						TripGroundMesh->CastShadow = false;
-						TripGroundMesh->RegisterComponent();
+						// Spawn subtle underglow point lights at flower positions
+						struct FGlowRing { int32 Count; float Radius; float Intensity; float Atten; };
+						static const FGlowRing GRings[] = {
+							{  1,    0.f, 1500.f, 500.f },   // center bloom
+							{  6,  600.f, 1000.f, 400.f },   // sub-bloom centers
+							{ 12, 1400.f,  800.f, 350.f },   // tertiary centers
+							{ 12, 2400.f,  600.f, 350.f },   // seed pods
+							{  8, 3500.f,  500.f, 300.f },   // outer buds
+						};
 
-						TripGroundMID = UMaterialInstanceDynamic::Create(ColorMaterial, TripGroundMesh);
-						TripGroundMID->SetScalarParameterValue(TEXT("Roughness"), 1.f);
-						TripGroundMID->SetScalarParameterValue(TEXT("Metallic"), 0.f);
-						TripGroundMID->SetVectorParameterValue(TEXT("BaseColor"),
-							FLinearColor(0.03f, 0.03f, 0.03f));
-						TripGroundMesh->SetMaterial(0, TripGroundMID);
+						for (const auto& GR : GRings)
+						{
+							const float AngleStep = (GR.Count > 1) ? (2.f * UE_PI / GR.Count) : 0.f;
+							for (int32 gi = 0; gi < GR.Count; ++gi)
+							{
+								const float GA = gi * AngleStep;
+								UPointLightComponent* Glow = NewObject<UPointLightComponent>(
+									TripHallucinationActor);
+								Glow->SetRelativeLocation(FVector(
+									GR.Radius * FMath::Cos(GA),
+									GR.Radius * FMath::Sin(GA), 10.f));
+								Glow->SetIntensity(GR.Intensity);
+								Glow->SetAttenuationRadius(GR.Atten);
+								Glow->SetLightColor(FColor(207, 192, 255)); // lavender initial
+								Glow->CastShadows = false;
+								Glow->RegisterComponent();
+								TripHallucinationActor->AddInstanceComponent(Glow);
+								TripGlowLights.Add(Glow);
+							}
+						}
 					}
 				}
 
@@ -1862,10 +2167,56 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 							FLinearColor(0.45f, 0.55f, 0.65f), FogTint, Intensity));
 					}
 
-					// Animate triangular floor shadows — follow player
-					if (TripGroundMesh && TripTriCount > 0)
+					// Animate DMT floor — counter-rotating layers for kaleidoscope
+					if (TripTileHISM)
 					{
-						TripGroundMesh->SetWorldLocation(FVector(PlayerPos.X, PlayerPos.Y, 0.f));
+						const FVector FloorPos(PlayerPos.X, PlayerPos.Y, 0.f);
+						// Each layer rotates at different speed/direction
+						TripTileHISM->SetWorldLocation(FloorPos);
+						TripTileHISM->SetWorldRotation(FRotator(0.f, GT * 6.f, 0.f));
+						if (TripBarHISM)
+						{
+							TripBarHISM->SetWorldLocation(FloorPos);
+							TripBarHISM->SetWorldRotation(FRotator(0.f, GT * -4.f, 0.f));
+						}
+						if (TripDotHISM)
+						{
+							TripDotHISM->SetWorldLocation(FloorPos);
+							TripDotHISM->SetWorldRotation(FRotator(0.f, GT * 2.5f, 0.f));
+						}
+
+						if (TripTileMID)
+						{
+							FLinearColor TileCol = SamplePal(GT * 0.08f + 0.7f);
+							const float TileAlpha = FMath::Max(0.5f, Intensity);
+							TripTileMID->SetVectorParameterValue(TEXT("BaseColor"),
+								FLinearColor(0.02f, 0.02f, 0.03f));
+							TripTileMID->SetVectorParameterValue(TEXT("EmissiveColor"),
+								TileCol * 0.4f * TileAlpha);
+						}
+
+						// Move decals with player + animate emissive
+						if (TripDecalMID)
+						{
+							TripHallucinationActor->SetActorLocation(
+								FVector(PlayerPos.X, PlayerPos.Y, 0.f));
+							FLinearColor DecalCol = SamplePal(GT * 0.08f + 0.7f);
+							const float DecAlpha = FMath::Max(0.5f, Intensity);
+							TripDecalMID->SetVectorParameterValue(TEXT("EmissiveColor"),
+								DecalCol * 0.4f * DecAlpha);
+						}
+
+						// Animate underglow light colors — each light offset in palette
+						for (int32 li = 0; li < TripGlowLights.Num(); ++li)
+						{
+							if (TripGlowLights[li])
+							{
+								const float Phase = GT * 0.06f + li * 0.15f;
+								FLinearColor GlowCol = SamplePal(Phase);
+								TripGlowLights[li]->SetLightColor(
+									(GlowCol * 0.7f + FLinearColor(0.15f, 0.15f, 0.15f)).ToFColor(true));
+							}
+						}
 					}
 
 					// === WORLD MORPHING — Full mandala palette colors + intensity ===
@@ -1935,10 +2286,12 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			PP.ColorGain.X = 1.f + ColorAmp * (0.7f * WarmCool + 0.5f * FMath::Sin(GT * 0.31f));
 			PP.ColorGain.Y = 1.f + ColorAmp * (0.4f * FMath::Sin(GT * 0.23f + 1.5f));
 			PP.ColorGain.Z = 1.f + ColorAmp * (-0.6f * WarmCool + 0.6f * FMath::Sin(GT * 0.19f + 3.f));
-			// Electric magenta/purple pulses — DMT signature colors
-			const float MagentaPulse = 0.15f * Intensity * FixMul;
-			PP.ColorGain.X += MagentaPulse * FMath::Abs(FMath::Sin(GT * 0.41f + 0.8f));
-			PP.ColorGain.Z += MagentaPulse * FMath::Abs(FMath::Sin(GT * 0.41f + 0.8f));
+			// Lavender (#cfc0ff) pulses — DMT signature colors
+			const float LavenderPulse = 0.15f * Intensity * FixMul;
+			const float LavSin = FMath::Abs(FMath::Sin(GT * 0.41f + 0.8f));
+			PP.ColorGain.X += LavenderPulse * 0.81f * LavSin;
+			PP.ColorGain.Y += LavenderPulse * 0.75f * LavSin;
+			PP.ColorGain.Z += LavenderPulse * LavSin;
 
 			// Color contrast boost — hyper-vivid, synthetic look (DMT "plastic" effect)
 			PP.bOverride_ColorContrast = true;
@@ -1952,10 +2305,23 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			PP.bOverride_BloomSizeScale = true;
 			PP.BloomSizeScale = 1.f + 3.f * Intensity;
 
-			// === 3. CHROMATIC ABERRATION — rainbow color blending, re-doses push harder ===
-			const float ChromaBreath = FMath::Sin(GT * 1.257f);
-			const float Chroma = Overdrive * (6.f + 3.f * ChromaBreath * FixMul);
-			PP.SceneFringeIntensity = FMath::Max(PP.SceneFringeIntensity, Chroma);
+			// === 3. CHROMATIC ABERRATION — mandala-colored fringing via custom PP material ===
+			PP.SceneFringeIntensity = 0.f; // disable built-in RGB fringing
+			if (TripChromaMID)
+			{
+				const float ChromaBreath = FMath::Sin(GT * 1.257f);
+				const float CAStrength = Overdrive * (0.015f + 0.008f * ChromaBreath * FixMul);
+				TripChromaMID->SetScalarParameterValue(TEXT("ChromaOffset"), CAStrength);
+
+				const float TintBlend = FMath::Min(1.f, Intensity);
+				// Lerp tints from neutral white to mandala palette colors
+				TripChromaMID->SetVectorParameterValue(TEXT("TintA"),
+					FMath::Lerp(FLinearColor::White, FLinearColor(1.22f, 1.13f, 1.5f), TintBlend)); // Lavender (#cfc0ff)
+				TripChromaMID->SetVectorParameterValue(TEXT("TintB"),
+					FMath::Lerp(FLinearColor::White, FLinearColor(0.0f, 0.4f, 1.5f), TintBlend)); // Hyperspace Blue
+				TripChromaMID->SetVectorParameterValue(TEXT("TintC"),
+					FMath::Lerp(FLinearColor::White, FLinearColor(0.0f, 1.35f, 1.35f), TintBlend)); // Electric Teal
+			}
 
 			// === 4. VIGNETTE ===
 			const float VigPulse = 0.10f * Intensity * FMath::Sin(GT * 1.257f);
@@ -2256,18 +2622,18 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 
 				if (MushroomTripTimer >= 0.f)
 				{
-					// Re-dose — extend trip and increase intensity
+					// Re-dose — extend trip by 20s and increase intensity (doubled)
 					TripDoseCount++;
-					MushroomTripDuration += 120.f;  // +120s per re-dose
-					TripIntensityMultiplier = FMath::Min(TripIntensityMultiplier + 0.70f, 3.f);
+					MushroomTripDuration += 20.f;
+					TripIntensityMultiplier = FMath::Min(TripIntensityMultiplier + 1.4f, 6.f);
 				}
 				else
 				{
-					// First dose — start the trip
+					// First dose — start the trip (60 seconds base, doubled intensity)
 					MushroomTripTimer = 0.f;
-					MushroomTripDuration = 180.f;
+					MushroomTripDuration = 60.f;
 					TripDoseCount = 1;
-					TripIntensityMultiplier = 1.f;
+					TripIntensityMultiplier = 2.f;
 
 					// Mark character as tripping (replicated — hides from other players/NPCs)
 					if (UWorld* TW = GetWorld())
@@ -16300,51 +16666,121 @@ void UPHCCitySubsystem::SpawnNPCHelicopter()
 {
 	UWorld* World = GetWorld();
 	if (!World) return;
-	if (bNPCHeliPermanentlyDestroyed) return;
 
-	const FVector SpawnPos(18000.f, 0.f, 3500.f);
+	// Always spawn — pair respawns when both are shot down
+	bNPCHeliPermanentlyDestroyed = false;
+
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	NPCHelicopter = World->SpawnActor<APHCBlackHawkPawn>(APHCBlackHawkPawn::StaticClass(), SpawnPos, FRotator::ZeroRotator, Params);
-	if (!NPCHelicopter) return;
 
-	// Mark as occupied so the rotor animation runs, but nobody is piloting
-	NPCHelicopter->bIsOccupied = true;
+	UStaticMesh* ArrowConeMesh = LoadObject<UStaticMesh>(nullptr,
+		TEXT("/Engine/BasicShapes/Cone.Cone"));
+	UMaterial* ArrowGlassMat = LoadObject<UMaterial>(nullptr,
+		TEXT("/Game/Materials/M_PHCGlass.M_PHCGlass"));
 
-	// Set MinAltitude very low so the ground clamp never fights our SetActorLocation
-	NPCHelicopter->MinAltitude = -100000.f;
-
-	// Tag for hitscan identification (same pattern as "GiantCrab")
-	NPCHelicopter->Tags.Add(FName("NPCHelicopter"));
-
-	// Set collision to QueryOnly so hitscan line traces can hit it, but no physics blocking
-	if (NPCHelicopter->VehicleCollision)
+	// Lambda to configure a spawned NPC helicopter
+	auto ConfigureNPCHeli = [&](APHCBlackHawkPawn* Heli, TArray<TObjectPtr<UMaterialInstanceDynamic>>& MIDs,
+		UStaticMeshComponent*& OutArrow)
 	{
-		NPCHelicopter->VehicleCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-		NPCHelicopter->VehicleCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
-		NPCHelicopter->VehicleCollision->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
-	}
+		if (!Heli) return;
 
-	// Collect all body MIDs for damage flash effect
-	NPCHeliBodyMIDs.Empty();
-	for (UStaticMeshComponent* Comp : NPCHelicopter->BodyColoredMeshes)
-	{
-		if (!Comp) continue;
-		UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(Comp->GetMaterial(0));
-		if (MID) NPCHeliBodyMIDs.Add(MID);
-	}
+		// NPC helicopters are local-only — disable replication so the net driver
+		// doesn't destroy them when connected to a dedicated server.
+		Heli->SetReplicates(false);
+		Heli->SetReplicateMovement(false);
 
-	// Start hidden (Tick will show it during daytime)
-	NPCHelicopter->SetActorHiddenInGame(true);
-	bNPCHeliVisible = false;
+		Heli->bIsOccupied = true;
+		Heli->MinAltitude = -100000.f;
+		Heli->Tags.Add(FName("NPCHelicopter"));
+
+		if (Heli->VehicleCollision)
+		{
+			Heli->VehicleCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+			Heli->VehicleCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
+			Heli->VehicleCollision->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+		}
+
+		MIDs.Empty();
+		for (UStaticMeshComponent* Comp : Heli->BodyColoredMeshes)
+		{
+			if (!Comp) continue;
+			UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(Comp->GetMaterial(0));
+			if (MID) MIDs.Add(MID);
+		}
+
+		// Liquid glass arrow indicator above helicopter
+		if (ArrowConeMesh && ArrowGlassMat && Heli->VehicleCollision)
+		{
+			UStaticMeshComponent* Arrow = NewObject<UStaticMeshComponent>(Heli, TEXT("ArrowIndicator"));
+			Arrow->SetupAttachment(Heli->VehicleCollision);
+			Arrow->SetStaticMesh(ArrowConeMesh);
+			Arrow->SetRelativeLocation(FVector(0.f, 0.f, 250.f));
+			Arrow->SetRelativeRotation(FRotator(180.f, 0.f, 0.f));
+			Arrow->SetRelativeScale3D(FVector(1.5f, 1.5f, 2.0f));
+			Arrow->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Arrow->SetCastShadow(false);
+
+			UMaterialInstanceDynamic* ArrowMID = UMaterialInstanceDynamic::Create(ArrowGlassMat, Heli);
+			ArrowMID->SetVectorParameterValue(TEXT("BaseColor"),
+				FLinearColor(1.0f, 0.9f, 0.3f));
+			ArrowMID->SetScalarParameterValue(TEXT("Opacity"), 0.8f);
+			ArrowMID->SetScalarParameterValue(TEXT("Metallic"), 0.3f);
+			ArrowMID->SetScalarParameterValue(TEXT("Roughness"), 0.05f);
+			ArrowMID->SetVectorParameterValue(TEXT("EmissiveColor"),
+				FLinearColor(10.0f, 8.0f, 2.0f));
+			Arrow->SetMaterial(0, ArrowMID);
+			Arrow->RegisterComponent();
+			OutArrow = Arrow;
+		}
+
+		Heli->SetActorHiddenInGame(true);
+	};
+
+	// Helicopter 1
+	const FVector SpawnPos1(-2000.f, -10000.f, 2500.f);
+	NPCHelicopter = World->SpawnActor<APHCBlackHawkPawn>(APHCBlackHawkPawn::StaticClass(), SpawnPos1, FRotator::ZeroRotator, Params);
+	UStaticMeshComponent* Arrow1Raw = nullptr;
+	ConfigureNPCHeli(NPCHelicopter, NPCHeliBodyMIDs, Arrow1Raw);
+	NPCHeliArrow = Arrow1Raw;
+	bNPCHeliVisible = true;
 	NPCHeliPatrolAngle = 0.f;
 	NPCHeliHealth = 240.f;
 	bNPCHeliCrashing = false;
 	NPCHeliCrashTimer = 0.f;
-	NPCHeliRespawnTimer = -1.f;
 	NPCHeliDamageFlashTimer = 0.f;
+	bNPCHeli1Down = false;
+	if (NPCHelicopter)
+	{
+		NPCHelicopter->SetActorHiddenInGame(false);
+		UE_LOG(LogPlayhouseCity, Warning, TEXT("NPC Helicopter 1 spawned at %s"), *NPCHelicopter->GetActorLocation().ToString());
+	}
 
-	UE_LOG(LogPlayhouseCity, Log, TEXT("NPC patrol helicopter spawned (APHCBlackHawkPawn)."));
+	// Helicopter 2 — starts on opposite side
+	const FVector SpawnPos2(-18000.f, -10000.f, 2500.f);
+	NPCHelicopter2 = World->SpawnActor<APHCBlackHawkPawn>(APHCBlackHawkPawn::StaticClass(), SpawnPos2, FRotator::ZeroRotator, Params);
+	UStaticMeshComponent* Arrow2Raw = nullptr;
+	ConfigureNPCHeli(NPCHelicopter2, NPCHeliBodyMIDs2, Arrow2Raw);
+	NPCHeliArrow2 = Arrow2Raw;
+	bNPCHeliVisible2 = true;
+	NPCHeliPatrolAngle2 = UE_PI; // opposite side
+	NPCHeliHealth2 = 240.f;
+	bNPCHeliCrashing2 = false;
+	NPCHeliCrashTimer2 = 0.f;
+	NPCHeliDamageFlashTimer2 = 0.f;
+	bNPCHeli2Down = false;
+	if (NPCHelicopter2)
+	{
+		NPCHelicopter2->SetActorHiddenInGame(false);
+		UE_LOG(LogPlayhouseCity, Warning, TEXT("NPC Helicopter 2 spawned at %s"), *NPCHelicopter2->GetActorLocation().ToString());
+	}
+	else
+	{
+		UE_LOG(LogPlayhouseCity, Error, TEXT("NPC Helicopter 2 FAILED to spawn!"));
+	}
+
+	NPCHeliPairRespawnTimer = -1.f;
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("2 NPC patrol helicopters spawned."));
 }
 
 // ---------------------------------------------------------------------------
@@ -16352,36 +16788,70 @@ void UPHCCitySubsystem::OnNPCHeliDestroyed()
 {
 	bNPCHeliCrashing = true;
 	NPCHeliCrashTimer = 0.f;
-	bNPCHeliPermanentlyDestroyed = true;
-	SaveDestroyedVehicleState();
+	bNPCHeli1Down = true;
+
+	// Start pair respawn timer only when both are down
+	if (bNPCHeli2Down && NPCHeliPairRespawnTimer < 0.f)
+	{
+		NPCHeliPairRespawnTimer = 60.f;
+	}
+}
+
+// ---------------------------------------------------------------------------
+void UPHCCitySubsystem::OnNPCHeli2Destroyed()
+{
+	bNPCHeliCrashing2 = true;
+	NPCHeliCrashTimer2 = 0.f;
+	bNPCHeli2Down = true;
+
+	// Start pair respawn timer only when both are down
+	if (bNPCHeli1Down && NPCHeliPairRespawnTimer < 0.f)
+	{
+		NPCHeliPairRespawnTimer = 60.f;
+	}
 }
 
 // ---------------------------------------------------------------------------
 void UPHCCitySubsystem::RespawnNPCHelicopter()
 {
-	if (!NPCHelicopter) return;
-
-	NPCHeliHealth = 240.f;
-	bNPCHeliCrashing = false;
-	NPCHeliCrashTimer = 0.f;
-	NPCHeliRespawnTimer = -1.f;
-	NPCHeliDamageFlashTimer = 0.f;
-	NPCHeliPatrolAngle = 0.f;
-
-	// Clear emissive flash
-	for (UMaterialInstanceDynamic* MID : NPCHeliBodyMIDs)
+	auto ResetHeli = [this](APHCBlackHawkPawn* Heli, TArray<TObjectPtr<UMaterialInstanceDynamic>>& MIDs,
+		float& Health, bool& bCrashing, float& CrashTimer, float& DmgFlash, float& PatrolAngle,
+		bool& bVisible, bool& bDown, const FVector& SpawnPos, float StartAngle)
 	{
-		if (MID) MID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
-	}
+		if (!Heli) return;
 
-	NPCHelicopter->SetActorLocation(FVector(18000.f, 0.f, 3500.f));
-	NPCHelicopter->SetActorRotation(FRotator::ZeroRotator);
-	NPCHelicopter->bIsOccupied = true;
+		Health = 240.f;
+		bCrashing = false;
+		CrashTimer = 0.f;
+		DmgFlash = 0.f;
+		PatrolAngle = StartAngle;
+		bDown = false;
 
-	// Show if daytime
-	const bool bDay = (DayNightTime > 0.02f && DayNightTime < 0.48f);
-	NPCHelicopter->SetActorHiddenInGame(!bDay);
-	bNPCHeliVisible = bDay;
+		for (UMaterialInstanceDynamic* MID : MIDs)
+		{
+			if (MID) MID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
+		}
+
+		Heli->SetActorLocation(SpawnPos);
+		Heli->SetActorRotation(FRotator::ZeroRotator);
+		Heli->bIsOccupied = true;
+
+		const bool bDay = (DayNightTime > 0.02f && DayNightTime < 0.48f);
+		Heli->SetActorHiddenInGame(!bDay);
+		bVisible = bDay;
+	};
+
+	ResetHeli(NPCHelicopter, NPCHeliBodyMIDs, NPCHeliHealth, bNPCHeliCrashing,
+		NPCHeliCrashTimer, NPCHeliDamageFlashTimer, NPCHeliPatrolAngle,
+		bNPCHeliVisible, bNPCHeli1Down, FVector(-2000.f, -10000.f, 2500.f), 0.f);
+
+	ResetHeli(NPCHelicopter2, NPCHeliBodyMIDs2, NPCHeliHealth2, bNPCHeliCrashing2,
+		NPCHeliCrashTimer2, NPCHeliDamageFlashTimer2, NPCHeliPatrolAngle2,
+		bNPCHeliVisible2, bNPCHeli2Down, FVector(-18000.f, -10000.f, 2500.f), UE_PI);
+
+	NPCHeliPairRespawnTimer = -1.f;
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Both NPC helicopters respawned."));
 }
 
 // ---------------------------------------------------------------------------

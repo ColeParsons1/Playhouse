@@ -18,6 +18,7 @@ class APostProcessVolume;
 class APHCBlackbirdPawn;
 class APHCBlackHawkPawn;
 class UProceduralMeshComponent;
+class UDecalComponent;
 
 /** City district types for zone-based procedural generation. */
 enum class ECityDistrict : uint8
@@ -138,6 +139,9 @@ private:
 	/** Translucent glass/water material with BaseColor, Opacity, Metallic, Roughness, EmissiveColor. */
 	UPROPERTY(Transient) TObjectPtr<UMaterial> GlassMaterial;
 
+	/** Post-process material for custom-colored chromatic aberration during trip. */
+	UPROPERTY(Transient) TObjectPtr<UMaterial> ChromaAberrationMaterial;
+
 	// -- Procedural normal/roughness map textures (generated at startup) ------
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> GrassNormalMap;
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> BrickNormalMap;
@@ -174,7 +178,7 @@ public:
 
 	/** Mushroom psychedelic trip effect. */
 	float MushroomTripTimer = -1.f;          // <0 = inactive, >=0 = elapsed seconds
-	float MushroomTripDuration = 180.f;      // base 3 minutes, extended by re-doses
+	float MushroomTripDuration = 60.f;       // base 1 minute, +20s per re-dose
 	int32 TripDoseCount = 0;                 // how many mushrooms collected this trip
 	float TripIntensityMultiplier = 1.f;     // grows with re-doses
 	float TripBaseFOV = 90.f;                // cached camera FOV before trip
@@ -185,12 +189,22 @@ public:
 	/** World-space hallucination — ground shadow tiles + mandala. */
 	UPROPERTY(Transient) TObjectPtr<AActor> TripHallucinationActor;
 
-	/** Ground overlay — triangle tiles covering the area around the player. */
-	static constexpr int32 TripGridN = 20;
-	static constexpr float TripTileSize = 500.f;
-	int32 TripTriCount = 0;
-	UPROPERTY(Transient) TObjectPtr<UProceduralMeshComponent> TripGroundMesh;
-	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> TripGroundMID;
+	/** Ground overlay — DMT chrysanthemum pattern using multiple HISMs. */
+	UPROPERTY(Transient) TObjectPtr<UHierarchicalInstancedStaticMeshComponent> TripTileHISM;   // Cone petals
+	UPROPERTY(Transient) TObjectPtr<UHierarchicalInstancedStaticMeshComponent> TripBarHISM;    // Cube lattice bars
+	UPROPERTY(Transient) TObjectPtr<UHierarchicalInstancedStaticMeshComponent> TripDotHISM;    // Cylinder nodes
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> TripTileMID;
+
+	/** Deferred decal projection — projects DMT pattern onto walls/terrain. */
+	UPROPERTY(Transient) TObjectPtr<UMaterial> DecalMaterial;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> TripDecalMID;
+	UPROPERTY(Transient) TArray<TObjectPtr<UDecalComponent>> TripDecals;
+
+	/** Subtle underglow point lights for floral pattern. */
+	UPROPERTY(Transient) TArray<TObjectPtr<UPointLightComponent>> TripGlowLights;
+
+	/** Custom chromatic aberration post-process material (mandala-colored fringing). */
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> TripChromaMID;
 
 	bool bTripHallucinationsSpawned = false;
 
@@ -327,7 +341,28 @@ public:
 	float NPCHeliDamageFlashTimer = 0.f;
 	bool bNPCHeliCrashing = false;
 	float NPCHeliCrashTimer = 0.f;
-	float NPCHeliRespawnTimer = -1.f;
+	bool bNPCHeli1Down = false;
+
+	/** Second NPC patrol helicopter (opposite side of city). */
+	void OnNPCHeli2Destroyed();
+
+	UPROPERTY(Transient) TObjectPtr<APHCBlackHawkPawn> NPCHelicopter2;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> NPCHeliBodyMIDs2;
+
+	// Liquid glass arrow indicators above NPC helicopters
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> NPCHeliArrow;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> NPCHeliArrow2;
+
+	float NPCHeliPatrolAngle2 = UE_PI; // start on opposite side
+	bool bNPCHeliVisible2 = false;
+	float NPCHeliHealth2 = 240.f;
+	float NPCHeliDamageFlashTimer2 = 0.f;
+	bool bNPCHeliCrashing2 = false;
+	float NPCHeliCrashTimer2 = 0.f;
+	bool bNPCHeli2Down = false;
+
+	/** Both helis must be down before the pair respawns together. */
+	float NPCHeliPairRespawnTimer = -1.f;
 	bool bNPCHeliPermanentlyDestroyed = false;
 	bool bAirportBlackbirdDestroyed = false;
 
