@@ -18,6 +18,9 @@
 #include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionScreenPosition.h"
 #include "Materials/MaterialExpressionSceneTexture.h"
+#include "Materials/MaterialExpressionCustom.h"
+#include "Materials/MaterialExpressionTextureCoordinate.h"
+#include "Materials/MaterialExpressionTime.h"
 #include "MaterialDomain.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
@@ -633,6 +636,255 @@ void FPlayhouseCityModule::StartupModule()
 
 		UE_LOG(LogPlayhouseCity, Log,
 			TEXT("PHC: Created and saved M_PHCDecal material to %s"), *FilePath);
+		}
+	}
+
+	// ---------------------------------------------------------------------------
+	// M_PHCTripSky -- Unlit Neon Circuitry fractal sky dome for mushroom trip.
+	// Mandelbox fractal iteration (box fold + sphere fold), dual scene modes
+	// (Alien Synthesis neon glow + Neon Glyphs ornamental grid), Persian paisley
+	// background, post-processing (contrast, saturation 2.2x, vignette).
+	// Rendered on inside of a sphere surrounding the player.
+	// ---------------------------------------------------------------------------
+	{
+		const FString PackagePath = TEXT("/Game/Materials/M_PHCTripSky");
+		const FString FilePath = FPackageName::LongPackageNameToFilename(
+			PackagePath, FPackageName::GetAssetPackageExtension());
+		if (!FPaths::FileExists(FilePath))
+		{
+		const FString DirPath = FPaths::GetPath(FilePath);
+		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+		PlatformFile.CreateDirectoryTree(*DirPath);
+
+		UPackage* Package = CreatePackage(*PackagePath);
+		UMaterial* Mat = NewObject<UMaterial>(Package, TEXT("M_PHCTripSky"),
+			RF_Public | RF_Standalone);
+
+		Mat->SetShadingModel(MSM_Unlit);
+		Mat->TwoSided = true;
+
+		UMaterialEditorOnlyData* EditorData = Mat->GetEditorOnlyData();
+
+		// --- Node 1: Texture Coordinate (sphere UVs) ---
+		auto* TexCoord = NewObject<UMaterialExpressionTextureCoordinate>(Mat);
+		EditorData->ExpressionCollection.Expressions.Add(TexCoord);
+
+		// --- Node 2: Time ---
+		auto* TimeNode = NewObject<UMaterialExpressionTime>(Mat);
+		EditorData->ExpressionCollection.Expressions.Add(TimeNode);
+
+		// --- Scalar parameters for simulated audio ---
+		auto* BassParam = NewObject<UMaterialExpressionScalarParameter>(Mat);
+		BassParam->ParameterName = TEXT("Bass");
+		BassParam->DefaultValue = 0.0f;
+		EditorData->ExpressionCollection.Expressions.Add(BassParam);
+
+		auto* HighParam = NewObject<UMaterialExpressionScalarParameter>(Mat);
+		HighParam->ParameterName = TEXT("High");
+		HighParam->DefaultValue = 0.0f;
+		EditorData->ExpressionCollection.Expressions.Add(HighParam);
+
+		auto* LevelParam = NewObject<UMaterialExpressionScalarParameter>(Mat);
+		LevelParam->ParameterName = TEXT("Level");
+		LevelParam->DefaultValue = 0.5f;
+		EditorData->ExpressionCollection.Expressions.Add(LevelParam);
+
+		auto* MidParam = NewObject<UMaterialExpressionScalarParameter>(Mat);
+		MidParam->ParameterName = TEXT("Mid");
+		MidParam->DefaultValue = 0.0f;
+		EditorData->ExpressionCollection.Expressions.Add(MidParam);
+
+		auto* SceneIndexParam = NewObject<UMaterialExpressionScalarParameter>(Mat);
+		SceneIndexParam->ParameterName = TEXT("SceneIndex");
+		SceneIndexParam->DefaultValue = 0.0f;
+		EditorData->ExpressionCollection.Expressions.Add(SceneIndexParam);
+
+		// --- Custom HLSL Neon Circuitry shader ---
+		auto* CustomNode = NewObject<UMaterialExpressionCustom>(Mat);
+		CustomNode->OutputType = CMOT_Float3;
+		CustomNode->Description = TEXT("NeonCircuitryShader");
+
+		// Define 7 inputs
+		CustomNode->Inputs.Empty();
+		{
+			FCustomInput In;
+			In.InputName = TEXT("UV");
+			In.Input.Expression = TexCoord;
+			CustomNode->Inputs.Add(In);
+		}
+		{
+			FCustomInput In;
+			In.InputName = TEXT("Time");
+			In.Input.Expression = TimeNode;
+			CustomNode->Inputs.Add(In);
+		}
+		{
+			FCustomInput In;
+			In.InputName = TEXT("Bass");
+			In.Input.Expression = BassParam;
+			CustomNode->Inputs.Add(In);
+		}
+		{
+			FCustomInput In;
+			In.InputName = TEXT("High");
+			In.Input.Expression = HighParam;
+			CustomNode->Inputs.Add(In);
+		}
+		{
+			FCustomInput In;
+			In.InputName = TEXT("Level");
+			In.Input.Expression = LevelParam;
+			CustomNode->Inputs.Add(In);
+		}
+		{
+			FCustomInput In;
+			In.InputName = TEXT("Mid");
+			In.Input.Expression = MidParam;
+			CustomNode->Inputs.Add(In);
+		}
+		{
+			FCustomInput In;
+			In.InputName = TEXT("SceneIndex");
+			In.Input.Expression = SceneIndexParam;
+			CustomNode->Inputs.Add(In);
+		}
+
+		// Full HLSL — Neon Circuitry translation from three.js
+		// Mandelbox fractal (box fold + sphere fold), dual scenes, Persian BG
+		CustomNode->Code = TEXT(
+			"float time = Time * 0.5;\n"
+			"float2 uv = UV * 2.0 - 1.0;\n"
+			"uv.x *= 2.0;\n"
+			"float2 rawUV = UV * 2.0 - 1.0;\n"
+			"\n"
+			"// --- Persian paisley background ---\n"
+			"float2 bgp = rawUV * 2.5 + time * 0.05;\n"
+			"float2 bgID = floor(bgp);\n"
+			"float2 bgF = frac(bgp) - 0.5;\n"
+			"float bgRipple = sin(length(rawUV) * 5.0 - time * 0.5);\n"
+			"bgF += bgF * bgRipple * 0.05;\n"
+			"float bgR = length(bgF);\n"
+			"float bgA = atan2(bgF.y, bgF.x);\n"
+			"float bgTwist = sin(bgR * 8.0 - time * 0.5);\n"
+			"float bgShape = sin(bgA + bgR * 6.0 + bgTwist);\n"
+			"float bgPat = smoothstep(0.1, 0.0, abs(bgShape * bgR - 0.1));\n"
+			"float bgT = length(bgID) * 0.1 + time * 0.1;\n"
+			"float3 bgCol = (0.5 + 0.5 * cos(6.28318 * (float3(1.0, 1.0, 0.5) * bgT\n"
+			"    + float3(0.0, 0.15, 0.20)))) * bgPat * 0.25;\n"
+			"\n"
+			"float3 sceneCol = float3(0.0, 0.0, 0.0);\n"
+			"\n"
+			"if (SceneIndex < 0.5)\n"
+			"{\n"
+			"    // Scene 1: Alien Synthesis — Mandelbox fractal\n"
+			"    float2 suv = abs(uv);\n"
+			"    suv -= 0.5;\n"
+			"    float ra0 = time * 0.05;\n"
+			"    float rs0 = sin(ra0); float rc0 = cos(ra0);\n"
+			"    suv = float2(rc0 * suv.x - rs0 * suv.y, rs0 * suv.x + rc0 * suv.y);\n"
+			"    float2 uv0 = suv;\n"
+			"    float sc = 2.0 + 0.1 * sin(time * 0.1);\n"
+			"    for (int i = 0; i < 5; i++)\n"
+			"    {\n"
+			"        suv = clamp(suv, -1.0, 1.0) * 2.0 - suv;\n"
+			"        float r2 = dot(suv, suv);\n"
+			"        if (r2 < 0.25) suv *= 4.0;\n"
+			"        else if (r2 < 1.0) suv *= 1.0 / r2;\n"
+			"        suv *= sc;\n"
+			"        float ira = 0.2 + (float)i * 0.03 * sin(time * 0.1);\n"
+			"        float irs = sin(ira); float irc = cos(ira);\n"
+			"        suv = float2(irc * suv.x - irs * suv.y, irs * suv.x + irc * suv.y);\n"
+			"        suv += float2(0.5 * sin(time * 0.1), 0.5 * cos(time * 0.13));\n"
+			"        float d = length(suv);\n"
+			"        float pt = length(uv0) + (float)i * 0.4 + time * 0.1;\n"
+			"        float3 col = 0.5 + 0.5 * cos(6.28318 * (pt + float3(0.263, 0.416, 0.657)));\n"
+			"        float sinP = sin(d * (4.0 + Level * 6.0) + time * 0.1) / 8.0;\n"
+			"        float sharpP = abs(sin(d * 8.0 + time * 0.1)) / 8.0;\n"
+			"        float dMixed = lerp(sinP, sharpP, 0.5);\n"
+			"        float brightness = 0.008 + Bass * 0.004;\n"
+			"        float glow = pow(brightness / (abs(dMixed) + 0.01), 1.15);\n"
+			"        sceneCol += col * glow * exp(-(float)i * 0.25);\n"
+			"    }\n"
+			"    sceneCol *= 0.8;\n"
+			"}\n"
+			"else\n"
+			"{\n"
+			"    // Scene 2: Neon Glyphs — Mandelbox + grid-based glyphs\n"
+			"    float2 suv = abs(uv);\n"
+			"    suv -= 0.5;\n"
+			"    float ra0 = time * 0.05;\n"
+			"    float rs0 = sin(ra0); float rc0 = cos(ra0);\n"
+			"    suv = float2(rc0 * suv.x - rs0 * suv.y, rs0 * suv.x + rc0 * suv.y);\n"
+			"    float2 uv0 = suv;\n"
+			"    float sc = 2.0 + 0.1 * sin(time * 0.1);\n"
+			"    for (int j = 0; j < 5; j++)\n"
+			"    {\n"
+			"        suv = clamp(suv, -1.0, 1.0) * 2.0 - suv;\n"
+			"        float r2 = dot(suv, suv);\n"
+			"        if (r2 < 0.25) suv *= 4.0;\n"
+			"        else if (r2 < 1.0) suv *= 1.0 / r2;\n"
+			"        suv *= sc;\n"
+			"        float ira = 0.2 + (float)j * 0.03 * sin(time * 0.1);\n"
+			"        float irs = sin(ira); float irc = cos(ira);\n"
+			"        suv = float2(irc * suv.x - irs * suv.y, irs * suv.x + irc * suv.y);\n"
+			"        suv += float2(0.5 * sin(time * 0.1), 0.5 * cos(time * 0.13));\n"
+			"        float3 col = 0.5 + 0.5 * cos(6.28318 * (length(uv0) + (float)j * 0.4\n"
+			"            + time * 0.1 + float3(0.263, 0.416, 0.657)));\n"
+			"        float2 gs = suv * 4.0;\n"
+			"        float2 gID = floor(gs);\n"
+			"        float2 gUV = frac(gs) - 0.5;\n"
+			"        float rnd = frac(sin(dot(gID + (float)j * 1.618,\n"
+			"            float2(12.9898, 78.233))) * 43758.5453);\n"
+			"        if (rnd > 0.5) gUV.x *= -1.0;\n"
+			"        if (rnd > 0.75) gUV = gUV.yx;\n"
+			"        float thickness = clamp(0.1 - High * 0.05, 0.02, 0.15);\n"
+			"        float tp = frac(rnd * 123.45);\n"
+			"        float shape = 0.0;\n"
+			"        if (tp < 0.3) {\n"
+			"            float dd = max(abs(gUV.x), abs(gUV.y));\n"
+			"            shape = smoothstep(thickness, 0.0, abs(dd - 0.35));\n"
+			"        } else if (tp < 0.6) {\n"
+			"            float rr = length(gUV);\n"
+			"            shape = smoothstep(thickness, 0.0, abs(rr - 0.3));\n"
+			"        } else {\n"
+			"            float dd = abs(gUV.x + gUV.y);\n"
+			"            shape = smoothstep(thickness, 0.0, dd);\n"
+			"        }\n"
+			"        float flicker = 0.5 + 0.5 * sin(time * 10.0 + rnd * 100.0);\n"
+			"        float glow = shape * (0.015 + Bass * 0.01) * flicker;\n"
+			"        glow += 0.001 / (length(gUV) + 0.2);\n"
+			"        sceneCol += col * glow * exp(-(float)j * 0.25);\n"
+			"    }\n"
+			"}\n"
+			"\n"
+			"// Blend scene with BG based on scene luminance\n"
+			"float scLum = dot(sceneCol, float3(0.299, 0.587, 0.114));\n"
+			"float blendA = clamp(smoothstep(0.05, 0.4, scLum) + Bass * 0.05, 0.0, 1.0);\n"
+			"float3 col = lerp(bgCol, sceneCol, blendA);\n"
+			"\n"
+			"// Post-processing: gamma, saturation boost, vignette\n"
+			"float expo = 0.8 + Bass * 0.05;\n"
+			"col = pow(max(col, 0.001), float3(expo, expo, expo));\n"
+			"float grayVal = dot(col, float3(0.299, 0.587, 0.114));\n"
+			"col = lerp(float3(grayVal, grayVal, grayVal), col, 2.2);\n"
+			"col *= 0.6 * smoothstep(2.5, 0.5, length(UV * 2.0 - 1.0));\n"
+			"return max(col, float3(0.0, 0.0, 0.0));\n"
+		);
+
+		EditorData->ExpressionCollection.Expressions.Add(CustomNode);
+
+		// Connect custom node output → EmissiveColor
+		EditorData->EmissiveColor.Expression = CustomNode;
+
+		Mat->PreEditChange(nullptr);
+		Mat->PostEditChange();
+
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		UPackage::SavePackage(Package, Mat, *FilePath, SaveArgs);
+
+		UE_LOG(LogPlayhouseCity, Log,
+			TEXT("PHC: Created and saved M_PHCTripSky material to %s"), *FilePath);
 		}
 	}
 

@@ -206,6 +206,11 @@ public:
 	/** Custom chromatic aberration post-process material (mandala-colored fringing). */
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> TripChromaMID;
 
+	/** Fractal sky dome — replaces sky during trip. */
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> TripSkyDome;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> TripSkyMID;
+	UPROPERTY(Transient) TObjectPtr<UMaterial> TripSkyMaterial;
+
 	bool bTripHallucinationsSpawned = false;
 
 	/** Natural disaster system. */

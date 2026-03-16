@@ -162,6 +162,7 @@ void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	GlassMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCGlass.M_PHCGlass"));
 	ChromaAberrationMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCChromaAberration.M_PHCChromaAberration"));
 	DecalMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCDecal.M_PHCDecal"));
+	TripSkyMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCTripSky.M_PHCTripSky"));
 
 #if WITH_EDITORONLY_DATA
 	if (!ColorMaterial)
@@ -1634,7 +1635,15 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			TripDecalMID = nullptr;
 			TripDecals.Empty();
 			TripGlowLights.Empty();
+			TripSkyDome = nullptr;
+			TripSkyMID = nullptr;
 			bTripHallucinationsSpawned = false;
+
+			// Restore sky visibility
+			if (StarfieldActor) StarfieldActor->SetActorHiddenInGame(false);
+			if (CloudLayerActor) CloudLayerActor->SetActorHiddenInGame(false);
+			if (CloudLayerActor2) CloudLayerActor2->SetActorHiddenInGame(false);
+			if (CloudLayerActor3) CloudLayerActor3->SetActorHiddenInGame(false);
 
 			// Remove custom chromatic aberration blendable
 			if (TripChromaMID && PostProcessVolume)
@@ -1676,7 +1685,10 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 				WinMat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
 			}
 			if (SkyLightComp)
+			{
 				SkyLightComp->SetLightColor(FLinearColor(0.6f, 0.7f, 1.0f));
+				SkyLightComp->SetIntensity(0.3f);
+			}
 		}
 		else
 		{
@@ -1793,6 +1805,37 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 						TripChromaMID->SetVectorParameterValue(TEXT("TintC"), FLinearColor::White);
 						PostProcessVolume->Settings.WeightedBlendables.Array.Add(
 							FWeightedBlendable(1.f, TripChromaMID));
+					}
+
+					// Spawn fractal sky dome (replaces sky with three.js-style shader)
+					if (TripSkyMaterial && SphereMesh && TripHallucinationActor)
+					{
+						TripSkyDome = NewObject<UStaticMeshComponent>(
+							TripHallucinationActor, TEXT("TripSkyDome"));
+						TripSkyDome->SetStaticMesh(SphereMesh);
+						TripSkyDome->SetWorldLocation(PlayerPos);
+						TripSkyDome->SetWorldScale3D(FVector(200.f, 200.f, 200.f));
+						TripSkyDome->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+						TripSkyDome->CastShadow = false;
+						TripSkyDome->AttachToComponent(
+							TripHallucinationActor->GetRootComponent(),
+							FAttachmentTransformRules::KeepWorldTransform);
+						TripSkyDome->RegisterComponent();
+
+						TripSkyMID = UMaterialInstanceDynamic::Create(TripSkyMaterial, this);
+						TripSkyMID->SetScalarParameterValue(TEXT("Bass"), 0.f);
+						TripSkyMID->SetScalarParameterValue(TEXT("High"), 0.f);
+						TripSkyMID->SetScalarParameterValue(TEXT("Level"), 0.5f);
+						TripSkyMID->SetScalarParameterValue(TEXT("Mid"), 0.f);
+						TripSkyMID->SetScalarParameterValue(TEXT("SceneIndex"), 0.f);
+						TripSkyDome->SetMaterial(0, TripSkyMID);
+
+						// Hide existing sky elements
+						if (StarfieldActor) StarfieldActor->SetActorHiddenInGame(true);
+						if (CloudLayerActor) CloudLayerActor->SetActorHiddenInGame(true);
+						if (CloudLayerActor2) CloudLayerActor2->SetActorHiddenInGame(true);
+						if (CloudLayerActor3) CloudLayerActor3->SetActorHiddenInGame(true);
+						if (SkyLightComp) SkyLightComp->SetIntensity(0.1f);
 					}
 
 					// Spawn floral DMT floor pattern using 3 HISMs
@@ -2217,6 +2260,26 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 									(GlowCol * 0.7f + FLinearColor(0.15f, 0.15f, 0.15f)).ToFColor(true));
 							}
 						}
+					}
+
+					// Animate Neon Circuitry sky dome — simulated audio drives shader params
+					if (TripSkyMID)
+					{
+						const float SimBass  = FMath::Clamp(0.4f + 0.35f * FMath::Sin(GT * 0.8f) * FMath::Sin(GT * 1.3f), 0.f, 1.f);
+						const float SimHigh  = FMath::Clamp(0.3f + 0.25f * FMath::Sin(GT * 2.1f), 0.f, 1.f);
+						const float SimLevel = FMath::Clamp(0.5f + 0.3f * FMath::Sin(GT * 0.5f), 0.f, 1.f);
+						const float SimMid   = FMath::Clamp(0.35f + 0.3f * FMath::Sin(GT * 1.5f), 0.f, 1.f);
+						// Toggle between Alien Synthesis and Neon Glyphs every ~30s
+						const float SceneIdx = FMath::Fmod(GT, 60.f) < 30.f ? 0.f : 1.f;
+
+						TripSkyMID->SetScalarParameterValue(TEXT("Bass"), SimBass * Intensity);
+						TripSkyMID->SetScalarParameterValue(TEXT("High"), SimHigh * Intensity);
+						TripSkyMID->SetScalarParameterValue(TEXT("Level"), SimLevel);
+						TripSkyMID->SetScalarParameterValue(TEXT("Mid"), SimMid * Intensity);
+						TripSkyMID->SetScalarParameterValue(TEXT("SceneIndex"), SceneIdx);
+
+						if (TripSkyDome)
+							TripSkyDome->SetWorldLocation(PlayerPos);
 					}
 
 					// === WORLD MORPHING — Full mandala palette colors + intensity ===
