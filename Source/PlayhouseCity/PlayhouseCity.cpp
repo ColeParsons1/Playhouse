@@ -18,6 +18,7 @@
 #include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionScreenPosition.h"
 #include "Materials/MaterialExpressionSceneTexture.h"
+#include "MaterialDomain.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
 #include "Misc/PackageName.h"
