@@ -960,23 +960,30 @@ void APHCRaptorPawn::FireRocket()
 	UWorld* World = GetWorld();
 	if (!World) return;
 
+	// Fire toward camera forward (exactly where crosshair points, including lag)
+	FRotator AimRot = GetActorForwardVector().Rotation();
+	if (VehicleCamera)
+	{
+		AimRot = VehicleCamera->GetComponentRotation();
+	}
+	const FVector AimDir = AimRot.Vector();
+
 	const FVector MuzzleLoc = GetActorLocation()
 		+ GetActorForwardVector() * 550.f
 		+ FVector(0.f, 0.f, -10.f);
-	const FRotator MuzzleRot = GetActorForwardVector().Rotation();
 
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	APHCMissileProjectile* Proj = World->SpawnActor<APHCMissileProjectile>(
-		APHCMissileProjectile::StaticClass(), MuzzleLoc, MuzzleRot, SP);
+		APHCMissileProjectile::StaticClass(), MuzzleLoc, AimRot, SP);
 	if (Proj)
 	{
 		Proj->OwnerVehicle = this;
 		Proj->Damage = 100.f;
 
-		// Override velocity: high-velocity rocket
-		Proj->ManualVelocity = MuzzleRot.Vector() * 25000.f;
+		// Override velocity: high-velocity rocket toward crosshair
+		Proj->ManualVelocity = AimDir * 25000.f;
 
 		// Neon orange emissive color for Raptor rounds
 		if (Proj->ProjectileMesh)

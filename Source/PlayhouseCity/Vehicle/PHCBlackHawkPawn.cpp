@@ -821,21 +821,24 @@ void APHCBlackHawkPawn::FireRocket()
 	UWorld* World = GetWorld();
 	if (!World) return;
 
+	FRotator AimRot = GetActorForwardVector().Rotation();
+	if (VehicleCamera) AimRot = VehicleCamera->GetComponentRotation();
+	const FVector AimDir = AimRot.Vector();
+
 	const FVector MuzzleLoc = GetActorLocation()
 		+ GetActorForwardVector() * 250.f
 		+ FVector(0.f, 0.f, -80.f);
-	const FRotator MuzzleRot = GetActorForwardVector().Rotation();
 
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	APHCMissileProjectile* Proj = World->SpawnActor<APHCMissileProjectile>(
-		APHCMissileProjectile::StaticClass(), MuzzleLoc, MuzzleRot, SP);
+		APHCMissileProjectile::StaticClass(), MuzzleLoc, AimRot, SP);
 	if (Proj)
 	{
 		Proj->OwnerVehicle = this;
 		Proj->Damage = 100.f;
-		Proj->ManualVelocity = MuzzleRot.Vector() * 30000.f;
+		Proj->ManualVelocity = AimDir * 30000.f;
 
 		if (Proj->ProjectileMesh)
 		{

@@ -308,6 +308,13 @@ protected:
 	UPROPERTY() TObjectPtr<UBorder> CrosshairLeft;
 	UPROPERTY() TObjectPtr<UBorder> CrosshairRight;
 
+	// -- Vehicle crosshair (flight vehicles: Raptor, Blackbird, Black Hawk) --
+	UPROPERTY() TObjectPtr<UBorder> VehicleCrosshairDot;
+	UPROPERTY() TObjectPtr<UBorder> VehicleCrosshairTop;
+	UPROPERTY() TObjectPtr<UBorder> VehicleCrosshairBottom;
+	UPROPERTY() TObjectPtr<UBorder> VehicleCrosshairLeft;
+	UPROPERTY() TObjectPtr<UBorder> VehicleCrosshairRight;
+
 	// -- Hit marker (white X flash at crosshair) ---------------------------
 	UPROPERTY() TObjectPtr<UBorder> HitMarkerTL;
 	UPROPERTY() TObjectPtr<UBorder> HitMarkerTR;

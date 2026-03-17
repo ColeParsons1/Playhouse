@@ -11,6 +11,8 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 #include "EngineUtils.h"
+#include "Core/PHCCitySubsystem.h"
+#include "Player/PHCCityCharacter.h"
 
 APHCMissileProjectile::APHCMissileProjectile()
 {
@@ -159,6 +161,82 @@ void APHCMissileProjectile::Tick(float DeltaTime)
 
 	// Move forward — simple SetActorLocation, no sweep, no PMC overhead
 	SetActorLocation(PrevLoc + StepDelta);
+
+	// --- Proximity damage: hit NPCs, crabs, players within blast radius ---
+	if (Damage > 0.f && GetWorld())
+	{
+		const float HitRadius = 200.f;
+		const FVector CurLoc = GetActorLocation();
+		for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+		{
+			AActor* Target = *It;
+			if (!Target || Target == this || Target == OwnerVehicle || Target->IsHidden()) continue;
+			if (!Target->Tags.Contains(FName("NPCPlayer")) &&
+				!Target->Tags.Contains(FName("GiantCrab")) &&
+				!Cast<APHCCityCharacter>(Target)) continue;
+			if (Target == Cast<AActor>(OwnerVehicle)) continue;
+
+			const float Dist = FVector::Dist(CurLoc, Target->GetActorLocation() + FVector(0,0,50));
+			if (Dist < HitRadius)
+			{
+				// Apply damage
+				if (Target->ActorHasTag(FName("GiantCrab")))
+				{
+					UPHCCitySubsystem* CS = GetWorld()->GetSubsystem<UPHCCitySubsystem>();
+					if (CS)
+					{
+						for (int32 CI = 0; CI < UPHCCitySubsystem::NumGiantCrabs; ++CI)
+						{
+							if (CS->Crabs[CI].Actor == Target)
+							{
+								CS->Crabs[CI].Health -= Damage;
+								CS->Crabs[CI].DamageFlashTimer = 0.15f;
+								if (CS->Crabs[CI].Health <= 0.f) CS->RespawnCrab(CI);
+								break;
+							}
+						}
+					}
+				}
+				else if (Target->ActorHasTag(FName("NPCPlayer")))
+				{
+					UPHCCitySubsystem* CS = GetWorld()->GetSubsystem<UPHCCitySubsystem>();
+					if (CS)
+					{
+						for (int32 NI = 0; NI < UPHCCitySubsystem::NumNPCPlayers; ++NI)
+						{
+							if (CS->NPCPlayers[NI].Actor == Target)
+							{
+								CS->NPCPlayers[NI].Health -= Damage;
+								CS->NPCPlayers[NI].DamageFlashTimer = 0.15f;
+								if (CS->NPCPlayers[NI].Health <= 0.f)
+								{
+									const FVector NPCLoc = Target->GetActorLocation();
+									SpawnExplosion(NPCLoc);
+									CS->RespawnNPCPlayer(NI);
+								}
+								break;
+							}
+						}
+					}
+				}
+				else if (APHCCityCharacter* HitChar = Cast<APHCCityCharacter>(Target))
+				{
+					HitChar->Health -= Damage;
+					if (HitChar->Health <= 0.f)
+					{
+						HitChar->Deaths++;
+						HitChar->Health = HitChar->MaxHealth;
+						HitChar->SetActorLocation(FVector(0.f, 0.f, 100.f));
+					}
+					HitChar->DamageFlashTimer = 0.3f;
+				}
+
+				SpawnExplosion(CurLoc);
+				Destroy();
+				return;
+			}
+		}
+	}
 
 	// RPG: explode on ground impact
 	if (bIsRPGRocket && GetActorLocation().Z <= 5.f)

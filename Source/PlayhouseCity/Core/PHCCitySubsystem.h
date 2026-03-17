@@ -178,7 +178,7 @@ public:
 
 	/** Mushroom psychedelic trip effect. */
 	float MushroomTripTimer = -1.f;          // <0 = inactive, >=0 = elapsed seconds
-	float MushroomTripDuration = 60.f;       // base 1 minute, +20s per re-dose
+	float MushroomTripDuration = 120.f;      // base 2 minutes, +20s per re-dose
 	int32 TripDoseCount = 0;                 // how many mushrooms collected this trip
 	float TripIntensityMultiplier = 1.f;     // grows with re-doses
 	float TripBaseFOV = 90.f;                // cached camera FOV before trip
@@ -289,7 +289,7 @@ public:
 	void SpawnCollectibleMushrooms();
 
 	/** NPC player characters — wander city during daytime, damageable. */
-	static constexpr int32 NumNPCPlayers = 5;
+	static constexpr int32 NumNPCPlayers = 15;
 
 	struct FNPCPlayerData
 	{

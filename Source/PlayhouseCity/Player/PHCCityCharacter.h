@@ -149,10 +149,10 @@ public:
 	// -- Movement parameters --------------------------------------------------
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Movement")
-	float WalkSpeed = 1967.f;
+	float WalkSpeed = 2360.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Movement")
-	float SprintSpeed = 2000.f;
+	float SprintSpeed = 2600.f;
 
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Movement")
 	bool bIsSprinting = false;
@@ -407,7 +407,7 @@ public:
 	// Recoil (per-shot pitch kick + yaw scatter, auto-recovery)
 	float RecoilPitchAccum = 0.f;
 	float RecoilYawAccum = 0.f;
-	float RecoilRecoverySpeed = 6.f;
+	float RecoilRecoverySpeed = 10.f;
 
 	// Weapon viewmodel bob (uses existing WalkCyclePhase/WalkAnimBlend)
 	float WeaponBobH = 0.f;
@@ -416,7 +416,7 @@ public:
 	// ADS (Aim Down Sights)
 	bool bADS = false;
 	float ADSAlpha = 0.f;
-	float ADSInterpSpeed = 12.f;
+	float ADSInterpSpeed = 14.f;
 	float ADSFOVHip = 90.f;
 	float ADSFOVAim = 65.f;
 	float ADSSensitivityMult = 0.6f;
@@ -429,15 +429,31 @@ public:
 	// Thermal scope (MW2 style)
 	bool bThermalScope = false;
 
-	// Bullet spread (half-angle degrees)
-	float SpreadHipfire = 3.5f;
-	float SpreadADS = 0.8f;
+	// Bullet spread (half-angle degrees) — base values
+	float SpreadHipfire = 3.0f;
+	float SpreadADS = 0.5f;
+
+	// Fortnite-style bloom: spread grows per shot, recovers over time
+	float BloomAccum = 0.f;           // current accumulated bloom (degrees)
+	float BloomPerShot = 0.4f;        // bloom added per shot
+	float BloomMax = 5.0f;            // max bloom cap
+	float BloomRecoveryRate = 4.0f;   // degrees/sec recovery when not firing
+	float BloomMovePenalty = 0.f;     // extra spread from movement (0-2 degrees)
+
+	// Aim assist (Fortnite-style target magnetism for mobile)
+	float AimAssistRadius = 150.f;    // screen-space radius in pixels for slowdown
+	float AimAssistSlowdown = 0.4f;   // look sensitivity multiplier when near target (0.4 = 60% slower)
+	float AimAssistPullStrength = 2.0f; // degrees/sec pull toward nearest target
+	float AimAssistMaxRange = 15000.f;  // max world distance for aim assist
 
 	// Per-shot micro-shake
 	float ShotShakeTimer = 0.f;
 
 	// Hit marker
 	float HitMarkerTimer = 0.f;
+
+	// Headshot multiplier
+	static constexpr float HeadshotMultiplier = 2.0f;
 
 	// Muzzle flash dynamic light
 	UPROPERTY(Transient) TObjectPtr<UPointLightComponent> MuzzleFlashLight;

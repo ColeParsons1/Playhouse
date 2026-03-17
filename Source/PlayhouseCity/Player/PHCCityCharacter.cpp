@@ -67,7 +67,7 @@ APHCCityCharacter::APHCCityCharacter()
 	// ---- Camera boom (Fortnite-style third-person) ----------------------
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 450.f;
+	CameraBoom->TargetArmLength = 320.f;
 	CameraBoom->SocketOffset = FVector(0.f, 75.f, 60.f);
 	CameraBoom->bUsePawnControlRotation = true;
 	CameraBoom->bDoCollisionTest = false;
@@ -906,22 +906,37 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		}
 	}
 
-	// ---- ADS interpolation + FOV (COD-style) ----------------------------
-	if (bFirstPersonMode)
+	// ---- ADS interpolation + FOV (Fortnite-style: works in 1P and 3P) ----
 	{
 		const float ADSTarget = bADS ? 1.f : 0.f;
 		ADSAlpha = FMath::FInterpTo(ADSAlpha, ADSTarget, DeltaTime, ADSInterpSpeed);
-		if (FollowCamera)
+
+		if (bFirstPersonMode)
 		{
-			const float ScopedFOV = (CurrentWeaponType == 6) ? SniperZoomFOV : ADSFOVAim;
-			FollowCamera->SetFieldOfView(FMath::Lerp(ADSFOVHip, ScopedFOV, ADSAlpha));
+			if (FollowCamera)
+			{
+				const float ScopedFOV = (CurrentWeaponType == 6) ? SniperZoomFOV : ADSFOVAim;
+				FollowCamera->SetFieldOfView(FMath::Lerp(ADSFOVHip, ScopedFOV, ADSAlpha));
+			}
 		}
-	}
-	else
-	{
-		ADSAlpha = 0.f;
-		bADS = false;
-		if (FollowCamera) FollowCamera->SetFieldOfView(90.f);
+		else
+		{
+			// 3rd person ADS: over-the-shoulder shift + zoom
+			if (FollowCamera)
+			{
+				FollowCamera->SetFieldOfView(FMath::Lerp(90.f, 70.f, ADSAlpha));
+			}
+			if (CameraBoom)
+			{
+				// Hip: centered behind (0, 75, 60). ADS: shifted right + closer + higher
+				const FVector HipOffset(0.f, 75.f, 60.f);
+				const FVector ADSOffset(0.f, 90.f, 70.f);
+				const float HipArm = 320.f;
+				const float ADSArm = 180.f;
+				CameraBoom->SocketOffset = FMath::Lerp(HipOffset, ADSOffset, ADSAlpha);
+				CameraBoom->TargetArmLength = FMath::Lerp(HipArm, ADSArm, ADSAlpha);
+			}
+		}
 	}
 
 	// ---- Thermal scope post-process (MW2 style) -------------------------
@@ -1056,8 +1071,8 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		}
 	}
 
-	// ---- Recoil recovery (COD-style: pull back toward zero) -------------
-	if (bFirstPersonMode && GetController())
+	// ---- Recoil recovery (pull back toward zero, works in 1P and 3P) ----
+	if (GetController())
 	{
 		if (RecoilPitchAccum > 0.01f)
 		{
@@ -1076,6 +1091,20 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			RecoilYawAccum -= YawRecover;
 		}
 		else { RecoilYawAccum = 0.f; }
+	}
+
+	// ---- Bloom recovery (Fortnite-style: spread decays when not firing) ----
+	{
+		const bool bCurrentlyFiring = (bMinigunFiring || bAK47Firing);
+		if (!bCurrentlyFiring && BloomAccum > 0.f)
+		{
+			BloomAccum = FMath::Max(0.f, BloomAccum - BloomRecoveryRate * DeltaTime);
+		}
+		// Movement spread penalty: walking adds spread, sprinting adds more
+		const FVector Vel = GetVelocity();
+		const float Speed = Vel.Size2D();
+		BloomMovePenalty = FMath::GetMappedRangeValueClamped(
+			FVector2D(10.f, 2000.f), FVector2D(0.f, 2.0f), Speed);
 	}
 
 	// ---- Camera shake (RPG fire recoil, GTA V style) --------------------
@@ -1176,8 +1205,40 @@ void APHCCityCharacter::Tick(float DeltaTime)
 
 		if (!FMath::IsNearlyZero(TouchLookX) || !FMath::IsNearlyZero(TouchLookY))
 		{
-			AddControllerYawInput(TouchLookX);
-			AddControllerPitchInput(TouchLookY);
+			float TLX = TouchLookX;
+			float TLY = TouchLookY;
+
+			// Apply ADS sensitivity to touch look (same as HandleLook)
+			if (CurrentWeaponType == 6 && ADSAlpha > 0.01f)
+			{
+				const float ZoomRatio = SniperZoomFOV / 90.f;
+				const float SniperSens = FMath::Lerp(0.15f, 0.04f, FMath::Clamp(1.f - ZoomRatio, 0.f, 1.f));
+				const float SM = FMath::Lerp(1.f, SniperSens, ADSAlpha);
+				TLX *= SM;
+				TLY *= SM;
+			}
+			else if (ADSAlpha > 0.01f)
+			{
+				const float SM = FMath::Lerp(1.f, ADSSensitivityMult, ADSAlpha);
+				TLX *= SM;
+				TLY *= SM;
+			}
+
+			// Sniper scoped: deadzone + heavy smoothing on touch
+			if (CurrentWeaponType == 6 && ADSAlpha > 0.3f)
+			{
+				const float Mag = FMath::Sqrt(TLX * TLX + TLY * TLY);
+				if (Mag < 0.003f) { TLX = 0.f; TLY = 0.f; }
+
+				const float SmoothSpd = FMath::Lerp(10.f, 2.5f, ADSAlpha);
+				ScopedLookSmooth = FMath::Vector2DInterpTo(ScopedLookSmooth,
+					FVector2D(TLX, TLY), DeltaTime, SmoothSpd);
+				TLX = ScopedLookSmooth.X;
+				TLY = ScopedLookSmooth.Y;
+			}
+
+			AddControllerYawInput(TLX);
+			AddControllerPitchInput(TLY);
 		}
 	}
 
@@ -2533,24 +2594,100 @@ void APHCCityCharacter::HandleLook(const FInputActionValue& Value)
 {
 	if (!GetController()) return;
 	const FVector2D LookVector = Value.Get<FVector2D>();
-	const float ADSSens = (CurrentWeaponType == 6) ? 0.12f : ADSSensitivityMult;
-	const float SensMult = (bFirstPersonMode && ADSAlpha > 0.01f)
-		? FMath::Lerp(1.f, ADSSens, ADSAlpha) : 1.f;
+
+	// Sensitivity: sniper scoped gets much slower in both 1P and 3P
+	float SensMult = 1.f;
+	if (CurrentWeaponType == 6 && ADSAlpha > 0.01f)
+	{
+		// Scale sensitivity with zoom level — more zoom = slower
+		const float ZoomRatio = SniperZoomFOV / 90.f; // 10/90 = 0.11 at max zoom
+		const float SniperSens = FMath::Lerp(0.15f, 0.04f, FMath::Clamp(1.f - ZoomRatio, 0.f, 1.f));
+		SensMult = FMath::Lerp(1.f, SniperSens, ADSAlpha);
+	}
+	else if (ADSAlpha > 0.01f)
+	{
+		SensMult = FMath::Lerp(1.f, ADSSensitivityMult, ADSAlpha);
+	}
 
 	float YawIn = LookVector.X * SensMult;
 	float PitchIn = LookVector.Y * SensMult;
 
-	// Smooth input when scoped with sniper for precise aiming
-	if (CurrentWeaponType == 6 && ADSAlpha > 0.5f)
+	// Sniper scoped: heavy smoothing + deadzone to kill micro-jitter
+	if (CurrentWeaponType == 6 && ADSAlpha > 0.3f)
 	{
+		// Deadzone: ignore very small inputs (touch jitter)
+		const float InputMag = FMath::Sqrt(YawIn * YawIn + PitchIn * PitchIn);
+		if (InputMag < 0.005f)
+		{
+			YawIn = 0.f;
+			PitchIn = 0.f;
+		}
+
+		// Heavy smoothing — interp speed 3.0 for buttery scope movement
+		const float SmoothSpeed = FMath::Lerp(8.f, 3.0f, ADSAlpha);
 		ScopedLookSmooth = FMath::Vector2DInterpTo(ScopedLookSmooth, FVector2D(YawIn, PitchIn),
-			GetWorld()->GetDeltaSeconds(), 8.f);
+			GetWorld()->GetDeltaSeconds(), SmoothSpeed);
 		YawIn = ScopedLookSmooth.X;
 		PitchIn = ScopedLookSmooth.Y;
 	}
 	else
 	{
 		ScopedLookSmooth = FVector2D::ZeroVector;
+	}
+
+	// --- Aim assist (Fortnite-style target magnetism) ---
+	// Only active when holding a ranged weapon
+	const bool bRanged = (CurrentWeaponType == 0 || CurrentWeaponType == 5 || CurrentWeaponType == 6);
+	if (bRanged && GetWorld() && FollowCamera)
+	{
+		const FVector CamLoc = FollowCamera->GetComponentLocation();
+		const FVector CamFwd = FollowCamera->GetForwardVector();
+		float BestDot = -1.f;
+		FVector BestTargetLoc = FVector::ZeroVector;
+		bool bFoundTarget = false;
+
+		// Check all actors with NPCPlayer or enemy tags within range
+		for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+		{
+			AActor* Target = *It;
+			if (Target == this || Target->IsHidden()) continue;
+			if (!Target->Tags.Contains(FName("NPCPlayer")) &&
+				!Target->Tags.Contains(FName("GiantCrab"))) continue;
+
+			const FVector TargetLoc = Target->GetActorLocation() + FVector(0.f, 0.f, 50.f);
+			const float Dist = FVector::Dist(CamLoc, TargetLoc);
+			if (Dist > AimAssistMaxRange || Dist < 100.f) continue;
+
+			const FVector ToTarget = (TargetLoc - CamLoc).GetSafeNormal();
+			const float Dot = FVector::DotProduct(CamFwd, ToTarget);
+			if (Dot > 0.85f && Dot > BestDot)
+			{
+				BestDot = Dot;
+				BestTargetLoc = TargetLoc;
+				bFoundTarget = true;
+			}
+		}
+
+		if (bFoundTarget)
+		{
+			// Slowdown: reduce look speed when near a target
+			const float SlowMix = FMath::GetMappedRangeValueClamped(
+				FVector2D(0.9f, 0.99f), FVector2D(0.f, 1.f), BestDot);
+			const float SlowFactor = FMath::Lerp(1.f, AimAssistSlowdown, SlowMix);
+			YawIn *= SlowFactor;
+			PitchIn *= SlowFactor;
+
+			// Pull: gently rotate toward target
+			const float DT = GetWorld()->GetDeltaSeconds();
+			const FVector ToTarget = (BestTargetLoc - CamLoc).GetSafeNormal();
+			const FRotator CamRot = GetControlRotation();
+			const FRotator TargetRot = ToTarget.Rotation();
+			const float YawDelta = FRotator::NormalizeAxis(TargetRot.Yaw - CamRot.Yaw);
+			const float PitchDelta = FRotator::NormalizeAxis(TargetRot.Pitch - CamRot.Pitch);
+			const float PullScale = SlowMix * AimAssistPullStrength * DT;
+			YawIn += FMath::Clamp(YawDelta, -3.f, 3.f) * PullScale;
+			PitchIn += FMath::Clamp(PitchDelta, -3.f, 3.f) * PullScale;
+		}
 	}
 
 	AddControllerYawInput(YawIn);
@@ -2666,8 +2803,14 @@ void APHCCityCharacter::FireWeapon()
 			SniperFireTimer = 1.8f;
 		}
 
-		// No spread — bullets go exactly where you aim
-		const FVector ShotDir = AimDir;
+		// Fortnite-style spread: base + bloom + movement penalty
+		const float BaseSpread = FMath::Lerp(SpreadHipfire, SpreadADS, ADSAlpha);
+		const float TotalSpread = FMath::Min(BaseSpread + BloomAccum + BloomMovePenalty, 8.f);
+		const float SpreadRad = FMath::DegreesToRadians(TotalSpread);
+		const FVector ShotDir = FMath::VRandCone(AimDir, SpreadRad);
+
+		// Accumulate bloom per shot
+		BloomAccum = FMath::Min(BloomAccum + BloomPerShot, BloomMax);
 
 		// Hitscan line trace
 		const FVector TraceStart = FollowCamera
@@ -2683,7 +2826,10 @@ void APHCCityCharacter::FireWeapon()
 
 		if (bHit && HitResult.GetActor() && HitResult.GetActor()->ActorHasTag(FName("GiantCrab")))
 		{
-			const float BulletDamage = (CurrentWeaponType == 6) ? 999.f : (CurrentWeaponType == 5) ? 12.f : 7.f;
+			float BulletDamage = (CurrentWeaponType == 6) ? 999.f : (CurrentWeaponType == 5) ? 12.f : 7.f;
+			// Headshot: hit point is in upper 30% of target (Z > 70% of actor height)
+			const float HitZ = HitResult.ImpactPoint.Z - HitResult.GetActor()->GetActorLocation().Z;
+			if (HitZ > 50.f) BulletDamage *= HeadshotMultiplier;
 			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
 			if (CitySub)
 			{
@@ -2750,7 +2896,9 @@ void APHCCityCharacter::FireWeapon()
 			APHCCityCharacter* HitPlayer = Cast<APHCCityCharacter>(HitResult.GetActor());
 			if (HitPlayer)
 			{
-				const float BulletDmg = (CurrentWeaponType == 6) ? 999.f : (CurrentWeaponType == 5) ? 12.f : 7.f;
+				float BulletDmg = (CurrentWeaponType == 6) ? 999.f : (CurrentWeaponType == 5) ? 12.f : 7.f;
+				const float PvPHitZ = HitResult.ImpactPoint.Z - HitPlayer->GetActorLocation().Z;
+				if (PvPHitZ > 50.f) BulletDmg *= HeadshotMultiplier;
 				ServerInflictDamage(HitPlayer, BulletDmg);
 				HitMarkerTimer = 0.25f;
 			}
@@ -2759,7 +2907,9 @@ void APHCCityCharacter::FireWeapon()
 		// Check NPC player hit
 		if (bHit && HitResult.GetActor() && HitResult.GetActor()->ActorHasTag(FName("NPCPlayer")))
 		{
-			const float BulletDamage = (CurrentWeaponType == 6) ? 999.f : (CurrentWeaponType == 5) ? 12.f : 7.f;
+			float BulletDamage = (CurrentWeaponType == 6) ? 999.f : (CurrentWeaponType == 5) ? 12.f : 7.f;
+			const float NPCHitZ = HitResult.ImpactPoint.Z - HitResult.GetActor()->GetActorLocation().Z;
+			if (NPCHitZ > 50.f) BulletDamage *= HeadshotMultiplier;
 			UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
 			if (CitySub)
 			{
@@ -2879,8 +3029,8 @@ void APHCCityCharacter::FireWeapon()
 			{
 				// Long tapered bullet shape (stretched along forward axis)
 				Bullet->ProjectileMesh->SetRelativeScale3D(FVector(8.f, 0.5f, 0.5f));
-				Bullet->Speed = 150000.f; // .50 cal muzzle velocity
-				Bullet->SetLifeSpan(4.f); // long enough to cross entire map
+				Bullet->Speed = 800000.f; // near-instant — crosses map in < 1 frame
+				Bullet->SetLifeSpan(2.f);
 				UMaterialInstanceDynamic* BulletMat = Cast<UMaterialInstanceDynamic>(
 					Bullet->ProjectileMesh->GetMaterial(0));
 				if (BulletMat)
@@ -2900,26 +3050,31 @@ void APHCCityCharacter::FireWeapon()
 			}
 		}
 
-		// COD recoil: per-shot pitch kick + yaw scatter
-		if (bFirstPersonMode && GetController())
+		// Recoil: per-shot pitch kick + yaw scatter (works in 1P and 3P)
+		if (GetController())
 		{
-			const float RecoilMult = FMath::Lerp(1.f, 0.5f, ADSAlpha);
+			const float RecoilMult = FMath::Lerp(1.f, 0.4f, ADSAlpha);
+			// Sniper: less kick when scoped (the bolt-action cooldown is the balancer)
+			const float SniperADSRecoil = FMath::Lerp(1.f, 0.25f, ADSAlpha);
 			const float PitchKick = (CurrentWeaponType == 6)
-				? FMath::RandRange(0.25f, 0.35f) * RecoilMult
-				: FMath::RandRange(0.04f, 0.08f) * RecoilMult;
+				? FMath::RandRange(0.20f, 0.30f) * SniperADSRecoil
+				: FMath::RandRange(0.08f, 0.15f) * RecoilMult;
 			AddControllerPitchInput(PitchKick);
 			RecoilPitchAccum += PitchKick;
 
 			const float YawKick = (CurrentWeaponType == 6)
-				? FMath::RandRange(-0.08f, 0.08f) * RecoilMult
-				: FMath::RandRange(-0.03f, 0.03f) * RecoilMult;
+				? FMath::RandRange(-0.06f, 0.06f) * SniperADSRecoil
+				: FMath::RandRange(-0.05f, 0.05f) * RecoilMult;
 			AddControllerYawInput(YawKick);
 			RecoilYawAccum += YawKick;
 
-			// Viewmodel kick impulse
-			const float KickScale = (CurrentWeaponType == 6) ? 2.5f : (CurrentWeaponType == 5) ? 1.f : 0.5f;
-			WeaponKickZ.Vel += 2.f * RecoilMult * KickScale;
-			WeaponKickX.Vel += -1.f * RecoilMult * KickScale;
+			// Viewmodel kick impulse (1P only)
+			if (bFirstPersonMode)
+			{
+				const float KickScale = (CurrentWeaponType == 6) ? 2.5f : (CurrentWeaponType == 5) ? 1.f : 0.5f;
+				WeaponKickZ.Vel += 2.f * RecoilMult * KickScale;
+				WeaponKickX.Vel += -1.f * RecoilMult * KickScale;
+			}
 
 			ShotShakeTimer = 0.03f;
 			MuzzleFlashLightTimer = 0.04f;
@@ -3600,7 +3755,7 @@ void APHCCityCharacter::SetFirstPersonMode(bool bFirstPerson)
 	}
 	else
 	{
-		CameraBoom->TargetArmLength = 450.f;
+		CameraBoom->TargetArmLength = 320.f;
 		CameraBoom->SocketOffset = FVector(0.f, 75.f, 60.f);
 		CameraBoom->bEnableCameraLag = true;
 		CameraBoom->CameraLagSpeed = 10.f;

@@ -687,11 +687,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	TickNPCHeli(NPCHelicopter2, bNPCHeliVisible2, bNPCHeliCrashing2, NPCHeliCrashTimer2,
 		NPCHeliPatrolAngle2, NPCHeliDamageFlashTimer2, bNPCHeli2Down, NPCHeliBodyMIDs2);
 
-	// ---- NPC player characters — REMOVED (real players only) ----
-	if (false)
+	// ---- NPC player characters ----
 	{
-		if (false)
-		{
 			// Animation constants (same as PHCCityCharacter)
 			constexpr float ShPivZ = 54.f, HipPivZ = 2.f;
 			constexpr float UArmHalf = 10.f, FArmHalf = 9.f;
@@ -716,6 +713,16 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 				FVector Pos = NP.Actor->GetActorLocation();
 				bool bMoving = false;
 
+				// Keep Z on terrain even when idle
+				{
+					const float IdleTerrainZ = GetTerrainHeight(Pos.X, Pos.Y) + 90.f;
+					if (FMath::Abs(Pos.Z - IdleTerrainZ) > 1.f)
+					{
+						Pos.Z = FMath::FInterpTo(Pos.Z, IdleTerrainZ, DeltaTime, 12.f);
+						NP.Actor->SetActorLocation(Pos);
+					}
+				}
+
 				if (NP.WanderWaitTimer > 0.f)
 				{
 					NP.WanderWaitTimer -= DeltaTime;
@@ -736,7 +743,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 						bMoving = true;
 						FVector MoveDir = (NP.WanderTarget - Pos).GetSafeNormal2D();
 						FVector NewPos = Pos + MoveDir * WalkSpeed * DeltaTime;
-						NewPos.Z = 75.f;
+						const float TerrainZ = GetTerrainHeight(NewPos.X, NewPos.Y) + 90.f;
+						NewPos.Z = FMath::FInterpTo(Pos.Z, TerrainZ, DeltaTime, 12.f);
 						NP.Actor->SetActorLocation(NewPos);
 
 						// Face movement direction
@@ -854,7 +862,6 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 				}
 			}
 		}
-	}
 
 	// ---- Grass streaming (update instances around player) ----
 	{
@@ -1756,18 +1763,18 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 					}
 				}
 
-				// 10-color palette (DMT hyperspace — neon, electric, self-luminous)
+				// 10-color palette (galaxy nighttime — cool, deep, ethereal)
 				static const FLinearColor TripPalette[] = {
-					FLinearColor(0.00f, 0.27f, 1.00f),  // hyperspace blue
-					FLinearColor(0.61f, 0.19f, 1.00f),  // neon purple
-					FLinearColor(1.00f, 0.40f, 0.00f),  // deep orange
-					FLinearColor(1.00f, 0.84f, 0.00f),  // shimmering gold
-					FLinearColor(0.00f, 1.00f, 0.50f),  // emerald green
-					FLinearColor(0.81f, 0.75f, 1.00f),  // lavender (#cfc0ff)
-					FLinearColor(0.00f, 0.40f, 0.80f),  // dark electric blue
-					FLinearColor(1.00f, 0.55f, 0.00f),  // chrysanthemum orange
-					FLinearColor(0.40f, 0.00f, 0.80f),  // void purple
-					FLinearColor(0.00f, 0.90f, 0.90f),  // electric teal
+					FLinearColor(0.05f, 0.08f, 0.30f),  // deep space blue
+					FLinearColor(0.30f, 0.10f, 0.55f),  // nebula violet
+					FLinearColor(0.00f, 0.20f, 0.50f),  // midnight ocean
+					FLinearColor(0.15f, 0.40f, 0.55f),  // aurora teal
+					FLinearColor(0.10f, 0.05f, 0.35f),  // void indigo
+					FLinearColor(0.50f, 0.40f, 0.70f),  // soft lavender
+					FLinearColor(0.02f, 0.15f, 0.40f),  // dark cosmic blue
+					FLinearColor(0.40f, 0.15f, 0.60f),  // deep magenta
+					FLinearColor(0.20f, 0.02f, 0.45f),  // dark purple
+					FLinearColor(0.05f, 0.35f, 0.45f),  // deep teal
 				};
 				constexpr int32 PalSize = 10;
 
@@ -2156,25 +2163,18 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 				}
 			}
 
-			// === 1. COLOR — impossibly vivid, self-luminous (DMT-accurate) ===
-			// Extreme saturation — "brighter than bright", colors beyond normal vision
-			const float SatBoost = 1.f + 1.50f * Overdrive;
+			// === 1. COLOR — subtle, gentle shifts ===
+			const float SatBoost = 1.f + 0.20f * Overdrive;
 			PP.bOverride_ColorSaturation = true;
 			PP.ColorSaturation = FVector4(SatBoost, SatBoost, SatBoost, 1.0f);
 
-			// Aggressive hue cycling — electric color shifts, emotionally reactive
+			// Gentle hue drift
 			const float WarmCool = FMath::Sin(GT * 0.15f);
-			const float ColorAmp = 0.25f * Intensity;
+			const float ColorAmp = 0.06f * Intensity;
 			PP.bOverride_ColorGain = true;
-			PP.ColorGain.X = 1.f + ColorAmp * (0.7f * WarmCool + 0.5f * FMath::Sin(GT * 0.31f));
-			PP.ColorGain.Y = 1.f + ColorAmp * (0.4f * FMath::Sin(GT * 0.23f + 1.5f));
-			PP.ColorGain.Z = 1.f + ColorAmp * (-0.6f * WarmCool + 0.6f * FMath::Sin(GT * 0.19f + 3.f));
-			// Lavender (#cfc0ff) pulses — DMT signature colors
-			const float LavenderPulse = 0.15f * Intensity * FixMul;
-			const float LavSin = FMath::Abs(FMath::Sin(GT * 0.41f + 0.8f));
-			PP.ColorGain.X += LavenderPulse * 0.81f * LavSin;
-			PP.ColorGain.Y += LavenderPulse * 0.75f * LavSin;
-			PP.ColorGain.Z += LavenderPulse * LavSin;
+			PP.ColorGain.X = 1.f + ColorAmp * (0.3f * WarmCool);
+			PP.ColorGain.Y = 1.f + ColorAmp * (0.2f * FMath::Sin(GT * 0.23f + 1.5f));
+			PP.ColorGain.Z = 1.f + ColorAmp * (-0.2f * WarmCool);
 
 			// Color contrast boost — hyper-vivid, synthetic look (DMT "plastic" effect)
 			PP.bOverride_ColorContrast = true;
@@ -3648,7 +3648,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnGrassSystem();
 	SpawnVisualPolish();
 	SpawnNPCHelicopter();
-	// SpawnNPCPlayers(); // Removed — real players only
+	SpawnNPCPlayers();
 
 	// City is fully generated — dismiss the loading screen after a delay
 	// to let the renderer settle (LOD streaming, materials compiling, etc.).
@@ -16741,7 +16741,7 @@ void UPHCCitySubsystem::LoadDestroyedVehicleState()
 }
 
 // ---------------------------------------------------------------------------
-// SpawnNPCPlayers — 5 wandering NPC player characters (daytime, damageable)
+// SpawnNPCPlayers — 15 wandering NPC player characters (always visible, damageable)
 // ---------------------------------------------------------------------------
 void UPHCCitySubsystem::SpawnNPCPlayers()
 {
@@ -16749,11 +16749,21 @@ void UPHCCitySubsystem::SpawnNPCPlayers()
 	if (!World || !SphereMesh || !CylinderMesh || !CubeMesh || !ColorMaterial) return;
 
 	const FVector Spawns[NumNPCPlayers] = {
-		{  500.f,   300.f, 75.f },
-		{ -400.f,   600.f, 75.f },
-		{  800.f,  -500.f, 75.f },
-		{ -600.f,  -400.f, 75.f },
-		{  200.f,   900.f, 75.f },
+		{   500.f,    300.f, 90.f },
+		{  -400.f,    600.f, 90.f },
+		{   800.f,   -500.f, 90.f },
+		{  -600.f,   -400.f, 90.f },
+		{   200.f,    900.f, 90.f },
+		{  3000.f,   2000.f, 90.f },
+		{ -2500.f,   3500.f, 90.f },
+		{  5000.f,  -3000.f, 90.f },
+		{ -4000.f,  -2000.f, 90.f },
+		{  1500.f,   5000.f, 90.f },
+		{ -6000.f,   1000.f, 90.f },
+		{  7000.f,   4000.f, 90.f },
+		{ -3000.f,  -6000.f, 90.f },
+		{  4500.f,   6000.f, 90.f },
+		{ -5000.f,   5000.f, 90.f },
 	};
 
 	// Colors (matching PHCCityCharacter::BeginPlay)
@@ -16948,6 +16958,31 @@ void UPHCCitySubsystem::SpawnNPCPlayers()
 		Glow->RegisterComponent();
 		A->AddInstanceComponent(Glow);
 		NP.GlowLight = Glow;
+
+		// Floating arrow indicator above head
+		if (ConeMesh && GlassMaterial)
+		{
+			UStaticMeshComponent* Arrow = NewObject<UStaticMeshComponent>(A, N(TEXT("Arrow")));
+			Arrow->SetStaticMesh(ConeMesh);
+			Arrow->SetRelativeLocation(FVector(0.f, 0.f, 130.f));
+			Arrow->SetRelativeRotation(FRotator(180.f, 0.f, 0.f));
+			Arrow->SetRelativeScale3D(FVector(0.6f, 0.6f, 0.8f));
+			Arrow->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Arrow->SetCastShadow(false);
+			Arrow->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+			Arrow->RegisterComponent();
+			A->AddInstanceComponent(Arrow);
+
+			UMaterialInstanceDynamic* ArrowMID = UMaterialInstanceDynamic::Create(GlassMaterial, A);
+			ArrowMID->SetVectorParameterValue(TEXT("BaseColor"),
+				FLinearColor(0.2f, 0.9f, 1.0f));
+			ArrowMID->SetScalarParameterValue(TEXT("Opacity"), 0.75f);
+			ArrowMID->SetScalarParameterValue(TEXT("Metallic"), 0.2f);
+			ArrowMID->SetScalarParameterValue(TEXT("Roughness"), 0.05f);
+			ArrowMID->SetVectorParameterValue(TEXT("EmissiveColor"),
+				FLinearColor(0.f, 4.f, 5.f));
+			Arrow->SetMaterial(0, ArrowMID);
+		}
 
 		// Start visible so NPCs appear immediately
 		A->SetActorHiddenInGame(false);

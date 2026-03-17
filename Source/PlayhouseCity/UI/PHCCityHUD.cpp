@@ -1231,8 +1231,8 @@ bool UPHCCityHUD::Initialize()
 		FireButton->AddChild(FireLabel);
 
 		UCanvasPanelSlot* FireBtnSlot = RootCanvas->AddChildToCanvas(FireButton);
-		FireBtnSlot->SetAnchors(FAnchors(0.15f, 0.48f, 0.15f, 0.48f));
-		FireBtnSlot->SetAlignment(FVector2D(0.5f, 1.f));
+		FireBtnSlot->SetAnchors(FAnchors(0.85f, 0.30f, 0.85f, 0.30f));
+		FireBtnSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 		FireBtnSlot->SetOffsets(FMargin(0.f, 0.f, FireBtnSize, FireBtnSize));
 		FireButton->SetVisibility(ESlateVisibility::Collapsed);
 
@@ -1276,11 +1276,47 @@ bool UPHCCityHUD::Initialize()
 		DropBombButton->AddChild(DropLabel);
 
 		UCanvasPanelSlot* DropBtnSlot = RootCanvas->AddChildToCanvas(DropBombButton);
-		DropBtnSlot->SetAnchors(FAnchors(0.85f, 0.30f, 0.85f, 0.30f));
-		DropBtnSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+		DropBtnSlot->SetAnchors(FAnchors(0.15f, 0.48f, 0.15f, 0.48f));
+		DropBtnSlot->SetAlignment(FVector2D(0.5f, 1.f));
 		DropBtnSlot->SetOffsets(FMargin(0.f, 0.f, DropBtnSize, DropBtnSize));
 		DropBombButton->SetVisibility(ESlateVisibility::Collapsed);
 #endif
+
+		// -- Vehicle crosshair (for flight vehicles) --
+		{
+			const FLinearColor VehCrossColor(0.0f, 1.0f, 0.4f, 0.85f);
+			const float Gap = 10.f, ArmW = 2.f, ArmL = 18.f, DotSz = 4.f;
+
+			auto MakeVC = [&](const TCHAR* Name, float W, float H, float OffX, float OffY) -> UBorder*
+			{
+				UBorder* B = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), Name);
+				B->SetBrushColor(VehCrossColor);
+				B->SetPadding(FMargin(0.f));
+				UCanvasPanelSlot* S = RootCanvas->AddChildToCanvas(B);
+				S->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+				S->SetAlignment(FVector2D(0.f, 0.f));
+				S->SetOffsets(FMargin(OffX, OffY, W, H));
+				S->SetAutoSize(false);
+				B->SetVisibility(ESlateVisibility::Collapsed);
+				return B;
+			};
+
+			// Center dot
+			VehicleCrosshairDot = MakeVC(TEXT("VehCrossDot"), DotSz, DotSz,
+				-DotSz * 0.5f, -DotSz * 0.5f);
+			// Top arm
+			VehicleCrosshairTop = MakeVC(TEXT("VehCrossTop"), ArmW, ArmL,
+				-ArmW * 0.5f, -(Gap + ArmL));
+			// Bottom arm
+			VehicleCrosshairBottom = MakeVC(TEXT("VehCrossBot"), ArmW, ArmL,
+				-ArmW * 0.5f, Gap);
+			// Left arm
+			VehicleCrosshairLeft = MakeVC(TEXT("VehCrossLeft"), ArmL, ArmW,
+				-(Gap + ArmL), -ArmW * 0.5f);
+			// Right arm
+			VehicleCrosshairRight = MakeVC(TEXT("VehCrossRight"), ArmL, ArmW,
+				Gap, -ArmW * 0.5f);
+		}
 
 		// Larger font for selection popup buttons
 		const FSlateFontInfo PopupBtnFont = FSlateFontInfo(
@@ -3223,6 +3259,16 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 					const bool bShowDrop = (Cast<APHCRaptorPawn>(CurrentPawn) || Cast<APHCBlackbirdPawn>(CurrentPawn) || Cast<APHCBlackHawkPawn>(CurrentPawn));
 					DropBombButton->SetVisibility(bShowDrop ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 				}
+				// Vehicle crosshair for flight vehicles
+				{
+					const bool bFlight = (Cast<APHCRaptorPawn>(CurrentPawn) || Cast<APHCBlackbirdPawn>(CurrentPawn) || Cast<APHCBlackHawkPawn>(CurrentPawn) || Cast<APHCDuneBuggyPawn>(CurrentPawn));
+					const ESlateVisibility VehCrossVis = bFlight ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+					if (VehicleCrosshairDot) VehicleCrosshairDot->SetVisibility(VehCrossVis);
+					if (VehicleCrosshairTop) VehicleCrosshairTop->SetVisibility(VehCrossVis);
+					if (VehicleCrosshairBottom) VehicleCrosshairBottom->SetVisibility(VehCrossVis);
+					if (VehicleCrosshairLeft) VehicleCrosshairLeft->SetVisibility(VehCrossVis);
+					if (VehicleCrosshairRight) VehicleCrosshairRight->SetVisibility(VehCrossVis);
+				}
 			}
 			// Vehicle found — clear pending flag.
 			bPendingVehicleEntry = false;
@@ -3628,7 +3674,9 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		// Dynamic spread: reposition crosshair lines based on ADSAlpha
 		if (bRangedWeapon && Char)
 		{
-			const float SpreadDeg = FMath::Lerp(Char->SpreadHipfire, Char->SpreadADS, Char->ADSAlpha);
+			// Total spread = base + bloom + movement penalty (matches actual bullet spread)
+			const float BaseSpread = FMath::Lerp(Char->SpreadHipfire, Char->SpreadADS, Char->ADSAlpha);
+			const float SpreadDeg = FMath::Min(BaseSpread + Char->BloomAccum + Char->BloomMovePenalty, 8.f);
 			// Convert degrees to screen-space pixels (~6 px per degree at default FOV)
 			const float GapPx = 6.f + SpreadDeg * 6.f;
 
@@ -3732,6 +3780,17 @@ void UPHCCityHUD::SetDrivingMode(bool bDriving, APawn* Vehicle)
 	{
 		const bool bShowDrop = bDriving && (Cast<APHCRaptorPawn>(Vehicle) != nullptr || Cast<APHCBlackbirdPawn>(Vehicle) != nullptr || Cast<APHCBlackHawkPawn>(Vehicle) != nullptr);
 		DropBombButton->SetVisibility(bShowDrop ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+
+	// Vehicle crosshair
+	{
+		const bool bShowVehCross = bDriving && (Cast<APHCRaptorPawn>(Vehicle) || Cast<APHCBlackbirdPawn>(Vehicle) || Cast<APHCBlackHawkPawn>(Vehicle) || Cast<APHCDuneBuggyPawn>(Vehicle));
+		const ESlateVisibility VCV = bShowVehCross ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+		if (VehicleCrosshairDot) VehicleCrosshairDot->SetVisibility(VCV);
+		if (VehicleCrosshairTop) VehicleCrosshairTop->SetVisibility(VCV);
+		if (VehicleCrosshairBottom) VehicleCrosshairBottom->SetVisibility(VCV);
+		if (VehicleCrosshairLeft) VehicleCrosshairLeft->SetVisibility(VCV);
+		if (VehicleCrosshairRight) VehicleCrosshairRight->SetVisibility(VCV);
 	}
 
 	// Toggle on-foot controls.
@@ -3864,13 +3923,12 @@ void UPHCCityHUD::UpdateMinimap(float DeltaTime)
 		RadarSweepLine->SetBrushColor(FLinearColor(0.0f, 1.0f, 0.3f, Pulse));
 	}
 
-	// ---- Direction indicator (heading line from center outward) ----
+	// ---- Direction indicator (fixed pointing up — heading-up radar) ----
 	if (MinimapDirectionIndicator)
 	{
-		const float YawRad = FMath::DegreesToRadians(-PlayerYaw + 90.f);
-		const float DirDist = 20.f;
-		const float DirX = Half - 1.f + FMath::Cos(YawRad) * DirDist;
-		const float DirY = Half - 8.f - FMath::Sin(YawRad) * DirDist;
+		// Player always faces up on heading-up radar
+		const float DirX = Half - 1.f;
+		const float DirY = Half - 28.f;
 
 		if (UCanvasPanelSlot* DirSlot = Cast<UCanvasPanelSlot>(MinimapDirectionIndicator->Slot))
 		{
@@ -3887,12 +3945,19 @@ void UPHCCityHUD::UpdateMinimap(float DeltaTime)
 
 	int32 DotIndex = 0;
 
-	// Lambda to place a blip at a world position with a given color
+	// Lambda to place a blip rotated by player heading (heading-up radar)
+	const float YawRad = FMath::DegreesToRadians(-PlayerYaw);
+	const float CY = FMath::Cos(YawRad);
+	const float SY_rot = FMath::Sin(YawRad);
+
 	auto PlaceBlip = [&](const FVector& WorldPos, const FLinearColor& Color, float DotSize)
 	{
 		const FVector RelPos = WorldPos - LocalPos;
-		float MmX = RelPos.X / MinimapRadius * Half;
-		float MmY = -RelPos.Y / MinimapRadius * Half;
+		// Rotate relative position by player yaw so forward is always up
+		float RX = RelPos.X * CY - RelPos.Y * SY_rot;
+		float RY = RelPos.X * SY_rot + RelPos.Y * CY;
+		float MmX = RX / MinimapRadius * Half;
+		float MmY = -RY / MinimapRadius * Half;
 
 		const float Dist = FMath::Sqrt(MmX * MmX + MmY * MmY);
 		if (Dist > Half - 4.f)
@@ -3903,7 +3968,7 @@ void UPHCCityHUD::UpdateMinimap(float DeltaTime)
 		}
 
 		const float SX = Half + MmX - DotSize * 0.5f;
-		const float SY = Half + MmY - DotSize * 0.5f;
+		const float SY = Half - MmY - DotSize * 0.5f;
 
 		if (DotIndex >= MinimapPlayerDots.Num())
 		{
@@ -3955,6 +4020,15 @@ void UPHCCityHUD::UpdateMinimap(float DeltaTime)
 			PlaceBlip(CitySub->NPCHelicopter->GetActorLocation(), HeliRed, 12.f);
 		if (CitySub->NPCHelicopter2 && CitySub->bNPCHeliVisible2)
 			PlaceBlip(CitySub->NPCHelicopter2->GetActorLocation(), HeliRed, 12.f);
+
+		// NPC player characters — cyan blips
+		const FLinearColor NPCCyan(0.0f, 0.9f, 1.0f, 0.9f);
+		for (int32 ni = 0; ni < CitySub->NumNPCPlayers; ++ni)
+		{
+			const auto& NP = CitySub->NPCPlayers[ni];
+			if (NP.Actor && NP.bVisible)
+				PlaceBlip(NP.Actor->GetActorLocation(), NPCCyan, 7.f);
+		}
 	}
 
 	// Hide unused dots
