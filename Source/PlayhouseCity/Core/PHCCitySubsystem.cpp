@@ -1795,18 +1795,6 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 						TripHallucinationActor->GetRootComponent()->RegisterComponent();
 					}
 
-					// Add custom mandala-colored chromatic aberration
-					if (ChromaAberrationMaterial && PostProcessVolume)
-					{
-						TripChromaMID = UMaterialInstanceDynamic::Create(ChromaAberrationMaterial, this);
-						TripChromaMID->SetScalarParameterValue(TEXT("ChromaOffset"), 0.f);
-						TripChromaMID->SetVectorParameterValue(TEXT("TintA"), FLinearColor::White);
-						TripChromaMID->SetVectorParameterValue(TEXT("TintB"), FLinearColor::White);
-						TripChromaMID->SetVectorParameterValue(TEXT("TintC"), FLinearColor::White);
-						PostProcessVolume->Settings.WeightedBlendables.Array.Add(
-							FWeightedBlendable(1.f, TripChromaMID));
-					}
-
 					// Spawn fractal sky dome (replaces sky with three.js-style shader)
 					if (TripSkyMaterial && SphereMesh && TripHallucinationActor)
 					{
@@ -1814,7 +1802,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 							TripHallucinationActor, TEXT("TripSkyDome"));
 						TripSkyDome->SetStaticMesh(SphereMesh);
 						TripSkyDome->SetWorldLocation(PlayerPos);
-						TripSkyDome->SetWorldScale3D(FVector(200.f, 200.f, 200.f));
+						TripSkyDome->SetWorldScale3D(FVector(4500.f, 4500.f, 4500.f));
 						TripSkyDome->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 						TripSkyDome->CastShadow = false;
 						TripSkyDome->AttachToComponent(
@@ -1838,8 +1826,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 						if (SkyLightComp) SkyLightComp->SetIntensity(0.1f);
 					}
 
-					// Spawn floral DMT floor pattern using 3 HISMs
-					if (ColorMaterial && SphereMesh && CubeMesh && CylinderMesh && TripHallucinationActor)
+					// Spawn kaleidoscopic mirror triangle floor pattern
+					if (ColorMaterial && CubeMesh && TripHallucinationActor)
 					{
 						const FVector FloorOrigin(PlayerPos.X, PlayerPos.Y, 0.f);
 						auto MakeHISM = [&](UStaticMesh* Mesh, const TCHAR* Name)
@@ -1854,320 +1842,165 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 							return H;
 						};
 
-						// Spheres = smooth organic petals, Cylinders = flower centers, Cubes = vine stems
-						TripTileHISM = MakeHISM(SphereMesh, TEXT("TripPetalHISM"));
-						TripBarHISM  = MakeHISM(CubeMesh, TEXT("TripVineHISM"));
-						TripDotHISM  = MakeHISM(CylinderMesh, TEXT("TripCenterHISM"));
+						TripTileHISM = MakeHISM(CubeMesh, TEXT("TripMirrorHISM"));
+						TripBarHISM  = MakeHISM(CubeMesh, TEXT("TripMirrorHISM2"));
 
-						const float Z = 25.f;
+						const float Z = 5.f;
 
-						// =============================================================
-						// FLOWER CENTERS (Cylinders) — pistils and seed pods
-						// =============================================================
+						// Mirror triangles are thin flat cubes scaled to look
+						// like elongated triangular shards, arranged in concentric
+						// rings with alternating mirror symmetry.
 
-						// Large center flower pistil
-						TripDotHISM->AddInstance(FTransform(
-							FRotator::ZeroRotator, FVector(0, 0, Z),
-							FVector(3.5f, 3.5f, 0.04f)), false);
-
-						// Inner stamen ring — 8 small discs around center
-						for (int32 i = 0; i < 8; ++i)
-						{
-							const float A = i * 2.f * UE_PI / 8.f;
-							TripDotHISM->AddInstance(FTransform(
-								FRotator::ZeroRotator,
-								FVector(100.f * FMath::Cos(A), 100.f * FMath::Sin(A), Z),
-								FVector(0.8f, 0.8f, 0.03f)), false);
-						}
-
-						// R=600 — 6 secondary flower centers (sub-blooms)
+						// Ring 1 — 6 inner shards (tight hexagonal star)
 						for (int32 i = 0; i < 6; ++i)
 						{
 							const float A = i * 2.f * UE_PI / 6.f;
-							TripDotHISM->AddInstance(FTransform(
-								FRotator::ZeroRotator,
-								FVector(600.f * FMath::Cos(A), 600.f * FMath::Sin(A), Z),
-								FVector(1.5f, 1.5f, 0.03f)), false);
+							const float Deg = FMath::RadiansToDegrees(A);
+							TripTileHISM->AddInstance(FTransform(
+								FRotator(0.f, Deg, 0.f),
+								FVector(150.f * FMath::Cos(A), 150.f * FMath::Sin(A), Z),
+								FVector(3.0f, 0.15f, 0.02f)), false);
 						}
 
-						// R=1400 — 12 tertiary flower centers
+						// Ring 2 — 12 shards, alternating mirror flip
 						for (int32 i = 0; i < 12; ++i)
 						{
 							const float A = i * 2.f * UE_PI / 12.f;
-							TripDotHISM->AddInstance(FTransform(
-								FRotator::ZeroRotator,
-								FVector(1400.f * FMath::Cos(A), 1400.f * FMath::Sin(A), Z),
-								FVector(1.2f, 1.2f, 0.03f)), false);
+							const float Deg = FMath::RadiansToDegrees(A);
+							const float Flip = (i % 2 == 0) ? 0.f : 30.f;
+							TripTileHISM->AddInstance(FTransform(
+								FRotator(0.f, Deg + Flip, 0.f),
+								FVector(450.f * FMath::Cos(A), 450.f * FMath::Sin(A), Z),
+								FVector(4.0f, 0.18f, 0.02f)), false);
 						}
 
-						// R=2400 — 18 seed pod dots
+						// Ring 3 — 18 shards
 						for (int32 i = 0; i < 18; ++i)
 						{
 							const float A = i * 2.f * UE_PI / 18.f;
-							TripDotHISM->AddInstance(FTransform(
-								FRotator::ZeroRotator,
-								FVector(2400.f * FMath::Cos(A), 2400.f * FMath::Sin(A), Z),
-								FVector(1.0f, 1.0f, 0.03f)), false);
+							const float Deg = FMath::RadiansToDegrees(A);
+							const float Flip = (i % 2 == 0) ? 0.f : 20.f;
+							TripTileHISM->AddInstance(FTransform(
+								FRotator(0.f, Deg + Flip, 0.f),
+								FVector(900.f * FMath::Cos(A), 900.f * FMath::Sin(A), Z),
+								FVector(5.0f, 0.20f, 0.02f)), false);
 						}
 
-						// R=3500 — 24 outer bud dots
+						// Ring 4 — 24 shards (second layer, counter-rotating)
 						for (int32 i = 0; i < 24; ++i)
 						{
 							const float A = i * 2.f * UE_PI / 24.f;
-							TripDotHISM->AddInstance(FTransform(
-								FRotator::ZeroRotator,
-								FVector(3500.f * FMath::Cos(A), 3500.f * FMath::Sin(A), Z),
-								FVector(0.8f, 0.8f, 0.03f)), false);
-						}
-
-						// R=4500 — 36 outermost pollen dots
-						for (int32 i = 0; i < 36; ++i)
-						{
-							const float A = i * 2.f * UE_PI / 36.f;
-							TripDotHISM->AddInstance(FTransform(
-								FRotator::ZeroRotator,
-								FVector(4500.f * FMath::Cos(A), 4500.f * FMath::Sin(A), Z),
-								FVector(0.5f, 0.5f, 0.03f)), false);
-						}
-
-						// =============================================================
-						// PETALS (Spheres) — flattened elliptical organic petals
-						// Sphere scaled: X=radial length, Y=lateral width, Z=flat
-						// Yaw rotates long axis to point outward from center
-						// =============================================================
-
-						// R=200 — 8 inner petals (tight daisy)
-						for (int32 i = 0; i < 8; ++i)
-						{
-							const float A = i * 2.f * UE_PI / 8.f;
-							TripTileHISM->AddInstance(FTransform(
-								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
-								FVector(200.f * FMath::Cos(A), 200.f * FMath::Sin(A), Z),
-								FVector(2.5f, 1.0f, 0.04f)), false);
-						}
-
-						// R=380 — 8 interleaved petals (offset 22.5°)
-						for (int32 i = 0; i < 8; ++i)
-						{
-							const float A = FMath::DegreesToRadians(22.5f) + i * 2.f * UE_PI / 8.f;
-							TripTileHISM->AddInstance(FTransform(
-								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
-								FVector(380.f * FMath::Cos(A), 380.f * FMath::Sin(A), Z),
-								FVector(3.0f, 1.2f, 0.04f)), false);
-						}
-
-						// R=700 — 12 petals around each sub-bloom
-						for (int32 i = 0; i < 12; ++i)
-						{
-							const float A = i * 2.f * UE_PI / 12.f;
-							TripTileHISM->AddInstance(FTransform(
-								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
-								FVector(700.f * FMath::Cos(A), 700.f * FMath::Sin(A), Z),
-								FVector(3.5f, 1.3f, 0.04f)), false);
-						}
-
-						// R=950 — 12 interleaved (offset 15°)
-						for (int32 i = 0; i < 12; ++i)
-						{
-							const float A = FMath::DegreesToRadians(15.f) + i * 2.f * UE_PI / 12.f;
-							TripTileHISM->AddInstance(FTransform(
-								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
-								FVector(950.f * FMath::Cos(A), 950.f * FMath::Sin(A), Z),
-								FVector(3.8f, 1.4f, 0.04f)), false);
-						}
-
-						// R=1500 — 18 petals (third bloom ring)
-						for (int32 i = 0; i < 18; ++i)
-						{
-							const float A = i * 2.f * UE_PI / 18.f;
-							TripTileHISM->AddInstance(FTransform(
-								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
+							const float Deg = FMath::RadiansToDegrees(A);
+							const float Flip = (i % 2 == 0) ? 0.f : 15.f;
+							TripBarHISM->AddInstance(FTransform(
+								FRotator(0.f, Deg + Flip, 0.f),
 								FVector(1500.f * FMath::Cos(A), 1500.f * FMath::Sin(A), Z),
-								FVector(4.0f, 1.5f, 0.04f)), false);
+								FVector(6.0f, 0.22f, 0.02f)), false);
 						}
 
-						// R=1900 — 18 interleaved (offset 10°)
-						for (int32 i = 0; i < 18; ++i)
-						{
-							const float A = FMath::DegreesToRadians(10.f) + i * 2.f * UE_PI / 18.f;
-							TripTileHISM->AddInstance(FTransform(
-								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
-								FVector(1900.f * FMath::Cos(A), 1900.f * FMath::Sin(A), Z),
-								FVector(4.5f, 1.6f, 0.04f)), false);
-						}
-
-						// R=2600 — 24 petals (fourth ring)
-						for (int32 i = 0; i < 24; ++i)
-						{
-							const float A = i * 2.f * UE_PI / 24.f;
-							TripTileHISM->AddInstance(FTransform(
-								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
-								FVector(2600.f * FMath::Cos(A), 2600.f * FMath::Sin(A), Z),
-								FVector(5.0f, 1.8f, 0.04f)), false);
-						}
-
-						// R=3300 — 30 petals
+						// Ring 5 — 30 shards
 						for (int32 i = 0; i < 30; ++i)
 						{
 							const float A = i * 2.f * UE_PI / 30.f;
-							TripTileHISM->AddInstance(FTransform(
-								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
-								FVector(3300.f * FMath::Cos(A), 3300.f * FMath::Sin(A), Z),
-								FVector(5.5f, 2.0f, 0.04f)), false);
+							const float Deg = FMath::RadiansToDegrees(A);
+							const float Flip = (i % 2 == 0) ? 0.f : 12.f;
+							TripBarHISM->AddInstance(FTransform(
+								FRotator(0.f, Deg + Flip, 0.f),
+								FVector(2200.f * FMath::Cos(A), 2200.f * FMath::Sin(A), Z),
+								FVector(7.0f, 0.25f, 0.02f)), false);
 						}
 
-						// R=4200 — 36 outer petals
+						// Ring 6 — 36 outer shards
 						for (int32 i = 0; i < 36; ++i)
 						{
 							const float A = i * 2.f * UE_PI / 36.f;
-							TripTileHISM->AddInstance(FTransform(
-								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
+							const float Deg = FMath::RadiansToDegrees(A);
+							const float Flip = (i % 2 == 0) ? 0.f : 10.f;
+							TripBarHISM->AddInstance(FTransform(
+								FRotator(0.f, Deg + Flip, 0.f),
+								FVector(3200.f * FMath::Cos(A), 3200.f * FMath::Sin(A), Z),
+								FVector(8.0f, 0.28f, 0.02f)), false);
+						}
+
+						// Ring 7 — 42 outermost shards
+						for (int32 i = 0; i < 42; ++i)
+						{
+							const float A = i * 2.f * UE_PI / 42.f;
+							const float Deg = FMath::RadiansToDegrees(A);
+							const float Flip = (i % 2 == 0) ? 0.f : 8.6f;
+							TripBarHISM->AddInstance(FTransform(
+								FRotator(0.f, Deg + Flip, 0.f),
 								FVector(4200.f * FMath::Cos(A), 4200.f * FMath::Sin(A), Z),
-								FVector(6.0f, 2.2f, 0.04f)), false);
+								FVector(9.0f, 0.30f, 0.02f)), false);
 						}
 
-						// R=4600 — 36 interleaved outer petals (offset half-step)
-						for (int32 i = 0; i < 36; ++i)
-						{
-							const float A = (UE_PI / 36.f) + i * 2.f * UE_PI / 36.f;
-							TripTileHISM->AddInstance(FTransform(
-								FRotator(0.f, FMath::RadiansToDegrees(A), 0.f),
-								FVector(4600.f * FMath::Cos(A), 4600.f * FMath::Sin(A), Z),
-								FVector(5.5f, 2.0f, 0.04f)), false);
-						}
-
-						// =============================================================
-						// VINES (Cubes) — thin organic stem lines connecting flowers
-						// =============================================================
-
-						// R=400 — 6 main vine stems radiating outward
-						for (int32 i = 0; i < 6; ++i)
-						{
-							const float A = i * 2.f * UE_PI / 6.f;
-							const float Deg = FMath::RadiansToDegrees(A);
-							TripBarHISM->AddInstance(FTransform(
-								FRotator(0.f, Deg, 0.f),
-								FVector(400.f * FMath::Cos(A), 400.f * FMath::Sin(A), Z),
-								FVector(6.0f, 0.08f, 0.03f)), false);
-						}
-
-						// R=1000 — 12 secondary vine stems
-						for (int32 i = 0; i < 12; ++i)
-						{
-							const float A = i * 2.f * UE_PI / 12.f;
-							const float Deg = FMath::RadiansToDegrees(A);
-							TripBarHISM->AddInstance(FTransform(
-								FRotator(0.f, Deg, 0.f),
-								FVector(1000.f * FMath::Cos(A), 1000.f * FMath::Sin(A), Z),
-								FVector(5.0f, 0.06f, 0.03f)), false);
-						}
-
-						// R=1800 — 18 tendril vines with slight curve (angled ±15°)
-						for (int32 i = 0; i < 18; ++i)
-						{
-							const float A = i * 2.f * UE_PI / 18.f;
-							const float Deg = FMath::RadiansToDegrees(A);
-							const float Curl = (i % 2 == 0) ? 15.f : -15.f;
-							TripBarHISM->AddInstance(FTransform(
-								FRotator(0.f, Deg + Curl, 0.f),
-								FVector(1800.f * FMath::Cos(A), 1800.f * FMath::Sin(A), Z),
-								FVector(4.5f, 0.06f, 0.03f)), false);
-						}
-
-						// R=2800 — 24 outer vines
-						for (int32 i = 0; i < 24; ++i)
-						{
-							const float A = i * 2.f * UE_PI / 24.f;
-							const float Deg = FMath::RadiansToDegrees(A);
-							TripBarHISM->AddInstance(FTransform(
-								FRotator(0.f, Deg, 0.f),
-								FVector(2800.f * FMath::Cos(A), 2800.f * FMath::Sin(A), Z),
-								FVector(5.0f, 0.06f, 0.03f)), false);
-						}
-
-						// R=3800 — 30 outermost vine tendrils
-						for (int32 i = 0; i < 30; ++i)
-						{
-							const float A = i * 2.f * UE_PI / 30.f;
-							const float Deg = FMath::RadiansToDegrees(A);
-							const float Curl = (i % 2 == 0) ? 12.f : -12.f;
-							TripBarHISM->AddInstance(FTransform(
-								FRotator(0.f, Deg + Curl, 0.f),
-								FVector(3800.f * FMath::Cos(A), 3800.f * FMath::Sin(A), Z),
-								FVector(5.5f, 0.06f, 0.03f)), false);
-						}
-
-						// Register all, then apply shared dark shadow material
 						TripTileHISM->RegisterComponent();
 						TripHallucinationActor->AddInstanceComponent(TripTileHISM);
 						TripBarHISM->RegisterComponent();
 						TripHallucinationActor->AddInstanceComponent(TripBarHISM);
-						TripDotHISM->RegisterComponent();
-						TripHallucinationActor->AddInstanceComponent(TripDotHISM);
 
 						TripTileMID = UMaterialInstanceDynamic::Create(ColorMaterial, TripTileHISM);
 						TripTileMID->SetVectorParameterValue(TEXT("BaseColor"),
-							FLinearColor(0.02f, 0.02f, 0.03f));
-						TripTileMID->SetScalarParameterValue(TEXT("Roughness"), 0.95f);
-						TripTileMID->SetScalarParameterValue(TEXT("Metallic"), 0.0f);
+							FLinearColor(0.05f, 0.05f, 0.08f));
+						TripTileMID->SetScalarParameterValue(TEXT("Roughness"), 0.08f);
+						TripTileMID->SetScalarParameterValue(TEXT("Metallic"), 0.95f);
 						TripTileMID->SetVectorParameterValue(TEXT("EmissiveColor"),
 							FLinearColor(0.f, 0.f, 0.f));
 						TripTileHISM->SetMaterial(0, TripTileMID);
 						TripBarHISM->SetMaterial(0, TripTileMID);
-						TripDotHISM->SetMaterial(0, TripTileMID);
+					}
 
-						// Spawn deferred decals to project pattern onto walls/terrain
-						if (DecalMaterial)
+					// Spawn deferred decals to project pattern onto walls/terrain
+					if (DecalMaterial)
+					{
+						TripDecalMID = UMaterialInstanceDynamic::Create(DecalMaterial, TripHallucinationActor);
+						TripDecalMID->SetVectorParameterValue(TEXT("BaseColor"),
+							FLinearColor(0.02f, 0.02f, 0.03f));
+						TripDecalMID->SetScalarParameterValue(TEXT("Opacity"), 0.85f);
+						TripDecalMID->SetVectorParameterValue(TEXT("EmissiveColor"),
+							FLinearColor(0.f, 0.f, 0.f));
+
+						// Decal ring layout — project dark shapes onto all surfaces
+						struct FDecalRing { int32 Count; float Radius; float Size; };
+						static const FDecalRing DRings[] = {
+							{  1,    0.f, 200.f },  // center
+							{  6,  300.f, 150.f },
+							{ 12,  800.f, 180.f },
+							{ 12, 1500.f, 220.f },
+							{ 16, 2200.f, 250.f },
+							{ 18, 3000.f, 280.f },
+							{ 24, 4000.f, 300.f },
+						};
+
+						for (const auto& DR : DRings)
 						{
-							TripDecalMID = UMaterialInstanceDynamic::Create(DecalMaterial, TripHallucinationActor);
-							TripDecalMID->SetVectorParameterValue(TEXT("BaseColor"),
-								FLinearColor(0.02f, 0.02f, 0.03f));
-							TripDecalMID->SetScalarParameterValue(TEXT("Opacity"), 0.85f);
-							TripDecalMID->SetVectorParameterValue(TEXT("EmissiveColor"),
-								FLinearColor(0.f, 0.f, 0.f));
-
-							// Decal ring layout — project dark shapes onto all surfaces
-							struct FDecalRing { int32 Count; float Radius; float Size; };
-							static const FDecalRing DRings[] = {
-								{  1,    0.f, 200.f },  // center
-								{  6,  300.f, 150.f },
-								{ 12,  800.f, 180.f },
-								{ 12, 1500.f, 220.f },
-								{ 16, 2200.f, 250.f },
-								{ 18, 3000.f, 280.f },
-								{ 24, 4000.f, 300.f },
-							};
-
-							for (const auto& DR : DRings)
+							const float AngleStep = (DR.Count > 1) ? (2.f * UE_PI / DR.Count) : 0.f;
+							for (int32 di = 0; di < DR.Count; ++di)
 							{
-								const float AngleStep = (DR.Count > 1) ? (2.f * UE_PI / DR.Count) : 0.f;
-								for (int32 di = 0; di < DR.Count; ++di)
-								{
-									const float DA = di * AngleStep;
-									UDecalComponent* Decal = NewObject<UDecalComponent>(TripHallucinationActor);
-									Decal->SetDecalMaterial(TripDecalMID);
-									// DecalSize: X=projection depth, Y/Z=surface coverage
-									Decal->DecalSize = FVector(500.f, DR.Size, DR.Size);
-									Decal->SetRelativeLocation(FVector(
-										DR.Radius * FMath::Cos(DA),
-										DR.Radius * FMath::Sin(DA), 250.f));
-									// Point downward to project onto ground + wrap onto walls
-									Decal->SetRelativeRotation(FRotator(-90.f, FMath::RadiansToDegrees(DA), 0.f));
-									Decal->RegisterComponent();
-									TripHallucinationActor->AddInstanceComponent(Decal);
-									TripDecals.Add(Decal);
-								}
+								const float DA = di * AngleStep;
+								UDecalComponent* Decal = NewObject<UDecalComponent>(TripHallucinationActor);
+								Decal->SetDecalMaterial(TripDecalMID);
+								Decal->DecalSize = FVector(500.f, DR.Size, DR.Size);
+								Decal->SetRelativeLocation(FVector(
+									DR.Radius * FMath::Cos(DA),
+									DR.Radius * FMath::Sin(DA), 250.f));
+								Decal->SetRelativeRotation(FRotator(-90.f, FMath::RadiansToDegrees(DA), 0.f));
+								Decal->RegisterComponent();
+								TripHallucinationActor->AddInstanceComponent(Decal);
+								TripDecals.Add(Decal);
 							}
 						}
+					}
 
-						// Spawn subtle underglow point lights at flower positions
+					// Spawn subtle underglow point lights
+					{
 						struct FGlowRing { int32 Count; float Radius; float Intensity; float Atten; };
 						static const FGlowRing GRings[] = {
-							{  1,    0.f, 1500.f, 500.f },   // center bloom
-							{  6,  600.f, 1000.f, 400.f },   // sub-bloom centers
-							{ 12, 1400.f,  800.f, 350.f },   // tertiary centers
-							{ 12, 2400.f,  600.f, 350.f },   // seed pods
-							{  8, 3500.f,  500.f, 300.f },   // outer buds
+							{  1,    0.f, 1500.f, 500.f },
+							{  6,  600.f, 1000.f, 400.f },
+							{ 12, 1400.f,  800.f, 350.f },
+							{ 12, 2400.f,  600.f, 350.f },
+							{  8, 3500.f,  500.f, 300.f },
 						};
 
 						for (const auto& GR : GRings)
@@ -2183,7 +2016,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 									GR.Radius * FMath::Sin(GA), 10.f));
 								Glow->SetIntensity(GR.Intensity);
 								Glow->SetAttenuationRadius(GR.Atten);
-								Glow->SetLightColor(FColor(207, 192, 255)); // lavender initial
+								Glow->SetLightColor(FColor(207, 192, 255));
 								Glow->CastShadows = false;
 								Glow->RegisterComponent();
 								TripHallucinationActor->AddInstanceComponent(Glow);
@@ -2210,73 +2043,60 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 							FLinearColor(0.45f, 0.55f, 0.65f), FogTint, Intensity));
 					}
 
-					// Animate DMT floor — counter-rotating layers for kaleidoscope
+					// Animate mirror triangle floor — counter-rotating layers
 					if (TripTileHISM)
 					{
 						const FVector FloorPos(PlayerPos.X, PlayerPos.Y, 0.f);
-						// Each layer rotates at different speed/direction
 						TripTileHISM->SetWorldLocation(FloorPos);
-						TripTileHISM->SetWorldRotation(FRotator(0.f, GT * 6.f, 0.f));
+						TripTileHISM->SetWorldRotation(FRotator(0.f, GT * 8.f, 0.f));
 						if (TripBarHISM)
 						{
 							TripBarHISM->SetWorldLocation(FloorPos);
-							TripBarHISM->SetWorldRotation(FRotator(0.f, GT * -4.f, 0.f));
-						}
-						if (TripDotHISM)
-						{
-							TripDotHISM->SetWorldLocation(FloorPos);
-							TripDotHISM->SetWorldRotation(FRotator(0.f, GT * 2.5f, 0.f));
+							TripBarHISM->SetWorldRotation(FRotator(0.f, GT * -5.f, 0.f));
 						}
 
 						if (TripTileMID)
 						{
-							FLinearColor TileCol = SamplePal(GT * 0.08f + 0.7f);
-							const float TileAlpha = FMath::Max(0.5f, Intensity);
+							FLinearColor TriCol = SamplePal(GT * 0.1f + 0.3f);
+							const float TriAlpha = FMath::Max(0.5f, Intensity);
 							TripTileMID->SetVectorParameterValue(TEXT("BaseColor"),
-								FLinearColor(0.02f, 0.02f, 0.03f));
+								FLinearColor(0.05f, 0.05f, 0.08f));
 							TripTileMID->SetVectorParameterValue(TEXT("EmissiveColor"),
-								TileCol * 0.4f * TileAlpha);
-						}
-
-						// Move decals with player + animate emissive
-						if (TripDecalMID)
-						{
-							TripHallucinationActor->SetActorLocation(
-								FVector(PlayerPos.X, PlayerPos.Y, 0.f));
-							FLinearColor DecalCol = SamplePal(GT * 0.08f + 0.7f);
-							const float DecAlpha = FMath::Max(0.5f, Intensity);
-							TripDecalMID->SetVectorParameterValue(TEXT("EmissiveColor"),
-								DecalCol * 0.4f * DecAlpha);
-						}
-
-						// Animate underglow light colors — each light offset in palette
-						for (int32 li = 0; li < TripGlowLights.Num(); ++li)
-						{
-							if (TripGlowLights[li])
-							{
-								const float Phase = GT * 0.06f + li * 0.15f;
-								FLinearColor GlowCol = SamplePal(Phase);
-								TripGlowLights[li]->SetLightColor(
-									(GlowCol * 0.7f + FLinearColor(0.15f, 0.15f, 0.15f)).ToFColor(true));
-							}
+								TriCol * 1.5f * TriAlpha);
 						}
 					}
 
-					// Animate Neon Circuitry sky dome — simulated audio drives shader params
+					// Move decals with player + animate emissive
+					if (TripDecalMID)
+					{
+						TripHallucinationActor->SetActorLocation(
+							FVector(PlayerPos.X, PlayerPos.Y, 0.f));
+						FLinearColor DecalCol = SamplePal(GT * 0.08f + 0.7f);
+						const float DecAlpha = FMath::Max(0.5f, Intensity);
+						TripDecalMID->SetVectorParameterValue(TEXT("EmissiveColor"),
+							DecalCol * 0.4f * DecAlpha);
+					}
+
+					// Animate underglow light colors — each light offset in palette
+					for (int32 li = 0; li < TripGlowLights.Num(); ++li)
+					{
+						if (TripGlowLights[li])
+						{
+							const float Phase = GT * 0.06f + li * 0.15f;
+							FLinearColor GlowCol = SamplePal(Phase);
+							TripGlowLights[li]->SetLightColor(
+								(GlowCol * 0.7f + FLinearColor(0.15f, 0.15f, 0.15f)).ToFColor(true));
+						}
+					}
+
+					// Animate Neon Circuitry sky dome — static params, no audio reactivity
 					if (TripSkyMID)
 					{
-						const float SimBass  = FMath::Clamp(0.4f + 0.35f * FMath::Sin(GT * 0.8f) * FMath::Sin(GT * 1.3f), 0.f, 1.f);
-						const float SimHigh  = FMath::Clamp(0.3f + 0.25f * FMath::Sin(GT * 2.1f), 0.f, 1.f);
-						const float SimLevel = FMath::Clamp(0.5f + 0.3f * FMath::Sin(GT * 0.5f), 0.f, 1.f);
-						const float SimMid   = FMath::Clamp(0.35f + 0.3f * FMath::Sin(GT * 1.5f), 0.f, 1.f);
-						// Toggle between Alien Synthesis and Neon Glyphs every ~30s
-						const float SceneIdx = FMath::Fmod(GT, 60.f) < 30.f ? 0.f : 1.f;
-
-						TripSkyMID->SetScalarParameterValue(TEXT("Bass"), SimBass * Intensity);
-						TripSkyMID->SetScalarParameterValue(TEXT("High"), SimHigh * Intensity);
-						TripSkyMID->SetScalarParameterValue(TEXT("Level"), SimLevel);
-						TripSkyMID->SetScalarParameterValue(TEXT("Mid"), SimMid * Intensity);
-						TripSkyMID->SetScalarParameterValue(TEXT("SceneIndex"), SceneIdx);
+						TripSkyMID->SetScalarParameterValue(TEXT("Bass"), 0.5f * Intensity);
+						TripSkyMID->SetScalarParameterValue(TEXT("High"), 0.3f * Intensity);
+						TripSkyMID->SetScalarParameterValue(TEXT("Level"), 0.5f);
+						TripSkyMID->SetScalarParameterValue(TEXT("Mid"), 0.35f * Intensity);
+						TripSkyMID->SetScalarParameterValue(TEXT("SceneIndex"), 0.f);
 
 						if (TripSkyDome)
 							TripSkyDome->SetWorldLocation(PlayerPos);
@@ -2368,28 +2188,6 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			PP.bOverride_BloomSizeScale = true;
 			PP.BloomSizeScale = 1.f + 3.f * Intensity;
 
-			// === 3. CHROMATIC ABERRATION — mandala-colored fringing via custom PP material ===
-			PP.SceneFringeIntensity = 0.f; // disable built-in RGB fringing
-			if (TripChromaMID)
-			{
-				const float ChromaBreath = FMath::Sin(GT * 1.257f);
-				const float CAStrength = Overdrive * (0.015f + 0.008f * ChromaBreath * FixMul);
-				TripChromaMID->SetScalarParameterValue(TEXT("ChromaOffset"), CAStrength);
-
-				const float TintBlend = FMath::Min(1.f, Intensity);
-				// Lerp tints from neutral white to mandala palette colors
-				TripChromaMID->SetVectorParameterValue(TEXT("TintA"),
-					FMath::Lerp(FLinearColor::White, FLinearColor(1.22f, 1.13f, 1.5f), TintBlend)); // Lavender (#cfc0ff)
-				TripChromaMID->SetVectorParameterValue(TEXT("TintB"),
-					FMath::Lerp(FLinearColor::White, FLinearColor(0.0f, 0.4f, 1.5f), TintBlend)); // Hyperspace Blue
-				TripChromaMID->SetVectorParameterValue(TEXT("TintC"),
-					FMath::Lerp(FLinearColor::White, FLinearColor(0.0f, 1.35f, 1.35f), TintBlend)); // Electric Teal
-			}
-
-			// === 4. VIGNETTE ===
-			const float VigPulse = 0.10f * Intensity * FMath::Sin(GT * 1.257f);
-			PP.VignetteIntensity += 0.15f * Intensity + VigPulse;
-
 			// === 5. DEPTH OF FIELD — heavy focus swimming ===
 			const float FocalDrift = 3000.f * Intensity * FixMul * (
 				0.50f * FMath::Sin(GT * 0.131f) +
@@ -2398,9 +2196,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			PP.DepthOfFieldFstop = FMath::Lerp(PP.DepthOfFieldFstop, 1.8f, Intensity * 0.5f);
 			PP.DepthOfFieldFocalDistance = 3000.f + FocalDrift;
 
-			// === 6. FILM GRAIN ===
-			PP.bOverride_FilmGrainIntensity = true;
-			PP.FilmGrainIntensity = 0.08f * Intensity;
+			// === 6. FILM GRAIN — disabled ===
 
 			// === 7. TRACERS — moderate (won't desaturate) ===
 			PP.bOverride_MotionBlurAmount = true;
