@@ -75,6 +75,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UButton> MenuButton;
 
+	// Voice mute toggle
+	UPROPERTY() TObjectPtr<UButton> VoiceMuteButton;
+	UPROPERTY() TObjectPtr<UTextBlock> VoiceMuteLabel;
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UButton> CloseMenuButton;
 
@@ -373,6 +377,8 @@ protected:
 private:
 	UFUNCTION()
 	void OnMenuButtonClicked();
+
+	UFUNCTION() void OnVoiceMuteClicked();
 
 	UFUNCTION()
 	void OnCloseMenuButtonClicked();

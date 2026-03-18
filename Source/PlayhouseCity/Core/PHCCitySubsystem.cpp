@@ -524,25 +524,44 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		}
 	}
 
-	// ---- Cloud layer drift + sunset tinting ----
+	// ---- Cloud drift (all clouds, varied speeds for natural feel) ----
 	{
-		const float CloudDriftSpeed = 500.f; // UU per minute eastward
-		const float CloudDrift = DeltaTime * (CloudDriftSpeed / 60.f);
-		const float DawnDusk = 1.f - FMath::Abs(SunSine);
+		const float BaseSpeed = 400.f; // UU per minute
+		const float BaseDrift = DeltaTime * (BaseSpeed / 60.f);
 
-		if (CloudLayerActor)
+		for (int32 Ci = 0; Ci < CloudActors.Num(); ++Ci)
 		{
-			CloudLayerActor->AddActorWorldOffset(FVector(CloudDrift, CloudDrift * 0.3f, 0.f));
+			AActor* CA = CloudActors[Ci];
+			if (!CA) continue;
+			// Each cloud drifts at a slightly different speed/direction
+			// based on its index for natural variation
+			float SpeedMul = 0.5f + (float(Ci % 7) / 7.f) * 1.0f; // 0.5x to 1.5x
+			float AngleOff = float(Ci % 5) * 0.2f - 0.4f; // slight Y variation
+			CA->AddActorWorldOffset(FVector(BaseDrift * SpeedMul, BaseDrift * AngleOff, 0.f));
 		}
-		if (CloudLayerActor2)
+	// Cloud day/night color
+		if (CloudMIDs.Num() > 0)
 		{
-			// Second layer drifts slower for parallax
-			CloudLayerActor2->AddActorWorldOffset(FVector(CloudDrift * 0.6f, CloudDrift * 0.15f, 0.f));
-		}
-		if (CloudLayerActor3)
-		{
-			// Third layer drifts slowest for deep parallax depth
-			CloudLayerActor3->AddActorWorldOffset(FVector(CloudDrift * 0.35f, -CloudDrift * 0.1f, 0.f));
+			const float NightFactor = FMath::Max(0.f, -SunSine);
+			const float DawnDuskFactor = 1.f - FMath::Abs(SunSine);
+			// Day: white-gray, Sunset: warm orange-pink, Night: dark blue-gray
+			FLinearColor DayCol(0.85f, 0.85f, 0.88f);
+			FLinearColor SunsetCol(0.95f, 0.70f, 0.50f);
+			FLinearColor NightCol(0.08f, 0.08f, 0.12f);
+			FLinearColor CloudCol = FMath::Lerp(DayCol, SunsetCol, DawnDuskFactor * 0.6f);
+			CloudCol = FMath::Lerp(CloudCol, NightCol, NightFactor);
+
+			FLinearColor DayEmis(0.3f, 0.3f, 0.32f);
+			FLinearColor NightEmis(0.01f, 0.01f, 0.02f);
+			FLinearColor CloudEmis = FMath::Lerp(DayEmis, NightEmis, NightFactor);
+
+			for (int32 Ci = 0; Ci < CloudMIDs.Num(); ++Ci)
+			{
+				UMaterialInstanceDynamic* CM = CloudMIDs[Ci];
+				if (!CM) continue;
+				CM->SetVectorParameterValue(TEXT("BaseColor"), CloudCol);
+				CM->SetVectorParameterValue(TEXT("EmissiveColor"), CloudEmis);
+			}
 		}
 	}
 
@@ -900,6 +919,53 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		// Recompute normals not needed every frame for mobile perf
 		RiverWaterPMC->UpdateMeshSection(0, AnimVerts, AnimNormals, RiverWaterUVs,
 			TArray<FColor>(), TArray<FProcMeshTangent>());
+	}
+
+	// ---- Torch flame animation (flickering, swaying) ----
+	if (TorchFlames.Num() > 0)
+	{
+		const float GT = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+		for (int32 Fi = 0; Fi < TorchFlames.Num(); ++Fi)
+		{
+			FTorchFlameData& F = TorchFlames[Fi];
+			const float P = F.Phase;
+			const float BX = F.BasePos.X;
+			const float BY = F.BasePos.Y;
+			const float BZ = F.BasePos.Z;
+
+			// Flicker: rapid scale oscillation
+			const float Flicker = 1.0f + 0.15f * FMath::Sin(GT * 12.f + P)
+				+ 0.08f * FMath::Sin(GT * 19.f + P * 2.3f)
+				+ 0.05f * FMath::Sin(GT * 31.f + P * 5.1f);
+
+			// Sway: slow lateral movement (wind)
+			const float SwayX = 8.f * FMath::Sin(GT * 2.5f + P) + 4.f * FMath::Sin(GT * 4.1f + P * 1.7f);
+			const float SwayY = 6.f * FMath::Sin(GT * 3.2f + P * 1.3f);
+
+			// Height bob
+			const float ZBob = 5.f * FMath::Sin(GT * 5.f + P * 0.9f);
+
+			if (F.Core)
+			{
+				F.Core->SetWorldLocation(FVector(BX + SwayX * 0.5f, BY + SwayY * 0.5f, BZ + 30.f + ZBob));
+				F.Core->SetWorldScale3D(FVector(0.30f * Flicker, 0.30f * Flicker, 1.8f * Flicker));
+			}
+			if (F.Mid)
+			{
+				F.Mid->SetWorldLocation(FVector(BX + SwayX * 0.7f, BY + SwayY * 0.7f, BZ + 20.f + ZBob * 0.8f));
+				F.Mid->SetWorldScale3D(FVector(0.50f * Flicker, 0.50f * Flicker, 2.2f * Flicker));
+			}
+			if (F.Outer)
+			{
+				F.Outer->SetWorldLocation(FVector(BX + SwayX, BY + SwayY, BZ + 10.f + ZBob * 0.5f));
+				F.Outer->SetWorldScale3D(FVector(0.70f * Flicker * 0.95f, 0.70f * Flicker * 0.95f, 2.8f * Flicker));
+			}
+			if (F.Tip)
+			{
+				F.Tip->SetWorldLocation(FVector(BX + SwayX * 1.3f, BY + SwayY * 1.3f, BZ + 100.f + ZBob * 1.5f));
+				F.Tip->SetWorldScale3D(FVector(0.25f * Flicker, 0.25f * Flicker, 1.5f * Flicker * 1.1f));
+			}
+		}
 	}
 
 	// ---- Wet roads at night (dew/humidity effect) ----
@@ -1884,6 +1950,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 						TripSkyDome->SetStaticMesh(SphereMesh);
 						TripSkyDome->SetWorldLocation(PlayerPos);
 						TripSkyDome->SetWorldScale3D(FVector(4500.f, 4500.f, 4500.f));
+						TripSkyDome->SetWorldRotation(FRotator(90.f, 0.f, 0.f)); // rotate pole to horizon
 						TripSkyDome->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 						TripSkyDome->CastShadow = false;
 						TripSkyDome->AttachToComponent(
@@ -2293,24 +2360,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 							WinCol * 8.f * Intensity);
 					}
 
-					// Fog — vivid colored mist at mandala intensity
-					if (FogComp)
-					{
-						const float BaseDensity = FMath::Lerp(0.0004f, 0.0015f,
-							FMath::Clamp(FMath::Sin(DayNightTime * PI * 2.f) * -0.5f + 0.5f, 0.f, 1.f));
-						const float TripDensity = FMath::Lerp(BaseDensity,
-							0.008f + 0.004f * FMath::Sin(GT * 0.2f), Intensity);
-						FogComp->SetFogDensity(TripDensity);
-						FogComp->SetFogHeightFalloff(FMath::Lerp(0.08f, 0.01f, Intensity));
-					}
-
-					// Sky light — full palette color
-					if (SkyLightComp)
-					{
-						FLinearColor SkyCol = SamplePal(GT * 0.03f + 0.7f);
-						SkyLightComp->SetLightColor(FMath::Lerp(
-							FLinearColor(0.6f, 0.7f, 1.0f), SkyCol, Intensity));
-					}
+					// Fog — keep normal (no trip color change)
+					// Sky light — keep normal (no trip color change)
 
 				}
 			}
@@ -9677,39 +9728,86 @@ void UPHCCitySubsystem::SpawnStarfield()
 void UPHCCitySubsystem::SpawnCloudLayer()
 {
 	UWorld* World = GetWorld();
-	if (!World || !PlaneMesh || !GlassMaterial) return;
+	if (!World || !SphereMesh || !ColorMaterial) return;
 
-	auto SpawnCloudPlane = [&](float Z, float Opacity, const TCHAR* Label) -> AActor*
+	FRandomStream CloudRand(333333);
+
+	// Spawn 25 cumulus cloud clusters at varying positions/heights
+	// Each cloud = 5-10 overlapping flattened spheres forming a puffy mass
+	const int32 NumClouds = 50;
+	int32 CloudCompIdx = 0;
+
+	for (int32 Ci = 0; Ci < NumClouds; ++Ci)
 	{
+		float CX = CloudRand.FRandRange(-150000.f, 150000.f);
+		float CY = CloudRand.FRandRange(-150000.f, 150000.f);
+		float CZ = CloudRand.FRandRange(25000.f, 40000.f);
+
 		AActor* CA = World->SpawnActor<AActor>(AActor::StaticClass(),
-			FVector(0.f, 0.f, Z), FRotator::ZeroRotator);
-		if (!CA) return nullptr;
-#if WITH_EDITOR
-		CA->SetActorLabel(Label);
-#endif
-		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(CA, TEXT("CloudMesh"));
-		MC->SetStaticMesh(PlaneMesh);
-		MC->SetWorldScale3D(FVector(5000.f, 5000.f, 1.f)); // massive sky plane (doubled map)
-		MC->SetWorldLocation(FVector(0.f, 0.f, Z));
-		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MC->RegisterComponent();
-		CA->SetRootComponent(MC);
+			FVector(CX, CY, CZ), FRotator::ZeroRotator);
+		if (!CA) continue;
 
-		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(GlassMaterial, MC);
-		if (Mat)
+		// Store first 3 for legacy refs + all for drift
+		if (Ci == 0) CloudLayerActor = CA;
+		else if (Ci == 1) CloudLayerActor2 = CA;
+		else if (Ci == 2) CloudLayerActor3 = CA;
+		CloudActors.Add(CA);
+
+		int32 NumPuffs = CloudRand.RandRange(5, 10);
+		float CloudWidth = CloudRand.FRandRange(4000.f, 12000.f);
+		float CloudDepth = CloudWidth * CloudRand.FRandRange(0.5f, 0.9f);
+		float CloudHeight = CloudWidth * CloudRand.FRandRange(0.15f, 0.3f);
+
+		bool bFirstComp = true;
+		for (int32 Pi = 0; Pi < NumPuffs; ++Pi)
 		{
-			Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.85f, 0.85f, 0.88f));
-			Mat->SetScalarParameterValue(TEXT("Opacity"), Opacity);
-			Mat->SetScalarParameterValue(TEXT("Roughness"), 1.0f);
-			MC->SetMaterial(0, Mat);
-		}
-		CA->AddInstanceComponent(MC);
-		return CA;
-	};
+			float PX = CloudRand.FRandRange(-CloudWidth * 0.4f, CloudWidth * 0.4f);
+			float PY = CloudRand.FRandRange(-CloudDepth * 0.4f, CloudDepth * 0.4f);
+			float PZ = CloudRand.FRandRange(-CloudHeight * 0.3f, CloudHeight * 0.4f);
+			float PSz = CloudRand.FRandRange(CloudWidth * 0.2f, CloudWidth * 0.45f);
 
-	CloudLayerActor = SpawnCloudPlane(15000.f, 0.10f, TEXT("CloudLayer1"));
-	CloudLayerActor2 = SpawnCloudPlane(16500.f, 0.08f, TEXT("CloudLayer2"));
-	CloudLayerActor3 = SpawnCloudPlane(30000.f, 0.05f, TEXT("CloudLayer3"));
+			UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(CA,
+				*FString::Printf(TEXT("Cloud_%d_%d"), Ci, CloudCompIdx++));
+			MC->SetStaticMesh(SphereMesh);
+			MC->SetWorldLocation(FVector(CX + PX, CY + PY, CZ + PZ));
+			// Flat ellipsoid: wide, shallow
+			MC->SetWorldScale3D(FVector(PSz / 50.f, PSz / 50.f, PSz * 0.35f / 50.f));
+			MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			MC->SetCastShadow(false);
+			MC->SetBoundsScale(50.f);
+			MC->bNeverDistanceCull = true;
+			MC->RegisterComponent();
+
+			if (bFirstComp) { CA->SetRootComponent(MC); bFirstComp = false; }
+			CA->AddInstanceComponent(MC);
+
+			// White cloud with emissive brightness
+			// Top puffs brighter (sun-lit), bottom slightly darker (self-shadow)
+			float VertBrightness = FMath::GetMappedRangeValueClamped(
+				FVector2D(-CloudHeight * 0.3f, CloudHeight * 0.4f),
+				FVector2D(0.5f, 1.0f), PZ);
+			FLinearColor CloudCol(
+				0.85f * VertBrightness,
+				0.85f * VertBrightness,
+				0.88f * VertBrightness);
+			FLinearColor CloudEmis(
+				0.3f * VertBrightness,
+				0.3f * VertBrightness,
+				0.32f * VertBrightness);
+
+			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, MC);
+			if (Mat)
+			{
+				Mat->SetVectorParameterValue(TEXT("BaseColor"), CloudCol);
+				Mat->SetScalarParameterValue(TEXT("Roughness"), 1.0f);
+				Mat->SetVectorParameterValue(TEXT("EmissiveColor"), CloudEmis);
+				MC->SetMaterial(0, Mat);
+				CloudMIDs.Add(Mat);
+			}
+		}
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Spawned %d PUBG cumulus clouds with %d sphere puffs"), NumClouds, CloudCompIdx);
 }
 
 // ---------------------------------------------------------------------------
@@ -15541,6 +15639,18 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 				if (GlassMaterial)
 					ApplyPBRGlass(FTip, GlassMaterial, FlameTip, 0.3f, 0.f, 0.1f, TipEmissive);
 				TorchActor->AddInstanceComponent(FTip);
+
+				// Store flame data for Tick animation
+				{
+					FTorchFlameData FD;
+					FD.Core = FCore;
+					FD.Mid = FMid;
+					FD.Outer = FOuter;
+					FD.Tip = FTip;
+					FD.BasePos = FVector(TX, TY, TopZ);
+					FD.Phase = CityRandom.FRandRange(0.f, 6.28f);
+					TorchFlames.Add(FD);
+				}
 
 				// Ember glow sphere at the base of the flame
 				UStaticMeshComponent* Ember = NewObject<UStaticMeshComponent>(

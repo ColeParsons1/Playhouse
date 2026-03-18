@@ -758,6 +758,34 @@ bool UPHCCityHUD::Initialize()
 		MenuButton->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
+		//  Voice Mute Toggle Button (top-left, below menu)
+		// ============================================================
+		VoiceMuteButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("VoiceMuteButton"));
+		{
+			FButtonStyle MuteBtnStyle = VoiceMuteButton->GetStyle();
+			MuteBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.1f, 0.6f, 0.1f, 0.5f));
+			MuteBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.15f, 0.7f, 0.15f, 0.6f));
+			MuteBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.2f, 0.8f, 0.2f, 0.7f));
+			VoiceMuteButton->SetStyle(MuteBtnStyle);
+		}
+		VoiceMuteLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("VoiceMuteLabel"));
+		VoiceMuteLabel->SetText(FText::FromString(TEXT("MIC ON")));
+		VoiceMuteLabel->SetFont(FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 12));
+		VoiceMuteLabel->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+		VoiceMuteLabel->SetJustification(ETextJustify::Center);
+		VoiceMuteButton->AddChild(VoiceMuteLabel);
+
+		UCanvasPanelSlot* MuteBtnSlot = RootCanvas->AddChildToCanvas(VoiceMuteButton);
+		MuteBtnSlot->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f)); // top-center like location bar
+		MuteBtnSlot->SetAlignment(FVector2D(1.f, 0.f)); // right edge aligned to anchor
+		MuteBtnSlot->SetOffsets(FMargin(-160.f, 10.f, 90.f, 34.f)); // left of location bar
+
+		VoiceMuteButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnVoiceMuteClicked);
+
+		// ============================================================
 		//  TOP-LEFT (below Menu): "Car" button -- spawns Aventador
 		// ============================================================
 		CarButton = WidgetTree->ConstructWidget<UButton>(
@@ -4117,6 +4145,32 @@ void UPHCCityHUD::CloseMenu()
 // ---------------------------------------------------------------------------
 // Button callbacks
 // ---------------------------------------------------------------------------
+
+void UPHCCityHUD::OnVoiceMuteClicked()
+{
+	UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(this);
+	if (GI)
+	{
+		GI->ToggleVoiceMute();
+		if (VoiceMuteLabel)
+		{
+			VoiceMuteLabel->SetText(FText::FromString(GI->bVoiceMuted ? TEXT("MIC OFF") : TEXT("MIC ON")));
+		}
+		if (VoiceMuteButton)
+		{
+			FButtonStyle Style = VoiceMuteButton->GetStyle();
+			if (GI->bVoiceMuted)
+			{
+				Style.Normal.TintColor = FSlateColor(FLinearColor(0.6f, 0.1f, 0.1f, 0.5f));
+			}
+			else
+			{
+				Style.Normal.TintColor = FSlateColor(FLinearColor(0.1f, 0.6f, 0.1f, 0.5f));
+			}
+			VoiceMuteButton->SetStyle(Style);
+		}
+	}
+}
 
 void UPHCCityHUD::OnMenuButtonClicked()
 {

@@ -34,7 +34,9 @@ public class PlayhouseCity : ModuleRules
 			"NavigationSystem",
 			"GameplayTags",
 			"Networking",
-			"ProceduralMeshComponent"
+			"ProceduralMeshComponent",
+			"AudioMixer",
+			"AudioCapture"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
@@ -45,6 +47,7 @@ public class PlayhouseCity : ModuleRules
 		{
 			PublicFrameworks.Add("AuthenticationServices");
 			PublicFrameworks.Add("UserNotifications");
+			PublicFrameworks.Add("AVFoundation");
 		}
 
 		DynamicallyLoadedModuleNames.AddRange(new string[]

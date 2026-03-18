@@ -400,6 +400,22 @@ private:
 	TArray<int32> RiverWaterTris;
 	TArray<FVector2D> RiverWaterUVs;
 
+	/** Cloud MIDs for day/night color change. */
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> CloudMIDs;
+	UPROPERTY(Transient) TArray<TObjectPtr<AActor>> CloudActors;
+
+	/** Torch flame components for animation. */
+	struct FTorchFlameData
+	{
+		TObjectPtr<UStaticMeshComponent> Core;
+		TObjectPtr<UStaticMeshComponent> Mid;
+		TObjectPtr<UStaticMeshComponent> Outer;
+		TObjectPtr<UStaticMeshComponent> Tip;
+		FVector BasePos;  // base world position of flame
+		float Phase;      // random phase offset
+	};
+	TArray<FTorchFlameData> TorchFlames;
+
 	/** Ground slab MID for trip color morphing. */
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> GroundSlabMID;
 

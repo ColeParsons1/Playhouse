@@ -182,6 +182,7 @@ bool UPHCGameInstance::HostGame()
 	{
 		bInMultiplayerSession = true;
 		bIsHost = true;
+		EnableVoiceChat();
 		UE_LOG(LogPlayhouseCity, Log, TEXT("HostGame: Listen server started on port 7777. Net mode: %d"), (int32)World->GetNetMode());
 		return true;
 	}
@@ -217,6 +218,7 @@ void UPHCGameInstance::JoinGame(const FString& IPAddress)
 
 	bInMultiplayerSession = true;
 	bIsHost = false;
+	EnableVoiceChat();
 }
 
 void UPHCGameInstance::LeaveGame()
@@ -244,6 +246,7 @@ void UPHCGameInstance::LeaveGame()
 
 	bInMultiplayerSession = false;
 	bIsHost = false;
+	DisableVoiceChat();
 }
 
 // ---------------------------------------------------------------------------
@@ -371,4 +374,71 @@ void UPHCGameInstance::DestroySubsystems()
 	ThemeManager    = nullptr;
 	EconomyManager  = nullptr;
 	AuthManager     = nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Voice Chat (UE5 built-in VOIP)
+// ---------------------------------------------------------------------------
+
+void UPHCGameInstance::EnableVoiceChat()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	APlayerController* PC = GetFirstLocalPlayerController();
+	if (!PC) return;
+
+	// Enable voice for the local player
+	PC->StartTalking();
+	bVoiceMuted = false;
+
+	// Register all players as talkers and listeners via console commands
+	if (GEngine)
+	{
+		GEngine->Exec(World, TEXT("OSS StartNetworkedVoice"));
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice chat enabled"));
+}
+
+void UPHCGameInstance::DisableVoiceChat()
+{
+	APlayerController* PC = GetFirstLocalPlayerController();
+	if (PC)
+	{
+		PC->StopTalking();
+	}
+
+	if (GEngine && GetWorld())
+	{
+		GEngine->Exec(GetWorld(), TEXT("OSS StopNetworkedVoice"));
+	}
+
+	bVoiceMuted = false;
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice chat disabled"));
+}
+
+void UPHCGameInstance::ToggleVoiceMute()
+{
+	SetVoiceMuted(!bVoiceMuted);
+}
+
+void UPHCGameInstance::SetVoiceMuted(bool bMute)
+{
+	bVoiceMuted = bMute;
+
+	APlayerController* PC = GetFirstLocalPlayerController();
+	if (PC)
+	{
+		if (bMute)
+		{
+			PC->StopTalking();
+		}
+		else
+		{
+			PC->StartTalking();
+		}
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice mute: %s"), bMute ? TEXT("ON") : TEXT("OFF"));
 }

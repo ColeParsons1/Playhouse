@@ -152,6 +152,26 @@ public:
 	 *  since ClientTravel will reload the map anyway. */
 	bool bPendingServerConnect = false;
 
+	// -- Voice Chat (UE5 built-in VOIP) ---------------------------------------
+
+	/** Toggle voice chat mute on/off. */
+	UFUNCTION(BlueprintCallable, Category = "PHC|Voice")
+	void ToggleVoiceMute();
+
+	/** Set voice mute state directly. */
+	UFUNCTION(BlueprintCallable, Category = "PHC|Voice")
+	void SetVoiceMuted(bool bMute);
+
+	/** Current mute state. */
+	UPROPERTY(BlueprintReadOnly, Category = "PHC|Voice")
+	bool bVoiceMuted = false;
+
+	/** Enable VOIP for the local player. Called when entering multiplayer. */
+	void EnableVoiceChat();
+
+	/** Disable VOIP. Called when leaving multiplayer. */
+	void DisableVoiceChat();
+
 	// -- Push Notifications ---------------------------------------------------
 
 	/** APNs device token (hex string), captured on iOS. */
