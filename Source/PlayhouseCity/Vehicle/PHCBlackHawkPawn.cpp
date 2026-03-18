@@ -821,9 +821,8 @@ void APHCBlackHawkPawn::FireRocket()
 	UWorld* World = GetWorld();
 	if (!World) return;
 
-	FRotator AimRot = GetActorForwardVector().Rotation();
-	if (VehicleCamera) AimRot = VehicleCamera->GetComponentRotation();
-	const FVector AimDir = AimRot.Vector();
+	const FRotator AimRot = GetActorForwardVector().Rotation();
+	const FVector AimDir = GetActorForwardVector();
 
 	const FVector MuzzleLoc = GetActorLocation()
 		+ GetActorForwardVector() * 250.f

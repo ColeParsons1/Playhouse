@@ -388,6 +388,12 @@ private:
 
 	/** Ocean actor reference for wave animation. */
 
+	/** River water animated mesh. */
+	UPROPERTY(Transient) TObjectPtr<UProceduralMeshComponent> RiverWaterPMC;
+	TArray<FVector> RiverWaterBaseVerts;
+	TArray<int32> RiverWaterTris;
+	TArray<FVector2D> RiverWaterUVs;
+
 	/** Ground slab MID for trip color morphing. */
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> GroundSlabMID;
 

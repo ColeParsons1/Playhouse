@@ -20,6 +20,8 @@
 #include "Materials/MaterialExpressionSceneTexture.h"
 #include "Materials/MaterialExpressionCustom.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
+#include "Materials/MaterialExpressionTextureSampleParameter2D.h"
+#include "Engine/Texture2D.h"
 #include "Materials/MaterialExpressionTime.h"
 #include "MaterialDomain.h"
 #include "UObject/Package.h"
@@ -145,15 +147,14 @@ void FPlayhouseCityModule::StartupModule()
 		UMaterial* Mat = NewObject<UMaterial>(Package, TEXT("M_PHCColor"),
 			RF_Public | RF_Standalone);
 
+		UMaterialEditorOnlyData* EditorData = Mat->GetEditorOnlyData();
+
 		// BaseColor (Vector)
 		UMaterialExpressionVectorParameter* BaseColorParam =
 			NewObject<UMaterialExpressionVectorParameter>(Mat);
 		BaseColorParam->ParameterName = TEXT("BaseColor");
 		BaseColorParam->DefaultValue = FLinearColor(1.f, 1.f, 1.f, 1.f);
-
-		UMaterialEditorOnlyData* EditorData = Mat->GetEditorOnlyData();
 		EditorData->ExpressionCollection.Expressions.Add(BaseColorParam);
-		EditorData->BaseColor.Expression = BaseColorParam;
 
 		// Metallic (Scalar)
 		UMaterialExpressionScalarParameter* MetallicParam =
@@ -169,7 +170,6 @@ void FPlayhouseCityModule::StartupModule()
 		RoughnessParam->ParameterName = TEXT("Roughness");
 		RoughnessParam->DefaultValue = 0.5f;
 		EditorData->ExpressionCollection.Expressions.Add(RoughnessParam);
-		EditorData->Roughness.Expression = RoughnessParam;
 
 		// EmissiveColor (Vector)
 		UMaterialExpressionVectorParameter* EmissiveParam =
@@ -178,6 +178,110 @@ void FPlayhouseCityModule::StartupModule()
 		EmissiveParam->DefaultValue = FLinearColor::Black;
 		EditorData->ExpressionCollection.Expressions.Add(EmissiveParam);
 		EditorData->EmissiveColor.Expression = EmissiveParam;
+
+		// --- World Position node (input to procedural detail shader) ---
+		auto* WorldPosNode = NewObject<UMaterialExpressionWorldPosition>(Mat);
+		EditorData->ExpressionCollection.Expressions.Add(WorldPosNode);
+
+		// --- Procedural surface detail (Custom HLSL) ---
+		// Pure math — no texture dependencies, iOS Metal compatible
+		// Outputs: RGB = modified BaseColor, A unused
+		// Normal output via separate additional output
+		auto* DetailNode = NewObject<UMaterialExpressionCustom>(Mat);
+		DetailNode->OutputType = CMOT_Float3;
+		DetailNode->Description = TEXT("ProceduralSurfaceDetail");
+
+		// Inputs
+		DetailNode->Inputs.Empty();
+		{
+			FCustomInput In;
+			In.InputName = TEXT("WorldPos");
+			In.Input.Expression = WorldPosNode;
+			DetailNode->Inputs.Add(In);
+		}
+		{
+			FCustomInput In;
+			In.InputName = TEXT("BaseCol");
+			In.Input.Expression = BaseColorParam;
+			DetailNode->Inputs.Add(In);
+		}
+		{
+			FCustomInput In;
+			In.InputName = TEXT("Rough");
+			In.Input.Expression = RoughnessParam;
+			DetailNode->Inputs.Add(In);
+		}
+
+		// Additional outputs: Normal (index 1), ModRoughness (index 2)
+		DetailNode->AdditionalOutputs.Empty();
+		{
+			FCustomOutput Out;
+			Out.OutputName = TEXT("Normal");
+			Out.OutputType = CMOT_Float3;
+			DetailNode->AdditionalOutputs.Add(Out);
+		}
+		{
+			FCustomOutput Out;
+			Out.OutputName = TEXT("ModRoughness");
+			Out.OutputType = CMOT_Float1;
+			DetailNode->AdditionalOutputs.Add(Out);
+		}
+
+		DetailNode->Code = TEXT(
+			"// Hash function (Metal-safe, no texture lookups)\n"
+			"float3 WP = WorldPos * 0.01;\n"
+			"\n"
+			"// Multi-octave hash noise for surface micro-detail\n"
+			"float2 p1 = floor(WP.xy * 6.0);\n"
+			"float2 p2 = floor(WP.xy * 14.0);\n"
+			"float2 p3 = floor(WP.xy * 30.0);\n"
+			"float2 f1 = frac(WP.xy * 6.0);\n"
+			"float2 f2 = frac(WP.xy * 14.0);\n"
+			"float2 f3 = frac(WP.xy * 30.0);\n"
+			"f1 = f1 * f1 * (3.0 - 2.0 * f1);\n"
+			"f2 = f2 * f2 * (3.0 - 2.0 * f2);\n"
+			"f3 = f3 * f3 * (3.0 - 2.0 * f3);\n"
+			"\n"
+			"float h00 = frac(sin(dot(p1, float2(127.1, 311.7))) * 43758.5453);\n"
+			"float h10 = frac(sin(dot(p1 + float2(1,0), float2(127.1, 311.7))) * 43758.5453);\n"
+			"float h01 = frac(sin(dot(p1 + float2(0,1), float2(127.1, 311.7))) * 43758.5453);\n"
+			"float h11 = frac(sin(dot(p1 + float2(1,1), float2(127.1, 311.7))) * 43758.5453);\n"
+			"float n1 = lerp(lerp(h00, h10, f1.x), lerp(h01, h11, f1.x), f1.y);\n"
+			"\n"
+			"float m00 = frac(sin(dot(p2, float2(269.5, 183.3))) * 43758.5453);\n"
+			"float m10 = frac(sin(dot(p2 + float2(1,0), float2(269.5, 183.3))) * 43758.5453);\n"
+			"float m01 = frac(sin(dot(p2 + float2(0,1), float2(269.5, 183.3))) * 43758.5453);\n"
+			"float m11 = frac(sin(dot(p2 + float2(1,1), float2(269.5, 183.3))) * 43758.5453);\n"
+			"float n2 = lerp(lerp(m00, m10, f2.x), lerp(m01, m11, f2.x), f2.y);\n"
+			"\n"
+			"float s00 = frac(sin(dot(p3, float2(419.2, 371.9))) * 43758.5453);\n"
+			"float s10 = frac(sin(dot(p3 + float2(1,0), float2(419.2, 371.9))) * 43758.5453);\n"
+			"float s01 = frac(sin(dot(p3 + float2(0,1), float2(419.2, 371.9))) * 43758.5453);\n"
+			"float s11 = frac(sin(dot(p3 + float2(1,1), float2(419.2, 371.9))) * 43758.5453);\n"
+			"float n3 = lerp(lerp(s00, s10, f3.x), lerp(s01, s11, f3.x), f3.y);\n"
+			"\n"
+			"// Normal perturbation (tangent space)\n"
+			"float nx = (n1 - 0.5) * 0.25 + (n2 - 0.5) * 0.15 + (n3 - 0.5) * 0.08;\n"
+			"float ny = (frac(n1 * 7.13) - 0.5) * 0.25 + (frac(n2 * 13.37) - 0.5) * 0.15;\n"
+			"Normal = float3(nx, ny, 1.0);\n"
+			"\n"
+			"// Roughness micro-variation\n"
+			"ModRoughness = Rough + (n2 - 0.5) * 0.12;\n"
+			"\n"
+			"// Color micro-variation (subtle per-pixel noise breaks flat look)\n"
+			"float colorNoise = (n1 - 0.5) * 0.06 + (n3 - 0.5) * 0.03;\n"
+			"float3 modColor = BaseCol + float3(colorNoise, colorNoise * 1.2, colorNoise * 0.5);\n"
+			"return max(modColor, float3(0.0, 0.0, 0.0));\n"
+		);
+
+		EditorData->ExpressionCollection.Expressions.Add(DetailNode);
+
+		// Connect outputs
+		EditorData->BaseColor.Expression = DetailNode;  // output 0: modified color
+		EditorData->Normal.Expression = DetailNode;
+		EditorData->Normal.OutputIndex = 1;  // additional output "Normal"
+		EditorData->Roughness.Expression = DetailNode;
+		EditorData->Roughness.OutputIndex = 2;  // additional output "ModRoughness"
 
 		AddCurvatureWPO(Mat, EditorData);
 

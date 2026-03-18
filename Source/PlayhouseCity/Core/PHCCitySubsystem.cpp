@@ -355,12 +355,12 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		const float Elevation = FMath::Max(0.f, SunSine);
 		SunLightComp->SetIntensity(Elevation * 4.5f);
 
-		// Color: orange at low sun, warm white at high sun.
+		// PUBG 2026: neutral white sun at noon, subtle warm at horizon
 		if (Elevation > 0.01f)
 		{
 			const float OrangeFactor = 1.f - FMath::Pow(Elevation, 0.4f);
-			const FLinearColor NoonColor(1.f, 0.97f, 0.92f);
-			const FLinearColor HorizonColor(1.f, 0.45f, 0.12f);
+			const FLinearColor NoonColor(1.f, 0.99f, 0.97f);  // nearly pure white
+			const FLinearColor HorizonColor(1.f, 0.55f, 0.25f); // warm but less saturated
 			const FLinearColor SunColor = FMath::Lerp(NoonColor, HorizonColor, OrangeFactor);
 			SunLightComp->SetLightColor(SunColor.ToFColor(true));
 		}
@@ -385,7 +385,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 
 		// Tint: blue-white during day, very deep blue at night.
 		const float NightFactor = FMath::Max(0.f, -SunSine);
-		const FLinearColor DayTint(0.6f, 0.7f, 1.0f);
+		// PUBG 2026: neutral pale blue sky light
+		const FLinearColor DayTint(0.7f, 0.75f, 0.85f);
 		const FLinearColor NightTint(0.04f, 0.01f, 0.06f);
 		SkyLightComp->SetLightColor(FMath::Lerp(DayTint, NightTint, NightFactor));
 
@@ -411,9 +412,10 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		const float DawnDusk = 1.f - FMath::Abs(SunSine);
 		FogComp->SetDirectionalInscatteringExponent(8.f);
 		FogComp->SetDirectionalInscatteringStartDistance(5000.f);
-		const FLinearColor NeutralFog(0.6f, 0.6f, 0.7f);
-		const FLinearColor WarmHaze(1.2f, 0.8f, 0.35f);   // richer golden haze
-		const FLinearColor NightFog(0.015f, 0.005f, 0.04f); // deep purple-black
+		// PUBG 2026: neutral blue-gray daytime fog, subtle warm haze at horizon
+		const FLinearColor NeutralFog(0.55f, 0.58f, 0.65f); // cool blue-gray
+		const FLinearColor WarmHaze(0.9f, 0.7f, 0.4f);      // reduced warmth
+		const FLinearColor NightFog(0.015f, 0.005f, 0.04f);
 		FLinearColor InscatterColor = FMath::Lerp(NeutralFog, WarmHaze, DawnDusk);
 		InscatterColor = FMath::Lerp(InscatterColor, NightFog, NightFactor);
 		FogComp->SetFogInscatteringColor(InscatterColor);
@@ -436,36 +438,36 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		FVector4 TargetOffset;
 		if (T < 0.125f || T >= 0.875f)
 		{
-			// Dawn: rose-gold highlights with warm lifted shadows
-			TargetGain = FVector4(1.18f, 0.93f, 0.82f, 1.0f);
-			TargetOffset = FVector4(0.025f, 0.008f, -0.012f, 0.0f);
+			// Dawn: subtle warm lift, PUBG-style muted gold
+			TargetGain = FVector4(1.08f, 0.98f, 0.90f, 1.0f);
+			TargetOffset = FVector4(0.012f, 0.004f, -0.006f, 0.0f);
 		}
 		else if (T < 0.375f)
 		{
-			// Day: clean neutral with subtle warmth
-			TargetGain = FVector4(1.04f, 1.02f, 0.97f, 1.0f);
-			TargetOffset = FVector4(0.002f, 0.001f, -0.003f, 0.0f);
+			// Day: PUBG neutral — very slightly cool, desaturated
+			TargetGain = FVector4(1.00f, 1.00f, 1.01f, 1.0f);
+			TargetOffset = FVector4(0.0f, 0.0f, 0.003f, 0.0f);
 		}
 		else if (T < 0.625f)
 		{
-			// Sunset: deep golden amber with crushed blue channel
-			TargetGain = FVector4(1.25f, 0.88f, 0.65f, 1.0f);
-			TargetOffset = FVector4(0.04f, 0.012f, -0.025f, 0.0f);
+			// Sunset: PUBG warm but restrained, not over-saturated
+			TargetGain = FVector4(1.10f, 0.92f, 0.78f, 1.0f);
+			TargetOffset = FVector4(0.02f, 0.006f, -0.012f, 0.0f);
 		}
 		else
 		{
-			// Night: moody blue with crushed shadows
-			TargetGain = FVector4(0.24f, 0.28f, 0.40f, 1.0f);
-			TargetOffset = FVector4(-0.025f, -0.012f, 0.008f, 0.0f);
+			// Night: cool blue, PUBG-style
+			TargetGain = FVector4(0.22f, 0.26f, 0.38f, 1.0f);
+			TargetOffset = FVector4(-0.02f, -0.008f, 0.01f, 0.0f);
 		}
 		// Smooth interpolation to target
 		PP.ColorGain = FMath::Lerp(PP.ColorGain, TargetGain, FMath::Min(1.f, DeltaTime * 2.f));
 		PP.ColorOffset = FMath::Lerp(PP.ColorOffset, TargetOffset, FMath::Min(1.f, DeltaTime * 2.f));
 
-		// Legacy ColorGamma — neutral at night, slight warmth during day
-		const float WarmR = FMath::Lerp(1.0f, 0.98f, NF);
-		const float WarmG = FMath::Lerp(0.97f, 0.97f, NF);
-		const float WarmB = FMath::Lerp(0.92f, 1.02f, NF);
+		// PUBG 2026 ColorGamma — neutral during day, cool at night
+		const float WarmR = FMath::Lerp(1.0f, 0.97f, NF);
+		const float WarmG = FMath::Lerp(1.0f, 0.98f, NF);
+		const float WarmB = FMath::Lerp(1.0f, 1.03f, NF);
 		PP.ColorGamma = FVector4(WarmR, WarmG, WarmB, 1.0f);
 
 		PP.VignetteIntensity = FMath::Lerp(0.35f, 0.42f, DawnDuskFactor);
@@ -875,6 +877,29 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 				UpdateGrassInstances(LocalPawn->GetActorLocation());
 			}
 		}
+	}
+
+	// ---- River wave animation (Gerstner-style ripples) ----
+	if (RiverWaterPMC && RiverWaterBaseVerts.Num() > 0)
+	{
+		const float GT = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+		TArray<FVector> AnimVerts;
+		AnimVerts.Reserve(RiverWaterBaseVerts.Num());
+		for (const FVector& V : RiverWaterBaseVerts)
+		{
+			float Z = V.Z;
+			// Wave 1: along river (X direction), long wavelength
+			Z += 12.f * FMath::Sin(V.X * 0.0008f + GT * 1.2f);
+			// Wave 2: cross-river chop
+			Z += 6.f * FMath::Sin(V.Y * 0.002f + GT * 2.0f);
+			// Wave 3: fine ripple detail
+			Z += 3.f * FMath::Sin((V.X + V.Y) * 0.003f + GT * 3.5f);
+			AnimVerts.Add(FVector(V.X, V.Y, Z));
+		}
+		TArray<FVector> AnimNormals;
+		// Recompute normals not needed every frame for mobile perf
+		RiverWaterPMC->UpdateMeshSection(0, AnimVerts, AnimNormals, RiverWaterUVs,
+			TArray<FColor>(), TArray<FProcMeshTangent>());
 	}
 
 	// ---- Wet roads at night (dew/humidity effect) ----
@@ -3001,7 +3026,9 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 
 			// LOD based on distance from center
 			int32 GridRes;
-			if (CenterDist < 50000.f)
+			if (CenterDist < 25000.f)
+				GridRes = 24;   // high detail near player
+			else if (CenterDist < 50000.f)
 				GridRes = 16;
 			else if (CenterDist < 100000.f)
 				GridRes = 8;
@@ -3126,10 +3153,10 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 						float n3 = TerrainNoise(WX, WY, 0.0008f);
 						float NoiseVal = n1 * 0.5f + n2 * 0.3f + n3 * 0.2f;
 
-						// Three grass tones blended by noise
-						const FLinearColor GrassLush(0.10f, 0.20f, 0.06f);
-						const FLinearColor GrassDry(0.15f, 0.18f, 0.08f);
-						const FLinearColor GrassLight(0.17f, 0.21f, 0.10f);
+						// PUBG-style terrain tones: yellowy-green dried grass
+						const FLinearColor GrassLush(0.16f, 0.24f, 0.08f);
+						const FLinearColor GrassDry(0.22f, 0.22f, 0.10f);
+						const FLinearColor GrassLight(0.26f, 0.24f, 0.12f);
 
 						FLinearColor TC;
 						if (NoiseVal < 0.4f)
@@ -3225,27 +3252,39 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 						return TC;
 					};
 
-					// Sample 9 points across the chunk (3×3 grid) and average
-					// This smooths color transitions across chunk boundaries
+					// Dense sampling across the chunk for accurate biome color
+					// Use 7×7 grid (49 samples) instead of 3×3 (9 samples)
+					// This dramatically reduces visible chunk boundary artifacts
 					FLinearColor AvgColor(0.f, 0.f, 0.f, 0.f);
-					const float SampleStep = ChunkSize * 0.333f;
-					for (int32 SY = 0; SY < 3; ++SY)
+					constexpr int32 SampleRes = 7;
+					const float SampleStep = ChunkSize / float(SampleRes);
+					for (int32 SY = 0; SY < SampleRes; ++SY)
 					{
-						for (int32 SX = 0; SX < 3; ++SX)
+						for (int32 SX = 0; SX < SampleRes; ++SX)
 						{
 							float SampleX = CX + SampleStep * (0.5f + SX);
 							float SampleY = CY + SampleStep * (0.5f + SY);
 							AvgColor += ComputeTerrainColor(SampleX, SampleY);
 						}
 					}
-					AvgColor.R /= 9.f;
-					AvgColor.G /= 9.f;
-					AvgColor.B /= 9.f;
+					constexpr float InvSamples = 1.f / float(SampleRes * SampleRes);
+					AvgColor.R *= InvSamples;
+					AvgColor.G *= InvSamples;
+					AvgColor.B *= InvSamples;
 
+					// Per-chunk micro-variation for visual texture (reduces flat look)
+					int32 ChunkHash = FMath::FloorToInt(CX * 0.01f) * 374761 + FMath::FloorToInt(CY * 0.01f) * 668265;
+					ChunkHash = (ChunkHash ^ (ChunkHash >> 13)) * 1274126177;
+					float ChunkNoise = float(ChunkHash & 0xFFFF) / 65535.f;
+					float ColorVar = (ChunkNoise - 0.5f) * 0.06f; // ±3% color jitter
+					AvgColor.R = FMath::Clamp(AvgColor.R + ColorVar, 0.f, 1.f);
+					AvgColor.G = FMath::Clamp(AvgColor.G + ColorVar * 1.2f, 0.f, 1.f);
+					AvgColor.B = FMath::Clamp(AvgColor.B + ColorVar * 0.5f, 0.f, 1.f);
+
+					// Vary roughness by biome (sand=smoother, rock=rougher)
+					float ChunkRough = 0.88f + (ChunkNoise - 0.5f) * 0.08f;
 					Mat->SetVectorParameterValue(TEXT("BaseColor"), AvgColor);
-					Mat->SetScalarParameterValue(TEXT("Roughness"), 0.9f);
-					if (GrassNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), GrassNormalMap);
-					if (GrassRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), GrassRoughnessMap);
+					Mat->SetScalarParameterValue(TEXT("Roughness"), ChunkRough);
 					PMC->SetMaterial(0, Mat);
 				}
 			}
@@ -3445,7 +3484,7 @@ void UPHCCitySubsystem::SpawnCollectibleMushrooms()
 void UPHCCitySubsystem::SpawnGrassSystem()
 {
 	UWorld* World = GetWorld();
-	if (!World || !CubeMesh) return;
+	if (!World || !CubeMesh || !SphereMesh || !ConeMesh) return;
 
 	GrassActor = World->SpawnActor<AActor>(AActor::StaticClass(),
 		FVector::ZeroVector, FRotator::ZeroRotator);
@@ -3454,38 +3493,36 @@ void UPHCCitySubsystem::SpawnGrassSystem()
 	GrassActor->SetActorLabel(TEXT("GrassInstances"));
 #endif
 
-	// 4 grass color variants
+	// PUBG-style grass: 6 color variants (green + yellowy dried)
 	const FLinearColor GrassColors[] = {
-		FLinearColor(0.08f, 0.16f, 0.04f),  // dark green
-		FLinearColor(0.12f, 0.22f, 0.06f),  // medium green
-		FLinearColor(0.18f, 0.28f, 0.10f),  // light green
-		FLinearColor(0.20f, 0.18f, 0.08f),  // dry/yellow patch
+		FLinearColor(0.14f, 0.22f, 0.06f),  // medium green
+		FLinearColor(0.18f, 0.26f, 0.08f),  // light green
+		FLinearColor(0.22f, 0.24f, 0.10f),  // yellow-green (PUBG dominant)
+		FLinearColor(0.25f, 0.22f, 0.08f),  // dried yellow
+		FLinearColor(0.20f, 0.28f, 0.07f),  // bright green
+		FLinearColor(0.28f, 0.25f, 0.12f),  // straw/hay tone
 	};
 
 	GrassHISMs.Empty();
-	for (int32 Gi = 0; Gi < 4; ++Gi)
+	for (int32 Gi = 0; Gi < 6; ++Gi)
 	{
 		FString HName = FString::Printf(TEXT("GrassHISM_%d"), Gi);
 		UHierarchicalInstancedStaticMeshComponent* HISM =
 			NewObject<UHierarchicalInstancedStaticMeshComponent>(GrassActor, *HName);
-		HISM->SetStaticMesh(CubeMesh);
+		HISM->SetStaticMesh(ConeMesh);  // tapered blade shape
 		HISM->SetCastShadow(false);
 		HISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-		// Cull distance for performance
 		HISM->SetCullDistances(0.f, 10000.f);
-
 		HISM->RegisterComponent();
 		GrassActor->AddInstanceComponent(HISM);
 
-		// Apply grass-colored material
 		if (ColorMaterial)
 		{
 			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, HISM);
 			if (Mat)
 			{
 				Mat->SetVectorParameterValue(TEXT("BaseColor"), GrassColors[Gi]);
-				Mat->SetScalarParameterValue(TEXT("Roughness"), 0.85f);
+				Mat->SetScalarParameterValue(TEXT("Roughness"), 0.82f);
 				HISM->SetMaterial(0, Mat);
 			}
 		}
@@ -3493,12 +3530,92 @@ void UPHCCitySubsystem::SpawnGrassSystem()
 		GrassHISMs.Add(HISM);
 	}
 
-	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Grass instancing system created with 4 HISM components"));
+	// --- Ground clutter HISMs: rocks + dirt patches (spawned once, static) ---
+	if (SphereMesh && CubeMesh && ColorMaterial)
+	{
+		// Rock HISM
+		auto* RockHISM = NewObject<UHierarchicalInstancedStaticMeshComponent>(GrassActor, TEXT("RockClutterHISM"));
+		RockHISM->SetStaticMesh(SphereMesh);
+		RockHISM->SetCastShadow(false);
+		RockHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		RockHISM->SetCullDistances(0.f, 8000.f);
+		RockHISM->RegisterComponent();
+		GrassActor->AddInstanceComponent(RockHISM);
+		if (ColorMaterial)
+		{
+			UMaterialInstanceDynamic* RM = UMaterialInstanceDynamic::Create(ColorMaterial, RockHISM);
+			if (RM)
+			{
+				RM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.25f, 0.23f, 0.20f));
+				RM->SetScalarParameterValue(TEXT("Roughness"), 0.85f);
+				RockHISM->SetMaterial(0, RM);
+			}
+		}
+
+		// Dirt patch HISM
+		auto* DirtHISM = NewObject<UHierarchicalInstancedStaticMeshComponent>(GrassActor, TEXT("DirtClutterHISM"));
+		DirtHISM->SetStaticMesh(CubeMesh);
+		DirtHISM->SetCastShadow(false);
+		DirtHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		DirtHISM->SetCullDistances(0.f, 6000.f);
+		DirtHISM->RegisterComponent();
+		GrassActor->AddInstanceComponent(DirtHISM);
+		if (ColorMaterial)
+		{
+			UMaterialInstanceDynamic* DM = UMaterialInstanceDynamic::Create(ColorMaterial, DirtHISM);
+			if (DM)
+			{
+				DM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.16f, 0.11f, 0.05f));
+				DM->SetScalarParameterValue(TEXT("Roughness"), 0.95f);
+				DirtHISM->SetMaterial(0, DM);
+			}
+		}
+
+		// Scatter 600 rocks and 400 dirt patches across the world (deterministic)
+		FRandomStream ClutterRand(42424);
+		for (int32 Ci = 0; Ci < 1000; ++Ci)
+		{
+			float CX = ClutterRand.FRandRange(-80000.f, 80000.f);
+			float CY = ClutterRand.FRandRange(-80000.f, 80000.f);
+			if (IsOnRoadOrSidewalk(CX, CY)) continue;
+			float CZ = GetTerrainHeight(CX, CY);
+			if (CZ > 200.f) continue;
+			// Skip desert/beach/snow
+			if (FMath::Square(CX - 22248.f) + FMath::Square(CY + 62419.f) < 50000.f * 50000.f) continue;
+			if (CX > 4000.f && CX < 74000.f && CY > 98000.f && CY < 136000.f) continue;
+
+			if (Ci < 600)
+			{
+				// Rock
+				float RS = ClutterRand.FRandRange(0.05f, 0.20f);
+				FTransform RT;
+				RT.SetLocation(FVector(CX, CY, CZ + RS * 25.f));
+				RT.SetRotation(FRotator(
+					ClutterRand.FRandRange(-15.f, 15.f),
+					ClutterRand.FRandRange(0.f, 360.f),
+					ClutterRand.FRandRange(-10.f, 10.f)).Quaternion());
+				RT.SetScale3D(FVector(RS, RS * ClutterRand.FRandRange(0.7f, 1.3f), RS * ClutterRand.FRandRange(0.4f, 0.8f)));
+				RockHISM->AddInstance(RT, false);
+			}
+			else
+			{
+				// Dirt patch
+				float PW = ClutterRand.FRandRange(0.4f, 1.0f);
+				FTransform DT;
+				DT.SetLocation(FVector(CX, CY, CZ + 1.f));
+				DT.SetRotation(FRotator(0.f, ClutterRand.FRandRange(0.f, 360.f), 0.f).Quaternion());
+				DT.SetScale3D(FVector(PW, PW * ClutterRand.FRandRange(0.6f, 1.4f), 0.005f));
+				DirtHISM->AddInstance(DT, false);
+			}
+		}
+	}
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Grass instancing system created with 4 HISM + clutter"));
 }
 
 void UPHCCitySubsystem::UpdateGrassInstances(const FVector& PlayerLoc)
 {
-	if (GrassHISMs.Num() < 4) return;
+	if (GrassHISMs.Num() < 6) return;
 
 	// Only update when player moves >2000 UU from last update
 	if (FVector::Dist2D(PlayerLoc, LastGrassUpdateLocation) < 2000.f)
@@ -3511,57 +3628,49 @@ void UPHCCitySubsystem::UpdateGrassInstances(const FVector& PlayerLoc)
 		if (HISM) HISM->ClearInstances();
 	}
 
-	// Scatter 4000 grass blades around player
-	const float Radius = 15000.f;
-	const int32 TotalBlades = 4000;
+	// PUBG-density grass: thick carpet of tall blades
+	const float Radius = 12000.f;
+	const int32 TotalBlades = 15000;
 	FRandomStream GrassRand(FMath::FloorToInt(PlayerLoc.X * 0.01f) * 1000 + FMath::FloorToInt(PlayerLoc.Y * 0.01f));
+
+	auto ShouldSkipZone = [](float GX, float GY) -> bool
+	{
+		if (FMath::Square(GX - 22248.f) + FMath::Square(GY + 62419.f) < 50000.f * 50000.f) return true;
+		if (FMath::Square(GX + 248405.f) + FMath::Square(GY - 7389.f) < 65000.f * 65000.f) return true;
+		if (GX > 4000.f && GX < 74000.f && GY > 98000.f && GY < 136000.f) return true;
+		return false;
+	};
 
 	for (int32 Bi = 0; Bi < TotalBlades; ++Bi)
 	{
 		float Angle = GrassRand.FRandRange(0.f, 2.f * PI);
-		float Dist = GrassRand.FRandRange(500.f, Radius);
+		float RawDist = GrassRand.FRand();
+		float Dist = 150.f + FMath::Pow(RawDist, 0.5f) * (Radius - 150.f);
 		float GX = PlayerLoc.X + FMath::Cos(Angle) * Dist;
 		float GY = PlayerLoc.Y + FMath::Sin(Angle) * Dist;
 
-		// Skip roads and sidewalks
-		if (IsOnRoadOrSidewalk(GX, GY))
-			continue;
-
+		if (IsOnRoadOrSidewalk(GX, GY)) continue;
 		float GZ = GetTerrainHeight(GX, GY);
-
-		// Skip grass on elevated terrain (mountains/hills) — avoids floating
-		// blades caused by mismatch between noise height and mesh interpolation
-		if (GZ > 200.f)
-			continue;
-
-		// Skip grass in sandy/snow zones — sand/snow replaces grass
-		{
-			// Pyramid desert zone
-			float PDist = FMath::Sqrt(FMath::Square(GX - 22248.f) + FMath::Square(GY - (-62419.f)));
-			if (PDist < 50000.f)
-				continue;
-			// Pirate ship lake zone
-			float PirateDist = FMath::Sqrt(FMath::Square(GX - (-248405.f)) + FMath::Square(GY - 7389.f));
-			if (PirateDist < 65000.f)
-				continue;
-			// Christmas snow zone — no grass in the snowy area
-			if (GX > 4000.f && GX < 74000.f && GY > 98000.f && GY < 136000.f)
-				continue;
-		}
+		if (GZ > 200.f) continue;
+		if (ShouldSkipZone(GX, GY)) continue;
 
 		float Yaw = GrassRand.FRandRange(0.f, 360.f);
-		float Pitch = GrassRand.FRandRange(-5.f, 5.f);
-		float BladeH = GrassRand.FRandRange(8.f, 20.f);
+		float Pitch = GrassRand.FRandRange(-12.f, 12.f);
+		// PUBG grass: predominantly tall (20-50 UU), some short ground cover
+		float BladeH = GrassRand.FRandRange(18.f, 50.f);
+		if (GrassRand.FRand() < 0.2f) BladeH = GrassRand.FRandRange(5.f, 18.f);
 
 		FTransform BladeT;
-		BladeT.SetLocation(FVector(GX, GY, GZ + BladeH * 0.5f));
+		BladeT.SetLocation(FVector(GX, GY, GZ + BladeH * 0.45f));
 		BladeT.SetRotation(FRotator(Pitch, Yaw, 0.f).Quaternion());
-		BladeT.SetScale3D(FVector(0.015f, 0.005f, BladeH / 100.f)); // thin blade
+		BladeT.SetScale3D(FVector(0.018f, 0.006f, BladeH / 100.f));
 
-		int32 Variant = Bi % 4;
+		int32 Variant = Bi % 6;
 		if (GrassHISMs[Variant])
 			GrassHISMs[Variant]->AddInstance(BladeT);
 	}
+
+	// Ground clutter is handled by static HISM in SpawnGrassSystem
 }
 
 // ---------------------------------------------------------------------------
@@ -3615,6 +3724,112 @@ void UPHCCitySubsystem::SpawnVisualPolish()
 		Mote->RegisterComponent();
 		DustMotes.Add(Mote);
 	}
+
+	// ================================================================
+	// PUBG-style deciduous trees — round canopy, scattered across map
+	// ================================================================
+	if (CylinderMesh && SphereMesh && ColorMaterial)
+	{
+		FRandomStream TreeRand(55555);
+		const int32 NumTrees = 400;
+
+		const FLinearColor TrunkColors[] = {
+			FLinearColor(0.20f, 0.14f, 0.08f),
+			FLinearColor(0.25f, 0.18f, 0.10f),
+			FLinearColor(0.18f, 0.12f, 0.06f),
+		};
+		const FLinearColor CanopyColors[] = {
+			FLinearColor(0.10f, 0.28f, 0.06f),  // deep green
+			FLinearColor(0.15f, 0.32f, 0.08f),  // medium green
+			FLinearColor(0.20f, 0.30f, 0.05f),  // yellow-green
+			FLinearColor(0.35f, 0.28f, 0.06f),  // autumn gold
+			FLinearColor(0.40f, 0.18f, 0.04f),  // autumn orange
+			FLinearColor(0.12f, 0.25f, 0.10f),  // dark green
+		};
+
+		for (int32 Ti = 0; Ti < NumTrees; ++Ti)
+		{
+			float TX = TreeRand.FRandRange(-90000.f, 90000.f);
+			float TY = TreeRand.FRandRange(-90000.f, 90000.f);
+			// Skip inner city grid only (roads/buildings), allow suburbs
+			if (FMath::Abs(TX) < 15000.f && FMath::Abs(TY) < 15000.f) continue;
+			if (FMath::Square(TX - 22248.f) + FMath::Square(TY + 62419.f) < 50000.f * 50000.f) continue;
+			if (TX > 4000.f && TX < 74000.f && TY > 98000.f && TY < 136000.f) continue;
+
+			float TZ = GetTerrainHeight(TX, TY);
+			if (TZ > 300.f) continue; // skip mountains
+
+			float TreeH = TreeRand.FRandRange(1500.f, 3500.f);
+			float TrunkR = TreeH * 0.015f;
+			float CanopyR = TreeH * TreeRand.FRandRange(0.18f, 0.28f);
+			FLinearColor TrunkCol = TrunkColors[Ti % 3];
+			FLinearColor LeafCol = CanopyColors[Ti % 6];
+
+			AActor* TreeActor = World->SpawnActor<AActor>(AActor::StaticClass(),
+				FVector(TX, TY, TZ), FRotator::ZeroRotator);
+			if (!TreeActor) continue;
+
+			// Root component FIRST so meshes attach correctly
+			USceneComponent* TRoot = NewObject<USceneComponent>(TreeActor, TEXT("TRoot"));
+			TRoot->RegisterComponent();
+			TreeActor->SetRootComponent(TRoot);
+
+			auto MakeTC = [&](UStaticMesh* Mesh, const FVector& Loc, const FVector& Scale,
+				const FLinearColor& Col, float Rough, const TCHAR* Name)
+			{
+				UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(TreeActor, Name);
+				MC->SetStaticMesh(Mesh);
+				MC->AttachToComponent(TRoot, FAttachmentTransformRules::KeepRelativeTransform);
+				MC->SetRelativeLocation(Loc);
+				MC->SetRelativeScale3D(Scale);
+				MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				MC->SetCastShadow(true);
+				MC->RegisterComponent();
+				TreeActor->AddInstanceComponent(MC);
+				if (ColorMaterial)
+				{
+					UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, MC);
+					if (Mat)
+					{
+						Mat->SetVectorParameterValue(TEXT("BaseColor"), Col);
+						Mat->SetScalarParameterValue(TEXT("Roughness"), Rough);
+						MC->SetMaterial(0, Mat);
+					}
+				}
+			};
+
+			// Trunk (tall thin cylinder)
+			MakeTC(CylinderMesh, FVector(0.f, 0.f, TreeH * 0.5f),
+				FVector(TrunkR / 50.f, TrunkR / 50.f, TreeH / 100.f),
+				TrunkCol, 0.88f, *FString::Printf(TEXT("DecTrunk_%d"), Ti));
+
+			// Canopy — 4-6 overlapping spheres for natural round shape
+			int32 NumClusters = TreeRand.RandRange(4, 6);
+			for (int32 Ci = 0; Ci < NumClusters; ++Ci)
+			{
+				float CA = TreeRand.FRandRange(0.f, 2.f * PI);
+				float CDist = CanopyR * TreeRand.FRandRange(0.0f, 0.5f);
+				float CZOff = TreeRand.FRandRange(-CanopyR * 0.3f, CanopyR * 0.3f);
+				float CSz = CanopyR * TreeRand.FRandRange(0.6f, 1.0f);
+				// Vary color slightly per cluster
+				FLinearColor ClusterCol = LeafCol;
+				ClusterCol.R += TreeRand.FRandRange(-0.03f, 0.03f);
+				ClusterCol.G += TreeRand.FRandRange(-0.04f, 0.04f);
+
+				MakeTC(SphereMesh,
+					FVector(FMath::Cos(CA) * CDist, FMath::Sin(CA) * CDist, TreeH * 0.85f + CZOff),
+					FVector(CSz / 50.f, CSz / 50.f, CSz * 0.7f / 50.f),
+					ClusterCol, 0.75f,
+					*FString::Printf(TEXT("DecCanopy_%d_%d"), Ti, Ci));
+			}
+
+		}
+	}
+
+	// ================================================================
+	// Volumetric cloud clusters (replace flat planes with sphere HISMs)
+	// ================================================================
+	// Volumetric clouds removed — revisit later
 }
 
 // ---------------------------------------------------------------------------
@@ -3648,7 +3863,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnGrassSystem();
 	SpawnVisualPolish();
 	SpawnNPCHelicopter();
-	SpawnNPCPlayers();
+	// SpawnNPCPlayers(); // Disabled for now — re-enable for testing
 
 	// City is fully generated — dismiss the loading screen after a delay
 	// to let the renderer settle (LOD streaming, materials compiling, etc.).
@@ -3679,7 +3894,7 @@ void UPHCCitySubsystem::SpawnGround()
 	// gives proper box collision the CMC can resolve correctly.
 	if (!World || !CubeMesh) return;
 
-	const FLinearColor GrassColor(0.12f, 0.18f, 0.08f);
+	const FLinearColor GrassColor(0.20f, 0.22f, 0.10f); // PUBG yellowy-green
 
 	// TopZ: desired Z of the top surface.
 	// Cube default is 100×100×100 centered at origin.
@@ -3688,7 +3903,7 @@ void UPHCCitySubsystem::SpawnGround()
 	auto SpawnGroundSlab = [&](float TopZ, const FVector& XYLoc,
 		const FVector& XYScale, const TCHAR* Label) -> UMaterialInstanceDynamic*
 	{
-		const FVector Loc(XYLoc.X, XYLoc.Y, TopZ - 3.f);
+		const FVector Loc(XYLoc.X, XYLoc.Y, TopZ - 10.f); // well below terrain
 		AActor* GA = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
 		if (!GA) return nullptr;
 #if WITH_EDITOR
@@ -3769,9 +3984,11 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 			if (Mat)
 			{
 				Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
-				Mat->SetScalarParameterValue(TEXT("Opacity"), 0.85f);
-				Mat->SetScalarParameterValue(TEXT("Roughness"), 0.02f);
-				Mat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.01f, 0.03f, 0.06f));
+				Mat->SetScalarParameterValue(TEXT("Opacity"), 0.70f);
+				Mat->SetScalarParameterValue(TEXT("Metallic"), 0.15f);
+				Mat->SetScalarParameterValue(TEXT("Roughness"), 0.08f);
+				// Sky reflection emissive — gives water a bright reflective look
+				Mat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.04f, 0.08f, 0.14f));
 				MC->SetMaterial(0, Mat);
 			}
 		}
@@ -3790,8 +4007,9 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 		WA->AddInstanceComponent(MC);
 	};
 
-	const FLinearColor DeepOcean(0.02f, 0.06f, 0.14f);
-	const FLinearColor ShallowWater(0.04f, 0.12f, 0.22f);
+	// PUBG-style water colors
+	const FLinearColor DeepOcean(0.03f, 0.10f, 0.22f);
+	const FLinearColor ShallowWater(0.06f, 0.18f, 0.30f);
 	const FLinearColor Sand(0.76f, 0.70f, 0.55f);
 
 	// Global ocean floor — massive, covers everything below land
@@ -3928,10 +4146,14 @@ void UPHCCitySubsystem::SpawnSkyAndLighting()
 			SunLightComp->BloomScale = 1.2f;
 			SunLightComp->BloomThreshold = 0.5f;
 
-			// ---- Enhanced Shadows ----
-			SunLightComp->DynamicShadowCascades = 3;
-			SunLightComp->CascadeDistributionExponent = 2.5f;
-			SunLightComp->ContactShadowLength = 0.02f;
+			// ---- PUBG-quality shadows ----
+			SunLightComp->DynamicShadowCascades = 4;
+			SunLightComp->CascadeDistributionExponent = 3.0f;
+			SunLightComp->ContactShadowLength = 0.03f;
+			SunLightComp->DynamicShadowDistanceMovableLight = 30000.f;
+			SunLightComp->ShadowBias = 0.5f;
+			SunLightComp->ShadowSlopeBias = 0.5f;
+			SunLightComp->ShadowSharpen = 0.0f; // fully soft penumbra shadows
 
 			SunLightComp->RegisterComponent();
 			SunActor->SetRootComponent(SunLightComp);
@@ -3987,18 +4209,19 @@ void UPHCCitySubsystem::SpawnSkyAndLighting()
 #endif
 			FogComp = NewObject<UExponentialHeightFogComponent>(
 				FogActor, TEXT("HeightFog"));
-			FogComp->SetFogDensity(0.0006f);
-			FogComp->SetFogHeightFalloff(0.08f);
-			FogComp->SetFogMaxOpacity(0.25f);
-			FogComp->SetStartDistance(10000.f);
+			// PUBG-style atmospheric distance haze
+			FogComp->SetFogDensity(0.001f);         // denser for visible distance haze
+			FogComp->SetFogHeightFalloff(0.04f);     // slower falloff = haze at all heights
+			FogComp->SetFogMaxOpacity(0.6f);          // visible distance fog
+			FogComp->SetStartDistance(3000.f);         // starts closer
 			FogComp->SetVolumetricFog(true);
-			FogComp->SetVolumetricFogScatteringDistribution(0.1f);
-			FogComp->SetVolumetricFogExtinctionScale(0.3f);
-			FogComp->SetVolumetricFogDistance(4000.f);
-			// Warm directional inscattering for golden dawn/dusk haze
-			FogComp->SetDirectionalInscatteringColor(FLinearColor(0.8f, 0.6f, 0.3f));
-			FogComp->SetDirectionalInscatteringExponent(10.f);
-			FogComp->SetDirectionalInscatteringStartDistance(8000.f);
+			FogComp->SetVolumetricFogScatteringDistribution(0.2f);
+			FogComp->SetVolumetricFogExtinctionScale(0.5f);
+			FogComp->SetVolumetricFogDistance(6000.f);
+			// Warm golden inscattering (visible sun shafts through fog)
+			FogComp->SetDirectionalInscatteringColor(FLinearColor(0.9f, 0.7f, 0.4f));
+			FogComp->SetDirectionalInscatteringExponent(6.f);  // wider scatter cone
+			FogComp->SetDirectionalInscatteringStartDistance(5000.f);
 			FogComp->RegisterComponent();
 			FogActor->SetRootComponent(FogComp);
 			FogActor->AddInstanceComponent(FogComp);
@@ -4046,65 +4269,85 @@ void UPHCCitySubsystem::SpawnSkyAndLighting()
 			PP.bOverride_BloomThreshold = true;
 			PP.BloomThreshold = 1.0f;
 
-			// Ambient Occlusion (tighter, stronger for grounded look)
+			// === PUBG-quality post-process pipeline ===
+
+			// Ambient Occlusion — strong, high-quality SSAO
 			PP.bOverride_AmbientOcclusionIntensity = true;
-			PP.AmbientOcclusionIntensity = 0.65f;
+			PP.AmbientOcclusionIntensity = 0.8f;
 			PP.bOverride_AmbientOcclusionRadius = true;
-			PP.AmbientOcclusionRadius = 150.f;
+			PP.AmbientOcclusionRadius = 200.f;
+			PP.bOverride_AmbientOcclusionQuality = true;
+			PP.AmbientOcclusionQuality = 70.f;
+			PP.bOverride_AmbientOcclusionMipBlend = true;
+			PP.AmbientOcclusionMipBlend = 0.6f;
 
-			// Vignette
+			// Vignette — subtle cinematic
 			PP.bOverride_VignetteIntensity = true;
-			PP.VignetteIntensity = 0.25f;
+			PP.VignetteIntensity = 0.3f;
 
-			// Auto Exposure
+			// Auto Exposure — PUBG-style wider range, slower adaptation
 			PP.bOverride_AutoExposureMinBrightness = true;
-			PP.AutoExposureMinBrightness = 0.5f;
+			PP.AutoExposureMinBrightness = 0.3f;
 			PP.bOverride_AutoExposureMaxBrightness = true;
-			PP.AutoExposureMaxBrightness = 3.0f;
+			PP.AutoExposureMaxBrightness = 4.0f;
 			PP.bOverride_AutoExposureSpeedUp = true;
-			PP.AutoExposureSpeedUp = 2.0f;
+			PP.AutoExposureSpeedUp = 1.5f;
 			PP.bOverride_AutoExposureSpeedDown = true;
-			PP.AutoExposureSpeedDown = 1.0f;
+			PP.AutoExposureSpeedDown = 0.8f;
 
-			// Color Grading (warm cinematic tone)
+			// Color Grading — desaturated military realism (PUBG look)
 			PP.bOverride_ColorGamma = true;
-			PP.ColorGamma = FVector4(1.0f, 0.97f, 0.92f, 1.0f);
+			PP.ColorGamma = FVector4(1.0f, 1.0f, 1.0f, 1.0f);  // PUBG: perfectly neutral gamma
 			PP.bOverride_ColorSaturation = true;
-			PP.ColorSaturation = FVector4(1.05f, 1.05f, 1.05f, 1.0f);
+			PP.ColorSaturation = FVector4(0.92f, 0.92f, 0.92f, 1.0f); // PUBG: slightly desaturated military look
 
-			// ---- GTA V Filmic Tone Mapping ----
+			// Filmic Tone Mapping — PUBG-style higher contrast
 			PP.bOverride_FilmSlope = true;
-			PP.FilmSlope = 0.88f;
+			PP.FilmSlope = 0.82f;
 			PP.bOverride_FilmToe = true;
-			PP.FilmToe = 0.55f;
+			PP.FilmToe = 0.6f;
 			PP.bOverride_FilmShoulder = true;
-			PP.FilmShoulder = 0.26f;
+			PP.FilmShoulder = 0.22f;
 			PP.bOverride_FilmBlackClip = true;
-			PP.FilmBlackClip = 0.0f;
+			PP.FilmBlackClip = 0.01f;
 			PP.bOverride_FilmWhiteClip = true;
-			PP.FilmWhiteClip = 0.04f;
+			PP.FilmWhiteClip = 0.03f;
 
-			// ---- Chromatic Aberration (disabled for mobile perf) ----
+			// Screen-space reflections (mobile-friendly, wet roads/windows)
+			PP.bOverride_ScreenSpaceReflectionIntensity = true;
+			PP.ScreenSpaceReflectionIntensity = 50.f;
+			PP.bOverride_ScreenSpaceReflectionQuality = true;
+			PP.ScreenSpaceReflectionQuality = 25.f;
+			PP.bOverride_ScreenSpaceReflectionMaxRoughness = true;
+			PP.ScreenSpaceReflectionMaxRoughness = 0.35f;
+
+			// Subtle motion blur (PUBG uses light motion blur)
+			PP.bOverride_MotionBlurAmount = true;
+			PP.MotionBlurAmount = 0.12f;
+			PP.bOverride_MotionBlurMax = true;
+			PP.MotionBlurMax = 2.f;
+
+			// Chromatic Aberration — very subtle for realism
 			PP.bOverride_SceneFringeIntensity = true;
-			PP.SceneFringeIntensity = 0.f;
+			PP.SceneFringeIntensity = 0.15f;
 
-			// ---- Film Grain (disabled for mobile perf) ----
+			// Film Grain — subtle texture
 			PP.bOverride_FilmGrainIntensity = true;
-			PP.FilmGrainIntensity = 0.f;
+			PP.FilmGrainIntensity = 0.03f;
 
-			// ---- Depth of Field (disabled for mobile perf) ----
+			// Depth of Field — shallow, cinematic
 			PP.bOverride_DepthOfFieldFocalDistance = true;
-			PP.DepthOfFieldFocalDistance = 3000.f;
+			PP.DepthOfFieldFocalDistance = 5000.f;
 			PP.bOverride_DepthOfFieldFstop = true;
-			PP.DepthOfFieldFstop = 22.f;
+			PP.DepthOfFieldFstop = 16.f;
 			PP.bOverride_DepthOfFieldSensorWidth = true;
-			PP.DepthOfFieldSensorWidth = 24.576f; // APS-C sensor
+			PP.DepthOfFieldSensorWidth = 24.576f;
 
-			// ---- Color Gain/Offset for GTA V time-of-day grading ----
+			// PUBG 2026: perfectly neutral gain, subtle cool shadow shift
 			PP.bOverride_ColorGain = true;
-			PP.ColorGain = FVector4(1.02f, 1.00f, 0.96f, 1.0f);
+			PP.ColorGain = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
 			PP.bOverride_ColorOffset = true;
-			PP.ColorOffset = FVector4(0.0f, 0.0f, 0.0f, 0.0f);
+			PP.ColorOffset = FVector4(0.0f, 0.0f, 0.004f, 0.0f); // tiny blue in shadows
 		}
 	}
 }
@@ -6180,6 +6423,44 @@ void UPHCCitySubsystem::SpawnBuilding(const FVector& Location, const FVector& Si
 		Building->AddInstanceComponent(Door);
 	}
 
+	// ---- Floor division trim bands (PUBG-style building detail) ----
+	if (Size.Z > 300.f && CubeMesh)
+	{
+		const FLinearColor TrimColor = Color * 1.15f; // slightly lighter than facade
+		const float TrimH = 12.f;
+		const float TrimDepth = 6.f;
+		const float StoryH = FMath::Clamp(Size.Z / FMath::Max(1.f, FMath::Floor(Size.Z / 350.f)), 250.f, 400.f);
+
+		for (float BZ = StoryH; BZ < Size.Z - 50.f; BZ += StoryH)
+		{
+			// Front and back face bands
+			for (int32 Face = 0; Face < 2; ++Face)
+			{
+				float FY = Location.Y + (Face == 0 ? Size.Y * 0.5f + TrimDepth * 0.5f : -Size.Y * 0.5f - TrimDepth * 0.5f);
+				UStaticMeshComponent* Band = NewObject<UStaticMeshComponent>(Building,
+					*FString::Printf(TEXT("FloorBand_%d_%d"), (int32)BZ, Face));
+				Band->SetStaticMesh(CubeMesh);
+				Band->SetWorldScale3D(FVector((Size.X + TrimDepth * 2.f) / 100.f, TrimDepth / 100.f, TrimH / 100.f));
+				Band->SetWorldLocation(FVector(Location.X, FY, BZ));
+				Band->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Band->SetCastShadow(false);
+				Band->RegisterComponent();
+				Building->AddInstanceComponent(Band);
+				if (ColorMaterial)
+				{
+					UMaterialInstanceDynamic* BM = UMaterialInstanceDynamic::Create(ColorMaterial, Band);
+					if (BM)
+					{
+						BM->SetVectorParameterValue(TEXT("BaseColor"), TrimColor);
+						BM->SetScalarParameterValue(TEXT("Roughness"), 0.4f);
+						BM->SetScalarParameterValue(TEXT("Metallic"), 0.15f);
+						Band->SetMaterial(0, BM);
+					}
+				}
+			}
+		}
+	}
+
 	// ---- Rooftop detail (35% -- AC unit, water tank, spire, or dome) ----
 	if (DetailRandom.FRand() < 0.35f && Size.Z > 600.f)
 	{
@@ -7041,7 +7322,7 @@ void UPHCCitySubsystem::SpawnJungle()
 	};
 	const FLinearColor BambooGreen(0.55f, 0.65f, 0.20f);
 	const FLinearColor VineDark(0.06f, 0.25f, 0.04f);
-	const FLinearColor PondTeal(0.05f, 0.18f, 0.15f);
+	const FLinearColor PondTeal(0.05f, 0.16f, 0.25f); // PUBG blue-teal pond
 	const FLinearColor PondBed(0.04f, 0.08f, 0.05f);
 	const FLinearColor JungleFloor(0.12f, 0.10f, 0.06f);
 	const FLinearColor MistGreen(0.08f, 0.15f, 0.08f);
@@ -7117,7 +7398,7 @@ void UPHCCitySubsystem::SpawnJungle()
 		{
 			float T = (float)S / TrunkSegs;
 			float R = FMath::Lerp(BaseR, TopR, T);
-			if (S == 0) R *= 1.3f;
+			if (S == 0) R *= 1.6f;  // wider flared base
 
 			float COff = CurveAmp * FMath::Sin(T * PI);
 			float SX = TX + COff * FMath::Cos(CurveYawR);
@@ -7150,19 +7431,64 @@ void UPHCCitySubsystem::SpawnJungle()
 			}
 		}
 
-		// --- Buttress roots ---
+		// --- Buttress roots (large, visible, PUBG-style) ---
 		if (bButtress)
 		{
-			for (int32 B = 0; B < 3; ++B)
+			const FLinearColor RootColor = FMath::Lerp(TrunkBase, FLinearColor(0.10f, 0.14f, 0.05f), 0.35f);
+			const FLinearColor MossColor(0.08f, 0.22f, 0.04f);
+
+			// 4-5 large buttress roots radiating outward
+			const int32 NumRoots = CityRandom.RandRange(4, 5);
+			for (int32 B = 0; B < NumRoots; ++B)
 			{
-				float BY = B * 120.f + CityRandom.FRandRange(-15.f, 15.f);
+				float BY = B * (360.f / NumRoots) + CityRandom.FRandRange(-20.f, 20.f);
 				float BR = FMath::DegreesToRadians(BY);
-				float BOff = BaseR * 2.2f;
+				float RootLen = BaseR * CityRandom.FRandRange(2.5f, 4.0f);
+				float RootH = BaseR * CityRandom.FRandRange(1.2f, 2.0f);
+
+				// Main buttress — tall flared wall
 				JC(CubeMesh,
-					FVector(TX + FMath::Cos(BR) * BOff, TY + FMath::Sin(BR) * BOff, TZ + BaseR * 2.f),
-					FRotator(0.f, BY, -25.f),
-					FVector(BaseR * 0.04f, 0.12f, BaseR * 0.06f),
-					FMath::Lerp(TrunkBase, FLinearColor(0.12f, 0.18f, 0.06f), 0.3f), 0.90f);
+					FVector(TX + FMath::Cos(BR) * RootLen * 0.5f,
+							TY + FMath::Sin(BR) * RootLen * 0.5f,
+							TZ + RootH * 0.5f),
+					FRotator(0.f, BY, -15.f),
+					FVector(RootLen / 100.f, 0.08f, RootH / 100.f),
+					RootColor, 0.92f);
+
+				// Surface root extending further out (thin cylinder on ground)
+				float SurfLen = BaseR * CityRandom.FRandRange(3.0f, 6.0f);
+				float SurfR = BaseR * 0.08f;
+				JC(CylinderMesh,
+					FVector(TX + FMath::Cos(BR) * SurfLen * 0.5f,
+							TY + FMath::Sin(BR) * SurfLen * 0.5f,
+							TZ + SurfR * 0.3f),
+					FRotator(0.f, BY, 85.f),
+					FVector(SurfR / 50.f, SurfR / 50.f, SurfLen / 200.f),
+					FMath::Lerp(TrunkBase, RootColor, 0.5f), 0.90f);
+			}
+
+			// Soil mound at base (flattened sphere)
+			JC(SphereMesh,
+				FVector(TX, TY, TZ - BaseR * 0.1f),
+				FRotator::ZeroRotator,
+				FVector(BaseR * 0.06f, BaseR * 0.06f, BaseR * 0.015f),
+				FLinearColor(0.10f, 0.08f, 0.04f), 0.95f);
+
+			// Moss/leaf litter clusters at base (4-6 small spheres)
+			const int32 NumMoss = CityRandom.RandRange(4, 6);
+			for (int32 M = 0; M < NumMoss; ++M)
+			{
+				float MA = CityRandom.FRandRange(0.f, 2.f * PI);
+				float MDist = BaseR * CityRandom.FRandRange(1.0f, 3.0f);
+				float MSize = CityRandom.FRandRange(0.15f, 0.4f);
+				JC(SphereMesh,
+					FVector(TX + FMath::Cos(MA) * MDist,
+							TY + FMath::Sin(MA) * MDist,
+							TZ + MSize * 10.f),
+					FRotator::ZeroRotator,
+					FVector(MSize, MSize, MSize * 0.3f),
+					FMath::Lerp(MossColor, FLinearColor(0.14f, 0.12f, 0.06f), CityRandom.FRand()),
+					0.92f);
 			}
 		}
 
@@ -13223,8 +13549,8 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 			if (GlassMaterial)
 			{
 				ApplyPBRGlass(WMC, GlassMaterial,
-					FLinearColor(0.05f, 0.15f, 0.30f), 0.80f, 0.f, 0.02f,
-					FLinearColor(0.01f, 0.03f, 0.06f));
+					FLinearColor(0.06f, 0.18f, 0.32f), 0.65f, 0.15f, 0.08f,
+					FLinearColor(0.03f, 0.06f, 0.12f));
 			}
 			WA->AddInstanceComponent(WMC);
 		}
@@ -14543,7 +14869,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 		const int32 NumSegs = FMath::CeilToInt((RiverEndX - RiverStartX) / SegLen);
 
 		const FLinearColor RiverBed(0.06f, 0.05f, 0.03f);
-		const FLinearColor RiverWater(0.04f, 0.15f, 0.22f);
+		const FLinearColor RiverWater(0.05f, 0.16f, 0.28f); // PUBG blue-teal
 		const FLinearColor RiverBank(0.38f, 0.30f, 0.18f);
 		const FLinearColor RiverMud(0.18f, 0.14f, 0.08f);
 		const FLinearColor RiverReed(0.12f, 0.35f, 0.08f);
@@ -14562,62 +14888,144 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 				RiverBed, 0.95f, 0.f,
 				*FString::Printf(TEXT("River_Bed_%d"), s));
 
-			// Water surface (translucent blue-green glass)
+			// Water surface — ProceduralMeshComponent grid for wave animation
+			// Only create ONE PMC for the first segment; store for Tick animation
+			if (s == 0 && !RiverWaterPMC)
 			{
+				const float TotalLen = RiverEndX - RiverStartX;
+				const int32 ResX = 60; // along river length
+				const int32 ResY = 8;  // across river width
+				const float StepX = TotalLen / float(ResX);
+				const float StepY = RiverWidth / float(ResY);
+
+				RiverWaterBaseVerts.Empty();
+				RiverWaterTris.Empty();
+				RiverWaterUVs.Empty();
+				TArray<FVector> Normals;
+				TArray<FColor> Colors;
+
+				for (int32 VY = 0; VY <= ResY; ++VY)
+				{
+					for (int32 VX = 0; VX <= ResX; ++VX)
+					{
+						float WX = RiverStartX + VX * StepX;
+						float WCurveY = RiverCenterY + FMath::Sin(WX * 0.00004f) * 2500.f;
+						float WY = WCurveY - RiverWidth * 0.5f + VY * StepY;
+						float WZ = GetTerrainHeight(WX, WY) + 8.f;
+						RiverWaterBaseVerts.Add(FVector(WX, WY, WZ));
+						RiverWaterUVs.Add(FVector2D(float(VX) / ResX, float(VY) / ResY));
+						Normals.Add(FVector(0.f, 0.f, 1.f));
+					}
+				}
+				for (int32 VY = 0; VY < ResY; ++VY)
+				{
+					for (int32 VX = 0; VX < ResX; ++VX)
+					{
+						int32 I0 = VY * (ResX + 1) + VX;
+						RiverWaterTris.Add(I0);
+						RiverWaterTris.Add(I0 + ResX + 1);
+						RiverWaterTris.Add(I0 + 1);
+						RiverWaterTris.Add(I0 + 1);
+						RiverWaterTris.Add(I0 + ResX + 1);
+						RiverWaterTris.Add(I0 + ResX + 2);
+					}
+				}
+
 				AActor* RWA = World->SpawnActor<AActor>(AActor::StaticClass(),
-					FVector(SX, CurveY, TZ + 8.f), FRotator::ZeroRotator);
+					FVector::ZeroVector, FRotator::ZeroRotator);
 				if (RWA)
 				{
-					UStaticMeshComponent* RWM = NewObject<UStaticMeshComponent>(RWA,
-						*FString::Printf(TEXT("River_Water_%d"), s));
-					RWM->SetStaticMesh(PlaneMesh);
-					RWM->SetWorldLocation(FVector(SX, CurveY, TZ + 8.f));
-					RWM->SetWorldScale3D(FVector(SegLen / 100.f, RiverWidth / 100.f, 1.f));
-					RWM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					RWM->SetBoundsScale(30.f);
-					RWM->RegisterComponent();
-					RWA->SetRootComponent(RWM);
+					RiverWaterPMC = NewObject<UProceduralMeshComponent>(RWA, TEXT("RiverWaterPMC"));
+					RiverWaterPMC->CreateMeshSection(0, RiverWaterBaseVerts, RiverWaterTris,
+						Normals, RiverWaterUVs, Colors, TArray<FProcMeshTangent>(), false);
+					RiverWaterPMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					RiverWaterPMC->SetCastShadow(false);
+					RiverWaterPMC->SetBoundsScale(100.f);
+					RiverWaterPMC->bNeverDistanceCull = true;
+					RiverWaterPMC->RegisterComponent();
+					RWA->SetRootComponent(RiverWaterPMC);
+
 					if (GlassMaterial)
-						ApplyPBRGlass(RWM, GlassMaterial, RiverWater, 0.75f, 0.f, 0.02f,
-							FLinearColor(0.01f, 0.02f, 0.04f));
-					RWA->AddInstanceComponent(RWM);
+					{
+						UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(GlassMaterial, RiverWaterPMC);
+						if (WMat)
+						{
+							WMat->SetVectorParameterValue(TEXT("BaseColor"), RiverWater);
+							WMat->SetScalarParameterValue(TEXT("Opacity"), 0.60f);
+							WMat->SetScalarParameterValue(TEXT("Metallic"), 0.2f);
+							WMat->SetScalarParameterValue(TEXT("Roughness"), 0.06f);
+							WMat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.04f, 0.08f, 0.15f));
+							RiverWaterPMC->SetMaterial(0, WMat);
+						}
+					}
+					RWA->AddInstanceComponent(RiverWaterPMC);
 				}
 			}
 
-			// North bank (muddy strip)
-			SpawnLakePiece(PlaneMesh,
-				FVector(SX, CurveY + RiverWidth * 0.5f + 600.f, TZ + 6.f),
-				FRotator::ZeroRotator,
-				FVector(SegLen / 100.f, 12.f, 1.f),
-				RiverBank, 0.92f, 0.f,
-				*FString::Printf(TEXT("River_BankN_%d"), s));
+			// PUBG-style shore: sand strip + scattered rocks + dense reeds
+			const FLinearColor ShoreSand(0.65f, 0.58f, 0.42f);
+			const FLinearColor ShoreRock(0.30f, 0.28f, 0.24f);
 
-			// South bank (muddy strip)
+			// North shore — wide sandy strip
 			SpawnLakePiece(PlaneMesh,
-				FVector(SX, CurveY - RiverWidth * 0.5f - 600.f, TZ + 6.f),
+				FVector(SX, CurveY + RiverWidth * 0.5f + 400.f, TZ + 4.f),
 				FRotator::ZeroRotator,
-				FVector(SegLen / 100.f, 12.f, 1.f),
-				RiverBank, 0.92f, 0.f,
-				*FString::Printf(TEXT("River_BankS_%d"), s));
+				FVector(SegLen / 100.f, 16.f, 1.f),
+				ShoreSand, 0.90f, 0.f,
+				*FString::Printf(TEXT("River_ShoreN_%d"), s));
 
-			// Reeds / vegetation along banks (every other segment)
-			if (s % 2 == 0)
+			// South shore — wide sandy strip
+			SpawnLakePiece(PlaneMesh,
+				FVector(SX, CurveY - RiverWidth * 0.5f - 400.f, TZ + 4.f),
+				FRotator::ZeroRotator,
+				FVector(SegLen / 100.f, 16.f, 1.f),
+				ShoreSand, 0.90f, 0.f,
+				*FString::Printf(TEXT("River_ShoreS_%d"), s));
+
+			// Muddy bank transition behind sand
+			SpawnLakePiece(PlaneMesh,
+				FVector(SX, CurveY + RiverWidth * 0.5f + 1200.f, TZ + 5.f),
+				FRotator::ZeroRotator,
+				FVector(SegLen / 100.f, 10.f, 1.f),
+				RiverMud, 0.94f, 0.f,
+				*FString::Printf(TEXT("River_MudN_%d"), s));
+			SpawnLakePiece(PlaneMesh,
+				FVector(SX, CurveY - RiverWidth * 0.5f - 1200.f, TZ + 5.f),
+				FRotator::ZeroRotator,
+				FVector(SegLen / 100.f, 10.f, 1.f),
+				RiverMud, 0.94f, 0.f,
+				*FString::Printf(TEXT("River_MudS_%d"), s));
+
+			// Shore rocks (3-4 per segment per side)
+			for (int32 r = 0; r < 7; ++r)
 			{
-				for (int32 r = 0; r < 6; ++r)
-				{
-					float RX = SX + CityRandom.FRandRange(-SegLen * 0.4f, SegLen * 0.4f);
-					float Side = (r < 3) ? 1.f : -1.f;
-					float RY = CurveY + Side * (RiverWidth * 0.5f + CityRandom.FRandRange(200.f, 800.f));
-					float RZ = GetTerrainHeight(RX, RY);
-					float RH = CityRandom.FRandRange(200.f, 500.f);
+				float RX = SX + CityRandom.FRandRange(-SegLen * 0.45f, SegLen * 0.45f);
+				float Side = (r < 4) ? 1.f : -1.f;
+				float RY = CurveY + Side * (RiverWidth * 0.5f + CityRandom.FRandRange(50.f, 600.f));
+				float RZ = GetTerrainHeight(RX, RY);
+				float RS = CityRandom.FRandRange(0.3f, 1.2f);
 
-					// Reed stalk
-					SpawnLakePiece(CylinderMesh, FVector(RX, RY, RZ + RH * 0.5f),
-						FRotator(CityRandom.FRandRange(-5.f, 5.f), CityRandom.FRandRange(0.f, 360.f), 0.f),
-						FVector(0.06f, 0.06f, RH / 100.f),
-						RiverReed, 0.75f, 0.f,
-						*FString::Printf(TEXT("River_Reed_%d_%d"), s, r));
-				}
+				SpawnLakePiece(SphereMesh, FVector(RX, RY, RZ + RS * 20.f),
+					FRotator(CityRandom.FRandRange(-10.f, 10.f), CityRandom.FRandRange(0.f, 360.f), 0.f),
+					FVector(RS, RS * CityRandom.FRandRange(0.7f, 1.3f), RS * CityRandom.FRandRange(0.3f, 0.6f)),
+					ShoreRock, CityRandom.FRandRange(0.80f, 0.95f), 0.f,
+					*FString::Printf(TEXT("River_Rock_%d_%d"), s, r));
+			}
+
+			// Dense reeds / vegetation (10 per segment)
+			for (int32 r = 0; r < 10; ++r)
+			{
+				float RX = SX + CityRandom.FRandRange(-SegLen * 0.45f, SegLen * 0.45f);
+				float Side = (r < 5) ? 1.f : -1.f;
+				float RY = CurveY + Side * (RiverWidth * 0.5f + CityRandom.FRandRange(100.f, 900.f));
+				float RZ = GetTerrainHeight(RX, RY);
+				float RH = CityRandom.FRandRange(150.f, 450.f);
+
+				SpawnLakePiece(CylinderMesh, FVector(RX, RY, RZ + RH * 0.5f),
+					FRotator(CityRandom.FRandRange(-8.f, 8.f), CityRandom.FRandRange(0.f, 360.f), 0.f),
+					FVector(0.05f, 0.05f, RH / 100.f),
+					RiverReed, 0.75f, 0.f,
+					*FString::Printf(TEXT("River_Reed_%d_%d"), s, r));
 			}
 		}
 	}

@@ -3416,6 +3416,38 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 			DebugThrottle = NewThrottle;
 			DebugSteering = NewSteering;
+
+			// --- Update vehicle crosshair to follow aircraft nose on screen ---
+			if (VehicleCrosshairDot && DrivenVehicle && PC)
+			{
+				const FVector NoseTarget = DrivenVehicle->GetActorLocation()
+					+ DrivenVehicle->GetActorForwardVector() * 50000.f;
+				FVector2D ScreenPos;
+				bool bOnScreen = PC->ProjectWorldLocationToScreen(NoseTarget, ScreenPos, true);
+
+				if (bOnScreen)
+				{
+					// Convert screen pos to canvas-relative offset from center
+					const float CX = ScreenPos.X - VPWidth * 0.5f;
+					const float CY = ScreenPos.Y - VPHeight * 0.5f;
+
+					const float DotSz = 4.f, Gap = 10.f, ArmW = 2.f, ArmL = 18.f;
+					if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(VehicleCrosshairDot->Slot))
+						S->SetOffsets(FMargin(CX - DotSz * 0.5f, CY - DotSz * 0.5f, DotSz, DotSz));
+					if (VehicleCrosshairTop)
+						if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(VehicleCrosshairTop->Slot))
+							S->SetOffsets(FMargin(CX - ArmW * 0.5f, CY - (Gap + ArmL), ArmW, ArmL));
+					if (VehicleCrosshairBottom)
+						if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(VehicleCrosshairBottom->Slot))
+							S->SetOffsets(FMargin(CX - ArmW * 0.5f, CY + Gap, ArmW, ArmL));
+					if (VehicleCrosshairLeft)
+						if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(VehicleCrosshairLeft->Slot))
+							S->SetOffsets(FMargin(CX - (Gap + ArmL), CY - ArmW * 0.5f, ArmL, ArmW));
+					if (VehicleCrosshairRight)
+						if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(VehicleCrosshairRight->Slot))
+							S->SetOffsets(FMargin(CX + Gap, CY - ArmW * 0.5f, ArmL, ArmW));
+				}
+			}
 		}
 		else
 		{

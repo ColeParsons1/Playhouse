@@ -960,13 +960,9 @@ void APHCRaptorPawn::FireRocket()
 	UWorld* World = GetWorld();
 	if (!World) return;
 
-	// Fire toward camera forward (exactly where crosshair points, including lag)
-	FRotator AimRot = GetActorForwardVector().Rotation();
-	if (VehicleCamera)
-	{
-		AimRot = VehicleCamera->GetComponentRotation();
-	}
-	const FVector AimDir = AimRot.Vector();
+	// Fire along aircraft nose direction
+	const FRotator AimRot = GetActorForwardVector().Rotation();
+	const FVector AimDir = GetActorForwardVector();
 
 	const FVector MuzzleLoc = GetActorLocation()
 		+ GetActorForwardVector() * 550.f
