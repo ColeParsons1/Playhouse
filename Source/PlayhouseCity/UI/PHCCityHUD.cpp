@@ -2169,48 +2169,29 @@ bool UPHCCityHUD::Initialize()
 		//  COD-style CROSSHAIR — dot + 4 lines, center of screen
 		// ============================================================
 		{
-			const FLinearColor CHColor(1.f, 1.f, 1.f, 0.85f);
-			const float DotSz = 4.f, LineW = 2.f, LineL = 12.f, Gap = 6.f;
+			// Green symmetrical crosshair (same style as F-22)
+			const FLinearColor CHColor(0.0f, 1.0f, 0.4f, 0.85f);
+			const float DotSz = 4.f, ArmW = 2.f, ArmL = 18.f, Gap = 10.f;
 
-			CrosshairDot = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CrosshairDot"));
-			CrosshairDot->SetBrushColor(CHColor);
-			UCanvasPanelSlot* DS = RootCanvas->AddChildToCanvas(CrosshairDot);
-			DS->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
-			DS->SetAlignment(FVector2D(0.5f, 0.5f));
-			DS->SetOffsets(FMargin(0.f, 0.f, DotSz, DotSz));
-			CrosshairDot->SetVisibility(ESlateVisibility::Collapsed);
+			auto MakeCH = [&](const TCHAR* Name, float W, float H, float OffX, float OffY) -> UBorder*
+			{
+				UBorder* B = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), Name);
+				B->SetBrushColor(CHColor);
+				B->SetPadding(FMargin(0.f));
+				UCanvasPanelSlot* S = RootCanvas->AddChildToCanvas(B);
+				S->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+				S->SetAlignment(FVector2D(0.f, 0.f));
+				S->SetOffsets(FMargin(OffX, OffY, W, H));
+				S->SetAutoSize(false);
+				B->SetVisibility(ESlateVisibility::Collapsed);
+				return B;
+			};
 
-			CrosshairTop = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CrosshairTop"));
-			CrosshairTop->SetBrushColor(CHColor);
-			UCanvasPanelSlot* TS = RootCanvas->AddChildToCanvas(CrosshairTop);
-			TS->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
-			TS->SetAlignment(FVector2D(0.5f, 1.f));
-			TS->SetOffsets(FMargin(0.f, -(Gap + LineL), LineW, LineL));
-			CrosshairTop->SetVisibility(ESlateVisibility::Collapsed);
-
-			CrosshairBottom = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CrosshairBottom"));
-			CrosshairBottom->SetBrushColor(CHColor);
-			UCanvasPanelSlot* BS = RootCanvas->AddChildToCanvas(CrosshairBottom);
-			BS->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
-			BS->SetAlignment(FVector2D(0.5f, 0.f));
-			BS->SetOffsets(FMargin(0.f, Gap, LineW, LineL));
-			CrosshairBottom->SetVisibility(ESlateVisibility::Collapsed);
-
-			CrosshairLeft = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CrosshairLeft"));
-			CrosshairLeft->SetBrushColor(CHColor);
-			UCanvasPanelSlot* LS = RootCanvas->AddChildToCanvas(CrosshairLeft);
-			LS->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
-			LS->SetAlignment(FVector2D(1.f, 0.5f));
-			LS->SetOffsets(FMargin(-(Gap + LineL), 0.f, LineL, LineW));
-			CrosshairLeft->SetVisibility(ESlateVisibility::Collapsed);
-
-			CrosshairRight = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CrosshairRight"));
-			CrosshairRight->SetBrushColor(CHColor);
-			UCanvasPanelSlot* RS = RootCanvas->AddChildToCanvas(CrosshairRight);
-			RS->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
-			RS->SetAlignment(FVector2D(0.f, 0.5f));
-			RS->SetOffsets(FMargin(Gap, 0.f, LineL, LineW));
-			CrosshairRight->SetVisibility(ESlateVisibility::Collapsed);
+			CrosshairDot    = MakeCH(TEXT("CrosshairDot"),    DotSz, DotSz, -DotSz * 0.5f, -DotSz * 0.5f);
+			CrosshairTop    = MakeCH(TEXT("CrosshairTop"),    ArmW, ArmL, -ArmW * 0.5f, -(Gap + ArmL));
+			CrosshairBottom = MakeCH(TEXT("CrosshairBottom"), ArmW, ArmL, -ArmW * 0.5f, Gap);
+			CrosshairLeft   = MakeCH(TEXT("CrosshairLeft"),   ArmL, ArmW, -(Gap + ArmL), -ArmW * 0.5f);
+			CrosshairRight  = MakeCH(TEXT("CrosshairRight"),  ArmL, ArmW, Gap, -ArmW * 0.5f);
 		}
 
 		// ============================================================
@@ -3712,26 +3693,19 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			// Convert degrees to screen-space pixels (~6 px per degree at default FOV)
 			const float GapPx = 6.f + SpreadDeg * 6.f;
 
+			const float AW = 2.f, AL = 18.f;
 			if (CrosshairTop)
-			{
 				if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(CrosshairTop->Slot))
-					S->SetPosition(FVector2D(-1.f, -(GapPx + 12.f)));
-			}
+					S->SetOffsets(FMargin(-AW * 0.5f, -(GapPx + AL), AW, AL));
 			if (CrosshairBottom)
-			{
 				if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(CrosshairBottom->Slot))
-					S->SetPosition(FVector2D(-1.f, GapPx));
-			}
+					S->SetOffsets(FMargin(-AW * 0.5f, GapPx, AW, AL));
 			if (CrosshairLeft)
-			{
 				if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(CrosshairLeft->Slot))
-					S->SetPosition(FVector2D(-(GapPx + 12.f), -1.f));
-			}
+					S->SetOffsets(FMargin(-(GapPx + AL), -AW * 0.5f, AL, AW));
 			if (CrosshairRight)
-			{
 				if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(CrosshairRight->Slot))
-					S->SetPosition(FVector2D(GapPx, -1.f));
-			}
+					S->SetOffsets(FMargin(GapPx, -AW * 0.5f, AL, AW));
 		}
 
 		// Hit marker fade

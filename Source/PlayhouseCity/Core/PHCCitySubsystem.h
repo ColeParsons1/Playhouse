@@ -178,7 +178,7 @@ public:
 
 	/** Mushroom psychedelic trip effect. */
 	float MushroomTripTimer = -1.f;          // <0 = inactive, >=0 = elapsed seconds
-	float MushroomTripDuration = 120.f;      // base 2 minutes, +20s per re-dose
+	float MushroomTripDuration = 240.f;      // base 4 minutes, +20s per re-dose
 	int32 TripDoseCount = 0;                 // how many mushrooms collected this trip
 	float TripIntensityMultiplier = 1.f;     // grows with re-doses
 	float TripBaseFOV = 90.f;                // cached camera FOV before trip
@@ -210,6 +210,12 @@ public:
 	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> TripSkyDome;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> TripSkyMID;
 	UPROPERTY(Transient) TObjectPtr<UMaterial> TripSkyMaterial;
+
+	/** Water surfaces — stored for trip sky pattern swap. */
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> WaterMIDs;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> WaterOriginalMIDs;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> RiverTripMID;
+	bool bWaterTripping = false;
 
 	bool bTripHallucinationsSpawned = false;
 
