@@ -388,17 +388,20 @@ void UPHCGameInstance::EnableVoiceChat()
 	APlayerController* PC = GetFirstLocalPlayerController();
 	if (!PC) return;
 
-	// Enable voice for the local player
+	// Start voice capture and transmission
 	PC->StartTalking();
 	bVoiceMuted = false;
 
-	// Register all players as talkers and listeners via console commands
+	// Enable networked voice via console commands
 	if (GEngine)
 	{
-		GEngine->Exec(World, TEXT("OSS StartNetworkedVoice"));
+		GEngine->Exec(World, TEXT("Online StartNetworkedVoice"));
 	}
 
-	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice chat enabled"));
+	// Also directly toggle speaking on the controller
+	PC->ConsoleCommand(TEXT("ToggleSpeaking 1"));
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice chat enabled — transmitting"));
 }
 
 void UPHCGameInstance::DisableVoiceChat()
@@ -407,11 +410,12 @@ void UPHCGameInstance::DisableVoiceChat()
 	if (PC)
 	{
 		PC->StopTalking();
+		PC->ConsoleCommand(TEXT("ToggleSpeaking 0"));
 	}
 
 	if (GEngine && GetWorld())
 	{
-		GEngine->Exec(GetWorld(), TEXT("OSS StopNetworkedVoice"));
+		GEngine->Exec(GetWorld(), TEXT("Online StopNetworkedVoice"));
 	}
 
 	bVoiceMuted = false;
