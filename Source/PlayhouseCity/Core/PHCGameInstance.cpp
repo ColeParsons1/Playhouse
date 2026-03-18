@@ -62,6 +62,9 @@ void UPHCGameInstance::Init()
 	CreateSubsystems();
 
 	SetupPushNotifications();
+
+	// Initialize Agora global voice — all players join the same channel
+	EnableVoiceChat();
 }
 
 void UPHCGameInstance::Shutdown()
@@ -377,49 +380,29 @@ void UPHCGameInstance::DestroySubsystems()
 }
 
 // ---------------------------------------------------------------------------
-// Voice Chat (UE5 built-in VOIP)
+// Voice Chat (Agora SDK — global, works without game server)
 // ---------------------------------------------------------------------------
+
+#include "Voice/AgoraVoiceManager.h"
 
 void UPHCGameInstance::EnableVoiceChat()
 {
-	UWorld* World = GetWorld();
-	if (!World) return;
-
-	APlayerController* PC = GetFirstLocalPlayerController();
-	if (!PC) return;
-
-	// Start voice capture and transmission
-	PC->StartTalking();
-	bVoiceMuted = false;
-
-	// Enable networked voice via console commands
-	if (GEngine)
+	FAgoraVoiceManager& Agora = FAgoraVoiceManager::Get();
+	if (!Agora.IsInChannel())
 	{
-		GEngine->Exec(World, TEXT("Online StartNetworkedVoice"));
+		Agora.Initialize(TEXT("REDACTED_AGORA_APP_ID"));
+		Agora.JoinChannel(TEXT("PlayhouseCity_Global"));
 	}
-
-	// Also directly toggle speaking on the controller
-	PC->ConsoleCommand(TEXT("ToggleSpeaking 1"));
-
-	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice chat enabled — transmitting"));
+	bVoiceMuted = false;
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice chat enabled (Agora)"));
 }
 
 void UPHCGameInstance::DisableVoiceChat()
 {
-	APlayerController* PC = GetFirstLocalPlayerController();
-	if (PC)
-	{
-		PC->StopTalking();
-		PC->ConsoleCommand(TEXT("ToggleSpeaking 0"));
-	}
-
-	if (GEngine && GetWorld())
-	{
-		GEngine->Exec(GetWorld(), TEXT("Online StopNetworkedVoice"));
-	}
-
+	FAgoraVoiceManager& Agora = FAgoraVoiceManager::Get();
+	Agora.LeaveChannel();
 	bVoiceMuted = false;
-	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice chat disabled"));
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice chat disabled (Agora)"));
 }
 
 void UPHCGameInstance::ToggleVoiceMute()
@@ -430,19 +413,6 @@ void UPHCGameInstance::ToggleVoiceMute()
 void UPHCGameInstance::SetVoiceMuted(bool bMute)
 {
 	bVoiceMuted = bMute;
-
-	APlayerController* PC = GetFirstLocalPlayerController();
-	if (PC)
-	{
-		if (bMute)
-		{
-			PC->StopTalking();
-		}
-		else
-		{
-			PC->StartTalking();
-		}
-	}
-
+	FAgoraVoiceManager::Get().SetMuted(bMute);
 	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice mute: %s"), bMute ? TEXT("ON") : TEXT("OFF"));
 }

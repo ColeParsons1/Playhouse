@@ -47,6 +47,9 @@ void APHCCityGameMode::PostLogin(APlayerController* NewPlayer)
 	{
 		UE_LOG(LogPlayhouseCity, Log, TEXT("APHCCityGameMode::PostLogin -- Player joined: %s"), *NewPlayer->GetName());
 
+		// Enable voice chat for this player
+		NewPlayer->StartTalking();
+
 		// Delay 3s so the client has time to send its profile via ServerSendPlayerProfile RPC
 		FTimerHandle TimerHandle;
 		TWeakObjectPtr<APlayerController> WeakPC = NewPlayer;
