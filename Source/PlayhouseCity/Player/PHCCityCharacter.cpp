@@ -193,26 +193,26 @@ APHCCityCharacter::APHCCityCharacter()
 	// ================================================================
 	//  NECK
 	// ================================================================
-	NeckMesh = MakeCyl(TEXT("NeckMesh"), FVector(0.f, 0.f, 60.f), 4.f, 10.f);
+	NeckMesh = MakeCyl(TEXT("NeckMesh"), FVector(0.f, 0.f, 56.f), 4.f, 10.f);
 
 	// ================================================================
-	//  TORSO — sphere-based for organic curves (NO cubes)
+	//  TORSO — flat cube-based for masculine PUBG tactical vest look
 	// ================================================================
-	// Chest: athletic build — wide but not deep
-	ChestMesh = MakeOval(TEXT("ChestMesh"), FVector(1.f, 0.f, 44.f),
-		FVector(0.22f, 0.44f, 0.26f));
-	// Abs: tapered V-taper waist
-	AbsMesh = MakeOval(TEXT("AbsMesh"), FVector(0.f, 0.f, 28.f),
-		FVector(0.16f, 0.32f, 0.18f));
-	// Pelvis/hips: lean
-	PelvisMesh = MakeOval(TEXT("PelvisMesh"), FVector(0.f, 0.f, 12.f),
-		FVector(0.17f, 0.36f, 0.20f));
+	// Chest: flat, wide, angular — like a ballistic vest plate, reaches up to neck
+	ChestMesh = MakeCube(TEXT("ChestMesh"), FVector(0.f, 0.f, 40.f),
+		FVector(10.f, 26.f, 22.f));
+	// Abs: flat stomach — overlaps chest and pelvis generously
+	AbsMesh = MakeCube(TEXT("AbsMesh"), FVector(0.f, 0.f, 22.f),
+		FVector(9.f, 20.f, 18.f));
+	// Pelvis/hips: wider to cover leg tops, overlaps abs
+	PelvisMesh = MakeCube(TEXT("PelvisMesh"), FVector(0.f, 0.f, 8.f),
+		FVector(10.f, 24.f, 22.f));
 
 	// ================================================================
 	//  CLOTHING DETAILS
 	// ================================================================
 	// T-shirt collar
-	CollarMesh = MakeCube(TEXT("CollarMesh"), FVector(2.f, 0.f, 56.f), FVector(10.f, 26.f, 2.f));
+	CollarMesh = MakeCube(TEXT("CollarMesh"), FVector(2.f, 0.f, 52.f), FVector(10.f, 26.f, 2.f));
 	// Belt
 	BeltMesh = MakeCube(TEXT("BeltMesh"), FVector(0.f, 0.f, 20.f), FVector(12.f, 36.f, 3.f));
 	// Belt buckle (small square in front)
@@ -221,25 +221,25 @@ APHCCityCharacter::APHCCityCharacter()
 	// ================================================================
 	//  LEFT ARM — shoulder sphere → upper arm cyl → elbow → forearm → hand
 	// ================================================================
-	LeftShoulderMesh = MakeSph(TEXT("LShld"),  FVector(0.f, -25.f, 54.f), 7.f);
-	LeftUpperArmMesh = MakeCyl(TEXT("LUArm"),  FVector(0.f, -26.f, 44.f), 4.5f, 20.f);
-	LeftElbowMesh    = MakeSph(TEXT("LElbow"), FVector(0.f, -26.f, 32.f), 4.f);
-	LeftForearmMesh  = MakeCyl(TEXT("LFArm"),  FVector(0.f, -26.f, 20.f), 4.f, 18.f);
-	LeftHandMesh     = MakeSph(TEXT("LHand"),  FVector(0.f, -26.f,  6.f), 3.5f);
+	LeftShoulderMesh = MakeSph(TEXT("LShld"),  FVector(0.f, -18.f, 50.f), 7.f);
+	LeftUpperArmMesh = MakeCyl(TEXT("LUArm"),  FVector(0.f, -19.f, 40.f), 4.5f, 20.f);
+	LeftElbowMesh    = MakeSph(TEXT("LElbow"), FVector(0.f, -19.f, 32.f), 4.f);
+	LeftForearmMesh  = MakeCyl(TEXT("LFArm"),  FVector(0.f, -19.f, 20.f), 4.f, 18.f);
+	LeftHandMesh     = MakeSph(TEXT("LHand"),  FVector(0.f, -19.f,  6.f), 3.5f);
 
 	// ================================================================
 	//  RIGHT ARM — mirror
 	// ================================================================
-	RightShoulderMesh = MakeSph(TEXT("RShld"),  FVector(0.f, 25.f, 54.f), 7.f);
-	RightUpperArmMesh = MakeCyl(TEXT("RUArm"),  FVector(0.f, 26.f, 44.f), 4.5f, 20.f);
-	RightElbowMesh    = MakeSph(TEXT("RElbow"), FVector(0.f, 26.f, 32.f), 4.f);
-	RightForearmMesh  = MakeCyl(TEXT("RFArm"),  FVector(0.f, 26.f, 20.f), 4.f, 18.f);
-	RightHandMesh     = MakeSph(TEXT("RHand"),  FVector(0.f, 26.f,  6.f), 3.5f);
+	RightShoulderMesh = MakeSph(TEXT("RShld"),  FVector(0.f, 18.f, 50.f), 7.f);
+	RightUpperArmMesh = MakeCyl(TEXT("RUArm"),  FVector(0.f, 19.f, 40.f), 4.5f, 20.f);
+	RightElbowMesh    = MakeSph(TEXT("RElbow"), FVector(0.f, 19.f, 32.f), 4.f);
+	RightForearmMesh  = MakeCyl(TEXT("RFArm"),  FVector(0.f, 19.f, 20.f), 4.f, 18.f);
+	RightHandMesh     = MakeSph(TEXT("RHand"),  FVector(0.f, 19.f,  6.f), 3.5f);
 
 	// ================================================================
 	//  LEFT LEG — thigh → knee → shin → foot + toe cap + sole
 	// ================================================================
-	LeftThighMesh = MakeCyl(TEXT("LThigh"), FVector(0.f, -11.f, -12.f), 5.5f, 28.f);
+	LeftThighMesh = MakeCyl(TEXT("LThigh"), FVector(0.f, -11.f, -8.f), 6.5f, 28.f);
 	LeftKneeMesh  = MakeSph(TEXT("LKnee"),  FVector(0.f, -11.f, -30.f), 5.f);
 	LeftShinMesh  = MakeCyl(TEXT("LShin"),  FVector(0.f, -11.f, -48.f), 4.5f, 24.f);
 	LeftFootMesh  = MakeCube(TEXT("LFoot"), FVector(4.f, -11.f, -68.f), FVector(22.f, 12.f, 8.f));
@@ -249,7 +249,7 @@ APHCCityCharacter::APHCCityCharacter()
 	// ================================================================
 	//  RIGHT LEG — mirror
 	// ================================================================
-	RightThighMesh = MakeCyl(TEXT("RThigh"), FVector(0.f, 11.f, -12.f), 5.5f, 28.f);
+	RightThighMesh = MakeCyl(TEXT("RThigh"), FVector(0.f, 11.f, -8.f), 6.5f, 28.f);
 	RightKneeMesh  = MakeSph(TEXT("RKnee"),  FVector(0.f, 11.f, -30.f), 5.f);
 	RightShinMesh  = MakeCyl(TEXT("RShin"),  FVector(0.f, 11.f, -48.f), 4.5f, 24.f);
 	RightFootMesh  = MakeCube(TEXT("RFoot"), FVector(4.f, 11.f, -68.f), FVector(22.f, 12.f, 8.f));
@@ -531,6 +531,28 @@ void APHCCityCharacter::BeginPlay()
 		TEXT("/Game/Materials/M_PHCSkin.M_PHCSkin"));
 	if (!SkinMat) SkinMat = ColorMat; // graceful fallback
 
+	// F-22 ClearCoat material for armor pieces
+	UMaterial* ClearCoatMat = LoadObject<UMaterial>(nullptr,
+		TEXT("/Game/Materials/M_PHCClearCoat.M_PHCClearCoat"));
+	if (!ClearCoatMat) ClearCoatMat = ColorMat; // fallback
+
+	auto ApplyArmor = [&](UStaticMeshComponent* Comp,
+		const FLinearColor& Color, float Roughness, float Metallic = 0.9f)
+	{
+		if (!Comp || !Comp->GetStaticMesh() || !ClearCoatMat) return;
+		UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(ClearCoatMat, Comp);
+		if (MID)
+		{
+			MID->SetVectorParameterValue(TEXT("BaseColor"), Color);
+			MID->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+			MID->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+			MID->SetScalarParameterValue(TEXT("ClearCoat"), 1.0f);
+			MID->SetScalarParameterValue(TEXT("ClearCoatRoughness"), 0.03f);
+			Comp->SetMaterial(0, MID);
+			BodyMIDs.Add(MID);
+		}
+	};
+
 	auto ApplyColor = [&](UStaticMeshComponent* Comp,
 		const FLinearColor& Color, float Roughness, float Metallic = 0.f)
 	{
@@ -576,14 +598,16 @@ void APHCCityCharacter::BeginPlay()
 	const FLinearColor EyeWhite(0.92f, 0.92f, 0.90f);       // off-white
 	const FLinearColor Pupil(0.04f, 0.06f, 0.04f);          // very dark
 	const FLinearColor BrowColor(0.06f, 0.04f, 0.03f);      // dark brown
-	const FLinearColor Shirt(0.12f, 0.38f, 0.18f);          // forest green tee
-	const FLinearColor ShirtTrim(0.10f, 0.32f, 0.14f);      // slightly darker trim
-	const FLinearColor Denim(0.08f, 0.10f, 0.20f);          // dark indigo jeans
-	const FLinearColor Belt(0.06f, 0.04f, 0.03f);           // dark leather
-	const FLinearColor Buckle(0.65f, 0.60f, 0.50f);         // brushed metal
-	const FLinearColor Shoe(0.92f, 0.92f, 0.90f);           // white sneaker
-	const FLinearColor ShoeToe(0.88f, 0.88f, 0.86f);        // slightly off-white
-	const FLinearColor Sole(0.05f, 0.05f, 0.05f);           // dark rubber
+	// F-22 stealth armor colors
+	const FLinearColor ArmorBase(0.04f, 0.04f, 0.05f);      // near-black armor plate
+	const FLinearColor ArmorTrim(0.35f, 0.37f, 0.38f);      // F-22 stealth gray (collar/belt)
+	const FLinearColor Denim(0.08f, 0.10f, 0.20f);           // blue denim jeans
+	const FLinearColor DenimDark(0.06f, 0.08f, 0.16f);      // darker denim (knees/seams)
+	const FLinearColor Belt(0.12f, 0.08f, 0.04f);           // brown leather belt
+	const FLinearColor Buckle(0.50f, 0.45f, 0.30f);         // brass buckle
+	const FLinearColor Shoe(0.06f, 0.06f, 0.07f);           // dark shoes
+	const FLinearColor ShoeToe(0.05f, 0.05f, 0.06f);
+	const FLinearColor Sole(0.03f, 0.03f, 0.03f);
 
 	// Skin (head, jaw, neck, forearms, elbows, hands) — warm SSS
 	ApplySkin(HeadMesh,    Skin, 0.45f);
@@ -614,33 +638,40 @@ void APHCCityCharacter::BeginPlay()
 	ApplyColor(HairSideLMesh, Hair, 0.85f);
 	ApplyColor(HairSideRMesh, Hair, 0.85f);
 
-	// Shirt (chest, abs, upper arms, shoulders, collar)
-	ApplyColor(ChestMesh,          Shirt, 0.82f);
-	ApplyColor(AbsMesh,            Shirt, 0.82f);
-	ApplyColor(CollarMesh,         ShirtTrim, 0.80f);
-	ApplyColor(LeftShoulderMesh,   Shirt, 0.82f);
-	ApplyColor(RightShoulderMesh,  Shirt, 0.82f);
-	ApplyColor(LeftUpperArmMesh,   Shirt, 0.82f);
-	ApplyColor(RightUpperArmMesh,  Shirt, 0.82f);
+	// F-22 stealth armor — ClearCoat material matching the F-22 Raptor
+	ApplyArmor(ChestMesh,          ArmorBase, 0.25f, 0.9f);
+	ApplyArmor(AbsMesh,            ArmorBase, 0.25f, 0.9f);
+	ApplyArmor(CollarMesh,         ArmorTrim, 0.20f, 0.9f);
+	ApplyArmor(LeftShoulderMesh,   ArmorBase, 0.25f, 0.9f);
+	ApplyArmor(RightShoulderMesh,  ArmorBase, 0.25f, 0.9f);
+	ApplyArmor(LeftUpperArmMesh,   ArmorBase, 0.25f, 0.9f);
+	ApplyArmor(RightUpperArmMesh,  ArmorBase, 0.25f, 0.9f);
 
-	// Denim jeans
+	// Armor on elbows and forearms
+	ApplyArmor(LeftElbowMesh,    ArmorTrim, 0.22f, 0.9f);
+	ApplyArmor(RightElbowMesh,   ArmorTrim, 0.22f, 0.9f);
+	ApplyArmor(LeftForearmMesh,  ArmorBase, 0.28f, 0.9f);
+	ApplyArmor(RightForearmMesh, ArmorBase, 0.28f, 0.9f);
+
+	// Armor legs — ClearCoat matching F-22
+	// Blue denim jeans
 	ApplyColor(PelvisMesh,     Denim, 0.78f);
 	ApplyColor(LeftThighMesh,  Denim, 0.78f);
 	ApplyColor(RightThighMesh, Denim, 0.78f);
-	ApplyColor(LeftKneeMesh,   Denim, 0.78f);
-	ApplyColor(RightKneeMesh,  Denim, 0.78f);
+	ApplyColor(LeftKneeMesh,   DenimDark, 0.75f);
+	ApplyColor(RightKneeMesh,  DenimDark, 0.75f);
 	ApplyColor(LeftShinMesh,   Denim, 0.78f);
 	ApplyColor(RightShinMesh,  Denim, 0.78f);
 
-	// Belt + buckle
-	ApplyColor(BeltMesh,       Belt, 0.35f);
-	ApplyColor(BeltBuckleMesh, Buckle, 0.30f, 0.6f);
+	// Brown leather belt + brass buckle
+	ApplyColor(BeltMesh,       Belt, 0.65f);
+	ApplyColor(BeltBuckleMesh, Buckle, 0.25f, 0.7f);
 
-	// Shoes — standard white
-	ApplyColor(LeftFootMesh,   Shoe, 0.50f);
-	ApplyColor(RightFootMesh,  Shoe, 0.50f);
-	ApplyColor(LeftToeMesh,    ShoeToe, 0.45f);
-	ApplyColor(RightToeMesh,   ShoeToe, 0.45f);
+	// Shoes
+	ApplyColor(LeftFootMesh,   Shoe, 0.35f, 0.4f);
+	ApplyColor(RightFootMesh,  Shoe, 0.35f, 0.4f);
+	ApplyColor(LeftToeMesh,    ShoeToe, 0.30f, 0.4f);
+	ApplyColor(RightToeMesh,   ShoeToe, 0.30f, 0.4f);
 	ApplyColor(LeftSoleMesh,   Sole, 0.90f);
 	ApplyColor(RightSoleMesh,  Sole, 0.90f);
 
@@ -852,6 +883,8 @@ void APHCCityCharacter::BeginPlay()
 			ArrowIndicator->RegisterComponent();
 		}
 	}
+
+
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCityCharacter::BeginPlay -- Pawn at %s"),
 		*GetActorLocation().ToString());
@@ -1669,8 +1702,8 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		const float IdleHeadPitch = FMath::Sin(WorldTime * 0.45f) * 1.5f * IdleFade;
 
 		// ---- Pivot constants (match constructor rest positions) ----
-		const float ShPivZ    = 54.f;
-		const float HipPivZ   =  2.f;
+		const float ShPivZ    = 50.f;
+		const float HipPivZ   =  6.f;
 		const float UArmHalf  = 10.f;
 		const float FArmHalf  =  9.f;
 		const float ThighHalf = 14.f;
@@ -1772,18 +1805,18 @@ void APHCCityCharacter::Tick(float DeltaTime)
 
 			// Right arm: main grip — forward 70 deg, slight elbow bend
 			PoseArm(RightUpperArmMesh, RightForearmMesh, RightElbowMesh, RightHandMesh,
-				RightShoulderMesh, 26.f, RAimPitch, 15.f);
+				RightShoulderMesh, 19.f, RAimPitch, 15.f);
 			// Left arm: support grip — forward 75 deg, more elbow bend to reach under barrel
 			PoseArm(LeftUpperArmMesh, LeftForearmMesh, LeftElbowMesh, LeftHandMesh,
-				LeftShoulderMesh, -26.f, 75.f, 25.f);
+				LeftShoulderMesh, -19.f, 75.f, 25.f);
 		}
 		else
 		{
 			// Normal walk swing
 			AnimateArm(LeftUpperArmMesh, LeftForearmMesh, LeftElbowMesh, LeftHandMesh,
-				LeftShoulderMesh, -26.f, LArmSwing, LElbowBend);
+				LeftShoulderMesh, -19.f, LArmSwing, LElbowBend);
 			AnimateArm(RightUpperArmMesh, RightForearmMesh, RightElbowMesh, RightHandMesh,
-				RightShoulderMesh, 26.f, RArmSwing, RElbowBend);
+				RightShoulderMesh, 19.f, RArmSwing, RElbowBend);
 		}
 
 		// ---- Hand spring-damper lag (follow-through / overshoot) ----
@@ -1816,39 +1849,37 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		// ---- Torso: lean + momentum + bounce + twist + sway + breathing ----
 		if (ChestMesh)
 		{
-			ChestMesh->SetRelativeLocation(FVector(1.f, HipSway * 0.7f, 44.f + VertBounce));
+			ChestMesh->SetRelativeLocation(FVector(0.f, HipSway, 40.f + VertBounce));
 			ChestMesh->SetRelativeRotation(FRotator(
 				TorsoLean + MomentumPitch, ChestYaw, MomentumRoll));
-			ChestMesh->SetRelativeScale3D(FVector(0.22f, 0.44f, 0.26f + BreathScale));
 		}
 		if (AbsMesh)
 		{
-			AbsMesh->SetRelativeLocation(FVector(0.f, HipSway * 0.5f, 28.f + VertBounce * 0.8f));
+			AbsMesh->SetRelativeLocation(FVector(0.f, HipSway, 22.f + VertBounce * 0.8f));
 			AbsMesh->SetRelativeRotation(FRotator(
 				TorsoLean * 0.6f + MomentumPitch * 0.5f,
 				(ChestYaw + PelvisYaw) * 0.5f,
 				MomentumRoll * 0.5f));
-			AbsMesh->SetRelativeScale3D(FVector(0.16f, 0.32f, 0.18f + BreathScale * 0.5f));
 		}
 		if (PelvisMesh)
 		{
 			PelvisMesh->SetRelativeLocation(FVector(0.f,
-				HipSway + IdleWeightShift, 12.f + VertBounce * 0.4f));
+				HipSway, 8.f + VertBounce * 0.4f));
 			PelvisMesh->SetRelativeRotation(FRotator(0.f, PelvisYaw, 0.f));
 		}
 
 		// Clothing follows torso
-		if (CollarMesh) CollarMesh->SetRelativeLocation(FVector(2.f, HipSway * 0.7f, 56.f + VertBounce));
-		if (BeltMesh)   BeltMesh->SetRelativeLocation(FVector(0.f, HipSway + IdleWeightShift * 0.5f, 20.f + VertBounce * 0.5f));
-		if (BeltBuckleMesh) BeltBuckleMesh->SetRelativeLocation(FVector(8.f, HipSway + IdleWeightShift * 0.5f, 20.f + VertBounce * 0.5f));
+		if (CollarMesh) CollarMesh->SetRelativeLocation(FVector(2.f, HipSway, 52.f + VertBounce));
+		if (BeltMesh)   BeltMesh->SetRelativeLocation(FVector(0.f, HipSway, 20.f + VertBounce * 0.5f));
+		if (BeltBuckleMesh) BeltBuckleMesh->SetRelativeLocation(FVector(8.f, HipSway, 20.f + VertBounce * 0.5f));
 
 		// Neck
-		if (NeckMesh) NeckMesh->SetRelativeLocation(FVector(0.f, HipSway * 0.5f, 60.f + VertBounce * 0.7f));
+		if (NeckMesh) NeckMesh->SetRelativeLocation(FVector(0.f, HipSway * 0.5f, 56.f + VertBounce * 0.7f));
 
 		// ---- Head: stabilized + momentum + idle micro-movement ----
 		const float HeadYaw = -ChestYaw * 0.3f + IdleHeadYaw;
 		const FVector HeadPos(0.f, HipSway * 0.2f + IdleWeightShift * 0.3f,
-			76.f + VertBounce * 0.3f);
+			72.f + VertBounce * 0.3f);
 		const FRotator HeadRot(
 			-TorsoLean * 0.25f - MomentumPitch * 0.15f + IdleHeadPitch,
 			HeadYaw,

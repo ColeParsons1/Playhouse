@@ -457,6 +457,11 @@ public:
 
 	// Muzzle flash dynamic light
 	UPROPERTY(Transient) TObjectPtr<UPointLightComponent> MuzzleFlashLight;
+
+	// Holographic ground ring (Madden-style player indicator)
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> GroundRing;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> GroundRingInner;
+	float GroundRingPulseTime = 0.f;
 	float MuzzleFlashLightTimer = 0.f;
 
 	// -- Flashlight --------------------------------------------------------------

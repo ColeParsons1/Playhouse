@@ -381,7 +381,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	{
 		// Bright during day, very dim at night.
 		const float DayFactor = FMath::Max(0.f, SunSine);
-		SkyLightComp->SetIntensity(FMath::Lerp(0.03f, 1.5f, DayFactor));
+		SkyLightComp->SetIntensity(FMath::Lerp(0.05f, 1.8f, DayFactor)); // dark night, bright day
 
 		// Tint: blue-white during day, very deep blue at night.
 		const float NightFactor = FMath::Max(0.f, -SunSine);
@@ -438,27 +438,27 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		FVector4 TargetOffset;
 		if (T < 0.125f || T >= 0.875f)
 		{
-			// Dawn: subtle warm lift, PUBG-style muted gold
-			TargetGain = FVector4(1.08f, 0.98f, 0.90f, 1.0f);
-			TargetOffset = FVector4(0.012f, 0.004f, -0.006f, 0.0f);
+			// Dawn: very subtle warm, mostly neutral
+			TargetGain = FVector4(1.03f, 1.00f, 0.96f, 1.0f);
+			TargetOffset = FVector4(0.005f, 0.002f, -0.002f, 0.0f);
 		}
 		else if (T < 0.375f)
 		{
-			// Day: PUBG neutral — very slightly cool, desaturated
-			TargetGain = FVector4(1.00f, 1.00f, 1.01f, 1.0f);
-			TargetOffset = FVector4(0.0f, 0.0f, 0.003f, 0.0f);
+			// Day: perfectly neutral
+			TargetGain = FVector4(1.00f, 1.00f, 1.00f, 1.0f);
+			TargetOffset = FVector4(0.0f, 0.0f, 0.0f, 0.0f);
 		}
 		else if (T < 0.625f)
 		{
-			// Sunset: PUBG warm but restrained, not over-saturated
-			TargetGain = FVector4(1.10f, 0.92f, 0.78f, 1.0f);
-			TargetOffset = FVector4(0.02f, 0.006f, -0.012f, 0.0f);
+			// Sunset: barely warm, no sepia
+			TargetGain = FVector4(1.04f, 0.98f, 0.92f, 1.0f);
+			TargetOffset = FVector4(0.008f, 0.002f, -0.004f, 0.0f);
 		}
 		else
 		{
-			// Night: cool blue, PUBG-style
-			TargetGain = FVector4(0.22f, 0.26f, 0.38f, 1.0f);
-			TargetOffset = FVector4(-0.02f, -0.008f, 0.01f, 0.0f);
+			// Night: darker cool blue
+			TargetGain = FVector4(0.18f, 0.22f, 0.35f, 1.0f);
+			TargetOffset = FVector4(-0.015f, -0.006f, 0.006f, 0.0f);
 		}
 		// Smooth interpolation to target
 		PP.ColorGain = FMath::Lerp(PP.ColorGain, TargetGain, FMath::Min(1.f, DeltaTime * 2.f));
@@ -547,12 +547,12 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			// Day: white-gray, Sunset: warm orange-pink, Night: dark blue-gray
 			FLinearColor DayCol(0.85f, 0.85f, 0.88f);
 			FLinearColor SunsetCol(0.95f, 0.70f, 0.50f);
-			FLinearColor NightCol(0.08f, 0.08f, 0.12f);
+			FLinearColor NightCol(0.04f, 0.04f, 0.06f); // dark gray at night
 			FLinearColor CloudCol = FMath::Lerp(DayCol, SunsetCol, DawnDuskFactor * 0.6f);
 			CloudCol = FMath::Lerp(CloudCol, NightCol, NightFactor);
 
 			FLinearColor DayEmis(0.3f, 0.3f, 0.32f);
-			FLinearColor NightEmis(0.01f, 0.01f, 0.02f);
+			FLinearColor NightEmis(0.0f, 0.0f, 0.0f);
 			FLinearColor CloudEmis = FMath::Lerp(DayEmis, NightEmis, NightFactor);
 
 			for (int32 Ci = 0; Ci < CloudMIDs.Num(); ++Ci)
@@ -4108,7 +4108,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 		if (TW && CylinderMesh && SphereMesh && ColorMaterial)
 		{
 			FRandomStream ForestRand(88888);
-			const int32 NumForestTrees = 800;
+			const int32 NumForestTrees = 1600;
 			int32 SpawnedCount = 0;
 
 			// Define cluster centers for natural grouping (like PUBG forest patches)
@@ -4708,47 +4708,47 @@ void UPHCCitySubsystem::SpawnSkyAndLighting()
 
 			// === PUBG-quality post-process pipeline ===
 
-			// Ambient Occlusion — strong, high-quality SSAO
+			// Ambient Occlusion — visible but not crushing
 			PP.bOverride_AmbientOcclusionIntensity = true;
-			PP.AmbientOcclusionIntensity = 0.8f;
+			PP.AmbientOcclusionIntensity = 0.5f;  // reduced from 0.8 for better shadow visibility
 			PP.bOverride_AmbientOcclusionRadius = true;
 			PP.AmbientOcclusionRadius = 200.f;
 			PP.bOverride_AmbientOcclusionQuality = true;
-			PP.AmbientOcclusionQuality = 70.f;
+			PP.AmbientOcclusionQuality = 60.f;
 			PP.bOverride_AmbientOcclusionMipBlend = true;
 			PP.AmbientOcclusionMipBlend = 0.6f;
 
-			// Vignette — subtle cinematic
+			// Vignette — lighter
 			PP.bOverride_VignetteIntensity = true;
-			PP.VignetteIntensity = 0.3f;
+			PP.VignetteIntensity = 0.15f;  // reduced from 0.3
 
-			// Auto Exposure — PUBG-style wider range, slower adaptation
+			// Auto Exposure — brighter minimum, faster adaptation for visibility
 			PP.bOverride_AutoExposureMinBrightness = true;
-			PP.AutoExposureMinBrightness = 0.3f;
+			PP.AutoExposureMinBrightness = 0.6f;  // up from 0.3 — shadows never get too dark
 			PP.bOverride_AutoExposureMaxBrightness = true;
-			PP.AutoExposureMaxBrightness = 4.0f;
+			PP.AutoExposureMaxBrightness = 3.0f;   // tighter max prevents washed out
 			PP.bOverride_AutoExposureSpeedUp = true;
-			PP.AutoExposureSpeedUp = 1.5f;
+			PP.AutoExposureSpeedUp = 2.5f;   // faster adaptation
 			PP.bOverride_AutoExposureSpeedDown = true;
-			PP.AutoExposureSpeedDown = 0.8f;
+			PP.AutoExposureSpeedDown = 1.5f;
 
-			// Color Grading — desaturated military realism (PUBG look)
+			// Color Grading — neutral, no desaturation
 			PP.bOverride_ColorGamma = true;
-			PP.ColorGamma = FVector4(1.0f, 1.0f, 1.0f, 1.0f);  // PUBG: perfectly neutral gamma
+			PP.ColorGamma = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
 			PP.bOverride_ColorSaturation = true;
-			PP.ColorSaturation = FVector4(0.92f, 0.92f, 0.92f, 1.0f); // PUBG: slightly desaturated military look
+			PP.ColorSaturation = FVector4(1.0f, 1.0f, 1.0f, 1.0f); // full saturation, no desaturation
 
-			// Filmic Tone Mapping — PUBG-style higher contrast
+			// Filmic Tone Mapping — lifted shadows for visibility
 			PP.bOverride_FilmSlope = true;
-			PP.FilmSlope = 0.82f;
+			PP.FilmSlope = 0.88f;   // up from 0.82 — brighter midtones
 			PP.bOverride_FilmToe = true;
-			PP.FilmToe = 0.6f;
+			PP.FilmToe = 0.45f;     // down from 0.6 — less crushed shadows
 			PP.bOverride_FilmShoulder = true;
-			PP.FilmShoulder = 0.22f;
+			PP.FilmShoulder = 0.26f; // up from 0.22 — smoother highlight rolloff
 			PP.bOverride_FilmBlackClip = true;
-			PP.FilmBlackClip = 0.01f;
+			PP.FilmBlackClip = 0.0f; // down from 0.01 — no black crush at all
 			PP.bOverride_FilmWhiteClip = true;
-			PP.FilmWhiteClip = 0.03f;
+			PP.FilmWhiteClip = 0.04f;
 
 			// Screen-space reflections (mobile-friendly, wet roads/windows)
 			PP.bOverride_ScreenSpaceReflectionIntensity = true;
@@ -9741,7 +9741,7 @@ void UPHCCitySubsystem::SpawnCloudLayer()
 	{
 		float CX = CloudRand.FRandRange(-150000.f, 150000.f);
 		float CY = CloudRand.FRandRange(-150000.f, 150000.f);
-		float CZ = CloudRand.FRandRange(25000.f, 40000.f);
+		float CZ = CloudRand.FRandRange(50000.f, 80000.f);
 
 		AActor* CA = World->SpawnActor<AActor>(AActor::StaticClass(),
 			FVector(CX, CY, CZ), FRotator::ZeroRotator);
