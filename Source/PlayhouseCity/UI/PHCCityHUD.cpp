@@ -3,6 +3,7 @@
 #include "UI/PHCCityHUD.h"
 #include "UI/PHCMainHUD.h"
 #include "Core/PHCGameInstance.h"
+#include "Voice/AgoraVoiceManager.h"
 #include "GameFramework/GameStateBase.h"
 #include "Core/PHCPlayerController.h"
 #include "Player/PHCCityCharacter.h"
@@ -4151,7 +4152,15 @@ void UPHCCityHUD::OnVoiceMuteClicked()
 	UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(this);
 	if (GI)
 	{
-		GI->ToggleVoiceMute();
+		// First press: init Agora and join channel
+		if (!GI->bVoiceMuted && !FAgoraVoiceManager::Get().IsInChannel())
+		{
+			GI->EnableVoiceChat();
+		}
+		else
+		{
+			GI->ToggleVoiceMute();
+		}
 		if (VoiceMuteLabel)
 		{
 			VoiceMuteLabel->SetText(FText::FromString(GI->bVoiceMuted ? TEXT("MIC OFF") : TEXT("MIC ON")));

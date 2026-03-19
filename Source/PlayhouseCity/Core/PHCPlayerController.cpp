@@ -96,14 +96,7 @@ void APHCPlayerController::BeginPlay()
 	// Ensure the cursor is visible and input is in UI mode.
 	SetUIOnlyInputMode();
 
-	// Initialize Agora global voice chat (delayed to here so iOS audio is ready)
-	{
-		UPHCGameInstance* VoiceGI = UPHCGameInstance::GetPHCGameInstance(this);
-		if (VoiceGI && !VoiceGI->bVoiceMuted)
-		{
-			VoiceGI->EnableVoiceChat();
-		}
-	}
+	// Agora voice: user-initiated via MIC button (not auto-join)
 
 	// Bind to GameInstance delegates so we react to login / logout from anywhere.
 	UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(this);

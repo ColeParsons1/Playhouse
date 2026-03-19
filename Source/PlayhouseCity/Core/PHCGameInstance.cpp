@@ -186,7 +186,6 @@ bool UPHCGameInstance::HostGame()
 	{
 		bInMultiplayerSession = true;
 		bIsHost = true;
-		EnableVoiceChat();
 		UE_LOG(LogPlayhouseCity, Log, TEXT("HostGame: Listen server started on port 7777. Net mode: %d"), (int32)World->GetNetMode());
 		return true;
 	}
@@ -222,7 +221,6 @@ void UPHCGameInstance::JoinGame(const FString& IPAddress)
 
 	bInMultiplayerSession = true;
 	bIsHost = false;
-	EnableVoiceChat();
 }
 
 void UPHCGameInstance::LeaveGame()
@@ -250,7 +248,6 @@ void UPHCGameInstance::LeaveGame()
 
 	bInMultiplayerSession = false;
 	bIsHost = false;
-	DisableVoiceChat();
 }
 
 // ---------------------------------------------------------------------------
@@ -388,13 +385,19 @@ void UPHCGameInstance::DestroySubsystems()
 
 void UPHCGameInstance::EnableVoiceChat()
 {
-	// Agora disabled temporarily — framework embedding issue on iOS
+	FAgoraVoiceManager& Agora = FAgoraVoiceManager::Get();
+	if (!Agora.IsInChannel())
+	{
+		Agora.Initialize(TEXT("REDACTED_AGORA_APP_ID"));
+		Agora.JoinChannel(TEXT("PlayhouseCity_Global"));
+	}
 	bVoiceMuted = false;
-	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice chat: Agora disabled (pending framework fix)"));
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice chat enabled (Agora)"));
 }
 
 void UPHCGameInstance::DisableVoiceChat()
 {
+	FAgoraVoiceManager::Get().LeaveChannel();
 	bVoiceMuted = false;
 }
 
@@ -406,5 +409,6 @@ void UPHCGameInstance::ToggleVoiceMute()
 void UPHCGameInstance::SetVoiceMuted(bool bMute)
 {
 	bVoiceMuted = bMute;
+	FAgoraVoiceManager::Get().SetMuted(bMute);
 	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice mute: %s"), bMute ? TEXT("ON") : TEXT("OFF"));
 }

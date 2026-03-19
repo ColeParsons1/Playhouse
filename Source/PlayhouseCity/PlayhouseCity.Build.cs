@@ -63,12 +63,12 @@ public class PlayhouseCity : ModuleRules
 			PublicFrameworks.Add("UserNotifications");
 			PublicFrameworks.Add("AVFoundation");
 
-			// Agora Voice SDK — disabled pending xcframework embedding fix
-			// string AgoraPath = System.IO.Path.Combine(ModuleDirectory, "../../ThirdParty/Agora/iOS");
-			// PublicAdditionalFrameworks.Add(new Framework("AgoraRtcKit",
-			//     System.IO.Path.Combine(AgoraPath, "AgoraRtcKit.xcframework"), ""));
-			// PublicAdditionalFrameworks.Add(new Framework("aosl",
-			//     System.IO.Path.Combine(AgoraPath, "aosl.xcframework"), ""));
+			// Agora Voice SDK — embedded dynamic frameworks
+			string AgoraPath = System.IO.Path.Combine(ModuleDirectory, "../../ThirdParty/Agora/iOS");
+			PublicAdditionalFrameworks.Add(new Framework("AgoraRtcKit",
+				System.IO.Path.Combine(AgoraPath, "AgoraRtcKit.embeddedframework.zip"), "", true));
+			PublicAdditionalFrameworks.Add(new Framework("aosl",
+				System.IO.Path.Combine(AgoraPath, "aosl.embeddedframework.zip"), "", true));
 		}
 
 		DynamicallyLoadedModuleNames.AddRange(new string[]
