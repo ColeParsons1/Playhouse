@@ -146,6 +146,16 @@ if [ "$BUILD" = true ]; then
         security cms -D -i "$DIST_PROFILE" 2>/dev/null | \
             plutil -extract Entitlements xml1 -o "$ENTITLEMENTS_FILE" -
 
+        # Re-sign embedded frameworks first (Agora SDK etc.)
+        if [ -d "$APP_FILE/Frameworks" ]; then
+            for FW in "$APP_FILE/Frameworks"/*.framework; do
+                echo "       Signing framework: $(basename $FW)"
+                /usr/bin/codesign --force --sign "$DIST_IDENTITY" \
+                    --timestamp=none \
+                    "$FW"
+            done
+        fi
+
         # Re-sign with distribution identity
         /usr/bin/codesign --force --sign "$DIST_IDENTITY" \
             --entitlements "$ENTITLEMENTS_FILE" \

@@ -8,13 +8,30 @@
 @end
 @implementation PHCAgoraDelegate
 - (void)rtcEngine:(AgoraRtcEngineKit *)engine didJoinChannel:(NSString *)channel withUid:(NSUInteger)uid elapsed:(NSInteger)elapsed {
-	UE_LOG(LogPlayhouseCity, Log, TEXT("Agora: Joined channel, uid=%lu"), (unsigned long)uid);
+	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora: SUCCESS joined channel '%s', uid=%lu, elapsed=%ldms"),
+		*FString(channel), (unsigned long)uid, (long)elapsed);
 }
 - (void)rtcEngine:(AgoraRtcEngineKit *)engine didJoinedOfUid:(NSUInteger)uid elapsed:(NSInteger)elapsed {
-	UE_LOG(LogPlayhouseCity, Log, TEXT("Agora: Remote user joined, uid=%lu"), (unsigned long)uid);
+	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora: Remote user JOINED, uid=%lu"), (unsigned long)uid);
 }
 - (void)rtcEngine:(AgoraRtcEngineKit *)engine didOfflineOfUid:(NSUInteger)uid reason:(AgoraUserOfflineReason)reason {
-	UE_LOG(LogPlayhouseCity, Log, TEXT("Agora: Remote user left, uid=%lu"), (unsigned long)uid);
+	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora: Remote user LEFT, uid=%lu reason=%d"), (unsigned long)uid, (int)reason);
+}
+- (void)rtcEngine:(AgoraRtcEngineKit *)engine didOccurError:(AgoraErrorCode)errorCode {
+	UE_LOG(LogPlayhouseCity, Error, TEXT("Agora ERROR: code=%d"), (int)errorCode);
+}
+- (void)rtcEngine:(AgoraRtcEngineKit *)engine didOccurWarning:(AgoraWarningCode)warningCode {
+	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora WARNING: code=%d"), (int)warningCode);
+}
+- (void)rtcEngine:(AgoraRtcEngineKit *)engine remoteAudioStateChangedOfUid:(NSUInteger)uid state:(AgoraAudioRemoteState)state reason:(AgoraAudioRemoteReason)reason elapsed:(NSInteger)elapsed {
+	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora: Remote audio uid=%lu state=%d reason=%d"), (unsigned long)uid, (int)state, (int)reason);
+}
+- (void)rtcEngine:(AgoraRtcEngineKit *)engine reportAudioVolumeIndicationOfSpeakers:(NSArray<AgoraRtcAudioVolumeInfo *> *)speakers totalVolume:(NSInteger)totalVolume {
+	for (AgoraRtcAudioVolumeInfo* info in speakers) {
+		if (info.uid != 0) {
+			UE_LOG(LogPlayhouseCity, Log, TEXT("Agora: Remote speaker uid=%lu vol=%ld"), (unsigned long)info.uid, (long)info.volume);
+		}
+	}
 }
 @end
 
@@ -32,6 +49,9 @@ void FAgoraVoiceManager::Initialize(const FString& AppId) {
 	[GRtcEngine disableVideo];
 	[GRtcEngine setAudioProfile:AgoraAudioProfileDefault];
 	[GRtcEngine setAudioScenario:AgoraAudioScenarioChatRoom];
+	[GRtcEngine setDefaultAudioRouteToSpeakerphone:YES];
+	[GRtcEngine setEnableSpeakerphone:YES];
+	[GRtcEngine enableAudioVolumeIndication:2000 smooth:3 reportVad:YES];
 	AgoraHandle = (__bridge void*)GRtcEngine;
 	bInitialized = true;
 	UE_LOG(LogPlayhouseCity, Log, TEXT("Agora Voice initialized"));

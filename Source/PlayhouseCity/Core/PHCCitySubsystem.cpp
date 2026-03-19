@@ -3808,7 +3808,7 @@ void UPHCCitySubsystem::UpdateGrassInstances(const FVector& PlayerLoc)
 
 	// PUBG-density grass: thick carpet of tall blades
 	const float Radius = 12000.f;
-	const int32 TotalBlades = 15000;
+	const int32 TotalBlades = 8000;
 	FRandomStream GrassRand(FMath::FloorToInt(PlayerLoc.X * 0.01f) * 1000 + FMath::FloorToInt(PlayerLoc.Y * 0.01f));
 
 	auto ShouldSkipZone = [](float GX, float GY) -> bool
@@ -4108,7 +4108,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 		if (TW && CylinderMesh && SphereMesh && ColorMaterial)
 		{
 			FRandomStream ForestRand(88888);
-			const int32 NumForestTrees = 1600;
+			const int32 NumForestTrees = 800;
 			int32 SpawnedCount = 0;
 
 			// Define cluster centers for natural grouping (like PUBG forest patches)
@@ -9734,7 +9734,7 @@ void UPHCCitySubsystem::SpawnCloudLayer()
 
 	// Spawn 25 cumulus cloud clusters at varying positions/heights
 	// Each cloud = 5-10 overlapping flattened spheres forming a puffy mass
-	const int32 NumClouds = 50;
+	const int32 NumClouds = 30;
 	int32 CloudCompIdx = 0;
 
 	for (int32 Ci = 0; Ci < NumClouds; ++Ci)
