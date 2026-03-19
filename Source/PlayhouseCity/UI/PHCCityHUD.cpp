@@ -4,6 +4,7 @@
 #include "UI/PHCMainHUD.h"
 #include "Core/PHCGameInstance.h"
 #include "Voice/AgoraVoiceManager.h"
+#include "TimerManager.h"
 #include "GameFramework/GameStateBase.h"
 #include "Core/PHCPlayerController.h"
 #include "Player/PHCCityCharacter.h"
@@ -4152,18 +4153,47 @@ void UPHCCityHUD::OnVoiceMuteClicked()
 	UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(this);
 	if (GI)
 	{
+		FAgoraVoiceManager& Agora = FAgoraVoiceManager::Get();
+
 		// First press: init Agora and join channel
-		if (!GI->bVoiceMuted && !FAgoraVoiceManager::Get().IsInChannel())
+		if (!Agora.IsInChannel())
 		{
 			GI->EnableVoiceChat();
+			// Show debug status
+			if (VoiceMuteLabel)
+			{
+				FString Status = FString::Printf(TEXT("JOINING... init=%d ch=%d"),
+					Agora.IsInChannel() ? 1 : 0, Agora.IsMuted() ? 1 : 0);
+				VoiceMuteLabel->SetText(FText::FromString(Status));
+			}
+
+			// Delayed status update after Agora has time to connect
+			if (GetWorld())
+			{
+				FTimerHandle DebugTimer;
+				TWeakObjectPtr<UTextBlock> WeakLabel = VoiceMuteLabel;
+				GetWorld()->GetTimerManager().SetTimer(DebugTimer, [WeakLabel, &Agora]()
+				{
+					if (WeakLabel.IsValid())
+					{
+						FString S = FString::Printf(TEXT("ch=%d mute=%d"),
+							Agora.IsInChannel() ? 1 : 0, Agora.IsMuted() ? 1 : 0);
+						WeakLabel->SetText(FText::FromString(S));
+					}
+				}, 3.0f, false);
+			}
+			return;
 		}
-		else
-		{
-			GI->ToggleVoiceMute();
-		}
+
+		// Subsequent presses: toggle mute
+		GI->ToggleVoiceMute();
+
 		if (VoiceMuteLabel)
 		{
-			VoiceMuteLabel->SetText(FText::FromString(GI->bVoiceMuted ? TEXT("MIC OFF") : TEXT("MIC ON")));
+			FString DebugText = FString::Printf(TEXT("%s ch=%d"),
+				GI->bVoiceMuted ? TEXT("MUTED") : TEXT("LIVE"),
+				Agora.IsInChannel() ? 1 : 0);
+			VoiceMuteLabel->SetText(FText::FromString(DebugText));
 		}
 		if (VoiceMuteButton)
 		{
