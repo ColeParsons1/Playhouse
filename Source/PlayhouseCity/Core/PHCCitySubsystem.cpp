@@ -539,8 +539,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			float AngleOff = float(Ci % 5) * 0.2f - 0.4f; // slight Y variation
 			CA->AddActorWorldOffset(FVector(BaseDrift * SpeedMul, BaseDrift * AngleOff, 0.f));
 		}
-	// Cloud day/night color
-		if (CloudMIDs.Num() > 0)
+	// Cloud day/night color (skip while tripping — clouds use trip sky material)
+		if (CloudMIDs.Num() > 0 && !bCloudTripping)
 		{
 			const float NightFactor = FMath::Max(0.f, -SunSine);
 			const float DawnDuskFactor = 1.f - FMath::Abs(SunSine);
@@ -1786,6 +1786,43 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 				WaterMIDs.Empty();
 			}
 
+			// Restore cloud materials to normal
+			if (bCloudTripping)
+			{
+				bCloudTripping = false;
+				for (int32 Ci = 0; Ci < CloudActors.Num(); ++Ci)
+				{
+					AActor* CA = CloudActors[Ci];
+					if (!CA) continue;
+					TArray<UStaticMeshComponent*> Meshes;
+					CA->GetComponents<UStaticMeshComponent>(Meshes);
+					for (auto* MC : Meshes)
+					{
+						if (!MC) continue;
+						// Re-apply a normal cloud MID from the original list
+						int32 MIDIdx = FMath::Min(Ci, CloudMIDs.Num() - 1);
+						if (CloudMIDs.IsValidIndex(MIDIdx) && CloudMIDs[MIDIdx])
+						{
+							MC->SetMaterial(0, CloudMIDs[MIDIdx]);
+						}
+					}
+				}
+				CloudTripMIDs.Empty();
+			}
+
+			// Restore grass materials to normal
+			if (bGrassTripping)
+			{
+				bGrassTripping = false;
+				for (int32 Gi = 0; Gi < GrassHISMs.Num() && Gi < GrassOriginalMIDs.Num(); ++Gi)
+				{
+					if (GrassHISMs[Gi] && GrassOriginalMIDs[Gi])
+					{
+						GrassHISMs[Gi]->SetMaterial(0, GrassOriginalMIDs[Gi]);
+					}
+				}
+			}
+
 			// Restore sky visibility
 			if (StarfieldActor) StarfieldActor->SetActorHiddenInGame(false);
 			if (CloudLayerActor) CloudLayerActor->SetActorHiddenInGame(false);
@@ -2022,6 +2059,77 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 										WaterMIDs.Add(TripWM);
 									}
 								}
+							}
+						}
+					}
+
+					// Swap cloud materials to trip sky
+					if (TripSkyMaterial && !bCloudTripping && CloudMIDs.Num() > 0)
+					{
+						bCloudTripping = true;
+						CloudTripMIDs.Empty();
+						for (int32 Ci = 0; Ci < CloudMIDs.Num(); ++Ci)
+						{
+							UMaterialInstanceDynamic* OrigMID = CloudMIDs[Ci];
+							if (!OrigMID) continue;
+							// Find the mesh component this MID is on
+							// Create a trip MID for each cloud sphere
+							UMaterialInstanceDynamic* CTripMID = UMaterialInstanceDynamic::Create(TripSkyMaterial, this);
+							if (CTripMID)
+							{
+								// Each cloud gets slightly different params for variety
+								float SceneIdx = (float)(Ci % 8) / 8.f;
+								CTripMID->SetScalarParameterValue(TEXT("Bass"), 0.3f + SceneIdx * 0.2f);
+								CTripMID->SetScalarParameterValue(TEXT("High"), 0.2f + SceneIdx * 0.15f);
+								CTripMID->SetScalarParameterValue(TEXT("Level"), 0.5f);
+								CTripMID->SetScalarParameterValue(TEXT("Mid"), 0.3f + SceneIdx * 0.1f);
+								CTripMID->SetScalarParameterValue(TEXT("SceneIndex"), SceneIdx);
+								CloudTripMIDs.Add(CTripMID);
+							}
+						}
+						// Apply trip materials to cloud mesh components
+						for (AActor* CA : CloudActors)
+						{
+							if (!CA) continue;
+							TArray<UStaticMeshComponent*> Meshes;
+							CA->GetComponents<UStaticMeshComponent>(Meshes);
+							for (auto* MC : Meshes)
+							{
+								if (!MC) continue;
+								int32 Idx = CloudTripMIDs.Num() > 0 ? FMath::RandRange(0, CloudTripMIDs.Num() - 1) : 0;
+								if (CloudTripMIDs.IsValidIndex(Idx))
+								{
+									MC->SetMaterial(0, CloudTripMIDs[Idx]);
+								}
+							}
+						}
+					}
+
+					// Swap grass to tripsky pattern (keep grass green color, just change pattern)
+					if (TripSkyMaterial && !bGrassTripping && GrassHISMs.Num() > 0)
+					{
+						bGrassTripping = true;
+						for (int32 Gi = 0; Gi < GrassHISMs.Num(); ++Gi)
+						{
+							UHierarchicalInstancedStaticMeshComponent* HISM = GrassHISMs[Gi];
+							if (!HISM) continue;
+							UMaterialInstanceDynamic* TripGrass = UMaterialInstanceDynamic::Create(TripSkyMaterial, HISM);
+							if (TripGrass)
+							{
+								// Use tripsky pattern but tint it with the original grass color
+								FLinearColor GrassCol = GrassOriginalMIDs.IsValidIndex(Gi) ?
+									FLinearColor(0.15f, 0.35f, 0.08f) : FLinearColor(0.15f, 0.35f, 0.08f);
+								if (GrassOriginalMIDs.IsValidIndex(Gi) && GrassOriginalMIDs[Gi])
+								{
+									GrassOriginalMIDs[Gi]->GetVectorParameterValue(TEXT("BaseColor"), GrassCol);
+								}
+								float SceneIdx = (float)(Gi) / 6.f;
+								TripGrass->SetScalarParameterValue(TEXT("Bass"), 0.3f);
+								TripGrass->SetScalarParameterValue(TEXT("High"), 0.25f);
+								TripGrass->SetScalarParameterValue(TEXT("Level"), 0.4f);
+								TripGrass->SetScalarParameterValue(TEXT("Mid"), 0.3f);
+								TripGrass->SetScalarParameterValue(TEXT("SceneIndex"), SceneIdx);
+								HISM->SetMaterial(0, TripGrass);
 							}
 						}
 					}
@@ -3682,6 +3790,7 @@ void UPHCCitySubsystem::SpawnGrassSystem()
 	};
 
 	GrassHISMs.Empty();
+	GrassOriginalMIDs.Empty();
 	for (int32 Gi = 0; Gi < 6; ++Gi)
 	{
 		FString HName = FString::Printf(TEXT("GrassHISM_%d"), Gi);
@@ -3702,6 +3811,7 @@ void UPHCCitySubsystem::SpawnGrassSystem()
 				Mat->SetVectorParameterValue(TEXT("BaseColor"), GrassColors[Gi]);
 				Mat->SetScalarParameterValue(TEXT("Roughness"), 0.82f);
 				HISM->SetMaterial(0, Mat);
+				GrassOriginalMIDs.Add(Mat);
 			}
 		}
 

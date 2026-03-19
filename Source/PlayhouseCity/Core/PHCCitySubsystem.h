@@ -216,6 +216,10 @@ public:
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> WaterOriginalMIDs;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> RiverTripMID;
 	bool bWaterTripping = false;
+	bool bCloudTripping = false;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> CloudTripMIDs;
+	bool bGrassTripping = false;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> GrassOriginalMIDs;
 
 	bool bTripHallucinationsSpawned = false;
 
