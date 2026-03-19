@@ -96,11 +96,13 @@ void APHCPlayerController::BeginPlay()
 	// Ensure the cursor is visible and input is in UI mode.
 	SetUIOnlyInputMode();
 
-	// Enable voice if in multiplayer
-	if (GetWorld() && GetWorld()->GetNetMode() != NM_Standalone)
+	// Initialize Agora global voice chat (delayed to here so iOS audio is ready)
 	{
-		StartTalking();
-		UE_LOG(LogPlayhouseCity, Warning, TEXT("PHCPlayerController: Voice enabled (multiplayer detected)"));
+		UPHCGameInstance* VoiceGI = UPHCGameInstance::GetPHCGameInstance(this);
+		if (VoiceGI && !VoiceGI->bVoiceMuted)
+		{
+			VoiceGI->EnableVoiceChat();
+		}
 	}
 
 	// Bind to GameInstance delegates so we react to login / logout from anywhere.

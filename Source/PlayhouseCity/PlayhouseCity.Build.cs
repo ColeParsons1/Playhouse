@@ -44,18 +44,31 @@ public class PlayhouseCity : ModuleRules
 		{
 		});
 
+		// Exclude iOS-only Objective-C++ files on non-iOS platforms
+		if (Target.Platform != UnrealTargetPlatform.IOS)
+		{
+			var iosDir = System.IO.Path.Combine(ModuleDirectory, "Voice/IOS");
+			if (System.IO.Directory.Exists(iosDir))
+			{
+				foreach (var f in System.IO.Directory.GetFiles(iosDir, "*.mm"))
+				{
+					PublicDefinitions.Add("AGORA_VOICE_DISABLED=1");
+				}
+			}
+		}
+
 		if (Target.Platform == UnrealTargetPlatform.IOS)
 		{
 			PublicFrameworks.Add("AuthenticationServices");
 			PublicFrameworks.Add("UserNotifications");
 			PublicFrameworks.Add("AVFoundation");
 
-			// Agora Voice SDK
-			string AgoraPath = System.IO.Path.Combine(ModuleDirectory, "../../ThirdParty/Agora/iOS");
-			PublicAdditionalFrameworks.Add(new Framework("AgoraRtcKit",
-				System.IO.Path.Combine(AgoraPath, "AgoraRtcKit.xcframework"), ""));
-			PublicAdditionalFrameworks.Add(new Framework("aosl",
-				System.IO.Path.Combine(AgoraPath, "aosl.xcframework"), ""));
+			// Agora Voice SDK — disabled pending xcframework embedding fix
+			// string AgoraPath = System.IO.Path.Combine(ModuleDirectory, "../../ThirdParty/Agora/iOS");
+			// PublicAdditionalFrameworks.Add(new Framework("AgoraRtcKit",
+			//     System.IO.Path.Combine(AgoraPath, "AgoraRtcKit.xcframework"), ""));
+			// PublicAdditionalFrameworks.Add(new Framework("aosl",
+			//     System.IO.Path.Combine(AgoraPath, "aosl.xcframework"), ""));
 		}
 
 		DynamicallyLoadedModuleNames.AddRange(new string[]

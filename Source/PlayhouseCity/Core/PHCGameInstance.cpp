@@ -8,6 +8,7 @@
 #include "Engine/NetDriver.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/NetworkVersion.h"
+#include "TimerManager.h"
 
 // Subsystem headers -- uncomment each as the corresponding class is created.
 // #include "Network/PHCHttpClient.h"
@@ -63,8 +64,8 @@ void UPHCGameInstance::Init()
 
 	SetupPushNotifications();
 
-	// Initialize Agora global voice — all players join the same channel
-	EnableVoiceChat();
+	// Agora voice is initialized later when player enters the world
+	// (not here — iOS audio session isn't ready during Init)
 }
 
 void UPHCGameInstance::Shutdown()
@@ -387,22 +388,14 @@ void UPHCGameInstance::DestroySubsystems()
 
 void UPHCGameInstance::EnableVoiceChat()
 {
-	FAgoraVoiceManager& Agora = FAgoraVoiceManager::Get();
-	if (!Agora.IsInChannel())
-	{
-		Agora.Initialize(TEXT("REDACTED_AGORA_APP_ID"));
-		Agora.JoinChannel(TEXT("PlayhouseCity_Global"));
-	}
+	// Agora disabled temporarily — framework embedding issue on iOS
 	bVoiceMuted = false;
-	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice chat enabled (Agora)"));
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice chat: Agora disabled (pending framework fix)"));
 }
 
 void UPHCGameInstance::DisableVoiceChat()
 {
-	FAgoraVoiceManager& Agora = FAgoraVoiceManager::Get();
-	Agora.LeaveChannel();
 	bVoiceMuted = false;
-	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice chat disabled (Agora)"));
 }
 
 void UPHCGameInstance::ToggleVoiceMute()
@@ -413,6 +406,5 @@ void UPHCGameInstance::ToggleVoiceMute()
 void UPHCGameInstance::SetVoiceMuted(bool bMute)
 {
 	bVoiceMuted = bMute;
-	FAgoraVoiceManager::Get().SetMuted(bMute);
 	UE_LOG(LogPlayhouseCity, Log, TEXT("Voice mute: %s"), bMute ? TEXT("ON") : TEXT("OFF"));
 }
