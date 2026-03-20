@@ -31,8 +31,17 @@ public:
 	/** Check if muted. */
 	bool IsMuted() const { return bMuted; }
 
+	/** Number of remote users currently in channel. */
+	int32 GetRemoteUserCount() const { return RemoteUserCount; }
+
+	/** Last Agora error code (0 = none). */
+	int32 GetLastError() const { return LastErrorCode; }
+
 	/** Shutdown and release Agora resources. */
 	void Shutdown();
+
+	int32 RemoteUserCount = 0;
+	int32 LastErrorCode = 0;
 
 private:
 	FAgoraVoiceManager() = default;

@@ -4176,8 +4176,10 @@ void UPHCCityHUD::OnVoiceMuteClicked()
 				{
 					if (WeakLabel.IsValid())
 					{
-						FString S = FString::Printf(TEXT("ch=%d mute=%d"),
-							Agora.IsInChannel() ? 1 : 0, Agora.IsMuted() ? 1 : 0);
+						FString S = FString::Printf(TEXT("ch=%d r=%d e=%d"),
+							Agora.IsInChannel() ? 1 : 0,
+							Agora.GetRemoteUserCount(),
+							Agora.GetLastError());
 						WeakLabel->SetText(FText::FromString(S));
 					}
 				}, 3.0f, false);
@@ -4190,9 +4192,11 @@ void UPHCCityHUD::OnVoiceMuteClicked()
 
 		if (VoiceMuteLabel)
 		{
-			FString DebugText = FString::Printf(TEXT("%s ch=%d"),
+			FString DebugText = FString::Printf(TEXT("%s ch=%d r=%d e=%d"),
 				GI->bVoiceMuted ? TEXT("MUTED") : TEXT("LIVE"),
-				Agora.IsInChannel() ? 1 : 0);
+				Agora.IsInChannel() ? 1 : 0,
+				Agora.GetRemoteUserCount(),
+				Agora.GetLastError());
 			VoiceMuteLabel->SetText(FText::FromString(DebugText));
 		}
 		if (VoiceMuteButton)

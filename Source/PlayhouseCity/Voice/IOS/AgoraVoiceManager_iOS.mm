@@ -13,12 +13,15 @@
 }
 - (void)rtcEngine:(AgoraRtcEngineKit *)engine didJoinedOfUid:(NSUInteger)uid elapsed:(NSInteger)elapsed {
 	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora: Remote user JOINED, uid=%lu"), (unsigned long)uid);
+	FAgoraVoiceManager::Get().RemoteUserCount++;
 }
 - (void)rtcEngine:(AgoraRtcEngineKit *)engine didOfflineOfUid:(NSUInteger)uid reason:(AgoraUserOfflineReason)reason {
 	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora: Remote user LEFT, uid=%lu reason=%d"), (unsigned long)uid, (int)reason);
+	FAgoraVoiceManager::Get().RemoteUserCount = FMath::Max(0, FAgoraVoiceManager::Get().RemoteUserCount - 1);
 }
 - (void)rtcEngine:(AgoraRtcEngineKit *)engine didOccurError:(AgoraErrorCode)errorCode {
 	UE_LOG(LogPlayhouseCity, Error, TEXT("Agora ERROR: code=%d"), (int)errorCode);
+	FAgoraVoiceManager::Get().LastErrorCode = (int32)errorCode;
 }
 - (void)rtcEngine:(AgoraRtcEngineKit *)engine didOccurWarning:(AgoraWarningCode)warningCode {
 	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora WARNING: code=%d"), (int)warningCode);
