@@ -1,6 +1,6 @@
 // Copyright PlayhouseCity. All Rights Reserved.
 // Stub for non-Apple platforms (Linux, Windows, Android)
-#if !PLATFORM_IOS && !PLATFORM_MAC
+#if !PLATFORM_IOS && !PLATFORM_MAC && !defined(AGORA_NATIVE_CPP)
 #include "Voice/AgoraVoiceManager.h"
 #include "PlayhouseCity.h"
 FAgoraVoiceManager& FAgoraVoiceManager::Get() { static FAgoraVoiceManager Instance; return Instance; }

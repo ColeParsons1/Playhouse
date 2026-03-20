@@ -78,6 +78,34 @@ public class PlayhouseCity : ModuleRules
 		if (Target.Platform == UnrealTargetPlatform.Android)
 		{
 			PublicDependencyModuleNames.Add("Launch");
+
+			// Agora C++ SDK for Android
+			PublicDefinitions.Add("AGORA_NATIVE_CPP=1");
+			string AgoraAndroidPath = System.IO.Path.Combine(ModuleDirectory, "../../ThirdParty/Agora/Android");
+			PublicIncludePaths.Add(System.IO.Path.Combine(ModuleDirectory, "../../ThirdParty/Agora/Include"));
+			PublicAdditionalLibraries.Add(System.IO.Path.Combine(AgoraAndroidPath, "arm64-v8a/libagora-rtc-sdk.so"));
+			PublicAdditionalLibraries.Add(System.IO.Path.Combine(AgoraAndroidPath, "arm64-v8a/libagora-fdkaac.so"));
+			PublicAdditionalLibraries.Add(System.IO.Path.Combine(AgoraAndroidPath, "arm64-v8a/libagora-ffmpeg.so"));
+			PublicAdditionalLibraries.Add(System.IO.Path.Combine(AgoraAndroidPath, "arm64-v8a/libagora-soundtouch.so"));
+		}
+
+		if (Target.Platform == UnrealTargetPlatform.Win64)
+		{
+			// Agora C++ SDK for Windows
+			PublicDefinitions.Add("AGORA_NATIVE_CPP=1");
+			string AgoraWinPath = System.IO.Path.Combine(ModuleDirectory, "../../ThirdParty/Agora/Win/x86_64");
+			PublicIncludePaths.Add(System.IO.Path.Combine(ModuleDirectory, "../../ThirdParty/Agora/Include"));
+			PublicAdditionalLibraries.Add(System.IO.Path.Combine(AgoraWinPath, "agora_rtc_sdk.dll.lib"));
+			RuntimeDependencies.Add("$(BinaryOutputDir)/agora_rtc_sdk.dll",
+				System.IO.Path.Combine(AgoraWinPath, "agora_rtc_sdk.dll"));
+			RuntimeDependencies.Add("$(BinaryOutputDir)/libaosl.dll",
+				System.IO.Path.Combine(AgoraWinPath, "libaosl.dll"));
+			RuntimeDependencies.Add("$(BinaryOutputDir)/libagora-fdkaac.dll",
+				System.IO.Path.Combine(AgoraWinPath, "libagora-fdkaac.dll"));
+			RuntimeDependencies.Add("$(BinaryOutputDir)/libagora-ffmpeg.dll",
+				System.IO.Path.Combine(AgoraWinPath, "libagora-ffmpeg.dll"));
+			RuntimeDependencies.Add("$(BinaryOutputDir)/libagora-soundtouch.dll",
+				System.IO.Path.Combine(AgoraWinPath, "libagora-soundtouch.dll"));
 		}
 
 		if (Target.Platform == UnrealTargetPlatform.Mac)
