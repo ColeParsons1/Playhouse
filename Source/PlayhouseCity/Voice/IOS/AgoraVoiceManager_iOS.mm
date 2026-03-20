@@ -63,7 +63,8 @@ void FAgoraVoiceManager::Initialize(const FString& AppId) {
 void FAgoraVoiceManager::JoinChannel(const FString& ChannelName) {
 	if (!bInitialized || bInChannel) return;
 	if (GRtcEngine) {
-		[GRtcEngine joinChannelByToken:nil channelId:[NSString stringWithUTF8String:TCHAR_TO_UTF8(*ChannelName)] info:nil uid:0 joinSuccess:nil];
+		NSString* TempToken = @"REDACTED_AGORA_TEMP_TOKEN";
+		[GRtcEngine joinChannelByToken:TempToken channelId:[NSString stringWithUTF8String:TCHAR_TO_UTF8(*ChannelName)] info:nil uid:0 joinSuccess:nil];
 		bInChannel = true; bMuted = false;
 		UE_LOG(LogPlayhouseCity, Log, TEXT("Agora: Joining channel '%s'"), *ChannelName);
 	}
