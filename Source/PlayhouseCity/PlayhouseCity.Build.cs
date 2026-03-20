@@ -49,17 +49,10 @@ public class PlayhouseCity : ModuleRules
 		{
 		});
 
-		// Exclude iOS-only Objective-C++ files on non-iOS platforms
-		if (Target.Platform != UnrealTargetPlatform.IOS)
+		// Agora voice: .mm files are guarded by PLATFORM_IOS / PLATFORM_MAC internally
+		if (Target.Platform != UnrealTargetPlatform.IOS && Target.Platform != UnrealTargetPlatform.Mac)
 		{
-			var iosDir = System.IO.Path.Combine(ModuleDirectory, "Voice/IOS");
-			if (System.IO.Directory.Exists(iosDir))
-			{
-				foreach (var f in System.IO.Directory.GetFiles(iosDir, "*.mm"))
-				{
-					PublicDefinitions.Add("AGORA_VOICE_DISABLED=1");
-				}
-			}
+			PublicDefinitions.Add("AGORA_VOICE_DISABLED=1");
 		}
 
 		if (Target.Platform == UnrealTargetPlatform.IOS)
@@ -85,6 +78,29 @@ public class PlayhouseCity : ModuleRules
 		if (Target.Platform == UnrealTargetPlatform.Android)
 		{
 			PublicDependencyModuleNames.Add("Launch");
+		}
+
+		if (Target.Platform == UnrealTargetPlatform.Mac)
+		{
+			PublicFrameworks.Add("AVFoundation");
+			PublicFrameworks.Add("CoreAudio");
+			PublicFrameworks.Add("AudioToolbox");
+
+			// Agora Voice SDK for macOS
+			string AgoraMacPath = System.IO.Path.Combine(ModuleDirectory, "../../ThirdParty/Agora/Mac");
+			PublicFrameworks.Add(System.IO.Path.Combine(AgoraMacPath, "AgoraRtcKit.framework"));
+			PublicFrameworks.Add(System.IO.Path.Combine(AgoraMacPath, "Agorafdkaac.framework"));
+			PublicFrameworks.Add(System.IO.Path.Combine(AgoraMacPath, "Agoraffmpeg.framework"));
+
+			// Add header search path so #import <AgoraRtcKit/...> resolves
+			PublicSystemLibraryPaths.Add(AgoraMacPath);
+			PublicIncludePaths.Add(AgoraMacPath + "/AgoraRtcKit.framework/Headers");
+
+			// Add rpath so frameworks are found at runtime
+			string AbsAgoraMacPath = System.IO.Path.GetFullPath(AgoraMacPath);
+			RuntimeDependencies.Add(System.IO.Path.Combine(AbsAgoraMacPath, "AgoraRtcKit.framework/Versions/A/AgoraRtcKit"));
+			RuntimeDependencies.Add(System.IO.Path.Combine(AbsAgoraMacPath, "Agorafdkaac.framework/Versions/A/Agorafdkaac"));
+			RuntimeDependencies.Add(System.IO.Path.Combine(AbsAgoraMacPath, "Agoraffmpeg.framework/Versions/A/Agoraffmpeg"));
 		}
 
 		DynamicallyLoadedModuleNames.AddRange(new string[]

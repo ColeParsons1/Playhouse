@@ -1,8 +1,15 @@
 // Copyright PlayhouseCity. All Rights Reserved.
-#if PLATFORM_IOS
+// Unified Agora voice implementation: iOS, Mac, and stub for other platforms.
+
 #include "Voice/AgoraVoiceManager.h"
 #include "PlayhouseCity.h"
+
+#if PLATFORM_IOS || PLATFORM_MAC
+#if PLATFORM_IOS
 #import <AgoraRtcKit/AgoraRtcEngineKit.h>
+#else
+#import "AgoraRtcEngineKit.h"
+#endif
 
 @interface PHCAgoraDelegate : NSObject <AgoraRtcEngineDelegate>
 @end
@@ -26,9 +33,6 @@
 - (void)rtcEngine:(AgoraRtcEngineKit *)engine didOccurWarning:(AgoraWarningCode)warningCode {
 	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora WARNING: code=%d"), (int)warningCode);
 }
-- (void)rtcEngine:(AgoraRtcEngineKit *)engine remoteAudioStateChangedOfUid:(NSUInteger)uid state:(AgoraAudioRemoteState)state reason:(AgoraAudioRemoteReason)reason elapsed:(NSInteger)elapsed {
-	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora: Remote audio uid=%lu state=%d reason=%d"), (unsigned long)uid, (int)state, (int)reason);
-}
 - (void)rtcEngine:(AgoraRtcEngineKit *)engine reportAudioVolumeIndicationOfSpeakers:(NSArray<AgoraRtcAudioVolumeInfo *> *)speakers totalVolume:(NSInteger)totalVolume {
 	for (AgoraRtcAudioVolumeInfo* info in speakers) {
 		if (info.uid != 0) {
@@ -46,18 +50,25 @@ FAgoraVoiceManager& FAgoraVoiceManager::Get() { static FAgoraVoiceManager Instan
 void FAgoraVoiceManager::Initialize(const FString& AppId) {
 	if (bInitialized) return;
 	GDelegate = [[PHCAgoraDelegate alloc] init];
+	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora: creating engine..."));
 	GRtcEngine = [AgoraRtcEngineKit sharedEngineWithAppId:[NSString stringWithUTF8String:TCHAR_TO_UTF8(*AppId)] delegate:GDelegate];
+	if (!GRtcEngine) {
+		UE_LOG(LogPlayhouseCity, Error, TEXT("Agora: sharedEngineWithAppId FAILED"));
+		return;
+	}
 	[GRtcEngine setChannelProfile:AgoraChannelProfileCommunication];
 	[GRtcEngine enableAudio];
 	[GRtcEngine disableVideo];
 	[GRtcEngine setAudioProfile:AgoraAudioProfileDefault];
-	[GRtcEngine setAudioScenario:AgoraAudioScenarioChatRoom];
+	[GRtcEngine setAudioScenario:AgoraAudioScenarioGameStreaming];
+#if PLATFORM_IOS
 	[GRtcEngine setDefaultAudioRouteToSpeakerphone:YES];
 	[GRtcEngine setEnableSpeakerphone:YES];
+#endif
 	[GRtcEngine enableAudioVolumeIndication:2000 smooth:3 reportVad:YES];
 	AgoraHandle = (__bridge void*)GRtcEngine;
 	bInitialized = true;
-	UE_LOG(LogPlayhouseCity, Log, TEXT("Agora Voice initialized"));
+	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora Voice initialized - SUCCESS"));
 }
 
 void FAgoraVoiceManager::JoinChannel(const FString& ChannelName) {
@@ -66,7 +77,7 @@ void FAgoraVoiceManager::JoinChannel(const FString& ChannelName) {
 		NSString* TempToken = @"REDACTED_AGORA_TEMP_TOKEN";
 		[GRtcEngine joinChannelByToken:TempToken channelId:[NSString stringWithUTF8String:TCHAR_TO_UTF8(*ChannelName)] info:nil uid:0 joinSuccess:nil];
 		bInChannel = true; bMuted = false;
-		UE_LOG(LogPlayhouseCity, Log, TEXT("Agora: Joining channel '%s'"), *ChannelName);
+		UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora: Joining channel '%s'"), *ChannelName);
 	}
 }
 
@@ -86,4 +97,13 @@ void FAgoraVoiceManager::Shutdown() {
 	if (GRtcEngine) { [GRtcEngine leaveChannel:nil]; [AgoraRtcEngineKit destroy]; GRtcEngine = nil; GDelegate = nil; }
 	AgoraHandle = nullptr; bInitialized = false; bInChannel = false;
 }
+
+#else
+// Stub for non-Apple platforms (Linux, Windows)
+FAgoraVoiceManager& FAgoraVoiceManager::Get() { static FAgoraVoiceManager Instance; return Instance; }
+void FAgoraVoiceManager::Initialize(const FString& AppId) { UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora: not available on this platform")); }
+void FAgoraVoiceManager::JoinChannel(const FString& ChannelName) {}
+void FAgoraVoiceManager::LeaveChannel() {}
+void FAgoraVoiceManager::SetMuted(bool bMute) { bMuted = bMute; }
+void FAgoraVoiceManager::Shutdown() {}
 #endif
