@@ -98,6 +98,12 @@ void APHCPlayerController::BeginPlay()
 
 	// Agora voice: user-initiated via MIC button (not auto-join)
 
+#if WITH_EDITOR
+	// Editor-only: skip auth and jump straight into the 3D world so we can
+	// preview the city without needing a backend connection.
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCPlayerController -- Editor mode: skipping auth, entering world mode directly."));
+	EnterWorldMode();
+#else
 	// Bind to GameInstance delegates so we react to login / logout from anywhere.
 	UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(this);
 	if (GI)
@@ -142,6 +148,7 @@ void APHCPlayerController::BeginPlay()
 			TEXT("PHCPlayerController::BeginPlay -- Could not retrieve PHCGameInstance. Defaulting to auth screen."));
 		ShowAuthScreen();
 	}
+#endif
 }
 
 void APHCPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -305,7 +312,8 @@ void APHCPlayerController::EnterWorldMode()
 
 	SetGameAndUIInputMode();
 
-	// Auto-connect to the dedicated server.
+	// Auto-connect to the dedicated server (skip in editor — local preview only).
+#if !WITH_EDITOR
 	if (UPHCGameInstance* GI = UPHCGameInstance::GetPHCGameInstance(this))
 	{
 		if (!GI->bInMultiplayerSession)
@@ -319,6 +327,7 @@ void APHCPlayerController::EnterWorldMode()
 			ServerSendPlayerProfile(GI->LocalPlayerProfile);
 		}
 	}
+#endif // !WITH_EDITOR
 
 	// If city generation already finished (OnWorldBeginPlay ran before us),
 	// hide the loading screen after a brief delay so the first frame renders.

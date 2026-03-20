@@ -237,6 +237,7 @@ private:
 	float NightWindowBrightness = 0.f;
 	float WindowToggleTimer = 0.f;
 	float SkyRecaptureTimer = 0.f;
+	float RiverWaveTimer = 0.f;
 
 public:
 	/** NPC enemies — always visible, chase the player. */

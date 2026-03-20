@@ -171,6 +171,9 @@ public:
 	/** Accumulated movement direction from HandleMove (camera-relative). */
 	FVector PendingMoveInput = FVector::ZeroVector;
 
+	/** Current movement speed fraction (0-1) for smooth acceleration. */
+	float MoveSpeedAlpha = 0.f;
+
 	/** Manual vertical velocity for gravity + jump. */
 	float ManualVelocityZ = 0.f;
 

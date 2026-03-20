@@ -23,6 +23,9 @@
 #include "Misc/CoreDelegates.h"
 #if PLATFORM_IOS
 #import <UserNotifications/UserNotifications.h>
+#elif PLATFORM_ANDROID
+#include "Android/AndroidJNI.h"
+#include "Android/AndroidApplication.h"
 #endif
 
 // ---------------------------------------------------------------------------
@@ -58,7 +61,11 @@ void UPHCGameInstance::Init()
 	});
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCGameInstance::Init -- Network version override set to %u."), PHCNetworkVersion);
 
+#if WITH_EDITOR
+	bPendingServerConnect = false; // Editor: generate city immediately, no server travel
+#else
 	bPendingServerConnect = true;
+#endif
 
 	CreateSubsystems();
 
@@ -274,6 +281,12 @@ void UPHCGameInstance::SetupPushNotifications()
 	});
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("SetupPushNotifications -- Requested iOS notification permission."));
+#elif PLATFORM_ANDROID
+	// Android push notifications via Firebase can be added later.
+	// For now, register for remote notifications through UE's delegate system.
+	FCoreDelegates::ApplicationRegisteredForRemoteNotificationsDelegate.AddUObject(
+		this, &UPHCGameInstance::OnRegisteredForRemoteNotifications);
+	UE_LOG(LogPlayhouseCity, Log, TEXT("SetupPushNotifications -- Android push notification setup (pending Firebase integration)."));
 #endif
 }
 
@@ -304,7 +317,13 @@ void UPHCGameInstance::RegisterDeviceTokenWithBackend()
 	TSharedPtr<FJsonObject> Body = MakeShared<FJsonObject>();
 	Body->SetStringField(TEXT("device_token"), APNsDeviceToken);
 	Body->SetNumberField(TEXT("player_id"), LocalPlayerProfile.PlayerId);
+#if PLATFORM_IOS
 	Body->SetStringField(TEXT("platform"), TEXT("ios"));
+#elif PLATFORM_ANDROID
+	Body->SetStringField(TEXT("platform"), TEXT("android"));
+#else
+	Body->SetStringField(TEXT("platform"), TEXT("desktop"));
+#endif
 
 	FString BodyStr;
 	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&BodyStr);

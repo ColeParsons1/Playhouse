@@ -2,7 +2,7 @@
 	"FileVersion": 3,
 	"EngineAssociation": "5.7",
 	"Category": "",
-	"Description": "PlayhouseCity - A multiplayer social gaming platform for iOS",
+	"Description": "PlayhouseCity - A multiplayer social gaming platform for iOS and Android",
 	"Modules": [
 		{
 			"Name": "PlayhouseCity",
@@ -23,7 +23,8 @@
 			"Name": "OnlineSubsystemIOS",
 			"Enabled": true,
 			"SupportedTargetPlatforms": [
-				"IOS"
+				"IOS",
+				"TVOS"
 			]
 		},
 		{

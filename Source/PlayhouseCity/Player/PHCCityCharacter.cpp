@@ -1286,6 +1286,17 @@ void APHCCityCharacter::Tick(float DeltaTime)
 
 	Speed = bJetpackEquipped ? 3576.f : bClimbingGearEquipped ? 1500.f : bRollerBladesEquipped ? (WalkSpeed * 3.f) : (bIsSprinting ? SprintSpeed : WalkSpeed);
 
+	// ---- Smooth acceleration only (instant stop) ------------------------
+	if (!MoveDir.IsNearlyZero())
+	{
+		MoveSpeedAlpha = FMath::FInterpConstantTo(MoveSpeedAlpha, 1.f, DeltaTime, 5.f);
+		Speed *= MoveSpeedAlpha;
+	}
+	else
+	{
+		MoveSpeedAlpha = 0.f; // instant stop — no lingering traces
+	}
+
 	// ---- Jetpack hover mode ---------------------------------------------
 	if (bJetpackEquipped)
 	{
@@ -1555,11 +1566,19 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				}
 				if (bFoundSurface)
 				{
-					bHasBeenGrounded = true;
-					ManualVelocityZ = 0.f;
-					const float GndInterp = bRollerBladesEquipped ? 25.f : 12.f;
-					const float NewZ = FMath::FInterpTo(Pos.Z, BestZ, DeltaTime, GndInterp);
-					SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
+					// Don't clamp to ground while jumping upward
+					if (ManualVelocityZ > 10.f && Pos.Z > BestZ - 5.f)
+					{
+						bHasBeenGrounded = false;
+					}
+					else
+					{
+						bHasBeenGrounded = true;
+						ManualVelocityZ = 0.f;
+						const float GndInterp = bRollerBladesEquipped ? 25.f : 12.f;
+						const float NewZ = FMath::FInterpTo(Pos.Z, BestZ, DeltaTime, GndInterp);
+						SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
+					}
 				}
 			}
 			if (!bFoundSurface && bHasBeenGrounded)

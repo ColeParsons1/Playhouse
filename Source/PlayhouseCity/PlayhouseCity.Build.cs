@@ -10,6 +10,11 @@ public class PlayhouseCity : ModuleRules
 		PrivatePCHHeaderFile = "PlayhouseCity.h";
 		CppStandard = CppStandardVersion.Cpp20;
 
+		// Suppress MSVC warnings treated as errors (project developed on Clang/Mac)
+		UnsafeTypeCastWarningLevel = WarningLevel.Off;
+		bEnableUndefinedIdentifierWarnings = false;
+		ShadowVariableWarningLevel = WarningLevel.Off;
+
 		// Allow subdirectory includes like "Games/Base/PHCMiniGameMode.h"
 		PublicIncludePaths.Add(ModuleDirectory);
 
@@ -75,6 +80,11 @@ public class PlayhouseCity : ModuleRules
 				System.IO.Path.Combine(AgoraPath, "Agorafdkaac.embeddedframework.zip"), "", true));
 			PublicAdditionalFrameworks.Add(new Framework("AgoraSoundTouch",
 				System.IO.Path.Combine(AgoraPath, "AgoraSoundTouch.embeddedframework.zip"), "", true));
+		}
+
+		if (Target.Platform == UnrealTargetPlatform.Android)
+		{
+			PublicDependencyModuleNames.Add("Launch");
 		}
 
 		DynamicallyLoadedModuleNames.AddRange(new string[]

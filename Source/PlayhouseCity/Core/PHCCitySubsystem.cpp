@@ -391,9 +391,9 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		SkyLightComp->SetLightColor(FMath::Lerp(DayTint, NightTint, NightFactor));
 
 		// RecaptureSky is extremely expensive (full cubemap capture).
-		// Throttle to once every 10 seconds to avoid GPU memory exhaustion on mobile.
+		// Throttle to once every 60 seconds (was 10s — too frequent for editor).
 		SkyRecaptureTimer += DeltaTime;
-		if (SkyRecaptureTimer >= 10.f)
+		if (SkyRecaptureTimer >= 60.f)
 		{
 			SkyRecaptureTimer = 0.f;
 			SkyLightComp->RecaptureSky();
@@ -898,9 +898,11 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		}
 	}
 
-	// ---- River wave animation (Gerstner-style ripples) ----
-	if (RiverWaterPMC && RiverWaterBaseVerts.Num() > 0)
+	// ---- River wave animation (Gerstner-style ripples, throttled) ----
+	RiverWaveTimer += DeltaTime;
+	if (RiverWaterPMC && RiverWaterBaseVerts.Num() > 0 && RiverWaveTimer >= 0.1f)
 	{
+		RiverWaveTimer = 0.f;
 		const float GT = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
 		TArray<FVector> AnimVerts;
 		AnimVerts.Reserve(RiverWaterBaseVerts.Num());
@@ -3917,8 +3919,8 @@ void UPHCCitySubsystem::UpdateGrassInstances(const FVector& PlayerLoc)
 	}
 
 	// PUBG-density grass: thick carpet of tall blades
-	const float Radius = 12000.f;
-	const int32 TotalBlades = 8000;
+	const float Radius = 8000.f;
+	const int32 TotalBlades = 5000;
 	FRandomStream GrassRand(FMath::FloorToInt(PlayerLoc.X * 0.01f) * 1000 + FMath::FloorToInt(PlayerLoc.Y * 0.01f));
 
 	auto ShouldSkipZone = [](float GX, float GY) -> bool
@@ -6885,13 +6887,13 @@ void UPHCCitySubsystem::SpawnBuilding(const FVector& Location, const FVector& Si
 		// Pick the two wider faces for more visible windows.
 		if (Size.X >= Size.Y)
 		{
-			WFaces[NumFaces++] = {  0.f,  WExtY + 6.f, true,  Size.X };
-			WFaces[NumFaces++] = {  0.f, -WExtY - 6.f, true,  Size.X };
+			WFaces[NumFaces++] = {  0.f,  (float)(WExtY + 6.f), true,  (float)Size.X };
+			WFaces[NumFaces++] = {  0.f, (float)(-WExtY - 6.f), true,  (float)Size.X };
 		}
 		else
 		{
-			WFaces[NumFaces++] = {  WExtX + 6.f, 0.f, false, Size.Y };
-			WFaces[NumFaces++] = { -WExtX - 6.f, 0.f, false, Size.Y };
+			WFaces[NumFaces++] = {  (float)(WExtX + 6.f), 0.f, false, (float)Size.Y };
+			WFaces[NumFaces++] = { (float)(-WExtX - 6.f), 0.f, false, (float)Size.Y };
 		}
 
 		int32 WinIdx = 0;
