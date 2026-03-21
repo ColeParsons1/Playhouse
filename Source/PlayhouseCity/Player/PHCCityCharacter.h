@@ -11,6 +11,8 @@ class UBoxComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UStaticMeshComponent;
+class USkeletalMeshComponent;
+class UAnimSequence;
 class UInputMappingContext;
 class UInputAction;
 class UPointLightComponent;
@@ -61,9 +63,15 @@ public:
 	UPROPERTY()
 	TObjectPtr<UMaterialInstanceDynamic> ArrowMID;
 
-	// -- Fortnite-Quality Character (45 components) --------------------------
-	// Sphere-based organic body, facial features, overlapping shapes for
-	// smooth silhouette. All /Engine/BasicShapes/ primitives.
+	// -- Mixamo Skeletal Mesh Character ----------------------------------------
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<USkeletalMeshComponent> CharacterSkelMesh;
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> IdleAnim;
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> WalkAnim;
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> RunAnim;
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> JumpAnim;
+	int32 CurrentAnimState = 0; // 0=idle, 1=walk, 2=run, 3=jump
+
+	// -- Legacy body components (hidden, kept for NPC compatibility) ----------
 
 	// Head & Face
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> HeadMesh;

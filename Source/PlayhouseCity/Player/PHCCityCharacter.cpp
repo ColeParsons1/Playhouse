@@ -6,6 +6,9 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Animation/AnimSequence.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
@@ -86,11 +89,18 @@ APHCCityCharacter::APHCCityCharacter()
 	bUseControllerRotationRoll = false;
 
 	// ====================================================================
-	//  Fortnite-Quality Character — 45 components
-	//
-	//  180 UU tall. Root at hips (Z=0 relative). Sphere-based organic body.
-	//  Cube=100³ at scale 1, Cyl=radius 50 h 100, Sphere=radius 50.
-	//  Stylized proportions: slightly large head (~6.5 heads tall).
+	//  Mixamo Skeletal Mesh Character
+	// ====================================================================
+	CharacterSkelMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterSkelMesh"));
+	CharacterSkelMesh->SetupAttachment(RootComponent);
+	CharacterSkelMesh->SetRelativeLocation(FVector(0.f, 0.f, -50.f));
+	CharacterSkelMesh->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
+	CharacterSkelMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CharacterSkelMesh->CastShadow = true;
+	CharacterSkelMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+
+	// ====================================================================
+	//  Legacy 45-component body (hidden — kept for NPC system compatibility)
 	// ====================================================================
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(
@@ -520,6 +530,60 @@ void APHCCityCharacter::BeginPlay()
 				PlayerXP = 0;
 			}
 		}
+	}
+
+	// ---- Mixamo skeletal mesh: load mesh + animations and hide old body ----
+	USkeletalMesh* MixamoMesh = LoadObject<USkeletalMesh>(nullptr,
+		TEXT("/Game/Characters/Mixamo/Ch15_nonPBR.Ch15_nonPBR"));
+	if (MixamoMesh && CharacterSkelMesh)
+	{
+		CharacterSkelMesh->SetSkeletalMeshAsset(MixamoMesh);
+		UE_LOG(LogPlayhouseCity, Warning, TEXT("Mixamo mesh loaded: %s"), *MixamoMesh->GetName());
+	}
+	else
+	{
+		UE_LOG(LogPlayhouseCity, Error, TEXT("Mixamo mesh FAILED to load! MixamoMesh=%d CharacterSkelMesh=%d"),
+			MixamoMesh ? 1 : 0, CharacterSkelMesh ? 1 : 0);
+	}
+
+	IdleAnim = LoadObject<UAnimSequence>(nullptr,
+		TEXT("/Game/Characters/Mixamo/Animations/idle.idle"));
+	WalkAnim = LoadObject<UAnimSequence>(nullptr,
+		TEXT("/Game/Characters/Mixamo/Animations/walking.walking"));
+	RunAnim = LoadObject<UAnimSequence>(nullptr,
+		TEXT("/Game/Characters/Mixamo/Animations/running.running"));
+	JumpAnim = LoadObject<UAnimSequence>(nullptr,
+		TEXT("/Game/Characters/Mixamo/Animations/jumping_up.jumping_up"));
+
+	UE_LOG(LogPlayhouseCity, Warning, TEXT("Mixamo anims: idle=%d walk=%d run=%d jump=%d"),
+		IdleAnim ? 1 : 0, WalkAnim ? 1 : 0, RunAnim ? 1 : 0, JumpAnim ? 1 : 0);
+
+	if (CharacterSkelMesh && CharacterSkelMesh->GetSkeletalMeshAsset() && IdleAnim)
+	{
+		CharacterSkelMesh->PlayAnimation(IdleAnim, true);
+		UE_LOG(LogPlayhouseCity, Log, TEXT("Mixamo character loaded with %d animations"),
+			(IdleAnim ? 1 : 0) + (WalkAnim ? 1 : 0) + (RunAnim ? 1 : 0) + (JumpAnim ? 1 : 0));
+
+		// Hide all old static mesh body parts
+		auto HideOld = [](UStaticMeshComponent* M) { if (M) M->SetVisibility(false); };
+		HideOld(HeadMesh); HideOld(JawMesh); HideOld(NeckMesh);
+		HideOld(LeftEyeWhiteMesh); HideOld(RightEyeWhiteMesh);
+		HideOld(LeftPupilMesh); HideOld(RightPupilMesh);
+		HideOld(NoseMesh); HideOld(MouthMesh);
+		HideOld(LeftEarMesh); HideOld(RightEarMesh);
+		HideOld(LeftBrowMesh); HideOld(RightBrowMesh);
+		HideOld(HairTopMesh); HideOld(HairBackMesh);
+		HideOld(HairSideLMesh); HideOld(HairSideRMesh);
+		HideOld(ChestMesh); HideOld(AbsMesh); HideOld(PelvisMesh);
+		HideOld(CollarMesh); HideOld(BeltMesh); HideOld(BeltBuckleMesh);
+		HideOld(LeftShoulderMesh); HideOld(LeftUpperArmMesh);
+		HideOld(LeftElbowMesh); HideOld(LeftForearmMesh); HideOld(LeftHandMesh);
+		HideOld(RightShoulderMesh); HideOld(RightUpperArmMesh);
+		HideOld(RightElbowMesh); HideOld(RightForearmMesh); HideOld(RightHandMesh);
+		HideOld(LeftThighMesh); HideOld(LeftKneeMesh); HideOld(LeftShinMesh);
+		HideOld(LeftFootMesh); HideOld(LeftToeMesh); HideOld(LeftSoleMesh);
+		HideOld(RightThighMesh); HideOld(RightKneeMesh); HideOld(RightShinMesh);
+		HideOld(RightFootMesh); HideOld(RightToeMesh); HideOld(RightSoleMesh);
 	}
 
 	// ---- PBR Materials — production quality character rendering ----------
@@ -1638,6 +1702,67 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		}
 		const float TargetBlend = bMoving ? 1.f : 0.f;
 		WalkAnimBlend = bJetpackEquipped ? 0.f : FMath::FInterpTo(WalkAnimBlend, TargetBlend, DeltaTime, 8.f);
+
+		// Mixamo animation state machine
+		if (CharacterSkelMesh && CharacterSkelMesh->GetSkeletalMeshAsset())
+		{
+			int32 NewState = 0; // idle
+			if (ManualVelocityZ > 50.f && JumpAnim) NewState = 3; // jumping
+			else if (bMoving && bIsSprinting && RunAnim) NewState = 2; // running
+			else if (bMoving && WalkAnim) NewState = 1; // walking
+
+			if (NewState != CurrentAnimState)
+			{
+				CurrentAnimState = NewState;
+				switch (NewState)
+				{
+					case 0:
+						if (IdleAnim) { CharacterSkelMesh->PlayAnimation(IdleAnim, true); CharacterSkelMesh->SetPlayRate(1.0f); }
+						break;
+					case 1:
+						if (WalkAnim) { CharacterSkelMesh->PlayAnimation(WalkAnim, true); CharacterSkelMesh->SetPlayRate(0.7f); }
+						break;
+					case 2:
+						if (RunAnim) { CharacterSkelMesh->PlayAnimation(RunAnim, true); CharacterSkelMesh->SetPlayRate(1.0f); }
+						break;
+					case 3:
+						if (JumpAnim) { CharacterSkelMesh->PlayAnimation(JumpAnim, false); CharacterSkelMesh->SetPlayRate(1.0f); }
+						break;
+				}
+			}
+
+			// Match animation play rate to actual movement speed
+			// Tune these constants so feet don't slide on the ground
+			if ((CurrentAnimState == 1 || CurrentAnimState == 2) && CharacterSkelMesh->IsPlaying())
+			{
+				// Actual speed based on current movement
+				float ActualSpeed = bIsSprinting ? SprintSpeed : WalkSpeed;
+				ActualSpeed *= MoveSpeedAlpha;
+
+				// Base animation speeds (UU/s the anim was designed for at 1.0 rate)
+				// Walk anim ~150 UU/s at 1x, Run anim ~400 UU/s at 1x
+				// Adjust these if feet still slide
+				const float WalkAnimBaseSpeed = 200.f;
+				const float RunAnimBaseSpeed = 500.f;
+
+				float BaseSpeed = (CurrentAnimState == 1) ? WalkAnimBaseSpeed : RunAnimBaseSpeed;
+				float DesiredRate = FMath::Clamp(ActualSpeed / BaseSpeed, 0.2f, 2.5f);
+				CharacterSkelMesh->SetPlayRate(DesiredRate);
+
+				// Cross-fade: skip end of anim to avoid hard loop snap
+				float Pos = CharacterSkelMesh->GetPosition();
+				UAnimSequence* CurAnim = (CurrentAnimState == 1) ? WalkAnim : RunAnim;
+				if (CurAnim)
+				{
+					float Length = CurAnim->GetPlayLength();
+					float FadeZone = Length * 0.12f;
+					if (Pos > Length - FadeZone)
+					{
+						CharacterSkelMesh->SetPosition(FadeZone * 0.3f);
+					}
+				}
+			}
+		}
 
 		if (bMoving)
 		{
