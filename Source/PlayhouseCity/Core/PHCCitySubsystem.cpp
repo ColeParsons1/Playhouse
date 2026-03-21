@@ -1773,7 +1773,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 								UMaterialInstanceDynamic* WR = UMaterialInstanceDynamic::Create(GlassMaterial, MC);
 								if (WR)
 								{
-									WR->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.03f, 0.10f, 0.22f));
+									WR->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.01f, 0.04f, 0.14f));
 									WR->SetScalarParameterValue(TEXT("Opacity"), 0.70f);
 									WR->SetScalarParameterValue(TEXT("Metallic"), 0.15f);
 									WR->SetScalarParameterValue(TEXT("Roughness"), 0.08f);
@@ -4198,7 +4198,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	// SpawnStreetLabels();  // removed per user request
 	// SpawnLangtree();  // removed per user request
 	// SpawnStreetLights();  // removed for mobile battery/thermal perf
-	SpawnRamps();
+	// SpawnRamps();  // removed per user request
 	SpawnOutskirts();
 	// SpawnHills();        // removed — spherical terrain
 	SpawnDirtBikePark();
@@ -4557,8 +4557,8 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 	};
 
 	// PUBG-style water colors
-	const FLinearColor DeepOcean(0.03f, 0.10f, 0.22f);
-	const FLinearColor ShallowWater(0.06f, 0.18f, 0.30f);
+	const FLinearColor DeepOcean(0.01f, 0.04f, 0.14f);  // deep ocean blue
+	const FLinearColor ShallowWater(0.02f, 0.08f, 0.22f);
 	const FLinearColor Sand(0.76f, 0.70f, 0.55f);
 
 	// Global ocean floor — massive, covers everything below land

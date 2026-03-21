@@ -525,6 +525,7 @@ public:
 
 	bool bFirstPersonMode = false;
 	void SetFirstPersonMode(bool bFirstPerson);
+	void HideOldBodyMeshes();
 
 	// -- Network movement replication (client → server) --------------------
 

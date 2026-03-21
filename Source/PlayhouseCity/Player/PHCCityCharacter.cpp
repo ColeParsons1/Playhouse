@@ -962,6 +962,9 @@ void APHCCityCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// Ensure old body meshes stay hidden (Mixamo replaces them)
+	HideOldBodyMeshes();
+
 	// If attached to a vehicle as a visible rider (dirt bike), skip all
 	// movement and ground-following — the vehicle handles positioning.
 	if (GetAttachParentActor() != nullptr)
@@ -1704,63 +1707,40 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		WalkAnimBlend = bJetpackEquipped ? 0.f : FMath::FInterpTo(WalkAnimBlend, TargetBlend, DeltaTime, 8.f);
 
 		// Mixamo animation state machine
+		// Mixamo animation state machine
 		if (CharacterSkelMesh && CharacterSkelMesh->GetSkeletalMeshAsset())
 		{
-			int32 NewState = 0; // idle
-			if (ManualVelocityZ > 50.f && JumpAnim) NewState = 3; // jumping
-			else if (bMoving && bIsSprinting && RunAnim) NewState = 2; // running
-			else if (bMoving && WalkAnim) NewState = 1; // walking
+			int32 NewState = 0;
+			if (ManualVelocityZ > 50.f && JumpAnim) NewState = 3;
+			else if (bMoving && RunAnim) NewState = 2;
 
 			if (NewState != CurrentAnimState)
 			{
 				CurrentAnimState = NewState;
-				switch (NewState)
-				{
-					case 0:
-						if (IdleAnim) { CharacterSkelMesh->PlayAnimation(IdleAnim, true); CharacterSkelMesh->SetPlayRate(1.0f); }
-						break;
-					case 1:
-						if (WalkAnim) { CharacterSkelMesh->PlayAnimation(WalkAnim, true); CharacterSkelMesh->SetPlayRate(0.7f); }
-						break;
-					case 2:
-						if (RunAnim) { CharacterSkelMesh->PlayAnimation(RunAnim, true); CharacterSkelMesh->SetPlayRate(1.0f); }
-						break;
-					case 3:
-						if (JumpAnim) { CharacterSkelMesh->PlayAnimation(JumpAnim, false); CharacterSkelMesh->SetPlayRate(1.0f); }
-						break;
-				}
+				if (NewState == 0 && IdleAnim)
+					CharacterSkelMesh->PlayAnimation(IdleAnim, true);
+				else if (NewState == 2 && RunAnim)
+					CharacterSkelMesh->PlayAnimation(RunAnim, true);
+				else if (NewState == 3 && JumpAnim)
+					CharacterSkelMesh->PlayAnimation(JumpAnim, false);
 			}
 
-			// Match animation play rate to actual movement speed
-			// Tune these constants so feet don't slide on the ground
-			if ((CurrentAnimState == 1 || CurrentAnimState == 2) && CharacterSkelMesh->IsPlaying())
+			// Prevent the snap: when near the end of the run anim,
+			// smoothly wind back to the beginning by advancing past the end
+			// The engine's looping wraps automatically, but the snap happens
+			// because the last frame pose != first frame pose.
+			// Fix: when we're in the last 10% of the anim, speed up playback
+			// so the transition through the snap point is too fast to see
+			if (CurrentAnimState == 2 && RunAnim && CharacterSkelMesh->IsPlaying())
 			{
-				// Actual speed based on current movement
-				float ActualSpeed = bIsSprinting ? SprintSpeed : WalkSpeed;
-				ActualSpeed *= MoveSpeedAlpha;
-
-				// Base animation speeds (UU/s the anim was designed for at 1.0 rate)
-				// Walk anim ~150 UU/s at 1x, Run anim ~400 UU/s at 1x
-				// Adjust these if feet still slide
-				const float WalkAnimBaseSpeed = 200.f;
-				const float RunAnimBaseSpeed = 500.f;
-
-				float BaseSpeed = (CurrentAnimState == 1) ? WalkAnimBaseSpeed : RunAnimBaseSpeed;
-				float DesiredRate = FMath::Clamp(ActualSpeed / BaseSpeed, 0.2f, 2.5f);
-				CharacterSkelMesh->SetPlayRate(DesiredRate);
-
-				// Cross-fade: skip end of anim to avoid hard loop snap
 				float Pos = CharacterSkelMesh->GetPosition();
-				UAnimSequence* CurAnim = (CurrentAnimState == 1) ? WalkAnim : RunAnim;
-				if (CurAnim)
-				{
-					float Length = CurAnim->GetPlayLength();
-					float FadeZone = Length * 0.12f;
-					if (Pos > Length - FadeZone)
-					{
-						CharacterSkelMesh->SetPosition(FadeZone * 0.3f);
-					}
-				}
+				float Length = RunAnim->GetPlayLength();
+				float NormPos = Pos / FMath::Max(Length, 0.01f);
+				// In the last 8% of the animation, speed through the snap
+				if (NormPos > 0.92f)
+					CharacterSkelMesh->SetPlayRate(4.0f);
+				else
+					CharacterSkelMesh->SetPlayRate(1.0f);
 			}
 		}
 
@@ -3939,45 +3919,41 @@ void APHCCityCharacter::SetFirstPersonMode(bool bFirstPerson)
 		bUseControllerRotationYaw = false;
 	}
 
+	// Show/hide Mixamo skeletal mesh based on camera mode
+	if (CharacterSkelMesh) CharacterSkelMesh->SetVisibility(!bFirstPerson);
+
+	// Old body meshes always hidden (Mixamo replaces them)
+	HideOldBodyMeshes();
+
+	// Jetpack visibility follows camera mode
 	const bool bShow = !bFirstPerson;
 	auto SetVis = [bShow](UStaticMeshComponent* M) { if (M) M->SetVisibility(bShow); };
-
-	// Head & Face
-	SetVis(HeadMesh); SetVis(JawMesh); SetVis(NeckMesh);
-	SetVis(LeftEyeWhiteMesh); SetVis(RightEyeWhiteMesh);
-	SetVis(LeftPupilMesh); SetVis(RightPupilMesh);
-	SetVis(NoseMesh); SetVis(MouthMesh);
-	SetVis(LeftEarMesh); SetVis(RightEarMesh);
-	SetVis(LeftBrowMesh); SetVis(RightBrowMesh);
-
-	// Hair
-	SetVis(HairTopMesh); SetVis(HairBackMesh);
-	SetVis(HairSideLMesh); SetVis(HairSideRMesh);
-
-	// Torso
-	SetVis(ChestMesh); SetVis(AbsMesh); SetVis(PelvisMesh);
-	SetVis(CollarMesh); SetVis(BeltMesh); SetVis(BeltBuckleMesh);
-
-	// Left Arm
-	SetVis(LeftShoulderMesh); SetVis(LeftUpperArmMesh);
-	SetVis(LeftElbowMesh); SetVis(LeftForearmMesh); SetVis(LeftHandMesh);
-
-	// Right Arm
-	SetVis(RightShoulderMesh); SetVis(RightUpperArmMesh);
-	SetVis(RightElbowMesh); SetVis(RightForearmMesh); SetVis(RightHandMesh);
-
-	// Left Leg
-	SetVis(LeftThighMesh); SetVis(LeftKneeMesh); SetVis(LeftShinMesh);
-	SetVis(LeftFootMesh); SetVis(LeftToeMesh); SetVis(LeftSoleMesh);
-
-	// Right Leg
-	SetVis(RightThighMesh); SetVis(RightKneeMesh); SetVis(RightShinMesh);
-	SetVis(RightFootMesh); SetVis(RightToeMesh); SetVis(RightSoleMesh);
-
-	// Jetpack
 	SetVis(JetpackBodyMesh); SetVis(JetpackNozzleL); SetVis(JetpackNozzleR);
 	SetVis(JetpackFlameL); SetVis(JetpackFlameR);
 	SetVis(JetpackStrapL); SetVis(JetpackStrapR);
+}
+
+void APHCCityCharacter::HideOldBodyMeshes()
+{
+	auto H = [](UStaticMeshComponent* M) { if (M) M->SetVisibility(false); };
+	H(HeadMesh); H(JawMesh); H(NeckMesh);
+	H(LeftEyeWhiteMesh); H(RightEyeWhiteMesh);
+	H(LeftPupilMesh); H(RightPupilMesh);
+	H(NoseMesh); H(MouthMesh);
+	H(LeftEarMesh); H(RightEarMesh);
+	H(LeftBrowMesh); H(RightBrowMesh);
+	H(HairTopMesh); H(HairBackMesh);
+	H(HairSideLMesh); H(HairSideRMesh);
+	H(ChestMesh); H(AbsMesh); H(PelvisMesh);
+	H(CollarMesh); H(BeltMesh); H(BeltBuckleMesh);
+	H(LeftShoulderMesh); H(LeftUpperArmMesh);
+	H(LeftElbowMesh); H(LeftForearmMesh); H(LeftHandMesh);
+	H(RightShoulderMesh); H(RightUpperArmMesh);
+	H(RightElbowMesh); H(RightForearmMesh); H(RightHandMesh);
+	H(LeftThighMesh); H(LeftKneeMesh); H(LeftShinMesh);
+	H(LeftFootMesh); H(LeftToeMesh); H(LeftSoleMesh);
+	H(RightThighMesh); H(RightKneeMesh); H(RightShinMesh);
+	H(RightFootMesh); H(RightToeMesh); H(RightSoleMesh);
 }
 
 // ---------------------------------------------------------------------------
