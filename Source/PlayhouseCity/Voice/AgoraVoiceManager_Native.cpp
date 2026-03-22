@@ -8,6 +8,11 @@
 
 #include "Voice/AgoraVoiceManager.h"
 #include "PlayhouseCity.h"
+#include "HttpModule.h"
+#include "Interfaces/IHttpRequest.h"
+#include "Interfaces/IHttpResponse.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 
 THIRD_PARTY_INCLUDES_START
 #include "AgoraBase.h"
@@ -108,14 +113,46 @@ void FAgoraVoiceManager::JoinChannel(const FString& ChannelName)
 {
 	if (!bInitialized || bInChannel || !GRtcEngine) return;
 
-	const char* TempToken = "REDACTED_AGORA_TEMP_TOKEN";
+	// Fetch token from backend
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Req = FHttpModule::Get().CreateRequest();
+	Req->SetURL(TEXT("https://tfplayhouse.com/api/agora/token/"));
+	Req->SetVerb(TEXT("POST"));
+	Req->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Req->SetContentAsString(FString::Printf(TEXT("{\"channel\":\"%s\",\"uid\":0}"), *ChannelName));
 
-	int ret = GRtcEngine->joinChannel(TempToken, TCHAR_TO_UTF8(*ChannelName), nullptr, 0);
+	FString CachedChannel = ChannelName;
+	Req->OnProcessRequestComplete().BindLambda(
+		[this, CachedChannel](FHttpRequestPtr Request, FHttpResponsePtr Response, bool bSuccess)
+		{
+			if (bSuccess && Response.IsValid() && Response->GetResponseCode() == 200)
+			{
+				TSharedPtr<FJsonObject> Json;
+				TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Response->GetContentAsString());
+				if (FJsonSerializer::Deserialize(Reader, Json) && Json.IsValid())
+				{
+					FString Token = Json->GetStringField(TEXT("token"));
+					JoinChannelWithToken(CachedChannel, Token);
+					return;
+				}
+			}
+			UE_LOG(LogPlayhouseCity, Error, TEXT("Agora C++: Failed to fetch token, joining without"));
+			JoinChannelWithToken(CachedChannel, TEXT(""));
+		});
+	Req->ProcessRequest();
+	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora C++: Fetching token for channel '%s'"), *ChannelName);
+}
+
+void FAgoraVoiceManager::JoinChannelWithToken(const FString& ChannelName, const FString& Token)
+{
+	if (!bInitialized || bInChannel || !GRtcEngine) return;
+
+	const char* TokenStr = Token.IsEmpty() ? nullptr : TCHAR_TO_UTF8(*Token);
+	int ret = GRtcEngine->joinChannel(TokenStr, TCHAR_TO_UTF8(*ChannelName), nullptr, 0);
 	if (ret == 0)
 	{
 		bInChannel = true;
 		bMuted = false;
-		UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora C++: Joining channel '%s'"), *ChannelName);
+		UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora C++: Joining channel '%s' with %s token"), *ChannelName, Token.IsEmpty() ? TEXT("no") : TEXT("server"));
 	}
 	else
 	{

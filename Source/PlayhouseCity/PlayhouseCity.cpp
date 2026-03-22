@@ -149,7 +149,7 @@ void FPlayhouseCityModule::StartupModule()
 
 		UMaterialEditorOnlyData* EditorData = Mat->GetEditorOnlyData();
 
-		// BaseColor (Vector)
+		// BaseColor (Vector) — tint/fallback color
 		UMaterialExpressionVectorParameter* BaseColorParam =
 			NewObject<UMaterialExpressionVectorParameter>(Mat);
 		BaseColorParam->ParameterName = TEXT("BaseColor");
@@ -682,6 +682,87 @@ void FPlayhouseCityModule::StartupModule()
 
 		UE_LOG(LogPlayhouseCity, Log,
 			TEXT("PHC: Created and saved M_PHCChromaAberration material to %s"), *FilePath);
+		}
+	}
+
+	// ---------------------------------------------------------------------------
+	// M_PHCTextured -- Opaque PBR with texture sampling (for Megascans surfaces).
+	// Parameters: BaseColorTex, NormalTex, RoughnessTex + tiling scale.
+	// ---------------------------------------------------------------------------
+	{
+		const FString PackagePath = TEXT("/Game/Materials/M_PHCTextured");
+		const FString FilePath = FPackageName::LongPackageNameToFilename(
+			PackagePath, FPackageName::GetAssetPackageExtension());
+
+		if (!FPaths::FileExists(FilePath))
+		{
+			UPackage* Package = CreatePackage(*PackagePath);
+			UMaterial* Mat = NewObject<UMaterial>(Package, TEXT("M_PHCTextured"),
+				RF_Public | RF_Standalone | RF_MarkAsRootSet);
+			Mat->MaterialDomain = MD_Surface;
+			Mat->BlendMode = BLEND_Opaque;
+			auto* EditorData = Mat->GetEditorOnlyData();
+
+			// Texture Coordinate with tiling
+			auto* TexCoord = NewObject<UMaterialExpressionTextureCoordinate>(Mat);
+			TexCoord->UTiling = 10.f;
+			TexCoord->VTiling = 10.f;
+			EditorData->ExpressionCollection.Expressions.Add(TexCoord);
+
+			// BaseColor Texture
+			auto* BaseColorTex = NewObject<UMaterialExpressionTextureSampleParameter2D>(Mat);
+			BaseColorTex->ParameterName = TEXT("BaseColorTex");
+			BaseColorTex->Coordinates.Expression = TexCoord;
+			EditorData->ExpressionCollection.Expressions.Add(BaseColorTex);
+			EditorData->BaseColor.Expression = BaseColorTex;
+
+			// Normal Texture
+			auto* NormalTex = NewObject<UMaterialExpressionTextureSampleParameter2D>(Mat);
+			NormalTex->ParameterName = TEXT("NormalTex");
+			NormalTex->SamplerType = SAMPLERTYPE_Normal;
+			NormalTex->Coordinates.Expression = TexCoord;
+			EditorData->ExpressionCollection.Expressions.Add(NormalTex);
+			EditorData->Normal.Expression = NormalTex;
+
+			// Roughness Texture
+			auto* RoughnessTex = NewObject<UMaterialExpressionTextureSampleParameter2D>(Mat);
+			RoughnessTex->ParameterName = TEXT("RoughnessTex");
+			RoughnessTex->Coordinates.Expression = TexCoord;
+			EditorData->ExpressionCollection.Expressions.Add(RoughnessTex);
+			EditorData->Roughness.Expression = RoughnessTex;
+
+			// Metallic (scalar, default 0)
+			auto* MetParam = NewObject<UMaterialExpressionScalarParameter>(Mat);
+			MetParam->ParameterName = TEXT("Metallic");
+			MetParam->DefaultValue = 0.0f;
+			EditorData->ExpressionCollection.Expressions.Add(MetParam);
+			EditorData->Metallic.Expression = MetParam;
+
+			// World position offset (curvature — same as M_PHCColor)
+			auto* WPO = NewObject<UMaterialExpressionCustom>(Mat);
+			WPO->OutputType = CMOT_Float3;
+			WPO->Code = TEXT("float d=length(float2(WorldPosition.x,WorldPosition.y));return float3(0,0,-d*d*-0.000020);");
+			WPO->Description = TEXT("WorldCurvature");
+			{
+				FCustomInput WPIn;
+				WPIn.InputName = TEXT("WorldPosition");
+				auto* WPNode = NewObject<UMaterialExpressionWorldPosition>(Mat);
+				EditorData->ExpressionCollection.Expressions.Add(WPNode);
+				WPIn.Input.Expression = WPNode;
+				WPO->Inputs.Add(WPIn);
+			}
+			EditorData->ExpressionCollection.Expressions.Add(WPO);
+			EditorData->WorldPositionOffset.Expression = WPO;
+
+			Mat->PreEditChange(nullptr);
+			Mat->PostEditChange();
+
+			FSavePackageArgs SaveArgs;
+			SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+			UPackage::SavePackage(Package, Mat, *FilePath, SaveArgs);
+
+			UE_LOG(LogPlayhouseCity, Log,
+				TEXT("PHC: Created and saved M_PHCTextured material to %s"), *FilePath);
 		}
 	}
 

@@ -24,6 +24,11 @@
 #include "UObject/Package.h"
 #include "Engine/Engine.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionTextureSampleParameter2D.h"
+#include "Materials/MaterialExpressionTextureCoordinate.h"
+#include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionCustom.h"
+#include "Materials/MaterialExpressionWorldPosition.h"
 #include "Engine/PostProcessVolume.h"
 #include "Components/TextRenderComponent.h"
 #include "Vehicle/PHCMissileProjectile.h"
@@ -42,6 +47,8 @@
 #include "Core/PHCGameInstance.h"
 #include "Economy/PHCEconomyManager.h"
 #include "TimerManager.h"
+#include "IImageWrapperModule.h"
+#include "IImageWrapper.h"
 #include "UI/PHCCityHUD.h"
 
 // ---------------------------------------------------------------------------
@@ -96,6 +103,30 @@ static UMaterialInstanceDynamic* ApplyPBRGlass(UStaticMeshComponent* MC,
 		Mat->SetVectorParameterValue(TEXT("EmissiveColor"), Emissive);
 	MC->SetMaterial(0, Mat);
 	return Mat;
+}
+
+/** Apply Megascans textured material (M_PHCTextured) with BaseColorTex, NormalTex, RoughnessTex.
+ *  Falls back to ApplyPBR with FallbackColor if TexturedMat or BaseColor texture is null. */
+static void ApplyTextured(UStaticMeshComponent* MC, UMaterial* TexturedMat,
+	UTexture2D* BC, UTexture2D* N, UTexture2D* R,
+	const FLinearColor& FallbackColor = FLinearColor(0.5f, 0.5f, 0.5f),
+	float FallbackRoughness = 0.8f)
+{
+	if (!MC) return;
+	if (TexturedMat && BC)
+	{
+		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(TexturedMat, MC);
+		if (Mat)
+		{
+			Mat->SetTextureParameterValue(TEXT("BaseColorTex"), BC);
+			if (N) Mat->SetTextureParameterValue(TEXT("NormalTex"), N);
+			if (R) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), R);
+			MC->SetMaterial(0, Mat);
+			return;
+		}
+	}
+	// Fallback: flat color via M_PHCColor
+	ApplyPBR(MC, FallbackColor, 0.f, FallbackRoughness);
 }
 
 // ---------------------------------------------------------------------------
@@ -167,35 +198,71 @@ void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 #if WITH_EDITORONLY_DATA
 	if (!ColorMaterial)
 	{
-		// First editor run before the .uasset exists -- create inline.
+		// Create full PBR material with texture support + procedural detail HLSL
 		ColorMaterial = NewObject<UMaterial>(GetTransientPackage(), FName(TEXT("PHC_ColorMaterial")));
+		UMaterialEditorOnlyData* EditorData = ColorMaterial->GetEditorOnlyData();
 
-		UMaterialExpressionVectorParameter* ColorParam =
-			NewObject<UMaterialExpressionVectorParameter>(ColorMaterial);
+		// BaseColor vector (tint/fallback)
+		auto* ColorParam = NewObject<UMaterialExpressionVectorParameter>(ColorMaterial);
 		ColorParam->ParameterName = TEXT("BaseColor");
 		ColorParam->DefaultValue = FLinearColor(1.f, 1.f, 1.f, 1.f);
-
-		UMaterialEditorOnlyData* EditorData = ColorMaterial->GetEditorOnlyData();
 		EditorData->ExpressionCollection.Expressions.Add(ColorParam);
-		EditorData->BaseColor.Expression = ColorParam;
 
-		UMaterialExpressionScalarParameter* MetParam = NewObject<UMaterialExpressionScalarParameter>(ColorMaterial);
+		// BaseColorTex (optional texture, defaults white → BaseColor used as-is)
+		auto* TexCoord = NewObject<UMaterialExpressionTextureCoordinate>(ColorMaterial);
+		TexCoord->UTiling = 10.f;
+		TexCoord->VTiling = 10.f;
+		EditorData->ExpressionCollection.Expressions.Add(TexCoord);
+
+		auto* BaseColorTex = NewObject<UMaterialExpressionTextureSampleParameter2D>(ColorMaterial);
+		BaseColorTex->ParameterName = TEXT("BaseColorTex");
+		BaseColorTex->Coordinates.Expression = TexCoord;
+		EditorData->ExpressionCollection.Expressions.Add(BaseColorTex);
+
+		// Multiply texture × BaseColor vector
+		auto* TexMul = NewObject<UMaterialExpressionMultiply>(ColorMaterial);
+		TexMul->A.Expression = BaseColorTex;
+		TexMul->B.Expression = ColorParam;
+		EditorData->ExpressionCollection.Expressions.Add(TexMul);
+
+		// NormalMap texture parameter
+		auto* NormalTex = NewObject<UMaterialExpressionTextureSampleParameter2D>(ColorMaterial);
+		NormalTex->ParameterName = TEXT("NormalMap");
+		NormalTex->SamplerType = SAMPLERTYPE_Normal;
+		NormalTex->Coordinates.Expression = TexCoord;
+		EditorData->ExpressionCollection.Expressions.Add(NormalTex);
+		EditorData->Normal.Expression = NormalTex;
+
+		// RoughnessMap texture parameter
+		auto* RoughnessTex = NewObject<UMaterialExpressionTextureSampleParameter2D>(ColorMaterial);
+		RoughnessTex->ParameterName = TEXT("RoughnessMap");
+		RoughnessTex->Coordinates.Expression = TexCoord;
+		EditorData->ExpressionCollection.Expressions.Add(RoughnessTex);
+
+		// Metallic
+		auto* MetParam = NewObject<UMaterialExpressionScalarParameter>(ColorMaterial);
 		MetParam->ParameterName = TEXT("Metallic");
 		MetParam->DefaultValue = 0.0f;
 		EditorData->ExpressionCollection.Expressions.Add(MetParam);
 		EditorData->Metallic.Expression = MetParam;
 
-		UMaterialExpressionScalarParameter* RghParam = NewObject<UMaterialExpressionScalarParameter>(ColorMaterial);
+		// Roughness scalar (fallback when no RoughnessMap)
+		auto* RghParam = NewObject<UMaterialExpressionScalarParameter>(ColorMaterial);
 		RghParam->ParameterName = TEXT("Roughness");
 		RghParam->DefaultValue = 0.5f;
 		EditorData->ExpressionCollection.Expressions.Add(RghParam);
-		EditorData->Roughness.Expression = RghParam;
 
-		UMaterialExpressionVectorParameter* EmParam = NewObject<UMaterialExpressionVectorParameter>(ColorMaterial);
+		// Emissive
+		auto* EmParam = NewObject<UMaterialExpressionVectorParameter>(ColorMaterial);
 		EmParam->ParameterName = TEXT("EmissiveColor");
 		EmParam->DefaultValue = FLinearColor::Black;
 		EditorData->ExpressionCollection.Expressions.Add(EmParam);
 		EditorData->EmissiveColor.Expression = EmParam;
+
+		// Connect BaseColor output (texture × tint)
+		EditorData->BaseColor.Expression = TexMul;
+		// Roughness: use scalar param (RoughnessMap will override via MID if set)
+		EditorData->Roughness.Expression = RghParam;
 
 		ColorMaterial->PreEditChange(nullptr);
 		ColorMaterial->PostEditChange();
@@ -286,6 +353,9 @@ void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 
 	// Generate procedural normal & roughness textures before city spawn
 	GenerateProceduralTextures();
+
+	// Load Megascans 4K textures from .uasset files
+	LoadMegascansTextures();
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCityGameMode::BeginPlay -- Spawning city."));
 	SpawnCityEnvironment();
@@ -3021,6 +3091,180 @@ void UPHCCitySubsystem::GenerateProceduralTextures()
 }
 
 // ---------------------------------------------------------------------------
+// Megascans Texture Loading — loads .uasset textures from Content/Megascans/
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::LoadMegascansTextures()
+{
+	// Load M_PHCTextured material (created by StartupModule in editor)
+	TexturedMaterial = LoadObject<UMaterial>(nullptr,
+		TEXT("/Game/Materials/M_PHCTextured.M_PHCTextured"));
+
+#if WITH_EDITORONLY_DATA
+	// Create TexturedMaterial at runtime if .uasset not available (device dev builds)
+	if (!TexturedMaterial)
+	{
+		TexturedMaterial = NewObject<UMaterial>(GetTransientPackage(), FName(TEXT("PHC_TexturedMaterial")));
+		UMaterialEditorOnlyData* ED = TexturedMaterial->GetEditorOnlyData();
+
+		auto* TC = NewObject<UMaterialExpressionTextureCoordinate>(TexturedMaterial);
+		TC->UTiling = 10.f;
+		TC->VTiling = 10.f;
+		ED->ExpressionCollection.Expressions.Add(TC);
+
+		auto* BCTX = NewObject<UMaterialExpressionTextureSampleParameter2D>(TexturedMaterial);
+		BCTX->ParameterName = TEXT("BaseColorTex");
+		BCTX->Coordinates.Expression = TC;
+		ED->ExpressionCollection.Expressions.Add(BCTX);
+		ED->BaseColor.Expression = BCTX;
+
+		auto* NTX = NewObject<UMaterialExpressionTextureSampleParameter2D>(TexturedMaterial);
+		NTX->ParameterName = TEXT("NormalTex");
+		NTX->SamplerType = SAMPLERTYPE_Normal;
+		NTX->Coordinates.Expression = TC;
+		ED->ExpressionCollection.Expressions.Add(NTX);
+		ED->Normal.Expression = NTX;
+
+		auto* RTX = NewObject<UMaterialExpressionTextureSampleParameter2D>(TexturedMaterial);
+		RTX->ParameterName = TEXT("RoughnessTex");
+		RTX->Coordinates.Expression = TC;
+		ED->ExpressionCollection.Expressions.Add(RTX);
+		ED->Roughness.Expression = RTX;
+
+		auto* MetP = NewObject<UMaterialExpressionScalarParameter>(TexturedMaterial);
+		MetP->ParameterName = TEXT("Metallic");
+		MetP->DefaultValue = 0.0f;
+		ED->ExpressionCollection.Expressions.Add(MetP);
+		ED->Metallic.Expression = MetP;
+
+		TexturedMaterial->PreEditChange(nullptr);
+		TexturedMaterial->PostEditChange();
+
+		UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Created TexturedMaterial at runtime"));
+	}
+#endif
+
+	// Try loading Megascans .uasset textures (works in editor/cooked builds)
+	auto LT = [](const TCHAR* P) { return LoadObject<UTexture2D>(nullptr, P); };
+
+	MegaGrassBC = LT(TEXT("/Game/Megascans/Grass/Grass_ofivdfoh2_4K_BaseColor"));
+	MegaGrassN  = LT(TEXT("/Game/Megascans/Grass/Grass_ofivdfoh2_4K_Normal"));
+	MegaGrassR  = LT(TEXT("/Game/Megascans/Grass/Grass_ofivdfoh2_4K_Roughness"));
+
+	MegaRockBC = LT(TEXT("/Game/Megascans/Mossy_Rocky_Ground/Mossy_Rocky_Ground_vcqhcig_4K_BaseColor"));
+	MegaRockN  = LT(TEXT("/Game/Megascans/Mossy_Rocky_Ground/Mossy_Rocky_Ground_vcqhcig_4K_Normal"));
+	MegaRockR  = LT(TEXT("/Game/Megascans/Mossy_Rocky_Ground/Mossy_Rocky_Ground_vcqhcig_4K_Roughness"));
+
+	MegaSandBC = LT(TEXT("/Game/Megascans/Rippled_Sand/Rippled_Sand_vd3lecfs_4K_BaseColor"));
+	MegaSandN  = LT(TEXT("/Game/Megascans/Rippled_Sand/Rippled_Sand_vd3lecfs_4K_Normal"));
+	MegaSandR  = LT(TEXT("/Game/Megascans/Rippled_Sand/Rippled_Sand_vd3lecfs_4K_Roughness"));
+
+	MegaConcreteBC = LT(TEXT("/Game/Megascans/Cast_In_Situ_Concrete/Cast_In_Situ_Concrete_uhwnbdoew_4K_BaseColor"));
+	MegaConcreteN  = LT(TEXT("/Game/Megascans/Cast_In_Situ_Concrete/Cast_In_Situ_Concrete_uhwnbdoew_4K_Normal"));
+	MegaConcreteR  = LT(TEXT("/Game/Megascans/Cast_In_Situ_Concrete/Cast_In_Situ_Concrete_uhwnbdoew_4K_Roughness"));
+
+	MegaRoadBC = LT(TEXT("/Game/Megascans/Fine_American_Road/Fine_American_Road_sjfnch0a_4K_BaseColor"));
+	MegaRoadN  = LT(TEXT("/Game/Megascans/Fine_American_Road/Fine_American_Road_sjfnch0a_4K_Normal"));
+	MegaRoadR  = LT(TEXT("/Game/Megascans/Fine_American_Road/Fine_American_Road_sjfnch0a_4K_Roughness"));
+
+	MegaBarkBC = LT(TEXT("/Game/Megascans/Tree_Bark/Tree_Bark_vimmdcofw_4K_BaseColor"));
+	MegaBarkN  = LT(TEXT("/Game/Megascans/Tree_Bark/Tree_Bark_vimmdcofw_4K_Normal"));
+	MegaBarkR  = LT(TEXT("/Game/Megascans/Tree_Bark/Tree_Bark_vimmdcofw_4K_Roughness"));
+
+	MegaWildGrassBC = LT(TEXT("/Game/Megascans/Wild_Grass/Wild_Grass_xbreagf_4K_BaseColor"));
+	MegaWildGrassN  = LT(TEXT("/Game/Megascans/Wild_Grass/Wild_Grass_xbreagf_4K_Normal"));
+	MegaWildGrassR  = LT(TEXT("/Game/Megascans/Wild_Grass/Wild_Grass_xbreagf_4K_Roughness"));
+
+	// Hash function for procedural textures
+	auto Hash = [](int32 X, int32 Y, int32 Seed) -> float
+	{
+		int32 N = X * 374761393 + Y * 668265263 + Seed * 1274126177;
+		N = (N ^ (N >> 13)) * 1274126177;
+		N = N ^ (N >> 16);
+		return (float)(N & 0x7FFFFFFF) / (float)0x7FFFFFFF;
+	};
+
+	// Generate procedural base color textures as fallback when Megascans unavailable
+	const int32 TexSize = 256;
+
+	if (!MegaRoadBC)
+	{
+		MegaRoadBC = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+		{
+			float n = Hash(X, Y, 100) * 0.04f + Hash(X / 3, Y / 3, 101) * 0.03f;
+			float base = 0.018f + n;
+			uint8 V = FMath::Clamp((int32)(base * 255.f), 0, 255);
+			return FColor(V, V, FMath::Clamp((int32)((base + 0.003f) * 255.f), 0, 255), 255);
+		});
+	}
+
+	if (!MegaConcreteBC)
+	{
+		MegaConcreteBC = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+		{
+			float n = Hash(X, Y, 110) * 0.06f + Hash(X / 4, Y / 4, 111) * 0.04f;
+			float base = 0.38f + n - 0.05f;
+			uint8 R = FMath::Clamp((int32)(base * 255.f), 0, 255);
+			uint8 G = FMath::Clamp((int32)((base - 0.01f) * 255.f), 0, 255);
+			uint8 B = FMath::Clamp((int32)((base - 0.02f) * 255.f), 0, 255);
+			return FColor(R, G, B, 255);
+		});
+	}
+
+	if (!MegaSandBC)
+	{
+		MegaSandBC = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+		{
+			float ripple = FMath::Sin((float)X * 0.15f + Hash(X / 8, Y, 120) * 2.f) * 0.03f;
+			float grain = Hash(X, Y, 121) * 0.04f;
+			float base = 0.72f + ripple + grain;
+			uint8 R = FMath::Clamp((int32)(base * 255.f), 0, 255);
+			uint8 G = FMath::Clamp((int32)((base - 0.06f) * 255.f), 0, 255);
+			uint8 B = FMath::Clamp((int32)((base - 0.17f) * 255.f), 0, 255);
+			return FColor(R, G, B, 255);
+		});
+	}
+
+	if (!MegaBarkBC)
+	{
+		MegaBarkBC = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+		{
+			// Vertical bark ridges + ring scars
+			float ridge = FMath::Sin((float)X * 0.4f + Hash(X / 6, Y / 12, 130) * 3.f) * 0.04f;
+			float rings = (Hash(X, Y / 16, 131) > 0.85f) ? 0.06f : 0.f;
+			float n = Hash(X, Y, 132) * 0.03f;
+			float base = 0.22f + ridge + rings + n;
+			uint8 R = FMath::Clamp((int32)(base * 255.f), 0, 255);
+			uint8 G = FMath::Clamp((int32)((base - 0.06f) * 255.f), 0, 255);
+			uint8 B = FMath::Clamp((int32)((base - 0.13f) * 255.f), 0, 255);
+			return FColor(R, G, B, 255);
+		});
+	}
+
+	if (!MegaGrassBC)
+	{
+		MegaGrassBC = CreateProceduralTexture(TexSize, TexSize, [&](int32 X, int32 Y) -> FColor
+		{
+			float n1 = Hash(X, Y, 140) * 0.06f;
+			float n2 = Hash(X / 4, Y / 4, 141) * 0.08f;
+			float base = 0.18f + n1 + n2;
+			uint8 R = FMath::Clamp((int32)(base * 255.f), 0, 255);
+			uint8 G = FMath::Clamp((int32)((base + 0.04f) * 255.f), 0, 255);
+			uint8 B = FMath::Clamp((int32)((base * 0.5f) * 255.f), 0, 255);
+			return FColor(R, G, B, 255);
+		});
+	}
+
+	int32 Loaded = 0;
+	auto CountLoaded = [](UTexture2D* T) { return T ? 1 : 0; };
+	Loaded = CountLoaded(MegaGrassBC) + CountLoaded(MegaRockBC) + CountLoaded(MegaSandBC)
+		+ CountLoaded(MegaConcreteBC) + CountLoaded(MegaRoadBC) + CountLoaded(MegaBarkBC)
+		+ CountLoaded(MegaWildGrassBC);
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: %d/7 Megascans texture sets ready (TexturedMat=%d)"),
+		Loaded, TexturedMaterial ? 1 : 0);
+}
+
+// ---------------------------------------------------------------------------
 // Perlin Noise 2D — classic gradient noise for terrain generation
 // ---------------------------------------------------------------------------
 
@@ -3805,7 +4049,19 @@ void UPHCCitySubsystem::SpawnGrassSystem()
 		HISM->RegisterComponent();
 		GrassActor->AddInstanceComponent(HISM);
 
-		if (ColorMaterial)
+		if (TexturedMaterial && MegaWildGrassBC)
+		{
+			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(TexturedMaterial, HISM);
+			if (Mat)
+			{
+				Mat->SetTextureParameterValue(TEXT("BaseColorTex"), MegaWildGrassBC);
+				if (MegaWildGrassN) Mat->SetTextureParameterValue(TEXT("NormalTex"), MegaWildGrassN);
+				if (MegaWildGrassR) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), MegaWildGrassR);
+				HISM->SetMaterial(0, Mat);
+				GrassOriginalMIDs.Add(Mat);
+			}
+		}
+		else if (ColorMaterial)
 		{
 			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, HISM);
 			if (Mat)
@@ -3831,7 +4087,18 @@ void UPHCCitySubsystem::SpawnGrassSystem()
 		RockHISM->SetCullDistances(0.f, 8000.f);
 		RockHISM->RegisterComponent();
 		GrassActor->AddInstanceComponent(RockHISM);
-		if (ColorMaterial)
+		if (TexturedMaterial && MegaRockBC)
+		{
+			UMaterialInstanceDynamic* RM = UMaterialInstanceDynamic::Create(TexturedMaterial, RockHISM);
+			if (RM)
+			{
+				RM->SetTextureParameterValue(TEXT("BaseColorTex"), MegaRockBC);
+				if (MegaRockN) RM->SetTextureParameterValue(TEXT("NormalTex"), MegaRockN);
+				if (MegaRockR) RM->SetTextureParameterValue(TEXT("RoughnessTex"), MegaRockR);
+				RockHISM->SetMaterial(0, RM);
+			}
+		}
+		else if (ColorMaterial)
 		{
 			UMaterialInstanceDynamic* RM = UMaterialInstanceDynamic::Create(ColorMaterial, RockHISM);
 			if (RM)
@@ -4433,7 +4700,8 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 // ---------------------------------------------------------------------------
 // Ground
 // ---------------------------------------------------------------------------
-
+// Helper: load a JPG from the Megascans/Raw content directory at runtime
+// ---------------------------------------------------------------------------
 void UPHCCitySubsystem::SpawnGround()
 {
 	UWorld* World = GetWorld();
@@ -4443,16 +4711,41 @@ void UPHCCitySubsystem::SpawnGround()
 	// gives proper box collision the CMC can resolve correctly.
 	if (!World || !CubeMesh) return;
 
-	const FLinearColor GrassColor(0.20f, 0.22f, 0.10f); // PUBG yellowy-green
+	const FLinearColor GrassColor(0.20f, 0.22f, 0.10f); // PUBG yellowy-green fallback
 
-	// TopZ: desired Z of the top surface.
-	// Cube default is 100×100×100 centered at origin.
-	// ScaleZ=0.02 → 2 UU thick, half-height=1.  Center at TopZ-3 so terrain
-	// chunks (at Z=0) always render on top without z-fighting.
-	auto SpawnGroundSlab = [&](float TopZ, const FVector& XYLoc,
-		const FVector& XYScale, const TCHAR* Label) -> UMaterialInstanceDynamic*
+	// Helper: create a textured or fallback material for a ground slab
+	auto MakeGroundMat = [&](UStaticMeshComponent* MC, UTexture2D* BC, UTexture2D* N, UTexture2D* R,
+		const FLinearColor& FallbackColor) -> UMaterialInstanceDynamic*
 	{
-		const FVector Loc(XYLoc.X, XYLoc.Y, TopZ - 10.f); // well below terrain
+		if (TexturedMaterial && BC)
+		{
+			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(TexturedMaterial, MC);
+			if (Mat)
+			{
+				Mat->SetTextureParameterValue(TEXT("BaseColorTex"), BC);
+				if (N) Mat->SetTextureParameterValue(TEXT("NormalTex"), N);
+				if (R) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), R);
+				MC->SetMaterial(0, Mat);
+				return Mat;
+			}
+		}
+		// Fallback to flat color
+		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, MC);
+		if (Mat)
+		{
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), FallbackColor);
+			Mat->SetScalarParameterValue(TEXT("Roughness"), 0.9f);
+			MC->SetMaterial(0, Mat);
+		}
+		return Mat;
+	};
+
+	auto SpawnGroundSlab = [&](float TopZ, const FVector& XYLoc,
+		const FVector& XYScale, const TCHAR* Label,
+		UTexture2D* BC = nullptr, UTexture2D* N = nullptr, UTexture2D* R = nullptr,
+		const FLinearColor& FallbackColor = FLinearColor(0.20f, 0.22f, 0.10f)) -> UMaterialInstanceDynamic*
+	{
+		const FVector Loc(XYLoc.X, XYLoc.Y, TopZ - 10.f);
 		AActor* GA = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
 		if (!GA) return nullptr;
 #if WITH_EDITOR
@@ -4462,20 +4755,11 @@ void UPHCCitySubsystem::SpawnGround()
 		MC->SetStaticMesh(CubeMesh);
 		MC->SetWorldScale3D(FVector(XYScale.X, XYScale.Y, 0.02f));
 		MC->SetWorldLocation(Loc);
-		// NoCollision — the ground is visual only.  Characters walk on
-		// road / sidewalk slabs which have proper box collision.
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->RegisterComponent();
 		GA->SetRootComponent(MC);
-		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
-		if (Mat)
-		{
-			Mat->SetVectorParameterValue(TEXT("BaseColor"), GrassColor);
-			Mat->SetScalarParameterValue(TEXT("Roughness"), 0.9f);
-			if (GrassNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), GrassNormalMap);
-			if (GrassRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), GrassRoughnessMap);
-			MC->SetMaterial(0, Mat);
-		}
+		UMaterialInstanceDynamic* Mat = MakeGroundMat(MC,
+			BC ? BC : MegaGrassBC.Get(), N ? N : MegaGrassN.Get(), R ? R : MegaGrassR.Get(), FallbackColor);
 		GA->AddInstanceComponent(MC);
 		return Mat;
 	};
@@ -4539,6 +4823,18 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 				Mat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.04f, 0.08f, 0.14f));
 				MC->SetMaterial(0, Mat);
 				WaterMIDs.Add(Mat);  // Store for trip sky swap
+			}
+		}
+		else if (!bIsWater && TexturedMaterial && MegaSandBC)
+		{
+			// Sand surface — use Megascans texture
+			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(TexturedMaterial, MC);
+			if (Mat)
+			{
+				Mat->SetTextureParameterValue(TEXT("BaseColorTex"), MegaSandBC);
+				if (MegaSandN) Mat->SetTextureParameterValue(TEXT("NormalTex"), MegaSandN);
+				if (MegaSandR) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), MegaSandR);
+				MC->SetMaterial(0, Mat);
 			}
 		}
 		else
@@ -7101,16 +7397,31 @@ void UPHCCitySubsystem::SpawnRoadStrip(const FVector& Center, float LengthX, flo
 	MC->RegisterComponent();
 	Road->SetRootComponent(MC);
 
-	UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
-	if (Mat)
+	// Apply Megascans road texture if available, otherwise flat asphalt with procedural detail
+	if (TexturedMaterial && MegaRoadBC)
 	{
-		// Black asphalt road surface.
-		Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.015f, 0.015f, 0.018f));
-		Mat->SetScalarParameterValue(TEXT("Roughness"), 0.85f);
-		if (AsphaltNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), AsphaltNormalMap);
-		if (AsphaltRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), AsphaltRoughnessMap);
-		MC->SetMaterial(0, Mat);
-		RoadMaterials.Add(Mat); // Store for wet road effect in Tick()
+		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(TexturedMaterial, MC);
+		if (Mat)
+		{
+			Mat->SetTextureParameterValue(TEXT("BaseColorTex"), MegaRoadBC);
+			if (MegaRoadN) Mat->SetTextureParameterValue(TEXT("NormalTex"), MegaRoadN);
+			if (MegaRoadR) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), MegaRoadR);
+			MC->SetMaterial(0, Mat);
+			RoadMaterials.Add(Mat);
+		}
+	}
+	else
+	{
+		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
+		if (Mat)
+		{
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.015f, 0.015f, 0.018f));
+			Mat->SetScalarParameterValue(TEXT("Roughness"), 0.85f);
+			if (AsphaltNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), AsphaltNormalMap);
+			if (AsphaltRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), AsphaltRoughnessMap);
+			MC->SetMaterial(0, Mat);
+			RoadMaterials.Add(Mat);
+		}
 	}
 	Road->AddInstanceComponent(MC);
 
@@ -7230,15 +7541,29 @@ void UPHCCitySubsystem::SpawnSidewalk(const FVector& Center, float LengthX, floa
 	MC->RegisterComponent();
 	Walk->SetRootComponent(MC);
 
-	UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
-	if (Mat)
+	// Apply Megascans concrete texture if available, otherwise flat concrete with procedural detail
+	if (TexturedMaterial && MegaConcreteBC)
 	{
-		// Concrete sidewalk.
-		Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.40f, 0.38f, 0.35f));
-		Mat->SetScalarParameterValue(TEXT("Roughness"), 0.75f);
-		if (ConcreteNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), ConcreteNormalMap);
-		if (ConcreteRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), ConcreteRoughnessMap);
-		MC->SetMaterial(0, Mat);
+		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(TexturedMaterial, MC);
+		if (Mat)
+		{
+			Mat->SetTextureParameterValue(TEXT("BaseColorTex"), MegaConcreteBC);
+			if (MegaConcreteN) Mat->SetTextureParameterValue(TEXT("NormalTex"), MegaConcreteN);
+			if (MegaConcreteR) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), MegaConcreteR);
+			MC->SetMaterial(0, Mat);
+		}
+	}
+	else
+	{
+		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
+		if (Mat)
+		{
+			Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.40f, 0.38f, 0.35f));
+			Mat->SetScalarParameterValue(TEXT("Roughness"), 0.75f);
+			if (ConcreteNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), ConcreteNormalMap);
+			if (ConcreteRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), ConcreteRoughnessMap);
+			MC->SetMaterial(0, Mat);
+		}
 	}
 	Walk->AddInstanceComponent(MC);
 }
@@ -7355,7 +7680,7 @@ void UPHCCitySubsystem::SpawnPalmTree(const FVector& Location, float Height, boo
 	// Helper: attach a mesh component, apply PBR material, register
 	auto AddComp = [&](UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot,
 		const FVector& Scale, const FLinearColor& Color, float Roughness,
-		float Metallic = 0.f) -> UStaticMeshComponent*
+		float Metallic = 0.f, bool bUseBarkTex = false) -> UStaticMeshComponent*
 	{
 		FString Name = FString::Printf(TEXT("P_%d"), CompIdx++);
 		UStaticMeshComponent* C = NewObject<UStaticMeshComponent>(Tree, *Name);
@@ -7367,14 +7692,28 @@ void UPHCCitySubsystem::SpawnPalmTree(const FVector& Location, float Height, boo
 		C->RegisterComponent();
 		if (CompIdx == 1) Tree->SetRootComponent(C);
 
-		UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(
-			C->GetMaterial(0), C);
-		if (M)
+		if (bUseBarkTex && TexturedMaterial && MegaBarkBC)
 		{
-			M->SetVectorParameterValue(TEXT("BaseColor"), Color);
-			M->SetScalarParameterValue(TEXT("Roughness"), Roughness);
-			M->SetScalarParameterValue(TEXT("Metallic"), Metallic);
-			C->SetMaterial(0, M);
+			UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(TexturedMaterial, C);
+			if (M)
+			{
+				M->SetTextureParameterValue(TEXT("BaseColorTex"), MegaBarkBC);
+				if (MegaBarkN) M->SetTextureParameterValue(TEXT("NormalTex"), MegaBarkN);
+				if (MegaBarkR) M->SetTextureParameterValue(TEXT("RoughnessTex"), MegaBarkR);
+				C->SetMaterial(0, M);
+			}
+		}
+		else
+		{
+			UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(
+				C->GetMaterial(0), C);
+			if (M)
+			{
+				M->SetVectorParameterValue(TEXT("BaseColor"), Color);
+				M->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+				M->SetScalarParameterValue(TEXT("Metallic"), Metallic);
+				C->SetMaterial(0, M);
+			}
 		}
 		Tree->AddInstanceComponent(C);
 		return C;
@@ -7435,7 +7774,7 @@ void UPHCCitySubsystem::SpawnPalmTree(const FVector& Location, float Height, boo
 					 CurveYaw,
 					 TiltDeg * FMath::Sin(CurveYawR)),
 			FVector(Radius / 50.f, Radius / 50.f, SegH / 100.f),
-			SegColor, 0.88f);
+			SegColor, 0.88f, 0.f, true);
 
 		// Ring scars — thin discs at segment joints (every 2 segments)
 		const int32 RingFreq = bDetailed ? 2 : 3;
@@ -7668,13 +8007,32 @@ void UPHCCitySubsystem::SpawnHills()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);  // Visual only
 		MC->RegisterComponent();
 		Hill->SetRootComponent(MC);
-		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
-		if (Mat)
+		// Choose texture based on color: green → Wild Grass, brown/gray → Mossy Rocky Ground
+		bool bIsGrassy = (Color.G > Color.R && Color.G > 0.2f);
+		UTexture2D* HillBC = bIsGrassy ? MegaWildGrassBC.Get() : MegaRockBC.Get();
+		UTexture2D* HillN  = bIsGrassy ? MegaWildGrassN.Get()  : MegaRockN.Get();
+		UTexture2D* HillR  = bIsGrassy ? MegaWildGrassR.Get()  : MegaRockR.Get();
+		if (TexturedMaterial && HillBC)
 		{
-			Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
-			if (GrassNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), GrassNormalMap);
-			if (GrassRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), GrassRoughnessMap);
-			MC->SetMaterial(0, Mat);
+			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(TexturedMaterial, MC);
+			if (Mat)
+			{
+				Mat->SetTextureParameterValue(TEXT("BaseColorTex"), HillBC);
+				if (HillN) Mat->SetTextureParameterValue(TEXT("NormalTex"), HillN);
+				if (HillR) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), HillR);
+				MC->SetMaterial(0, Mat);
+			}
+		}
+		else
+		{
+			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
+			if (Mat)
+			{
+				Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
+				if (GrassNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), GrassNormalMap);
+				if (GrassRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), GrassRoughnessMap);
+				MC->SetMaterial(0, Mat);
+			}
 		}
 		Hill->AddInstanceComponent(MC);
 
@@ -13641,7 +13999,8 @@ void UPHCCitySubsystem::SpawnSandCastle()
 			BeachMC->SetBoundsScale(30.f);
 			BeachMC->RegisterComponent();
 			BeachActor->SetRootComponent(BeachMC);
-			ApplyPBR(BeachMC, FLinearColor(0.82f, 0.76f, 0.58f), 0.f, 0.95f);
+			ApplyTextured(BeachMC, TexturedMaterial, MegaSandBC, MegaSandN, MegaSandR,
+				FLinearColor(0.82f, 0.76f, 0.58f), 0.95f);
 			BeachActor->AddInstanceComponent(BeachMC);
 		}
 

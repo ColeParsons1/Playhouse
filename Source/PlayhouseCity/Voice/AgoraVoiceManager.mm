@@ -3,6 +3,11 @@
 
 #include "Voice/AgoraVoiceManager.h"
 #include "PlayhouseCity.h"
+#include "HttpModule.h"
+#include "Interfaces/IHttpRequest.h"
+#include "Interfaces/IHttpResponse.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 
 #if PLATFORM_IOS || PLATFORM_MAC
 #if PLATFORM_IOS
@@ -73,11 +78,44 @@ void FAgoraVoiceManager::Initialize(const FString& AppId) {
 
 void FAgoraVoiceManager::JoinChannel(const FString& ChannelName) {
 	if (!bInitialized || bInChannel) return;
+
+	// Fetch token from backend
+	FString Url = FString::Printf(TEXT("https://tfplayhouse.com/api/agora/token/"));
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Req = FHttpModule::Get().CreateRequest();
+	Req->SetURL(Url);
+	Req->SetVerb(TEXT("POST"));
+	Req->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Req->SetContentAsString(FString::Printf(TEXT("{\"channel\":\"%s\",\"uid\":0}"), *ChannelName));
+
+	FString CachedChannel = ChannelName;
+	Req->OnProcessRequestComplete().BindLambda(
+		[this, CachedChannel](FHttpRequestPtr Request, FHttpResponsePtr Response, bool bSuccess)
+		{
+			if (bSuccess && Response.IsValid() && Response->GetResponseCode() == 200)
+			{
+				TSharedPtr<FJsonObject> Json;
+				TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Response->GetContentAsString());
+				if (FJsonSerializer::Deserialize(Reader, Json) && Json.IsValid())
+				{
+					FString Token = Json->GetStringField(TEXT("token"));
+					JoinChannelWithToken(CachedChannel, Token);
+					return;
+				}
+			}
+			UE_LOG(LogPlayhouseCity, Error, TEXT("Agora: Failed to fetch token from backend, joining without token"));
+			JoinChannelWithToken(CachedChannel, TEXT(""));
+		});
+	Req->ProcessRequest();
+	UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora: Fetching token for channel '%s'"), *ChannelName);
+}
+
+void FAgoraVoiceManager::JoinChannelWithToken(const FString& ChannelName, const FString& Token) {
+	if (!bInitialized || bInChannel) return;
 	if (GRtcEngine) {
-		NSString* TempToken = @"REDACTED_AGORA_TEMP_TOKEN";
-		[GRtcEngine joinChannelByToken:TempToken channelId:[NSString stringWithUTF8String:TCHAR_TO_UTF8(*ChannelName)] info:nil uid:0 joinSuccess:nil];
+		NSString* TokenStr = Token.IsEmpty() ? nil : [NSString stringWithUTF8String:TCHAR_TO_UTF8(*Token)];
+		[GRtcEngine joinChannelByToken:TokenStr channelId:[NSString stringWithUTF8String:TCHAR_TO_UTF8(*ChannelName)] info:nil uid:0 joinSuccess:nil];
 		bInChannel = true; bMuted = false;
-		UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora: Joining channel '%s'"), *ChannelName);
+		UE_LOG(LogPlayhouseCity, Warning, TEXT("Agora: Joining channel '%s' with %s token"), *ChannelName, Token.IsEmpty() ? TEXT("no") : TEXT("server"));
 	}
 }
 

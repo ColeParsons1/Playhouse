@@ -142,6 +142,34 @@ private:
 	/** Post-process material for custom-colored chromatic aberration during trip. */
 	UPROPERTY(Transient) TObjectPtr<UMaterial> ChromaAberrationMaterial;
 
+	/** Texture-sampled PBR material for Megascans surfaces (BaseColorTex, NormalTex, RoughnessTex). */
+	UPROPERTY(Transient) TObjectPtr<UMaterial> TexturedMaterial;
+
+	// -- Megascans 4K textures (loaded from .uasset at startup) ---------------
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaGrassBC;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaGrassN;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaGrassR;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaRockBC;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaRockN;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaRockR;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaSandBC;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaSandN;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaSandR;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaConcreteBC;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaConcreteN;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaConcreteR;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaRoadBC;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaRoadN;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaRoadR;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaBarkBC;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaBarkN;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaBarkR;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaWildGrassBC;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaWildGrassN;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaWildGrassR;
+
+	void LoadMegascansTextures();
+
 	// -- Procedural normal/roughness map textures (generated at startup) ------
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> GrassNormalMap;
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> BrickNormalMap;

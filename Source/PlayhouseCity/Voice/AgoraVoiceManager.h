@@ -16,8 +16,11 @@ public:
 	/** Initialize Agora with App ID. Call once at startup. */
 	void Initialize(const FString& AppId);
 
-	/** Join a voice channel. All players in the same channel can hear each other. */
+	/** Join a voice channel. Fetches a token from the backend, then joins. */
 	void JoinChannel(const FString& ChannelName);
+
+	/** Join with a specific token (called after async token fetch). */
+	void JoinChannelWithToken(const FString& ChannelName, const FString& Token);
 
 	/** Leave the current voice channel. */
 	void LeaveChannel();
