@@ -703,16 +703,28 @@ void FPlayhouseCityModule::StartupModule()
 			Mat->BlendMode = BLEND_Opaque;
 			auto* EditorData = Mat->GetEditorOnlyData();
 
-			// Texture Coordinate with tiling
+			// Texture Coordinate (base UVs)
 			auto* TexCoord = NewObject<UMaterialExpressionTextureCoordinate>(Mat);
-			TexCoord->UTiling = 10.f;
-			TexCoord->VTiling = 10.f;
+			TexCoord->UTiling = 1.f;
+			TexCoord->VTiling = 1.f;
 			EditorData->ExpressionCollection.Expressions.Add(TexCoord);
+
+			// Tiling scalar parameter (adjustable per MID)
+			auto* TilingParam = NewObject<UMaterialExpressionScalarParameter>(Mat);
+			TilingParam->ParameterName = TEXT("Tiling");
+			TilingParam->DefaultValue = 10.f;
+			EditorData->ExpressionCollection.Expressions.Add(TilingParam);
+
+			// Multiply TexCoord × Tiling
+			auto* TiledUV = NewObject<UMaterialExpressionMultiply>(Mat);
+			TiledUV->A.Expression = TexCoord;
+			TiledUV->B.Expression = TilingParam;
+			EditorData->ExpressionCollection.Expressions.Add(TiledUV);
 
 			// BaseColor Texture
 			auto* BaseColorTex = NewObject<UMaterialExpressionTextureSampleParameter2D>(Mat);
 			BaseColorTex->ParameterName = TEXT("BaseColorTex");
-			BaseColorTex->Coordinates.Expression = TexCoord;
+			BaseColorTex->Coordinates.Expression = TiledUV;
 			EditorData->ExpressionCollection.Expressions.Add(BaseColorTex);
 			EditorData->BaseColor.Expression = BaseColorTex;
 
@@ -720,14 +732,14 @@ void FPlayhouseCityModule::StartupModule()
 			auto* NormalTex = NewObject<UMaterialExpressionTextureSampleParameter2D>(Mat);
 			NormalTex->ParameterName = TEXT("NormalTex");
 			NormalTex->SamplerType = SAMPLERTYPE_Normal;
-			NormalTex->Coordinates.Expression = TexCoord;
+			NormalTex->Coordinates.Expression = TiledUV;
 			EditorData->ExpressionCollection.Expressions.Add(NormalTex);
 			EditorData->Normal.Expression = NormalTex;
 
 			// Roughness Texture
 			auto* RoughnessTex = NewObject<UMaterialExpressionTextureSampleParameter2D>(Mat);
 			RoughnessTex->ParameterName = TEXT("RoughnessTex");
-			RoughnessTex->Coordinates.Expression = TexCoord;
+			RoughnessTex->Coordinates.Expression = TiledUV;
 			EditorData->ExpressionCollection.Expressions.Add(RoughnessTex);
 			EditorData->Roughness.Expression = RoughnessTex;
 

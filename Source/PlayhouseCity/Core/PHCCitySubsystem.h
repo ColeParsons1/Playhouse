@@ -167,8 +167,27 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaWildGrassBC;
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaWildGrassN;
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaWildGrassR;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaUncutGrassBC;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaUncutGrassN;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaUncutGrassR;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaStoneTilesBC;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaStoneTilesN;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaStoneTilesR;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaAsphaltBC;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaAsphaltN;
+	UPROPERTY(Transient) TObjectPtr<UTexture2D> MegaAsphaltR;
 
 	void LoadMegascansTextures();
+
+	// -- Fab Megascans material instances (pre-compiled, work on iOS) ----------
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> FabGrassMI;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> FabSandMID;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> FabRoadMID;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> FabConcreteMID;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> FabRockMID;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> FabBarkMID;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> FabWildGrassMID;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> FabStoneTilesMID;
 
 	// -- Procedural normal/roughness map textures (generated at startup) ------
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> GrassNormalMap;

@@ -894,7 +894,71 @@ bool UPHCCityHUD::Initialize()
 		NightButton->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
-		//  Disasters button (below Night)
+		//  DEV MODE button (below Night) — time of day controls
+		// ============================================================
+		DevModeButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("DevModeButton"));
+		FButtonStyle DevBtnStyle = DevModeButton->GetStyle();
+		DevBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.2f, 0.8f, 0.3f, 0.3f));
+		DevBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.3f, 0.9f, 0.4f, 0.45f));
+		DevBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.4f, 1.0f, 0.5f, 0.6f));
+		DevModeButton->SetStyle(DevBtnStyle);
+
+		DevModeButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("DevModeLabel"));
+		DevModeButtonLabel->SetText(FText::FromString(TEXT("Dev")));
+		DevModeButtonLabel->SetFont(BtnFont);
+		DevModeButtonLabel->SetColorAndOpacity(FSlateColor(White));
+		DevModeButtonLabel->SetJustification(ETextJustify::Center);
+		DevModeButton->AddChild(DevModeButtonLabel);
+
+		UCanvasPanelSlot* DevBtnSlot = RootCanvas->AddChildToCanvas(DevModeButton);
+		DevBtnSlot->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f)); // top-center like mic button
+		DevBtnSlot->SetAlignment(FVector2D(1.f, 0.f));
+		DevBtnSlot->SetOffsets(FMargin(-260.f, 10.f, 90.f, 34.f)); // left of mic button
+
+		// Dev Time Panel (hidden by default)
+		DevTimePanel = WidgetTree->ConstructWidget<UCanvasPanel>(
+			UCanvasPanel::StaticClass(), TEXT("DevTimePanel"));
+		UCanvasPanelSlot* DevPanelSlot = RootCanvas->AddChildToCanvas(DevTimePanel);
+		DevPanelSlot->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f));
+		DevPanelSlot->SetAlignment(FVector2D(1.f, 0.f));
+		DevPanelSlot->SetOffsets(FMargin(-360.f, 50.f, 400.f, 260.f));
+		DevTimePanel->SetVisibility(ESlateVisibility::Collapsed);
+
+		const TCHAR* TimeLabels[] = {
+			TEXT("Sunrise"), TEXT("Morning"), TEXT("Noon"), TEXT("Afternoon"),
+			TEXT("Sunset"), TEXT("Dusk"), TEXT("Midnight"), TEXT("Cycle")
+		};
+		for (int32 Ti = 0; Ti < 8; ++Ti)
+		{
+			UButton* TBtn = WidgetTree->ConstructWidget<UButton>(
+				UButton::StaticClass(), *FString::Printf(TEXT("DevTimeBtn_%d"), Ti));
+			FButtonStyle TStyle = TBtn->GetStyle();
+			TStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.15f, 0.15f, 0.25f, 0.7f));
+			TStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.25f, 0.25f, 0.4f, 0.85f));
+			TStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.4f, 0.4f, 0.6f, 1.0f));
+			TBtn->SetStyle(TStyle);
+
+			UTextBlock* TLabel = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), *FString::Printf(TEXT("DevTimeLbl_%d"), Ti));
+			TLabel->SetText(FText::FromString(TimeLabels[Ti]));
+			TLabel->SetFont(BtnFont);
+			TLabel->SetColorAndOpacity(FSlateColor(White));
+			TLabel->SetJustification(ETextJustify::Center);
+			TBtn->AddChild(TLabel);
+
+			int32 Row = Ti / 2;
+			int32 Col = Ti % 2;
+			UCanvasPanelSlot* TSlot = DevTimePanel->AddChildToCanvas(TBtn);
+			TSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+			TSlot->SetAlignment(FVector2D(0.f, 0.f));
+			TSlot->SetOffsets(FMargin(Col * 195.f, Row * 60.f, 190.f, 55.f));
+			DevTimeBtns.Add(TBtn);
+		}
+
+		// ============================================================
+		//  Disasters button (below Dev Mode)
 		// ============================================================
 		DisastersButton = WidgetTree->ConstructWidget<UButton>(
 			UButton::StaticClass(), TEXT("DisastersButton"));
@@ -905,6 +969,7 @@ bool UPHCCityHUD::Initialize()
 		DisBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.95f, 0.97f, 1.00f, 0.50f));
 		DisastersButton->SetStyle(DisBtnStyle);
 
+		// Adjust Disasters button position (moved down for Dev Mode)
 		DisastersButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), TEXT("DisastersButtonLabel"));
 		DisastersButtonLabel->SetText(FText::FromString(TEXT("Disasters")));
@@ -2525,6 +2590,22 @@ void UPHCCityHUD::NativeConstruct()
 	if (NightButton)
 	{
 		NightButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnNightButtonClicked);
+	}
+	if (DevModeButton)
+	{
+		DevModeButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevModeButtonClicked);
+	}
+	// Bind dev time buttons
+	if (DevTimeBtns.Num() >= 8)
+	{
+		DevTimeBtns[0]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeSunrise);
+		DevTimeBtns[1]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeMorning);
+		DevTimeBtns[2]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeNoon);
+		DevTimeBtns[3]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeAfternoon);
+		DevTimeBtns[4]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeSunset);
+		DevTimeBtns[5]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeDusk);
+		DevTimeBtns[6]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeMidnight);
+		DevTimeBtns[7]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeCycle);
 	}
 	if (DisastersButton)
 	{
@@ -4560,23 +4641,51 @@ void UPHCCityHUD::OnNightButtonClicked()
 
 	if (!CitySub->bNightModeLocked)
 	{
-		// Switch to night and freeze
-		CitySub->DayNightTime = 0.75f; // midnight
+		CitySub->DayNightTime = 0.75f;
 		CitySub->bNightModeLocked = true;
 		if (NightButtonLabel)
-		{
 			NightButtonLabel->SetText(FText::FromString(TEXT("Cycle")));
-		}
 	}
 	else
 	{
-		// Resume normal cycle from current time
 		CitySub->bNightModeLocked = false;
 		if (NightButtonLabel)
-		{
 			NightButtonLabel->SetText(FText::FromString(TEXT("Night")));
-		}
 	}
+}
+
+void UPHCCityHUD::OnDevModeButtonClicked()
+{
+	if (!DevTimePanel) return;
+	bool bVisible = DevTimePanel->GetVisibility() == ESlateVisibility::Visible;
+	DevTimePanel->SetVisibility(bVisible ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+}
+
+void UPHCCityHUD::OnDevTimeSelected(int32 TimeIndex)
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+	UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+	if (!CitySub) return;
+
+	// Time values: 0=sunrise, 0.25=noon, 0.5=sunset, 0.75=midnight
+	const float Times[] = { 0.0f, 0.125f, 0.25f, 0.375f, 0.5f, 0.625f, 0.75f, -1.f };
+
+	if (TimeIndex == 7)
+	{
+		// Resume cycle
+		CitySub->bNightModeLocked = false;
+		if (DevTimePanel) DevTimePanel->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	if (TimeIndex >= 0 && TimeIndex < 7)
+	{
+		CitySub->DayNightTime = Times[TimeIndex];
+		CitySub->bNightModeLocked = true;
+	}
+
+	if (DevTimePanel) DevTimePanel->SetVisibility(ESlateVisibility::Collapsed);
 }
 
 // ---------------------------------------------------------------------------

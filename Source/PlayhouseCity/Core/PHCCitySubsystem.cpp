@@ -110,7 +110,7 @@ static UMaterialInstanceDynamic* ApplyPBRGlass(UStaticMeshComponent* MC,
 static void ApplyTextured(UStaticMeshComponent* MC, UMaterial* TexturedMat,
 	UTexture2D* BC, UTexture2D* N, UTexture2D* R,
 	const FLinearColor& FallbackColor = FLinearColor(0.5f, 0.5f, 0.5f),
-	float FallbackRoughness = 0.8f)
+	float FallbackRoughness = 0.8f, float Tiling = 10.f)
 {
 	if (!MC) return;
 	if (TexturedMat && BC)
@@ -121,6 +121,7 @@ static void ApplyTextured(UStaticMeshComponent* MC, UMaterial* TexturedMat,
 			Mat->SetTextureParameterValue(TEXT("BaseColorTex"), BC);
 			if (N) Mat->SetTextureParameterValue(TEXT("NormalTex"), N);
 			if (R) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), R);
+			Mat->SetScalarParameterValue(TEXT("Tiling"), Tiling);
 			MC->SetMaterial(0, Mat);
 			return;
 		}
@@ -3147,9 +3148,14 @@ void UPHCCitySubsystem::LoadMegascansTextures()
 	// Try loading Megascans .uasset textures (works in editor/cooked builds)
 	auto LT = [](const TCHAR* P) { return LoadObject<UTexture2D>(nullptr, P); };
 
-	MegaGrassBC = LT(TEXT("/Game/Megascans/Grass/Grass_ofivdfoh2_4K_BaseColor"));
-	MegaGrassN  = LT(TEXT("/Game/Megascans/Grass/Grass_ofivdfoh2_4K_Normal"));
-	MegaGrassR  = LT(TEXT("/Game/Megascans/Grass/Grass_ofivdfoh2_4K_Roughness"));
+	// Prefer Uncut Grass (Fab) over original Grass (Megascans) for ground surfaces
+	MegaGrassBC = LT(TEXT("/Game/Fab/Megascans/Surfaces/Uncut_Grass_oeeb70/High/oeeb70_tier_1/Textures/T_oeeb70_4K_B"));
+	MegaGrassN  = LT(TEXT("/Game/Fab/Megascans/Surfaces/Uncut_Grass_oeeb70/High/oeeb70_tier_1/Textures/T_oeeb70_4K_N"));
+	MegaGrassR  = LT(TEXT("/Game/Fab/Megascans/Surfaces/Uncut_Grass_oeeb70/High/oeeb70_tier_1/Textures/T_oeeb70_4K_ORM"));
+	// Fallback to original Grass if Uncut Grass not available
+	if (!MegaGrassBC) MegaGrassBC = LT(TEXT("/Game/Megascans/Grass/Grass_ofivdfoh2_4K_BaseColor"));
+	if (!MegaGrassN)  MegaGrassN  = LT(TEXT("/Game/Megascans/Grass/Grass_ofivdfoh2_4K_Normal"));
+	if (!MegaGrassR)  MegaGrassR  = LT(TEXT("/Game/Megascans/Grass/Grass_ofivdfoh2_4K_Roughness"));
 
 	MegaRockBC = LT(TEXT("/Game/Megascans/Mossy_Rocky_Ground/Mossy_Rocky_Ground_vcqhcig_4K_BaseColor"));
 	MegaRockN  = LT(TEXT("/Game/Megascans/Mossy_Rocky_Ground/Mossy_Rocky_Ground_vcqhcig_4K_Normal"));
@@ -3163,9 +3169,14 @@ void UPHCCitySubsystem::LoadMegascansTextures()
 	MegaConcreteN  = LT(TEXT("/Game/Megascans/Cast_In_Situ_Concrete/Cast_In_Situ_Concrete_uhwnbdoew_4K_Normal"));
 	MegaConcreteR  = LT(TEXT("/Game/Megascans/Cast_In_Situ_Concrete/Cast_In_Situ_Concrete_uhwnbdoew_4K_Roughness"));
 
-	MegaRoadBC = LT(TEXT("/Game/Megascans/Fine_American_Road/Fine_American_Road_sjfnch0a_4K_BaseColor"));
-	MegaRoadN  = LT(TEXT("/Game/Megascans/Fine_American_Road/Fine_American_Road_sjfnch0a_4K_Normal"));
-	MegaRoadR  = LT(TEXT("/Game/Megascans/Fine_American_Road/Fine_American_Road_sjfnch0a_4K_Roughness"));
+	// Prefer Asphalt (Fab) over Fine American Road for road surfaces
+	MegaRoadBC = LT(TEXT("/Game/Fab/Megascans/Surfaces/Asphalt_sk0mci2c/High/sk0mci2c_tier_1/Textures/T_sk0mci2c_4K_B"));
+	MegaRoadN  = LT(TEXT("/Game/Fab/Megascans/Surfaces/Asphalt_sk0mci2c/High/sk0mci2c_tier_1/Textures/T_sk0mci2c_4K_N"));
+	MegaRoadR  = LT(TEXT("/Game/Fab/Megascans/Surfaces/Asphalt_sk0mci2c/High/sk0mci2c_tier_1/Textures/T_sk0mci2c_4K_ORM"));
+	// Fallback to Fine American Road if Asphalt not available
+	if (!MegaRoadBC) MegaRoadBC = LT(TEXT("/Game/Megascans/Fine_American_Road/Fine_American_Road_sjfnch0a_4K_BaseColor"));
+	if (!MegaRoadN)  MegaRoadN  = LT(TEXT("/Game/Megascans/Fine_American_Road/Fine_American_Road_sjfnch0a_4K_Normal"));
+	if (!MegaRoadR)  MegaRoadR  = LT(TEXT("/Game/Megascans/Fine_American_Road/Fine_American_Road_sjfnch0a_4K_Roughness"));
 
 	MegaBarkBC = LT(TEXT("/Game/Megascans/Tree_Bark/Tree_Bark_vimmdcofw_4K_BaseColor"));
 	MegaBarkN  = LT(TEXT("/Game/Megascans/Tree_Bark/Tree_Bark_vimmdcofw_4K_Normal"));
@@ -3174,6 +3185,18 @@ void UPHCCitySubsystem::LoadMegascansTextures()
 	MegaWildGrassBC = LT(TEXT("/Game/Megascans/Wild_Grass/Wild_Grass_xbreagf_4K_BaseColor"));
 	MegaWildGrassN  = LT(TEXT("/Game/Megascans/Wild_Grass/Wild_Grass_xbreagf_4K_Normal"));
 	MegaWildGrassR  = LT(TEXT("/Game/Megascans/Wild_Grass/Wild_Grass_xbreagf_4K_Roughness"));
+
+	// Fab-imported textures (different naming: _B=BaseColor, _N=Normal, _ORM=Roughness)
+	MegaUncutGrassBC = LT(TEXT("/Game/Fab/Megascans/Surfaces/Uncut_Grass_oeeb70/High/oeeb70_tier_1/Textures/T_oeeb70_4K_B"));
+	MegaUncutGrassN  = LT(TEXT("/Game/Fab/Megascans/Surfaces/Uncut_Grass_oeeb70/High/oeeb70_tier_1/Textures/T_oeeb70_4K_N"));
+	MegaUncutGrassR  = LT(TEXT("/Game/Fab/Megascans/Surfaces/Uncut_Grass_oeeb70/High/oeeb70_tier_1/Textures/T_oeeb70_4K_ORM"));
+
+	// Stone Tiles Facade — textures didn't fully import, skip for now
+	// MegaStoneTilesBC/N/R will remain null, surfaces using them fall back
+
+	MegaAsphaltBC = LT(TEXT("/Game/Fab/Megascans/Surfaces/Asphalt_sk0mci2c/High/sk0mci2c_tier_1/Textures/T_sk0mci2c_4K_B"));
+	MegaAsphaltN  = LT(TEXT("/Game/Fab/Megascans/Surfaces/Asphalt_sk0mci2c/High/sk0mci2c_tier_1/Textures/T_sk0mci2c_4K_N"));
+	MegaAsphaltR  = LT(TEXT("/Game/Fab/Megascans/Surfaces/Asphalt_sk0mci2c/High/sk0mci2c_tier_1/Textures/T_sk0mci2c_4K_ORM"));
 
 	// Hash function for procedural textures
 	auto Hash = [](int32 X, int32 Y, int32 Seed) -> float
@@ -3262,6 +3285,45 @@ void UPHCCitySubsystem::LoadMegascansTextures()
 		+ CountLoaded(MegaWildGrassBC);
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: %d/7 Megascans texture sets ready (TexturedMat=%d)"),
 		Loaded, TexturedMaterial ? 1 : 0);
+
+	// Create Fab-based MIDs for each surface type using the working Uncut Grass MI
+	FabGrassMI = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Fab/Megascans/Surfaces/Uncut_Grass_oeeb70/High/oeeb70_tier_1/Materials/MI_oeeb70.MI_oeeb70"));
+
+	if (!FabGrassMI) return;
+
+	auto MakeFabMID = [&](UTexture2D* BC, UTexture2D* N, UTexture2D* R) -> UMaterialInstanceDynamic*
+	{
+		if (!BC) return nullptr;
+		UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(FabGrassMI, this);
+		if (!MID) return nullptr;
+		MID->SetTextureParameterValue(TEXT("BaseColorTexture"), BC);
+		if (N) MID->SetTextureParameterValue(TEXT("NormalTexture"), N);
+		if (R) MID->SetTextureParameterValue(TEXT("MetallicRoughnessTexture"), R);
+		return MID;
+	};
+
+	FabSandMID       = MakeFabMID(MegaSandBC, MegaSandN, MegaSandR);
+	FabConcreteMID   = MakeFabMID(MegaConcreteBC, MegaConcreteN, MegaConcreteR);
+	FabRockMID       = MakeFabMID(MegaRockBC, MegaRockN, MegaRockR);
+	FabBarkMID       = MakeFabMID(MegaBarkBC, MegaBarkN, MegaBarkR);
+	FabWildGrassMID  = MakeFabMID(MegaWildGrassBC, MegaWildGrassN, MegaWildGrassR);
+
+	// Asphalt MI loaded directly (has its own compiled material)
+	UMaterialInterface* AsphaltMI = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Fab/Megascans/Surfaces/Asphalt_sk0mci2c/High/sk0mci2c_tier_1/Materials/MI_sk0mci2c.MI_sk0mci2c"));
+	if (AsphaltMI)
+		FabRoadMID = UMaterialInstanceDynamic::Create(AsphaltMI, this);
+
+	// Stone Tiles — use Fab MI base with Stone Tiles textures
+	UTexture2D* StoneBC = LoadObject<UTexture2D>(nullptr, TEXT("/Game/Fab/Megascans/Surfaces/Stone_Tiles_Facade_ub4nbiag/High/ub4nbiag_tier_1/Textures/T_ub4nbiag_4K_B"));
+	UTexture2D* StoneN  = LoadObject<UTexture2D>(nullptr, TEXT("/Game/Fab/Megascans/Surfaces/Stone_Tiles_Facade_ub4nbiag/High/ub4nbiag_tier_1/Textures/T_ub4nbiag_4K_N"));
+	UTexture2D* StoneR  = LoadObject<UTexture2D>(nullptr, TEXT("/Game/Fab/Megascans/Surfaces/Stone_Tiles_Facade_ub4nbiag/High/ub4nbiag_tier_1/Textures/T_ub4nbiag_4K_ORM"));
+	FabStoneTilesMID = MakeFabMID(StoneBC, StoneN, StoneR);
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Fab MIDs created — Grass=%d Sand=%d Road=%d Concrete=%d Rock=%d Bark=%d WildGrass=%d Stone=%d"),
+		FabGrassMI ? 1 : 0, FabSandMID ? 1 : 0, FabRoadMID ? 1 : 0, FabConcreteMID ? 1 : 0,
+		FabRockMID ? 1 : 0, FabBarkMID ? 1 : 0, FabWildGrassMID ? 1 : 0, FabStoneTilesMID ? 1 : 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -3640,14 +3702,10 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 			PMC->RegisterComponent();
 			TerrainActor->AddInstanceComponent(PMC);
 
-			// Apply terrain material with natural biome blending
-			// Sample multiple points within the chunk and average for smooth color
-			UMaterialInstanceDynamic* Mat = nullptr;
-			if (ColorMaterial)
+			// Apply terrain material — use Fab MIDs based on biome
 			{
-				Mat = UMaterialInstanceDynamic::Create(ColorMaterial, PMC);
-				if (Mat)
-				{
+				// Still compute color for biome detection
+				UMaterialInstanceDynamic* Mat = nullptr;
 					// Deterministic noise from position for organic variation
 					auto TerrainNoise = [](float X, float Y, float Scale) -> float
 					{
@@ -3815,10 +3873,28 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 
 					// Vary roughness by biome (sand=smoother, rock=rougher)
 					float ChunkRough = 0.88f + (ChunkNoise - 0.5f) * 0.08f;
-					Mat->SetVectorParameterValue(TEXT("BaseColor"), AvgColor);
-					Mat->SetScalarParameterValue(TEXT("Roughness"), ChunkRough);
-					PMC->SetMaterial(0, Mat);
-				}
+					// Pick Fab MID based on averaged biome color
+					bool bIsSandy = (AvgColor.R > 0.4f && AvgColor.G > 0.3f && AvgColor.B > 0.2f && AvgColor.R > AvgColor.G);
+					bool bIsSnowy = (AvgColor.R > 0.7f && AvgColor.G > 0.7f && AvgColor.B > 0.7f);
+					bool bIsRocky = (ChunkRough > 0.92f || (AvgColor.R > 0.15f && FMath::Abs(AvgColor.R - AvgColor.G) < 0.05f && AvgColor.B < 0.15f));
+
+					if (bIsSnowy)
+					{
+						// Keep snow as flat white (no Fab texture for snow)
+						if (ColorMaterial) { Mat = UMaterialInstanceDynamic::Create(ColorMaterial, PMC); }
+						if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), AvgColor); Mat->SetScalarParameterValue(TEXT("Roughness"), ChunkRough); PMC->SetMaterial(0, Mat); }
+					}
+					else if (bIsSandy && FabSandMID)
+						PMC->SetMaterial(0, FabSandMID);
+					else if (bIsRocky && FabRockMID)
+						PMC->SetMaterial(0, FabRockMID);
+					else if (FabGrassMI)
+						PMC->SetMaterial(0, FabGrassMI);
+					else if (ColorMaterial)
+					{
+						Mat = UMaterialInstanceDynamic::Create(ColorMaterial, PMC);
+						if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), AvgColor); Mat->SetScalarParameterValue(TEXT("Roughness"), ChunkRough); PMC->SetMaterial(0, Mat); }
+					}
 			}
 		}
 	}
@@ -4049,17 +4125,10 @@ void UPHCCitySubsystem::SpawnGrassSystem()
 		HISM->RegisterComponent();
 		GrassActor->AddInstanceComponent(HISM);
 
-		if (TexturedMaterial && MegaWildGrassBC)
+		if (FabWildGrassMID)
 		{
-			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(TexturedMaterial, HISM);
-			if (Mat)
-			{
-				Mat->SetTextureParameterValue(TEXT("BaseColorTex"), MegaWildGrassBC);
-				if (MegaWildGrassN) Mat->SetTextureParameterValue(TEXT("NormalTex"), MegaWildGrassN);
-				if (MegaWildGrassR) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), MegaWildGrassR);
-				HISM->SetMaterial(0, Mat);
-				GrassOriginalMIDs.Add(Mat);
-			}
+			HISM->SetMaterial(0, FabWildGrassMID);
+			GrassOriginalMIDs.Add(FabWildGrassMID);
 		}
 		else if (ColorMaterial)
 		{
@@ -4087,16 +4156,9 @@ void UPHCCitySubsystem::SpawnGrassSystem()
 		RockHISM->SetCullDistances(0.f, 8000.f);
 		RockHISM->RegisterComponent();
 		GrassActor->AddInstanceComponent(RockHISM);
-		if (TexturedMaterial && MegaRockBC)
+		if (FabRockMID)
 		{
-			UMaterialInstanceDynamic* RM = UMaterialInstanceDynamic::Create(TexturedMaterial, RockHISM);
-			if (RM)
-			{
-				RM->SetTextureParameterValue(TEXT("BaseColorTex"), MegaRockBC);
-				if (MegaRockN) RM->SetTextureParameterValue(TEXT("NormalTex"), MegaRockN);
-				if (MegaRockR) RM->SetTextureParameterValue(TEXT("RoughnessTex"), MegaRockR);
-				RockHISM->SetMaterial(0, RM);
-			}
+			RockHISM->SetMaterial(0, FabRockMID);
 		}
 		else if (ColorMaterial)
 		{
@@ -4717,6 +4779,12 @@ void UPHCCitySubsystem::SpawnGround()
 	auto MakeGroundMat = [&](UStaticMeshComponent* MC, UTexture2D* BC, UTexture2D* N, UTexture2D* R,
 		const FLinearColor& FallbackColor) -> UMaterialInstanceDynamic*
 	{
+		if (FabGrassMI)
+		{
+			// Use MID (not raw MI) — raw MI doesn't apply correctly on iOS
+			MC->SetMaterial(0, FabGrassMI);
+			return nullptr;
+		}
 		if (TexturedMaterial && BC)
 		{
 			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(TexturedMaterial, MC);
@@ -4725,6 +4793,7 @@ void UPHCCitySubsystem::SpawnGround()
 				Mat->SetTextureParameterValue(TEXT("BaseColorTex"), BC);
 				if (N) Mat->SetTextureParameterValue(TEXT("NormalTex"), N);
 				if (R) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), R);
+				Mat->SetScalarParameterValue(TEXT("Tiling"), 50.f);
 				MC->SetMaterial(0, Mat);
 				return Mat;
 			}
@@ -4825,17 +4894,9 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 				WaterMIDs.Add(Mat);  // Store for trip sky swap
 			}
 		}
-		else if (!bIsWater && TexturedMaterial && MegaSandBC)
+		else if (!bIsWater && FabSandMID)
 		{
-			// Sand surface — use Megascans texture
-			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(TexturedMaterial, MC);
-			if (Mat)
-			{
-				Mat->SetTextureParameterValue(TEXT("BaseColorTex"), MegaSandBC);
-				if (MegaSandN) Mat->SetTextureParameterValue(TEXT("NormalTex"), MegaSandN);
-				if (MegaSandR) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), MegaSandR);
-				MC->SetMaterial(0, Mat);
-			}
+			MC->SetMaterial(0, FabSandMID);
 		}
 		else
 		{
@@ -6119,15 +6180,8 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 		Lawn->SetWorldLocation(FVector(Loc.X, Loc.Y, 3.f)); // top face at Z=4
 		Lawn->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Lawn->RegisterComponent();
-		UMaterialInstanceDynamic* LMat = UMaterialInstanceDynamic::Create(Lawn->GetMaterial(0), Lawn);
-		if (LMat)
-		{
-			LMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.15f, 0.35f, 0.08f));
-			LMat->SetScalarParameterValue(TEXT("Roughness"), 0.9f);
-			if (GrassNormalMap) LMat->SetTextureParameterValue(TEXT("NormalMap"), GrassNormalMap);
-			if (GrassRoughnessMap) LMat->SetTextureParameterValue(TEXT("RoughnessMap"), GrassRoughnessMap);
-			Lawn->SetMaterial(0, LMat);
-		}
+		if (FabGrassMI) Lawn->SetMaterial(0, FabGrassMI);
+		else ApplyPBR(Lawn, FLinearColor(0.15f, 0.35f, 0.08f), 0.f, 0.9f);
 		House->AddInstanceComponent(Lawn);
 	}
 
@@ -6833,14 +6887,8 @@ void UPHCCitySubsystem::SpawnParkBlock(const FVector& ParkCenter, float ParkSize
 	Grass->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Grass->RegisterComponent();
 	Park->SetRootComponent(Grass);
-	UMaterialInstanceDynamic* GrassMat = UMaterialInstanceDynamic::Create(Grass->GetMaterial(0), Grass);
-	if (GrassMat)
-	{
-		GrassMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.15f, 0.30f, 0.10f));
-		if (GrassNormalMap) GrassMat->SetTextureParameterValue(TEXT("NormalMap"), GrassNormalMap);
-		if (GrassRoughnessMap) GrassMat->SetTextureParameterValue(TEXT("RoughnessMap"), GrassRoughnessMap);
-		Grass->SetMaterial(0, GrassMat);
-	}
+	if (FabGrassMI) Grass->SetMaterial(0, FabGrassMI);
+	else ApplyPBR(Grass, FLinearColor(0.15f, 0.30f, 0.10f), 0.f, 0.85f);
 	Park->AddInstanceComponent(Grass);
 
 	// Walking paths (cross-shaped)
@@ -6855,7 +6903,8 @@ void UPHCCitySubsystem::SpawnParkBlock(const FVector& ParkCenter, float ParkSize
 		Path->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Path->RegisterComponent();
 		UMaterialInstanceDynamic* PM = UMaterialInstanceDynamic::Create(Path->GetMaterial(0), Path);
-		if (PM) { PM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.55f, 0.52f, 0.46f)); Path->SetMaterial(0, PM); }
+		if (FabConcreteMID) Path->SetMaterial(0, FabConcreteMID);
+		else ApplyPBR(Path, FLinearColor(0.55f, 0.52f, 0.46f), 0.f, 0.75f);
 		Park->AddInstanceComponent(Path);
 	};
 
@@ -6887,7 +6936,8 @@ void UPHCCitySubsystem::SpawnParkBlock(const FVector& ParkCenter, float ParkSize
 			Hedge->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			Hedge->RegisterComponent();
 			UMaterialInstanceDynamic* HM = UMaterialInstanceDynamic::Create(Hedge->GetMaterial(0), Hedge);
-			if (HM) { HM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.08f, 0.25f, 0.05f)); HM->SetScalarParameterValue(TEXT("Roughness"), 0.92f); Hedge->SetMaterial(0, HM); }
+			if (FabWildGrassMID) Hedge->SetMaterial(0, FabWildGrassMID);
+		else ApplyPBR(Hedge, FLinearColor(0.08f, 0.25f, 0.05f), 0.f, 0.92f);
 			Park->AddInstanceComponent(Hedge);
 		}
 	}
@@ -6906,7 +6956,8 @@ void UPHCCitySubsystem::SpawnParkBlock(const FVector& ParkCenter, float ParkSize
 			Topiary->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			Topiary->RegisterComponent();
 			UMaterialInstanceDynamic* TM = UMaterialInstanceDynamic::Create(Topiary->GetMaterial(0), Topiary);
-			if (TM) { TM->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.05f, 0.22f, 0.04f)); TM->SetScalarParameterValue(TEXT("Roughness"), 0.90f); Topiary->SetMaterial(0, TM); }
+			if (FabWildGrassMID) Topiary->SetMaterial(0, FabWildGrassMID);
+		else ApplyPBR(Topiary, FLinearColor(0.05f, 0.22f, 0.04f), 0.f, 0.90f);
 			Park->AddInstanceComponent(Topiary);
 		}
 	}
@@ -7397,18 +7448,13 @@ void UPHCCitySubsystem::SpawnRoadStrip(const FVector& Center, float LengthX, flo
 	MC->RegisterComponent();
 	Road->SetRootComponent(MC);
 
-	// Apply Megascans road texture if available, otherwise flat asphalt with procedural detail
-	if (TexturedMaterial && MegaRoadBC)
+	// Try Fab material instance first (pre-compiled with correct shaders)
+	UMaterialInterface* AsphaltMI = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Fab/Megascans/Surfaces/Asphalt_sk0mci2c/High/sk0mci2c_tier_1/Materials/MI_sk0mci2c.MI_sk0mci2c"));
+	if (AsphaltMI)
 	{
-		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(TexturedMaterial, MC);
-		if (Mat)
-		{
-			Mat->SetTextureParameterValue(TEXT("BaseColorTex"), MegaRoadBC);
-			if (MegaRoadN) Mat->SetTextureParameterValue(TEXT("NormalTex"), MegaRoadN);
-			if (MegaRoadR) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), MegaRoadR);
-			MC->SetMaterial(0, Mat);
-			RoadMaterials.Add(Mat);
-		}
+		MC->SetMaterial(0, AsphaltMI);
+		RoadMaterials.Add(nullptr);
 	}
 	else
 	{
@@ -7417,8 +7463,6 @@ void UPHCCitySubsystem::SpawnRoadStrip(const FVector& Center, float LengthX, flo
 		{
 			Mat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.015f, 0.015f, 0.018f));
 			Mat->SetScalarParameterValue(TEXT("Roughness"), 0.85f);
-			if (AsphaltNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), AsphaltNormalMap);
-			if (AsphaltRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), AsphaltRoughnessMap);
 			MC->SetMaterial(0, Mat);
 			RoadMaterials.Add(Mat);
 		}
@@ -7490,7 +7534,8 @@ void UPHCCitySubsystem::SpawnRoadStrip(const FVector& Center, float LengthX, flo
 		Curb->SetWorldLocation(CurbLoc);
 		Curb->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Curb->RegisterComponent();
-		ApplyPBR(Curb, CurbColor, 0.f, 0.75f, FLinearColor::Black, ConcreteNormalMap, ConcreteRoughnessMap);
+		if (FabConcreteMID) Curb->SetMaterial(0, FabConcreteMID);
+		else ApplyPBR(Curb, CurbColor, 0.f, 0.75f);
 		Road->AddInstanceComponent(Curb);
 	};
 
@@ -7541,17 +7586,9 @@ void UPHCCitySubsystem::SpawnSidewalk(const FVector& Center, float LengthX, floa
 	MC->RegisterComponent();
 	Walk->SetRootComponent(MC);
 
-	// Apply Megascans concrete texture if available, otherwise flat concrete with procedural detail
-	if (TexturedMaterial && MegaConcreteBC)
+	if (FabConcreteMID)
 	{
-		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(TexturedMaterial, MC);
-		if (Mat)
-		{
-			Mat->SetTextureParameterValue(TEXT("BaseColorTex"), MegaConcreteBC);
-			if (MegaConcreteN) Mat->SetTextureParameterValue(TEXT("NormalTex"), MegaConcreteN);
-			if (MegaConcreteR) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), MegaConcreteR);
-			MC->SetMaterial(0, Mat);
-		}
+		MC->SetMaterial(0, FabConcreteMID);
 	}
 	else
 	{
@@ -7692,16 +7729,9 @@ void UPHCCitySubsystem::SpawnPalmTree(const FVector& Location, float Height, boo
 		C->RegisterComponent();
 		if (CompIdx == 1) Tree->SetRootComponent(C);
 
-		if (bUseBarkTex && TexturedMaterial && MegaBarkBC)
+		if (bUseBarkTex && FabBarkMID)
 		{
-			UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(TexturedMaterial, C);
-			if (M)
-			{
-				M->SetTextureParameterValue(TEXT("BaseColorTex"), MegaBarkBC);
-				if (MegaBarkN) M->SetTextureParameterValue(TEXT("NormalTex"), MegaBarkN);
-				if (MegaBarkR) M->SetTextureParameterValue(TEXT("RoughnessTex"), MegaBarkR);
-				C->SetMaterial(0, M);
-			}
+			C->SetMaterial(0, FabBarkMID);
 		}
 		else
 		{
@@ -8007,33 +8037,12 @@ void UPHCCitySubsystem::SpawnHills()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);  // Visual only
 		MC->RegisterComponent();
 		Hill->SetRootComponent(MC);
-		// Choose texture based on color: green → Wild Grass, brown/gray → Mossy Rocky Ground
+		// Choose Fab MID based on color: green → Wild Grass, brown/gray → Rock
 		bool bIsGrassy = (Color.G > Color.R && Color.G > 0.2f);
-		UTexture2D* HillBC = bIsGrassy ? MegaWildGrassBC.Get() : MegaRockBC.Get();
-		UTexture2D* HillN  = bIsGrassy ? MegaWildGrassN.Get()  : MegaRockN.Get();
-		UTexture2D* HillR  = bIsGrassy ? MegaWildGrassR.Get()  : MegaRockR.Get();
-		if (TexturedMaterial && HillBC)
-		{
-			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(TexturedMaterial, MC);
-			if (Mat)
-			{
-				Mat->SetTextureParameterValue(TEXT("BaseColorTex"), HillBC);
-				if (HillN) Mat->SetTextureParameterValue(TEXT("NormalTex"), HillN);
-				if (HillR) Mat->SetTextureParameterValue(TEXT("RoughnessTex"), HillR);
-				MC->SetMaterial(0, Mat);
-			}
-		}
+		UMaterialInterface* HillMI = bIsGrassy ? (UMaterialInterface*)FabWildGrassMID.Get() : (UMaterialInterface*)FabRockMID.Get();
+		if (HillMI) MC->SetMaterial(0, HillMI);
 		else
-		{
-			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
-			if (Mat)
-			{
-				Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
-				if (GrassNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), GrassNormalMap);
-				if (GrassRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), GrassRoughnessMap);
-				MC->SetMaterial(0, Mat);
-			}
-		}
+			ApplyPBR(MC, Color, 0.f, 0.85f);
 		Hill->AddInstanceComponent(MC);
 
 		if (bCollision)
@@ -8197,16 +8206,20 @@ void UPHCCitySubsystem::SpawnJungle()
 		C->SetBoundsScale(10.f);
 		if (bGlass && GlassMaterial)
 			ApplyPBRGlass(C, GlassMaterial, Col, Opacity, Metal, Rough);
+		else if (Metal == 0.f)
+		{
+			// Auto-select Fab MID based on color hue
+			bool bIsBark = (Col.R > 0.2f && Col.G < Col.R && Col.B < 0.16f);
+			bool bIsRock = (Col.R > 0.15f && FMath::Abs(Col.R - Col.G) < 0.12f && Col.B < Col.R);
+			bool bIsGreen = (Col.G > Col.R && Col.G > 0.15f);
+			UMaterialInterface* JungleMI = bIsBark ? (UMaterialInterface*)FabBarkMID.Get() : bIsRock ? (UMaterialInterface*)FabRockMID.Get() : bIsGreen ? (UMaterialInterface*)FabWildGrassMID.Get() : nullptr;
+			if (JungleMI) C->SetMaterial(0, JungleMI);
+			else
+				ApplyPBR(C, Col, Metal, Rough);
+		}
 		else
 		{
-			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, C);
-			if (Mat)
-			{
-				Mat->SetVectorParameterValue(TEXT("BaseColor"), Col);
-				Mat->SetScalarParameterValue(TEXT("Roughness"), Rough);
-				if (Metal != 0.f) Mat->SetScalarParameterValue(TEXT("Metallic"), Metal);
-				C->SetMaterial(0, Mat);
-			}
+			ApplyPBR(C, Col, Metal, Rough);
 		}
 		if (CI == 1) { C->RegisterComponent(); JA->SetRootComponent(C); }
 		else { C->AttachToComponent(JA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform); C->RegisterComponent(); }
@@ -11601,7 +11614,6 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		MC->RegisterComponent();
 		if (bIcePeak)
 		{
-			// Rocky ice mountain: dark blue-gray rock with subtle icy emissive
 			float B = (Col.R + Col.G + Col.B) / 3.f;
 			FLinearColor IceRockCol(0.22f + B * 0.12f, 0.25f + B * 0.12f, 0.32f + B * 0.10f);
 			ApplyPBR(MC, IceRockCol, 0.08f, 0.88f,
@@ -11609,7 +11621,8 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 		else
 		{
-			ApplyPBR(MC, Col, Metal, Rough);
+			if (FabRockMID) MC->SetMaterial(0, FabRockMID);
+			else ApplyPBR(MC, Col, 0.f, Rough);
 		}
 		O->AddInstanceComponent(MC);
 		return MC;
@@ -12689,8 +12702,12 @@ void UPHCCitySubsystem::SpawnSandCastle()
 	const float PinkRough    = 0.92f;
 	const float StoneMetal   = 0.0f;
 
+	// Load Stone Tiles Facade material for castle walls
+	UMaterialInterface* StoneTilesMI = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Fab/Megascans/Surfaces/Stone_Tiles_Facade_ub4nbiag/High/ub4nbiag_tier_1/Materials/MI_ub4nbiag.MI_ub4nbiag"));
+
 	// ================================================================
-	// Mesh helper lambdas
+	// Mesh helper lambdas — use Stone Tiles material if available
 	// ================================================================
 	auto MakeCube = [&](AActor* Owner, const FVector& Loc, const FVector& Scale3D,
 		const FRotator& Rot, const FLinearColor& Color, float Roughness, float Metallic, const TCHAR* Name)
@@ -12704,7 +12721,9 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		ApplyPBR(MC, Color, Metallic, Roughness);
+		if (FabSandMID && FMath::Max3(Scale3D.X, Scale3D.Y, Scale3D.Z) < 50.f)
+			MC->SetMaterial(0, FabSandMID);
+		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -12720,7 +12739,9 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		ApplyPBR(MC, Color, Metallic, Roughness);
+		if (FabSandMID && FMath::Max3(Scale3D.X, Scale3D.Y, Scale3D.Z) < 50.f)
+			MC->SetMaterial(0, FabSandMID);
+		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -12736,7 +12757,9 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		ApplyPBR(MC, Color, Metallic, Roughness);
+		if (FabSandMID && FMath::Max3(Scale3D.X, Scale3D.Y, Scale3D.Z) < 50.f)
+			MC->SetMaterial(0, FabSandMID);
+		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -12753,7 +12776,9 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		ApplyPBR(MC, Color, Metallic, Roughness);
+		if (FabSandMID && FMath::Max3(Scale3D.X, Scale3D.Y, Scale3D.Z) < 50.f)
+			MC->SetMaterial(0, FabSandMID);
+		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -12793,7 +12818,9 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		ApplyPBR(MC, Color, 0.f, Roughness);
+		if (FabSandMID && FMath::Max3(Scale.X, Scale.Y, Scale.Z) < 50.f)
+			MC->SetMaterial(0, FabSandMID);
+		else ApplyPBR(MC, Color, 0.f, Roughness);
 		Castle->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -12828,7 +12855,9 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		ApplyPBR(MC, Color, Metallic, Roughness);
+		if (FabSandMID && Metallic < 0.1f && FMath::Max3(Scale.X, Scale.Y, Scale.Z) < 50.f)
+			MC->SetMaterial(0, FabSandMID);
+		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Castle->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -13999,8 +14028,9 @@ void UPHCCitySubsystem::SpawnSandCastle()
 			BeachMC->SetBoundsScale(30.f);
 			BeachMC->RegisterComponent();
 			BeachActor->SetRootComponent(BeachMC);
-			ApplyTextured(BeachMC, TexturedMaterial, MegaSandBC, MegaSandN, MegaSandR,
-				FLinearColor(0.82f, 0.76f, 0.58f), 0.95f);
+			if (FabSandMID) BeachMC->SetMaterial(0, FabSandMID);
+			else
+				ApplyPBR(BeachMC, FLinearColor(0.82f, 0.76f, 0.58f), 0.f, 0.95f);
 			BeachActor->AddInstanceComponent(BeachMC);
 		}
 
@@ -14457,6 +14487,8 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 	// ---------------------------------------------------------------
 	// Lake helper: spawn a single-component actor
 	// ---------------------------------------------------------------
+	// Fab MIDs are loaded centrally in LoadMegascansTextures()
+
 	auto SpawnLakePiece = [&](UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot, const FVector& Scale,
 		const FLinearColor& Color, float Roughness, float Metallic, const TCHAR* Label) -> UStaticMeshComponent*
 	{
@@ -14475,7 +14507,18 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 		MC->SetBoundsScale(30.f);
 		MC->RegisterComponent();
 		A->SetRootComponent(MC);
-		ApplyPBR(MC, Color, Metallic, Roughness);
+		// Use Megascans textures — but only on reasonably-sized meshes
+		// Large meshes (pyramid base blocks, causeways) get UV stretching, so keep ApplyPBR
+		float MaxScale = FMath::Max3(Scale.X, Scale.Y, Scale.Z);
+		bool bSmallEnough = (MaxScale < 50.f); // Fab textures look good up to ~50x scale
+		bool bIsLimestone = (Metallic < 0.1f && Color.R > 0.4f && Color.G > 0.3f && Color.B < 0.4f && Roughness > 0.7f);
+		bool bIsSand = (Metallic < 0.1f && Color.R > 0.5f && Color.G > 0.4f && Color.B < 0.7f && Color.R > Color.B);
+		if (bSmallEnough && FabStoneTilesMID && bIsLimestone)
+			MC->SetMaterial(0, FabStoneTilesMID);
+		else if (bSmallEnough && FabSandMID && bIsSand)
+			MC->SetMaterial(0, FabSandMID);
+		else
+			ApplyPBR(MC, Color, Metallic, Roughness);
 		A->AddInstanceComponent(MC);
 		return MC;
 	};

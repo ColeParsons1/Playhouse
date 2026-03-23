@@ -481,6 +481,27 @@ private:
 	UFUNCTION()
 	void OnNightButtonClicked();
 
+	// Dev Mode — time of day controls
+	UPROPERTY() TObjectPtr<UButton> DevModeButton;
+	UPROPERTY() TObjectPtr<UTextBlock> DevModeButtonLabel;
+	UPROPERTY() TObjectPtr<UCanvasPanel> DevTimePanel;
+	UPROPERTY() TArray<TObjectPtr<UButton>> DevTimeBtns;
+
+	UFUNCTION()
+	void OnDevModeButtonClicked();
+
+	UFUNCTION()
+	void OnDevTimeSelected(int32 TimeIndex);
+
+	UFUNCTION() void OnDevTimeSunrise()  { OnDevTimeSelected(0); }
+	UFUNCTION() void OnDevTimeMorning()  { OnDevTimeSelected(1); }
+	UFUNCTION() void OnDevTimeNoon()     { OnDevTimeSelected(2); }
+	UFUNCTION() void OnDevTimeAfternoon(){ OnDevTimeSelected(3); }
+	UFUNCTION() void OnDevTimeSunset()   { OnDevTimeSelected(4); }
+	UFUNCTION() void OnDevTimeDusk()     { OnDevTimeSelected(5); }
+	UFUNCTION() void OnDevTimeMidnight() { OnDevTimeSelected(6); }
+	UFUNCTION() void OnDevTimeCycle()    { OnDevTimeSelected(7); }
+
 	UFUNCTION()
 	void OnDisastersButtonClicked();
 
