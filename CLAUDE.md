@@ -391,28 +391,77 @@ All vehicles use custom arcade physics (NOT UE vehicle system). `SetSimulatePhys
 
 ---
 
-## Material System (4 Materials)
+## Material System
 
-All materials include **Animal Crossing-style world curvature** WorldPositionOffset (curvature=-0.000020).
+### Custom Materials (5, created by StartupModule in PlayhouseCity.cpp)
 
-### M_PHCColor (Opaque PBR)
-- Default Lit, params: BaseColor, Metallic (0.0), Roughness (0.5), EmissiveColor
-- Usage: Buildings, ground, roads, environment
+All include **Animal Crossing-style world curvature** WorldPositionOffset (curvature=-0.000020).
 
-### M_PHCGlass (Translucent)
-- BLEND_Translucent, TLM_SurfacePerPixelLighting
-- Params: BaseColor (0.1/0.15/0.2), Opacity (0.3), Metallic (0.0), Roughness (0.05), EmissiveColor
-- Usage: Glass, clouds, ocean, cockpit canopies
+| Material | Type | Key Params | Usage |
+|----------|------|-----------|-------|
+| M_PHCColor | Opaque PBR | BaseColor, Metallic, Roughness, EmissiveColor + Custom HLSL procedural detail | Buildings, fallback for large meshes |
+| M_PHCGlass | Translucent | BaseColor, Opacity, Metallic, Roughness, EmissiveColor | Glass, clouds, ocean, canopies |
+| M_PHCClearCoat | ClearCoat | BaseColor, Metallic(0.9), ClearCoat(1.0), ClearCoatRoughness(0.03) | Vehicle body panels |
+| M_PHCSkin | Subsurface | BaseColor, Roughness, SubsurfaceColor, Opacity | Character skin |
+| M_PHCTextured | Opaque PBR | BaseColorTex, NormalTex, RoughnessTex, Tiling(scalar), Metallic | Megascans texture sampling (legacy, mostly replaced by Fab MI approach) |
 
-### M_PHCClearCoat (Automotive Paint)
-- MSM_ClearCoat shading model
-- Params: BaseColor, Metallic (0.9), Roughness (0.35), ClearCoat (1.0), ClearCoatRoughness (0.03), EmissiveColor
-- Usage: All vehicle body panels
+**Important:** M_PHCColor and M_PHCTextured `.uasset` files are created by `StartupModule` only if they don't exist. If you change the material code, **delete the .uasset** and run the cook **twice** (first cook creates the file, second cook packs it).
 
-### M_PHCSkin (Subsurface Skin)
-- MSM_Subsurface shading model
-- Params: BaseColor (0.55/0.38/0.26), Roughness (0.45), SubsurfaceColor (0.9/0.2/0.1), Opacity (0.35), EmissiveColor
-- Usage: Character skin with warm SSS glow when backlit
+### Fab Megascans Material System (production approach for iOS)
+
+On iOS, `WITH_EDITORONLY_DATA=0` so materials cannot be created at runtime. The **Fab MI approach** is the only way to get 4K textures on device:
+
+1. Import textures via **Fab > My Library > Add to Project** in UE editor
+2. Fab creates a `MI_xxxxx.uasset` Material Instance with pre-compiled iOS Metal shaders
+3. Code loads the MI via `LoadObject<UMaterialInterface>` and applies with `SetMaterial(0, MI)`
+4. For texture swapping: create `UMaterialInstanceDynamic` from the Fab MI and override `BaseColorTexture`, `NormalTexture`, `MetallicRoughnessTexture` params
+
+**Key rule:** Fab MIs use **mesh UVs** (0-1 range). On large meshes (scale > 50x), the texture stretches/smears. Large meshes fall back to `ApplyPBR` (M_PHCColor with world-position procedural detail).
+
+### Fab MIDs (created in LoadMegascansTextures)
+
+| MID | Base MI | Textures Swapped | Applied to |
+|-----|---------|-----------------|------------|
+| FabGrassMI | MI_oeeb70 (Uncut Grass) | None (used directly) | Ground slabs, lawns, parks, terrain grass chunks |
+| FabSandMID | MI_oeeb70 | Rippled Sand BC/N/R | Beaches, sand castle, desert terrain chunks, shore strips |
+| FabConcreteMID | MI_oeeb70 | Cast In Situ Concrete BC/N/R | Sidewalks, curbs, park paths |
+| FabRockMID | MI_oeeb70 | Mossy Rocky Ground BC/N/R | Rock clutter, rocky hills, mountains, terrain rock chunks |
+| FabBarkMID | MI_oeeb70 | Tree Bark BC/N/R | Palm tree trunk segments |
+| FabWildGrassMID | MI_oeeb70 | Wild Grass BC/N/R | Grass blade HISMs, hedges, topiary, green hills |
+| FabRoadMID | MI_sk0mci2c (Asphalt) | None (used directly) | Roads |
+| FabStoneTilesMID | MI_oeeb70 | Stone Tiles Facade BC/N/R | Pyramid limestone blocks (small scale only) |
+
+### Megascans Texture Assets
+
+**Fab-imported (Content/Fab/Megascans/Surfaces/):**
+- Uncut Grass (`oeeb70`) — base MI for all MID swaps
+- Asphalt (`sk0mci2c`) — roads
+- Stone Tiles Facade (`ub4nbiag`) — pyramid blocks
+- Muddy Stone Wall (`uekoajlcw`) — imported, not yet applied
+
+**Legacy imports (Content/Megascans/):**
+- Grass (`ofivdfoh2`), Mossy Rocky Ground (`vcqhcig`), Rippled Sand (`vd3lecfs`)
+- Cast In Situ Concrete (`uhwnbdoew`), Fine American Road (`sjfnch0a`)
+- Tree Bark (`vimmdcofw`), Wild Grass (`xbreagf`)
+
+### Build Workflow for Textures
+
+```bash
+# 1. Build code
+RunUBT.sh PlayhouseCity IOS Development ...
+
+# 2. Cook content (must use -build flag so binary matches)
+RunUAT.sh BuildCookRun -build -cook -stage -pak -platform=IOS -clientconfig=Development
+
+# 3. Deploy staged build (has correct binary + cooked paks)
+xcrun devicectl device install app --device <ID> Saved/StagedBuilds/IOS/PlayhouseCity.app
+
+# If you deleted a material .uasset, cook TWICE:
+RunUAT.sh BuildCookRun ...  # First cook: StartupModule recreates the .uasset
+RunUAT.sh BuildCookRun ...  # Second cook: packs the new .uasset into the pak
+```
+
+**Important:** `RunUAT BuildCookRun -skipbuild` produces a DIFFERENT binary than `RunUBT`. Always use `-build` with the cook to ensure the staged binary has your latest code.
 
 ---
 
@@ -575,7 +624,57 @@ Source/PlayhouseCity/
 
 ---
 
+## Voice Chat (Agora)
+
+**App ID:** `REDACTED_AGORA_APP_ID`
+**App Certificate:** `REDACTED_AGORA_APP_CERTIFICATE` (server-side only, never in client code)
+
+### Production Token Flow
+1. Client calls `FAgoraVoiceManager::JoinChannel("PlayhouseCity_Global")`
+2. Client HTTP POSTs to `https://tfplayhouse.com/api/agora/token/` with `{"channel":"PlayhouseCity_Global","uid":0}`
+3. Django backend generates 24-hour token using `agora-token-builder` + App Certificate
+4. Client joins channel with server-generated token
+5. Falls back to tokenless join if backend unreachable
+
+### Key Files
+- `Voice/AgoraVoiceManager.mm` — iOS + Mac (ObjC SDK)
+- `Voice/AgoraVoiceManager_Native.cpp` — Windows + Android (C++ SDK, gated by `AGORA_NATIVE_CPP`)
+- `Voice/AgoraVoiceManager_Stub.cpp` — fallback for platforms without SDK
+- Backend endpoint: `/var/www/Playhouse/backend/game/views.py` → `agora_token` function
+
+### Platform Status
+- iOS: Working (ObjC SDK)
+- Mac: Working (ObjC SDK, shared .mm with `#if PLATFORM_MAC`)
+- Windows/Android: C++ SDK integrated, untested
+- Linux: Stub only — `.mm` files must be excluded from rsync to build server
+
+---
+
+## Dev Mode
+
+Green "Dev" button in top bar (left of mic). Tap to show time-of-day panel:
+
+| Button | DayNightTime | Effect |
+|--------|-------------|--------|
+| Sunrise | 0.0 | Locks to sunrise |
+| Morning | 0.125 | Locks to morning |
+| Noon | 0.25 | Locks to noon |
+| Afternoon | 0.375 | Locks to afternoon |
+| Sunset | 0.5 | Locks to sunset |
+| Dusk | 0.625 | Locks to dusk |
+| Midnight | 0.75 | Locks to midnight |
+| Cycle | — | Resumes normal day/night progression |
+
+Implemented in `PHCCityHUD.cpp` — `OnDevModeButtonClicked()` / `OnDevTimeSelected()`.
+
+---
+
 ## Known Issues & Open Items
+
+### Texture UV Smearing
+- Fab MI textures use mesh UVs (0-1 range), causing stretching on large meshes
+- Size check (scale < 50x) mitigates but doesn't fully solve for medium-sized meshes
+- Need world-space UV material variant for proper tiling on all mesh sizes
 
 ### Vehicle Replication
 - Vehicle `bReplicates` and `SetReplicateMovement()` are NOT enabled in vehicle constructors
