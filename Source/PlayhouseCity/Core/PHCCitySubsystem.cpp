@@ -424,7 +424,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 
 		// Intensity scales with elevation; zero when below horizon.
 		const float Elevation = FMath::Max(0.f, SunSine);
-		SunLightComp->SetIntensity(Elevation * 4.5f);
+		SunLightComp->SetIntensity(Elevation * 6.5f);
 
 		// PUBG 2026: neutral white sun at noon, subtle warm at horizon
 		if (Elevation > 0.01f)
@@ -441,7 +441,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	if (MoonLightComp)
 	{
 		const float MoonElevation = FMath::Max(0.f, -SunSine);
-		MoonLightComp->SetIntensity(MoonElevation * 0.08f);
+		MoonLightComp->SetIntensity(MoonElevation * 0.5f);
 		const float MoonPitch = -60.f * MoonElevation;
 		const float MoonYaw = 90.f - T * 360.f + 180.f;
 		MoonLightComp->SetWorldRotation(FRotator(MoonPitch, MoonYaw, 0.f));
@@ -452,13 +452,13 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	{
 		// Bright during day, very dim at night.
 		const float DayFactor = FMath::Max(0.f, SunSine);
-		SkyLightComp->SetIntensity(FMath::Lerp(0.05f, 1.8f, DayFactor)); // dark night, bright day
+		SkyLightComp->SetIntensity(FMath::Lerp(0.4f, 2.5f, DayFactor)); // brighter night ambient, brighter day
 
 		// Tint: blue-white during day, very deep blue at night.
 		const float NightFactor = FMath::Max(0.f, -SunSine);
 		// PUBG 2026: neutral pale blue sky light
 		const FLinearColor DayTint(0.7f, 0.75f, 0.85f);
-		const FLinearColor NightTint(0.04f, 0.01f, 0.06f);
+		const FLinearColor NightTint(0.15f, 0.12f, 0.22f);
 		SkyLightComp->SetLightColor(FMath::Lerp(DayTint, NightTint, NightFactor));
 
 		// RecaptureSky is extremely expensive (full cubemap capture).
@@ -475,8 +475,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	if (FogComp)
 	{
 		const float NightFactor = FMath::Max(0.f, -SunSine);
-		FogComp->SetFogDensity(FMath::Lerp(0.0004f, 0.0015f, NightFactor));
-		FogComp->SetFogMaxOpacity(FMath::Lerp(0.225f, 0.025f, NightFactor));
+		FogComp->SetFogDensity(FMath::Lerp(0.0003f, 0.0008f, NightFactor));
+		FogComp->SetFogMaxOpacity(FMath::Lerp(0.20f, 0.08f, NightFactor));
 		FogComp->SetVolumetricFogDistance(FMath::Lerp(4000.f, 2000.f, NightFactor));
 
 		// GTA V-style directional inscattering -- warm haze at dawn/dusk, near-black at night
@@ -486,7 +486,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		// PUBG 2026: neutral blue-gray daytime fog, subtle warm haze at horizon
 		const FLinearColor NeutralFog(0.55f, 0.58f, 0.65f); // cool blue-gray
 		const FLinearColor WarmHaze(0.9f, 0.7f, 0.4f);      // reduced warmth
-		const FLinearColor NightFog(0.015f, 0.005f, 0.04f);
+		const FLinearColor NightFog(0.06f, 0.04f, 0.10f);
 		FLinearColor InscatterColor = FMath::Lerp(NeutralFog, WarmHaze, DawnDusk);
 		InscatterColor = FMath::Lerp(InscatterColor, NightFog, NightFactor);
 		FogComp->SetFogInscatteringColor(InscatterColor);
@@ -969,30 +969,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		}
 	}
 
-	// ---- River wave animation (Gerstner-style ripples, throttled) ----
-	RiverWaveTimer += DeltaTime;
-	if (RiverWaterPMC && RiverWaterBaseVerts.Num() > 0 && RiverWaveTimer >= 0.1f)
-	{
-		RiverWaveTimer = 0.f;
-		const float GT = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-		TArray<FVector> AnimVerts;
-		AnimVerts.Reserve(RiverWaterBaseVerts.Num());
-		for (const FVector& V : RiverWaterBaseVerts)
-		{
-			float Z = V.Z;
-			// Wave 1: along river (X direction), long wavelength
-			Z += 12.f * FMath::Sin(V.X * 0.0008f + GT * 1.2f);
-			// Wave 2: cross-river chop
-			Z += 6.f * FMath::Sin(V.Y * 0.002f + GT * 2.0f);
-			// Wave 3: fine ripple detail
-			Z += 3.f * FMath::Sin((V.X + V.Y) * 0.003f + GT * 3.5f);
-			AnimVerts.Add(FVector(V.X, V.Y, Z));
-		}
-		TArray<FVector> AnimNormals;
-		// Recompute normals not needed every frame for mobile perf
-		RiverWaterPMC->UpdateMeshSection(0, AnimVerts, AnimNormals, RiverWaterUVs,
-			TArray<FColor>(), TArray<FProcMeshTangent>());
-	}
+	// ---- River wave animation disabled ----
 
 	// ---- Torch flame animation (flickering, swaying) ----
 	if (TorchFlames.Num() > 0)
@@ -3880,14 +3857,11 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 
 					if (bIsSnowy)
 					{
-						// Keep snow as flat white (no Fab texture for snow)
 						if (ColorMaterial) { Mat = UMaterialInstanceDynamic::Create(ColorMaterial, PMC); }
 						if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), AvgColor); Mat->SetScalarParameterValue(TEXT("Roughness"), ChunkRough); PMC->SetMaterial(0, Mat); }
 					}
 					else if (bIsSandy && FabSandMID)
 						PMC->SetMaterial(0, FabSandMID);
-					else if (bIsRocky && FabRockMID)
-						PMC->SetMaterial(0, FabRockMID);
 					else if (FabGrassMI)
 						PMC->SetMaterial(0, FabGrassMI);
 					else if (ColorMaterial)
@@ -4001,12 +3975,19 @@ void UPHCCitySubsystem::SpawnGoldCoins()
 		MC->RegisterComponent();
 		CoinActor->SetRootComponent(MC);
 
-		// Mirror-polished gold — highly reflective, catches sunlight
-		ApplyPBR(MC,
-			FLinearColor(1.0f, 0.84f, 0.0f),      // BaseColor: bright pure gold
-			1.0f,                                   // Metallic: full metal
-			0.05f,                                  // Roughness: mirror polish
-			FLinearColor::Black);                   // No emissive
+		// Smooth metallic gold — translucent glass at full opacity
+		if (GlassMaterial)
+		{
+			UMaterialInstanceDynamic* GoldMat = UMaterialInstanceDynamic::Create(GlassMaterial, MC);
+			if (GoldMat)
+			{
+				GoldMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(1.0f, 0.84f, 0.0f));
+				GoldMat->SetScalarParameterValue(TEXT("Opacity"), 1.0f);
+				GoldMat->SetScalarParameterValue(TEXT("Metallic"), 1.0f);
+				GoldMat->SetScalarParameterValue(TEXT("Roughness"), 0.05f);
+				MC->SetMaterial(0, GoldMat);
+			}
+		}
 	}
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnGoldCoins -- Spawned %d gold coins."), NumGoldCoins);
@@ -4395,10 +4376,10 @@ void UPHCCitySubsystem::SpawnVisualPolish()
 			const float TrunkH = TotalH * 0.60f;   // 1680 UU
 			const float TrunkBaseR = 35.f;           // base radius
 			const float TrunkTopR = 22.f;            // top radius (tapered)
-			const float CanopyBottom = TotalH * 0.50f; // canopy starts at 50%
+			const float CanopyBottom = TotalH * 0.40f; // start lower to overlap trunk
 			const float CanopyTop = TotalH * 1.0f;
-			const float CanopyW = 700.f;             // canopy width (radius)
-			const float CanopyTallH = CanopyTop - CanopyBottom; // 1400 UU tall
+			const float CanopyW = 800.f;             // wider canopy
+			const float CanopyTallH = CanopyTop - CanopyBottom;
 
 			// Trunk color: gray-brown (PUBG desaturated bark)
 			const FLinearColor BarkCol(0.22f, 0.18f, 0.13f);
@@ -4446,63 +4427,42 @@ void UPHCCitySubsystem::SpawnVisualPolish()
 					BranchCol, 0.88f);
 			}
 
-			// --- CANOPY: vertical oval shape, 12-16 foliage clusters ---
-			// PUBG canopy: taller than wide, irregular bumpy surface
-			const FLinearColor LeafDark(0.08f, 0.22f, 0.05f);
-			const FLinearColor LeafMid(0.12f, 0.30f, 0.06f);
-			const FLinearColor LeafBright(0.18f, 0.35f, 0.08f);
-			const FLinearColor LeafHighlight(0.22f, 0.38f, 0.10f);
+			// --- CANOPY: Megascans plant meshes (keep original materials) ---
+			UStaticMesh* HempMesh = LoadObject<UStaticMesh>(nullptr,
+				TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarA.SM_xh1kdfbqx_VarA"));
+			UStaticMesh* BalsamMesh = LoadObject<UStaticMesh>(nullptr,
+				TEXT("/Game/Fab/Megascans/Plants/Small_Balsam_xefmcgrqx/High/xefmcgrqx_tier_1/StaticMeshes/SM_xefmcgrqx_VarA.SM_xefmcgrqx_VarA"));
 
 			FRandomStream CanopyRand(12345);
-			const int32 NumLeafClusters = 14;
+			const int32 NumLeafClusters = 80;
 
 			for (int32 Li = 0; Li < NumLeafClusters; ++Li)
 			{
-				float FI = float(Li);
-				// Distribute clusters in a vertical oval pattern
 				float Angle = CanopyRand.FRandRange(0.f, 2.f * PI);
-				float VPos = CanopyRand.FRandRange(0.f, 1.f); // 0=bottom, 1=top of canopy
-				// Oval profile: wider at middle, narrow at top and bottom
-				float OvalFactor = FMath::Sin(VPos * PI); // 0 at edges, 1 at equator
-				float HorizDist = CanopyW * OvalFactor * CanopyRand.FRandRange(0.3f, 0.95f);
+				float VPos = CanopyRand.FRandRange(0.f, 1.f);
+				float HorizDist = CanopyW * CanopyRand.FRandRange(0.0f, 1.0f);
 				float CX = FMath::Cos(Angle) * HorizDist + LeanX * 0.5f;
 				float CY = FMath::Sin(Angle) * HorizDist;
 				float CZ = CanopyBottom + VPos * CanopyTallH;
 
-				// Cluster size: larger in middle, smaller at edges
-				float ClusterSz = CanopyRand.FRandRange(180.f, 320.f);
-				ClusterSz *= (0.7f + 0.3f * OvalFactor);
+				float PlantScale = CanopyRand.FRandRange(5.0f, 9.0f);
+				float Yaw = CanopyRand.FRandRange(0.f, 360.f);
+				float Pitch = CanopyRand.FRandRange(-25.f, 25.f);
+				float Roll = CanopyRand.FRandRange(-25.f, 25.f);
+				UStaticMesh* PlantMesh = (Li % 2 == 0) ? HempMesh : BalsamMesh;
+				if (!PlantMesh) continue;
 
-				// Color: darker interior, brighter edges (sun-facing)
-				float SunFacing = FMath::Max(0.f, FMath::Cos(Angle)); // east-facing = bright
-				FLinearColor LeafCol = FMath::Lerp(LeafDark, LeafMid, VPos);
-				LeafCol = FMath::Lerp(LeafCol, LeafHighlight, SunFacing * 0.5f);
-				// Per-cluster random variation
-				LeafCol.R += CanopyRand.FRandRange(-0.02f, 0.02f);
-				LeafCol.G += CanopyRand.FRandRange(-0.03f, 0.03f);
-
-				// Flatten spheres vertically for leafy look (wider than tall)
-				float FlattenZ = CanopyRand.FRandRange(0.5f, 0.75f);
-
-				MakeTC(SphereMesh, FVector(CX, CY, CZ), FRotator::ZeroRotator,
-					FVector(ClusterSz / 50.f, ClusterSz / 50.f, ClusterSz * FlattenZ / 50.f),
-					LeafCol, 0.72f);
-			}
-
-			// --- CANOPY FILLER: 6 smaller clusters to fill gaps ---
-			for (int32 Fi = 0; Fi < 6; ++Fi)
-			{
-				float Angle = CanopyRand.FRandRange(0.f, 2.f * PI);
-				float VPos = CanopyRand.FRandRange(0.2f, 0.8f);
-				float HorizDist = CanopyW * FMath::Sin(VPos * PI) * CanopyRand.FRandRange(0.1f, 0.6f);
-				float CX = FMath::Cos(Angle) * HorizDist + LeanX * 0.3f;
-				float CY = FMath::Sin(Angle) * HorizDist;
-				float CZ = CanopyBottom + VPos * CanopyTallH;
-				float Sz = CanopyRand.FRandRange(120.f, 220.f);
-
-				MakeTC(SphereMesh, FVector(CX, CY, CZ), FRotator::ZeroRotator,
-					FVector(Sz / 50.f, Sz / 50.f, Sz * 0.6f / 50.f),
-					FMath::Lerp(LeafMid, LeafBright, CanopyRand.FRand()), 0.72f);
+				UStaticMeshComponent* LeafMC = NewObject<UStaticMeshComponent>(TreeActor,
+					*FString::Printf(TEXT("Leaf_%d"), CompIdx++));
+				LeafMC->SetStaticMesh(PlantMesh);
+				LeafMC->AttachToComponent(TRoot, FAttachmentTransformRules::KeepRelativeTransform);
+				LeafMC->SetRelativeLocation(FVector(CX, CY, CZ));
+				LeafMC->SetRelativeRotation(FRotator(Pitch, Yaw, Roll));
+				LeafMC->SetRelativeScale3D(FVector(PlantScale));
+				LeafMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				LeafMC->SetCastShadow(false);
+				LeafMC->RegisterComponent();
+				TreeActor->AddInstanceComponent(LeafMC);
 			}
 		}
 	}
@@ -4511,6 +4471,124 @@ void UPHCCitySubsystem::SpawnVisualPolish()
 	// Volumetric cloud clusters (replace flat planes with sphere HISMs)
 	// ================================================================
 	// Volumetric clouds removed — revisit later
+}
+
+// ---------------------------------------------------------------------------
+// Megascans Foliage — scatter 3D plant meshes across grassy areas
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::SpawnFoliage()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	// Load plant meshes (one variant per species for performance)
+	struct FPlantInfo { UStaticMesh* Mesh; float MinScale; float MaxScale; float Density; };
+	TArray<FPlantInfo> Plants;
+
+	auto LoadPlant = [&](const TCHAR* Path, float MinS, float MaxS, float Dens)
+	{
+		UStaticMesh* M = LoadObject<UStaticMesh>(nullptr, Path);
+		if (M) Plants.Add({M, MinS, MaxS, Dens});
+	};
+
+	LoadPlant(TEXT("/Game/Fab/Megascans/Plants/Bigleaf_Hydrangea_vgztealha/High/vgztealha_tier_1/StaticMeshes/SM_vgztealha_VarA.SM_vgztealha_VarA"), 0.8f, 1.5f, 0.2f);
+	LoadPlant(TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarA.SM_xh1kdfbqx_VarA"), 0.6f, 1.2f, 0.25f);
+	LoadPlant(TEXT("/Game/Fab/Megascans/Plants/Lily_of_the_Valley_xikkdhjja/High/xikkdhjja_tier_1/StaticMeshes/SM_xikkdhjja_VarA.SM_xikkdhjja_VarA"), 0.7f, 1.3f, 0.2f);
+	LoadPlant(TEXT("/Game/Fab/Megascans/Plants/Matted_Pratia_uegjcflia/High/uegjcflia_tier_1/StaticMeshes/SM_uegjcflia_VarA.SM_uegjcflia_VarA"), 0.5f, 1.0f, 0.25f);
+	LoadPlant(TEXT("/Game/Fab/Megascans/Plants/Small_Balsam_xefmcgrqx/High/xefmcgrqx_tier_1/StaticMeshes/SM_xefmcgrqx_VarA.SM_xefmcgrqx_VarA"), 0.6f, 1.2f, 0.1f);
+
+	if (Plants.Num() == 0)
+	{
+		UE_LOG(LogPlayhouseCity, Warning, TEXT("PHC: No foliage meshes loaded — skipping SpawnFoliage"));
+		return;
+	}
+
+	AActor* FoliageActor = World->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!FoliageActor) return;
+#if WITH_EDITOR
+	FoliageActor->SetActorLabel(TEXT("MegascansFoliage"));
+#endif
+
+	// Create one HISM per plant type
+	TArray<UHierarchicalInstancedStaticMeshComponent*> HISMs;
+	for (int32 Pi = 0; Pi < Plants.Num(); ++Pi)
+	{
+		FString Name = FString::Printf(TEXT("FoliageHISM_%d"), Pi);
+		auto* HISM = NewObject<UHierarchicalInstancedStaticMeshComponent>(FoliageActor, *Name);
+		HISM->SetStaticMesh(Plants[Pi].Mesh);
+		HISM->SetCastShadow(false);
+		HISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		HISM->SetCullDistances(0.f, 15000.f);
+		HISM->RegisterComponent();
+		FoliageActor->AddInstanceComponent(HISM);
+		HISMs.Add(HISM);
+	}
+
+	// Scatter foliage using deterministic random stream
+	FRandomStream FoliageRandom(7331);
+	const float CityEdge = 36000.f;
+
+	// Grassy areas: city outskirts (outside city grid but not desert/ocean)
+	// Parks, lawns, hills, jungle edges
+	struct FScatterZone { FVector Center; float Radius; int32 Count; };
+	TArray<FScatterZone> Zones;
+
+	// Grassy fields and hills (outside city, NOT desert/pyramid area) — 40% of original
+	// North grassy fields
+	Zones.Add({ FVector(0.f, 70000.f, 0.f), 30000.f, 2400 });
+	Zones.Add({ FVector(-40000.f, 60000.f, 0.f), 20000.f, 1600 });
+	Zones.Add({ FVector(40000.f, 60000.f, 0.f), 20000.f, 1600 });
+
+	// West grassy fields / highway corridor
+	Zones.Add({ FVector(-70000.f, 0.f, 0.f), 25000.f, 2000 });
+	Zones.Add({ FVector(-70000.f, -30000.f, 0.f), 20000.f, 1600 });
+	Zones.Add({ FVector(-70000.f, 30000.f, 0.f), 20000.f, 1600 });
+
+	// East grassy hills
+	Zones.Add({ FVector(70000.f, 20000.f, 0.f), 20000.f, 1600 });
+	Zones.Add({ FVector(80000.f, -20000.f, 0.f), 20000.f, 1600 });
+
+	// South grassy transition (above jungle, below city)
+	Zones.Add({ FVector(0.f, -50000.f, 0.f), 15000.f, 1200 });
+	Zones.Add({ FVector(-40000.f, -45000.f, 0.f), 15000.f, 1200 });
+
+	for (const FScatterZone& Zone : Zones)
+	{
+		for (int32 I = 0; I < Zone.Count; ++I)
+		{
+			// Random position within zone radius
+			float Angle = FoliageRandom.FRandRange(0.f, 360.f);
+			float Dist = FoliageRandom.FRandRange(0.f, Zone.Radius);
+			float FX = Zone.Center.X + FMath::Cos(FMath::DegreesToRadians(Angle)) * Dist;
+			float FY = Zone.Center.Y + FMath::Sin(FMath::DegreesToRadians(Angle)) * Dist;
+			float FZ = GetTerrainHeight(FX, FY);
+
+			// Skip city interior and pyramid desert zone
+			float MaxDist = FMath::Max(FMath::Abs(FX), FMath::Abs(FY));
+			if (MaxDist < CityEdge) continue;
+			float PyramidDist = FMath::Sqrt(FMath::Square(FX - 22248.f) + FMath::Square(FY + 62419.f));
+			if (PyramidDist < 55000.f) continue;
+
+			// Pick a random plant
+			int32 PlantIdx = FoliageRandom.RandRange(0, Plants.Num() - 1);
+			const FPlantInfo& Plant = Plants[PlantIdx];
+
+			float Scale = FoliageRandom.FRandRange(Plant.MinScale, Plant.MaxScale);
+			float Yaw = FoliageRandom.FRandRange(0.f, 360.f);
+
+			FTransform T;
+			T.SetLocation(FVector(FX, FY, FZ));
+			T.SetRotation(FQuat(FRotator(0.f, Yaw, 0.f)));
+			T.SetScale3D(FVector(Scale));
+
+			HISMs[PlantIdx]->AddInstance(T);
+		}
+	}
+
+	int32 TotalInstances = 0;
+	for (auto* H : HISMs) TotalInstances += H->GetInstanceCount();
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Spawned %d foliage instances across %d plant types"), TotalInstances, Plants.Num());
 }
 
 // ---------------------------------------------------------------------------
@@ -4542,6 +4620,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnGoldCoins();
 	SpawnCollectibleMushrooms();
 	SpawnGrassSystem();
+	SpawnFoliage();
 
 	// --- PUBG 2026 DECIDUOUS FOREST ---
 	{
@@ -4646,9 +4725,9 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 				// PUBG: broccoli-head shape — wide lumpy dome, NOT smooth sphere
 				// Many small clusters (20+) creating bumpy organic silhouette
 				// Width ≈ Height, roughly 1200 UU diameter × 1000 UU tall
-				const float CanopyCenterZ = BZ + TrunkH + 200.f * SizeMul;
-				const float CanopyRadius = 600.f * SizeMul;
-				const float CanopyHeight = 500.f * SizeMul;
+				const float CanopyCenterZ = BZ + TrunkH - 100.f * SizeMul; // lower to overlap trunk
+				const float CanopyRadius = 700.f * SizeMul;  // wider
+				const float CanopyHeight = 700.f * SizeMul;  // taller for full coverage
 
 				FRandomStream CR(54321 + FTi * 137);
 
@@ -4669,66 +4748,51 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 					LeafSunlit = FLinearColor(0.24f, 0.38f, 0.08f);
 				}
 
-				// Core mass: 6 large overlapping spheres filling the center
-				for (int32 Ci = 0; Ci < 6; ++Ci)
-				{
-					float Ang = Ci * (6.28f / 6.f) + CR.FRandRange(-0.4f, 0.4f);
-					float Dist = CR.FRandRange(50.f, CanopyRadius * 0.4f);
-					float ZOff = CR.FRandRange(-CanopyHeight * 0.2f, CanopyHeight * 0.2f);
-					float Sz = CR.FRandRange(4.0f, 5.5f);
+				// Canopy: Megascans plant meshes (keep original leaf materials)
+				UStaticMesh* HempM = LoadObject<UStaticMesh>(nullptr,
+					TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarA.SM_xh1kdfbqx_VarA"));
+				UStaticMesh* BalsamM = LoadObject<UStaticMesh>(nullptr,
+					TEXT("/Game/Fab/Megascans/Plants/Small_Balsam_xefmcgrqx/High/xefmcgrqx_tier_1/StaticMeshes/SM_xefmcgrqx_VarA.SM_xefmcgrqx_VarA"));
 
-					SP(SphereMesh,
-						FVector(BX + FMath::Cos(Ang) * Dist, BY + FMath::Sin(Ang) * Dist, CanopyCenterZ + ZOff),
-						FVector(Sz, Sz, Sz * 0.7f),
-						FMath::Lerp(LeafDark, LeafMid, CR.FRand()), 0.70f);
-				}
+				// Dense overlapping foliage — 40 plants per tree for full coverage
+				const int32 NumPlants = 80;
+				// Also load additional variants for visual diversity
+				UStaticMesh* HempB = LoadObject<UStaticMesh>(nullptr,
+					TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarB.SM_xh1kdfbqx_VarB"));
+				UStaticMesh* BalsamB = LoadObject<UStaticMesh>(nullptr,
+					TEXT("/Game/Fab/Megascans/Plants/Small_Balsam_xefmcgrqx/High/xefmcgrqx_tier_1/StaticMeshes/SM_xefmcgrqx_VarB.SM_xefmcgrqx_VarB"));
+				UStaticMesh* PlantVariants[] = { HempM, BalsamM, HempB ? HempB : HempM, BalsamB ? BalsamB : BalsamM };
 
-				// Outer bumps: 14 smaller clusters creating the broccoli silhouette
-				for (int32 Ci = 0; Ci < 14; ++Ci)
-				{
-					float Ang = CR.FRandRange(0.f, 6.28f);
-					float Dist = CanopyRadius * CR.FRandRange(0.5f, 1.0f);
-					float ZOff = CR.FRandRange(-CanopyHeight * 0.4f, CanopyHeight * 0.45f);
-					float Sz = CR.FRandRange(2.2f, 3.8f);
-
-					// Sun-facing clusters are brighter (positive X direction = sun)
-					float SunFactor = FMath::Max(0.f, FMath::Cos(Ang)) * 0.6f;
-					FLinearColor LC = FMath::Lerp(LeafMid, LeafSunlit, SunFactor);
-					LC.R += CR.FRandRange(-0.02f, 0.02f);
-					LC.G += CR.FRandRange(-0.03f, 0.03f);
-
-					SP(SphereMesh,
-						FVector(BX + FMath::Cos(Ang) * Dist, BY + FMath::Sin(Ang) * Dist, CanopyCenterZ + ZOff),
-						FVector(Sz, Sz, Sz * 0.65f),
-						LC, 0.72f);
-				}
-
-				// Top crown: 4 small clusters poking up above
-				for (int32 Ci = 0; Ci < 4; ++Ci)
+				for (int32 Pi = 0; Pi < NumPlants; ++Pi)
 				{
 					float Ang = CR.FRandRange(0.f, 6.28f);
-					float Dist = CR.FRandRange(30.f, 200.f);
-					float Sz = CR.FRandRange(1.8f, 2.8f);
+					// Even spread — fill entire canopy volume uniformly
+					float Dist = CanopyRadius * CR.FRandRange(0.0f, 1.0f);
+					// Extend further down to overlap trunk, fill all gaps
+					float ZOff = CR.FRandRange(-CanopyHeight * 0.55f, CanopyHeight * 0.5f);
+					// Large plants for heavy overlap, no gaps
+					float Sz = CR.FRandRange(5.0f, 9.0f) * SizeMul;
+					float Yaw = CR.FRandRange(0.f, 360.f);
+					// More rotation variety for organic fill
+					float Pitch = CR.FRandRange(-25.f, 25.f);
+					float Roll = CR.FRandRange(-25.f, 25.f);
 
-					SP(SphereMesh,
-						FVector(BX + FMath::Cos(Ang) * Dist, BY + FMath::Sin(Ang) * Dist,
-								CanopyCenterZ + CanopyHeight * 0.4f + CR.FRandRange(50.f, 200.f)),
-						FVector(Sz, Sz, Sz * 0.6f),
-						FMath::Lerp(LeafBright, LeafSunlit, CR.FRand()), 0.70f);
-				}
+					UStaticMesh* PM = PlantVariants[Pi % 4];
+					if (!PM) continue;
 
-				// Bottom fringe: 4 clusters hanging slightly below canopy center
-				for (int32 Ci = 0; Ci < 4; ++Ci)
-				{
-					float Ang = CR.FRandRange(0.f, 6.28f);
-					float Dist = CanopyRadius * CR.FRandRange(0.4f, 0.8f);
-					float Sz = CR.FRandRange(2.0f, 3.0f);
-
-					SP(SphereMesh,
-						FVector(BX + FMath::Cos(Ang) * Dist, BY + FMath::Sin(Ang) * Dist,
-								CanopyCenterZ - CanopyHeight * 0.35f - CR.FRandRange(0.f, 100.f)),
-						FVector(Sz, Sz, Sz * 0.55f),
-						LeafDark, 0.74f);
+					UStaticMeshComponent* LMC = NewObject<UStaticMeshComponent>(TreeA,
+						*FString::Printf(TEXT("DL_%d"), TIdx++));
+					LMC->SetStaticMesh(PM);
+					LMC->SetWorldLocation(FVector(
+						BX + FMath::Cos(Ang) * Dist,
+						BY + FMath::Sin(Ang) * Dist,
+						CanopyCenterZ + ZOff));
+					LMC->SetWorldRotation(FRotator(Pitch, Yaw, Roll));
+					LMC->SetWorldScale3D(FVector(Sz));
+					LMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					LMC->SetCastShadow(false);
+					LMC->RegisterComponent();
+					TreeA->AddInstanceComponent(LMC);
 				}
 
 				SpawnedCount++;
@@ -5931,14 +5995,18 @@ void UPHCCitySubsystem::SpawnHouse(const FVector& Loc, float W, float D, int32 S
 	Body->SetBoundsScale(50.f);
 	Body->RegisterComponent();
 	House->SetRootComponent(Body);
-	UMaterialInstanceDynamic* BodyMat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
-	if (BodyMat)
+	// Mirror building — GlassMaterial at full opacity
+	if (GlassMaterial)
 	{
-		BodyMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor);
-		BodyMat->SetScalarParameterValue(TEXT("Roughness"), 0.92f);
-		if (BrickNormalMap) BodyMat->SetTextureParameterValue(TEXT("NormalMap"), BrickNormalMap);
-		if (BrickRoughnessMap) BodyMat->SetTextureParameterValue(TEXT("RoughnessMap"), BrickRoughnessMap);
-		Body->SetMaterial(0, BodyMat);
+		UMaterialInstanceDynamic* MirrorMat = UMaterialInstanceDynamic::Create(GlassMaterial, Body);
+		if (MirrorMat)
+		{
+			MirrorMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.7f, 0.75f, 0.82f));
+			MirrorMat->SetScalarParameterValue(TEXT("Opacity"), 1.0f);
+			MirrorMat->SetScalarParameterValue(TEXT("Metallic"), 0.95f);
+			MirrorMat->SetScalarParameterValue(TEXT("Roughness"), 0.02f);
+			Body->SetMaterial(0, MirrorMat);
+		}
 	}
 	House->AddInstanceComponent(Body);
 
@@ -6346,15 +6414,10 @@ void UPHCCitySubsystem::SpawnShop(const FVector& Loc, float W, float D, int32 St
 	Body->SetBoundsScale(50.f);
 	Body->RegisterComponent();
 	Shop->SetRootComponent(Body);
-	UMaterialInstanceDynamic* BodyMat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
-	if (BodyMat)
+	if (GlassMaterial)
 	{
-		BodyMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor);
-		BodyMat->SetScalarParameterValue(TEXT("Roughness"), 0.55f);
-		if (ConcreteNormalMap) BodyMat->SetTextureParameterValue(TEXT("NormalMap"), ConcreteNormalMap);
-		if (ConcreteRoughnessMap) BodyMat->SetTextureParameterValue(TEXT("RoughnessMap"), ConcreteRoughnessMap);
-		Body->SetMaterial(0, BodyMat);
 	}
+	ApplyPBR(Body, FLinearColor(0.85f, 0.88f, 0.92f), 1.0f, 0.0f);
 	Shop->AddInstanceComponent(Body);
 
 	// ---- Front face corner trim (decorative vertical cylinders) ----
@@ -6603,8 +6666,7 @@ void UPHCCitySubsystem::SpawnInstitution(const FVector& Loc, float W, float D, f
 	Body->SetBoundsScale(50.f);
 	Body->RegisterComponent();
 	Inst->SetRootComponent(Body);
-	UMaterialInstanceDynamic* BodyMat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
-	if (BodyMat) { BodyMat->SetVectorParameterValue(TEXT("BaseColor"), WallColor); BodyMat->SetScalarParameterValue(TEXT("Roughness"), 0.6f); Body->SetMaterial(0, BodyMat); }
+	ApplyPBR(Body, FLinearColor(0.85f, 0.88f, 0.92f), 1.0f, 0.0f);
 	Inst->AddInstanceComponent(Body);
 
 	// ---- Accent stripe (colored horizontal band at ground floor) ----
@@ -6778,8 +6840,7 @@ void UPHCCitySubsystem::SpawnWarehouse(const FVector& Loc, float W, float D, flo
 	Body->SetBoundsScale(50.f);
 	Body->RegisterComponent();
 	Bldg->SetRootComponent(Body);
-	UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(Body->GetMaterial(0), Body);
-	if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), Color); Mat->SetScalarParameterValue(TEXT("Roughness"), 0.7f); Body->SetMaterial(0, Mat); }
+	ApplyPBR(Body, FLinearColor(0.85f, 0.88f, 0.92f), 1.0f, 0.0f);
 	Bldg->AddInstanceComponent(Body);
 
 	// Loading dock (30% chance) — flat platform on one side
@@ -7060,14 +7121,18 @@ void UPHCCitySubsystem::SpawnBuilding(const FVector& Location, const FVector& Si
 	MC->RegisterComponent();
 	Building->SetRootComponent(MC);
 
-	UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(MC->GetMaterial(0), MC);
-	if (Mat)
+	// Mirror building — GlassMaterial at full opacity
+	if (GlassMaterial)
 	{
-		Mat->SetVectorParameterValue(TEXT("BaseColor"), Color);
-		Mat->SetScalarParameterValue(TEXT("Roughness"), 0.55f);
-		if (ConcreteNormalMap) Mat->SetTextureParameterValue(TEXT("NormalMap"), ConcreteNormalMap);
-		if (ConcreteRoughnessMap) Mat->SetTextureParameterValue(TEXT("RoughnessMap"), ConcreteRoughnessMap);
-		MC->SetMaterial(0, Mat);
+		UMaterialInstanceDynamic* MirrorMat = UMaterialInstanceDynamic::Create(GlassMaterial, MC);
+		if (MirrorMat)
+		{
+			MirrorMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.7f, 0.75f, 0.82f));
+			MirrorMat->SetScalarParameterValue(TEXT("Opacity"), 1.0f);
+			MirrorMat->SetScalarParameterValue(TEXT("Metallic"), 0.95f);
+			MirrorMat->SetScalarParameterValue(TEXT("Roughness"), 0.02f);
+			MC->SetMaterial(0, MirrorMat);
+		}
 	}
 	Building->AddInstanceComponent(MC);
 
@@ -8037,10 +8102,8 @@ void UPHCCitySubsystem::SpawnHills()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);  // Visual only
 		MC->RegisterComponent();
 		Hill->SetRootComponent(MC);
-		// Choose Fab MID based on color: green → Wild Grass, brown/gray → Rock
-		bool bIsGrassy = (Color.G > Color.R && Color.G > 0.2f);
-		UMaterialInterface* HillMI = bIsGrassy ? (UMaterialInterface*)FabWildGrassMID.Get() : (UMaterialInterface*)FabRockMID.Get();
-		if (HillMI) MC->SetMaterial(0, HillMI);
+		// All hills use Uncut Grass texture
+		if (FabGrassMI) MC->SetMaterial(0, FabGrassMI);
 		else
 			ApplyPBR(MC, Color, 0.f, 0.85f);
 		Hill->AddInstanceComponent(MC);
@@ -11621,7 +11684,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 		else
 		{
-			if (FabRockMID) MC->SetMaterial(0, FabRockMID);
+			if (FabGrassMI) MC->SetMaterial(0, FabGrassMI);
 			else ApplyPBR(MC, Col, 0.f, Rough);
 		}
 		O->AddInstanceComponent(MC);
@@ -12721,7 +12784,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (FabSandMID && FMath::Max3(Scale3D.X, Scale3D.Y, Scale3D.Z) < 50.f)
+		if (FabSandMID && Metallic < 0.1f && Color.R > 0.3f && Color.B < 0.6f)
 			MC->SetMaterial(0, FabSandMID);
 		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
@@ -12739,7 +12802,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (FabSandMID && FMath::Max3(Scale3D.X, Scale3D.Y, Scale3D.Z) < 50.f)
+		if (FabSandMID && Metallic < 0.1f && Color.R > 0.3f && Color.B < 0.6f)
 			MC->SetMaterial(0, FabSandMID);
 		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
@@ -12757,7 +12820,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (FabSandMID && FMath::Max3(Scale3D.X, Scale3D.Y, Scale3D.Z) < 50.f)
+		if (FabSandMID && Metallic < 0.1f && Color.R > 0.3f && Color.B < 0.6f)
 			MC->SetMaterial(0, FabSandMID);
 		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
@@ -12776,7 +12839,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (FabSandMID && FMath::Max3(Scale3D.X, Scale3D.Y, Scale3D.Z) < 50.f)
+		if (FabSandMID && Metallic < 0.1f && Color.R > 0.3f && Color.B < 0.6f)
 			MC->SetMaterial(0, FabSandMID);
 		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
@@ -12818,7 +12881,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (FabSandMID && FMath::Max3(Scale.X, Scale.Y, Scale.Z) < 50.f)
+		if (FabSandMID && Color.R > 0.3f && Color.B < 0.6f)
 			MC->SetMaterial(0, FabSandMID);
 		else ApplyPBR(MC, Color, 0.f, Roughness);
 		Castle->AddInstanceComponent(MC);
@@ -12855,8 +12918,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (FabSandMID && Metallic < 0.1f && FMath::Max3(Scale.X, Scale.Y, Scale.Z) < 50.f)
-			MC->SetMaterial(0, FabSandMID);
+		if (FabSandMID && Metallic < 0.1f) MC->SetMaterial(0, FabSandMID);
 		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Castle->AddInstanceComponent(MC);
 		return MC;
@@ -14507,15 +14569,13 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 		MC->SetBoundsScale(30.f);
 		MC->RegisterComponent();
 		A->SetRootComponent(MC);
-		// Use Megascans textures — but only on reasonably-sized meshes
-		// Large meshes (pyramid base blocks, causeways) get UV stretching, so keep ApplyPBR
 		float MaxScale = FMath::Max3(Scale.X, Scale.Y, Scale.Z);
-		bool bSmallEnough = (MaxScale < 50.f); // Fab textures look good up to ~50x scale
 		bool bIsLimestone = (Metallic < 0.1f && Color.R > 0.4f && Color.G > 0.3f && Color.B < 0.4f && Roughness > 0.7f);
 		bool bIsSand = (Metallic < 0.1f && Color.R > 0.5f && Color.G > 0.4f && Color.B < 0.7f && Color.R > Color.B);
-		if (bSmallEnough && FabStoneTilesMID && bIsLimestone)
+		// Limestone (pyramid blocks) and sand: always apply texture
+		if (FabStoneTilesMID && bIsLimestone)
 			MC->SetMaterial(0, FabStoneTilesMID);
-		else if (bSmallEnough && FabSandMID && bIsSand)
+		else if (FabSandMID && bIsSand)
 			MC->SetMaterial(0, FabSandMID);
 		else
 			ApplyPBR(MC, Color, Metallic, Roughness);
@@ -15269,7 +15329,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 
 		const FVector PyramidAreaCenter(22248.f, -62419.f, 0.f);
 
-		// (Desert sand ground plane removed — terrain chunks handle sand coloring)
+		// Terrain chunks handle desert ground with FabSandMID (same texture as explicit surfaces = no Z-fighting)
 
 		// --- Khufu (Great Pyramid) — the largest (2x scale) ---
 		const FVector KhufuBase = PyramidAreaCenter + FVector(-10000.f, 0.f, 0.f);

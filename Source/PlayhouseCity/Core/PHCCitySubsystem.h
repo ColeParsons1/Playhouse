@@ -89,6 +89,7 @@ private:
 	void SpawnJungle();
 	void SpawnOakGrove();
 	void SpawnVisualPolish();
+	void SpawnFoliage();
 	void UpdateGrassInstances(const FVector& PlayerLoc);
 
 	/** Spawn a single building with optional window lights. */

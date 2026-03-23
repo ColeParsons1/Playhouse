@@ -554,9 +554,11 @@ void APHCCityCharacter::BeginPlay()
 		TEXT("/Game/Characters/Mixamo/Animations/running.running"));
 	JumpAnim = LoadObject<UAnimSequence>(nullptr,
 		TEXT("/Game/Characters/Mixamo/Animations/jumping_up.jumping_up"));
+	RollerBladeAnim = LoadObject<UAnimSequence>(nullptr,
+		TEXT("/Game/Characters/Mixamo/Animations/rollerblade_walk_Anim.rollerblade_walk_Anim"));
 
-	UE_LOG(LogPlayhouseCity, Warning, TEXT("Mixamo anims: idle=%d walk=%d run=%d jump=%d"),
-		IdleAnim ? 1 : 0, WalkAnim ? 1 : 0, RunAnim ? 1 : 0, JumpAnim ? 1 : 0);
+	UE_LOG(LogPlayhouseCity, Warning, TEXT("Mixamo anims: idle=%d walk=%d run=%d jump=%d rollerblade=%d"),
+		IdleAnim ? 1 : 0, WalkAnim ? 1 : 0, RunAnim ? 1 : 0, JumpAnim ? 1 : 0, RollerBladeAnim ? 1 : 0);
 
 	if (CharacterSkelMesh && CharacterSkelMesh->GetSkeletalMeshAsset() && IdleAnim)
 	{
@@ -1592,7 +1594,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			bHasBeenGrounded = true;
 			bWasGrounded = true;
 			ManualVelocityZ = 0.f;
-			const float TerrainInterp = bRollerBladesEquipped ? 25.f : 12.f;
+			const float TerrainInterp = bRollerBladesEquipped ? 60.f : 50.f;
 			const float NewZ = FMath::FInterpTo(Pos.Z, TargetZ, DeltaTime, TerrainInterp);
 			SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 		}
@@ -1642,7 +1644,8 @@ void APHCCityCharacter::Tick(float DeltaTime)
 					{
 						bHasBeenGrounded = true;
 						ManualVelocityZ = 0.f;
-						const float GndInterp = bRollerBladesEquipped ? 25.f : 12.f;
+						// Snap precisely to terrain — high interp speed prevents floating above hills
+						const float GndInterp = bRollerBladesEquipped ? 60.f : 50.f;
 						const float NewZ = FMath::FInterpTo(Pos.Z, BestZ, DeltaTime, GndInterp);
 						SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 					}
@@ -1712,6 +1715,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		{
 			int32 NewState = 0;
 			if (ManualVelocityZ > 50.f && JumpAnim) NewState = 3;
+			else if (bMoving && bRollerBladesEquipped && RollerBladeAnim) NewState = 4;
 			else if (bMoving && RunAnim) NewState = 2;
 
 			if (NewState != CurrentAnimState)
@@ -1719,10 +1723,21 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				CurrentAnimState = NewState;
 				if (NewState == 0 && IdleAnim)
 					CharacterSkelMesh->PlayAnimation(IdleAnim, true);
+				else if (NewState == 4 && RollerBladeAnim)
+				{
+					CharacterSkelMesh->PlayAnimation(RollerBladeAnim, true);
+					CharacterSkelMesh->SetPlayRate(0.5f); // slow walking pace
+				}
 				else if (NewState == 2 && RunAnim)
+				{
 					CharacterSkelMesh->PlayAnimation(RunAnim, true);
+					CharacterSkelMesh->SetPlayRate(1.0f);
+				}
 				else if (NewState == 3 && JumpAnim)
+				{
 					CharacterSkelMesh->PlayAnimation(JumpAnim, false);
+					CharacterSkelMesh->SetPlayRate(1.0f);
+				}
 			}
 
 			// Prevent the snap: when near the end of the run anim,
@@ -1746,7 +1761,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 
 		if (bMoving)
 		{
-			const float CycleSpeed = bRollerBladesEquipped ? 4.f : (bIsSprinting ? 16.f : 15.f);
+			const float CycleSpeed = bRollerBladesEquipped ? 1.f : (bIsSprinting ? 16.f : 15.f);
 			WalkCyclePhase += CycleSpeed * DeltaTime;
 			IdleTimer = 0.f;
 		}
@@ -1765,12 +1780,13 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			return FMath::Sin(P) + 0.12f * FMath::Sin(2.f * P) + 0.05f * FMath::Sin(3.f * P - 0.4f);
 		};
 
-		const float ThighAmp    = bIsSprinting ? 45.f : 42.f;
-		const float UpperArmAmp = bIsSprinting ? 40.f : 36.f;
-		const float KneeBendMax = bIsSprinting ? 55.f : 48.f;
-		const float ElbowBendMax= bIsSprinting ? 50.f : 42.f;
-		const float LeanAmp     = bIsSprinting ? 10.f :  8.f;
-		const float BobAmp      = bIsSprinting ?  3.f :  2.5f;
+		const float RollerScale = bRollerBladesEquipped ? 0.1f : 1.f; // 90% reduction
+		const float ThighAmp    = (bIsSprinting ? 45.f : 42.f) * RollerScale;
+		const float UpperArmAmp = (bIsSprinting ? 40.f : 36.f) * RollerScale;
+		const float KneeBendMax = (bIsSprinting ? 55.f : 48.f) * RollerScale;
+		const float ElbowBendMax= (bIsSprinting ? 50.f : 42.f) * RollerScale;
+		const float LeanAmp     = (bIsSprinting ? 10.f :  8.f) * RollerScale;
+		const float BobAmp      = (bIsSprinting ?  3.f :  2.5f) * RollerScale;
 
 		const float Phase = WalkCyclePhase;
 		const float Blend = WalkAnimBlend;

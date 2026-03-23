@@ -69,6 +69,7 @@ public:
 	UPROPERTY(Transient) TObjectPtr<UAnimSequence> WalkAnim;
 	UPROPERTY(Transient) TObjectPtr<UAnimSequence> RunAnim;
 	UPROPERTY(Transient) TObjectPtr<UAnimSequence> JumpAnim;
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> RollerBladeAnim;
 	int32 CurrentAnimState = 0; // 0=idle, 1=walk, 2=run, 3=jump
 
 	// -- Legacy body components (hidden, kept for NPC compatibility) ----------

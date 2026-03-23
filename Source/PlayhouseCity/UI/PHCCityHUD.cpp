@@ -894,68 +894,19 @@ bool UPHCCityHUD::Initialize()
 		NightButton->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
-		//  DEV MODE button (below Night) — time of day controls
+		//  Time-of-day phase label (top bar, left of mic)
 		// ============================================================
-		DevModeButton = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("DevModeButton"));
-		FButtonStyle DevBtnStyle = DevModeButton->GetStyle();
-		DevBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.2f, 0.8f, 0.3f, 0.3f));
-		DevBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.3f, 0.9f, 0.4f, 0.45f));
-		DevBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.4f, 1.0f, 0.5f, 0.6f));
-		DevModeButton->SetStyle(DevBtnStyle);
-
 		DevModeButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("DevModeLabel"));
-		DevModeButtonLabel->SetText(FText::FromString(TEXT("Dev")));
+			UTextBlock::StaticClass(), TEXT("TimePhaseLabel"));
+		DevModeButtonLabel->SetText(FText::FromString(TEXT("Noon")));
 		DevModeButtonLabel->SetFont(BtnFont);
-		DevModeButtonLabel->SetColorAndOpacity(FSlateColor(White));
+		DevModeButtonLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.85f, 0.6f)));
 		DevModeButtonLabel->SetJustification(ETextJustify::Center);
-		DevModeButton->AddChild(DevModeButtonLabel);
 
-		UCanvasPanelSlot* DevBtnSlot = RootCanvas->AddChildToCanvas(DevModeButton);
-		DevBtnSlot->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f)); // top-center like mic button
-		DevBtnSlot->SetAlignment(FVector2D(1.f, 0.f));
-		DevBtnSlot->SetOffsets(FMargin(-260.f, 10.f, 90.f, 34.f)); // left of mic button
-
-		// Dev Time Panel (hidden by default)
-		DevTimePanel = WidgetTree->ConstructWidget<UCanvasPanel>(
-			UCanvasPanel::StaticClass(), TEXT("DevTimePanel"));
-		UCanvasPanelSlot* DevPanelSlot = RootCanvas->AddChildToCanvas(DevTimePanel);
-		DevPanelSlot->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f));
-		DevPanelSlot->SetAlignment(FVector2D(1.f, 0.f));
-		DevPanelSlot->SetOffsets(FMargin(-360.f, 50.f, 400.f, 260.f));
-		DevTimePanel->SetVisibility(ESlateVisibility::Collapsed);
-
-		const TCHAR* TimeLabels[] = {
-			TEXT("Sunrise"), TEXT("Morning"), TEXT("Noon"), TEXT("Afternoon"),
-			TEXT("Sunset"), TEXT("Dusk"), TEXT("Midnight"), TEXT("Cycle")
-		};
-		for (int32 Ti = 0; Ti < 8; ++Ti)
-		{
-			UButton* TBtn = WidgetTree->ConstructWidget<UButton>(
-				UButton::StaticClass(), *FString::Printf(TEXT("DevTimeBtn_%d"), Ti));
-			FButtonStyle TStyle = TBtn->GetStyle();
-			TStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.15f, 0.15f, 0.25f, 0.7f));
-			TStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.25f, 0.25f, 0.4f, 0.85f));
-			TStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.4f, 0.4f, 0.6f, 1.0f));
-			TBtn->SetStyle(TStyle);
-
-			UTextBlock* TLabel = WidgetTree->ConstructWidget<UTextBlock>(
-				UTextBlock::StaticClass(), *FString::Printf(TEXT("DevTimeLbl_%d"), Ti));
-			TLabel->SetText(FText::FromString(TimeLabels[Ti]));
-			TLabel->SetFont(BtnFont);
-			TLabel->SetColorAndOpacity(FSlateColor(White));
-			TLabel->SetJustification(ETextJustify::Center);
-			TBtn->AddChild(TLabel);
-
-			int32 Row = Ti / 2;
-			int32 Col = Ti % 2;
-			UCanvasPanelSlot* TSlot = DevTimePanel->AddChildToCanvas(TBtn);
-			TSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
-			TSlot->SetAlignment(FVector2D(0.f, 0.f));
-			TSlot->SetOffsets(FMargin(Col * 195.f, Row * 60.f, 190.f, 55.f));
-			DevTimeBtns.Add(TBtn);
-		}
+		UCanvasPanelSlot* TimeLabelSlot = RootCanvas->AddChildToCanvas(DevModeButtonLabel);
+		TimeLabelSlot->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f));
+		TimeLabelSlot->SetAlignment(FVector2D(1.f, 0.f));
+		TimeLabelSlot->SetOffsets(FMargin(-260.f, 14.f, 90.f, 30.f));
 
 		// ============================================================
 		//  Disasters button (below Dev Mode)
@@ -2591,22 +2542,7 @@ void UPHCCityHUD::NativeConstruct()
 	{
 		NightButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnNightButtonClicked);
 	}
-	if (DevModeButton)
-	{
-		DevModeButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevModeButtonClicked);
-	}
-	// Bind dev time buttons
-	if (DevTimeBtns.Num() >= 8)
-	{
-		DevTimeBtns[0]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeSunrise);
-		DevTimeBtns[1]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeMorning);
-		DevTimeBtns[2]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeNoon);
-		DevTimeBtns[3]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeAfternoon);
-		DevTimeBtns[4]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeSunset);
-		DevTimeBtns[5]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeDusk);
-		DevTimeBtns[6]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeMidnight);
-		DevTimeBtns[7]->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDevTimeCycle);
-	}
+	// Time phase label updated in NativeTick
 	if (DisastersButton)
 	{
 		DisastersButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnDisastersButtonClicked);
@@ -2791,6 +2727,35 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 	// Update minimap radar with player positions
 	UpdateMinimap(InDeltaTime);
+
+	// Update time-of-day phase label
+	if (DevModeButtonLabel)
+	{
+		UWorld* W = GetWorld();
+		UPHCCitySubsystem* CS = W ? W->GetSubsystem<UPHCCitySubsystem>() : nullptr;
+		if (CS)
+		{
+			float T = CS->DayNightTime;
+			const TCHAR* Phase;
+			if (T < 0.0625f || T >= 0.9375f)
+				Phase = TEXT("Sunrise");
+			else if (T < 0.1875f)
+				Phase = TEXT("Morning");
+			else if (T < 0.3125f)
+				Phase = TEXT("Noon");
+			else if (T < 0.4375f)
+				Phase = TEXT("Afternoon");
+			else if (T < 0.5625f)
+				Phase = TEXT("Sunset");
+			else if (T < 0.6875f)
+				Phase = TEXT("Dusk");
+			else if (T < 0.8125f)
+				Phase = TEXT("Midnight");
+			else
+				Phase = TEXT("Late Night");
+			DevModeButtonLabel->SetText(FText::FromString(Phase));
+		}
+	}
 
 	// Update speedometer + live location monitor
 	if (LocationText)
