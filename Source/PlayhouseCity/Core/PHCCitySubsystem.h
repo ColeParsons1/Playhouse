@@ -453,6 +453,12 @@ private:
 	TArray<int32> RiverWaterTris;
 	TArray<FVector2D> RiverWaterUVs;
 
+	// Animated caustics
+	UPROPERTY(Transient) TArray<TObjectPtr<UTexture2D>> CausticFrames;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> CausticFloorMID;
+	int32 CausticFrameIndex = 0;
+	float CausticTimer = 0.f;
+
 	/** Cloud MIDs for day/night color change. */
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> CloudMIDs;
 	UPROPERTY(Transient) TArray<TObjectPtr<AActor>> CloudActors;

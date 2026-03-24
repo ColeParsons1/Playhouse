@@ -955,6 +955,74 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			}
 		}
 
+	// ---- Animated water caustics (riverbed floor below translucent water) ----
+	if (CausticFrames.Num() > 0 && FabGrassMI)
+	{
+		// Spawn caustic floor on first tick (once)
+		if (!CausticFloorMID && RiverWaterPMC)
+		{
+			// Restore river to GlassMaterial (translucent water)
+			if (GlassMaterial)
+			{
+				UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(GlassMaterial, RiverWaterPMC);
+				if (WMat)
+				{
+					WMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.05f, 0.16f, 0.28f));
+					WMat->SetScalarParameterValue(TEXT("Opacity"), 0.50f);
+					WMat->SetScalarParameterValue(TEXT("Metallic"), 0.2f);
+					WMat->SetScalarParameterValue(TEXT("Roughness"), 0.06f);
+					WMat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.04f, 0.08f, 0.15f));
+					RiverWaterPMC->SetMaterial(0, WMat);
+				}
+			}
+
+			// Create caustic floor mesh (copy river verts but lower Z)
+			UWorld* CW = GetWorld();
+			if (CW && RiverWaterBaseVerts.Num() > 0)
+			{
+				AActor* CFA = CW->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator);
+				if (CFA)
+				{
+					TArray<FVector> FloorVerts;
+					FloorVerts.Reserve(RiverWaterBaseVerts.Num());
+					for (const FVector& V : RiverWaterBaseVerts)
+						FloorVerts.Add(FVector(V.X, V.Y, V.Z - 15.f)); // 15 UU below water
+
+					TArray<FVector> FloorNormals;
+					FloorNormals.Init(FVector(0.f, 0.f, 1.f), FloorVerts.Num());
+
+					auto* CaustPMC = NewObject<UProceduralMeshComponent>(CFA, TEXT("CausticFloor"));
+					CaustPMC->CreateMeshSection(0, FloorVerts, RiverWaterTris, FloorNormals,
+						RiverWaterUVs, TArray<FColor>(), TArray<FProcMeshTangent>(), false);
+					CaustPMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					CaustPMC->SetCastShadow(false);
+					CaustPMC->SetBoundsScale(100.f);
+					CaustPMC->RegisterComponent();
+					CFA->SetRootComponent(CaustPMC);
+					CFA->AddInstanceComponent(CaustPMC);
+
+					CausticFloorMID = UMaterialInstanceDynamic::Create(FabGrassMI, CaustPMC);
+					if (CausticFloorMID)
+					{
+						CaustPMC->SetMaterial(0, CausticFloorMID);
+					}
+				}
+			}
+		}
+
+		// Animate caustic texture
+		CausticTimer += DeltaTime;
+		if (CausticTimer >= 0.06f && CausticFloorMID)
+		{
+			CausticTimer = 0.f;
+			CausticFrameIndex = (CausticFrameIndex + 1) % CausticFrames.Num();
+			if (CausticFrames[CausticFrameIndex])
+			{
+				CausticFloorMID->SetTextureParameterValue(TEXT("BaseColorTexture"), CausticFrames[CausticFrameIndex]);
+			}
+		}
+	}
+
 	// ---- Grass streaming (update instances around player) ----
 	{
 		UWorld* GrassWorld = GetWorld();
@@ -3301,6 +3369,16 @@ void UPHCCitySubsystem::LoadMegascansTextures()
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Fab MIDs created — Grass=%d Sand=%d Road=%d Concrete=%d Rock=%d Bark=%d WildGrass=%d Stone=%d"),
 		FabGrassMI ? 1 : 0, FabSandMID ? 1 : 0, FabRoadMID ? 1 : 0, FabConcreteMID ? 1 : 0,
 		FabRockMID ? 1 : 0, FabBarkMID ? 1 : 0, FabWildGrassMID ? 1 : 0, FabStoneTilesMID ? 1 : 0);
+
+	// Load animated caustic frames (82 frames)
+	CausticFrames.Empty();
+	for (int32 i = 1; i <= 82; ++i)
+	{
+		FString Path = FString::Printf(TEXT("/Game/Caustics_Texture/T_Caustics_%02d.T_Caustics_%02d"), i, i);
+		UTexture2D* Frame = LoadObject<UTexture2D>(nullptr, *Path);
+		if (Frame) CausticFrames.Add(Frame);
+	}
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Loaded %d caustic frames"), CausticFrames.Num());
 }
 
 // ---------------------------------------------------------------------------
