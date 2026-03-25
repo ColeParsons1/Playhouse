@@ -375,6 +375,100 @@ void FPlayhouseCityModule::StartupModule()
 	}
 
 	// ---------------------------------------------------------------------------
+	// M_PHCWater -- translucent water material with texture sampling for caustics.
+	// Same as M_PHCGlass but with BaseColorTex texture parameter.
+	// ---------------------------------------------------------------------------
+	{
+		const FString PackagePath = TEXT("/Game/Materials/M_PHCWater");
+		const FString FilePath = FPackageName::LongPackageNameToFilename(
+			PackagePath, FPackageName::GetAssetPackageExtension());
+		if (!FPaths::FileExists(FilePath))
+		{
+		const FString DirPath = FPaths::GetPath(FilePath);
+		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+		PlatformFile.CreateDirectoryTree(*DirPath);
+
+		UPackage* Package = CreatePackage(*PackagePath);
+		UMaterial* Mat = NewObject<UMaterial>(Package, TEXT("M_PHCWater"),
+			RF_Public | RF_Standalone);
+
+		// Opaque so it renders at all distances on iOS mobile
+		Mat->BlendMode = BLEND_Opaque;
+
+		UMaterialEditorOnlyData* EditorData = Mat->GetEditorOnlyData();
+
+		// Texture Coordinate
+		auto* TexCoord = NewObject<UMaterialExpressionTextureCoordinate>(Mat);
+		TexCoord->UTiling = 4.f;
+		TexCoord->VTiling = 4.f;
+		EditorData->ExpressionCollection.Expressions.Add(TexCoord);
+
+		// BaseColor (water color, always visible — NOT multiplied by texture)
+		auto* BaseColorParam = NewObject<UMaterialExpressionVectorParameter>(Mat);
+		BaseColorParam->ParameterName = TEXT("BaseColor");
+		BaseColorParam->DefaultValue = FLinearColor(0.05f, 0.16f, 0.28f);
+		EditorData->ExpressionCollection.Expressions.Add(BaseColorParam);
+		EditorData->BaseColor.Expression = BaseColorParam;
+
+		// CausticTex (additive glow — goes to Emissive, not BaseColor)
+		auto* CausticTex = NewObject<UMaterialExpressionTextureSampleParameter2D>(Mat);
+		CausticTex->ParameterName = TEXT("BaseColorTex");
+		CausticTex->Coordinates.Expression = TexCoord;
+		CausticTex->Texture = LoadObject<UTexture2D>(nullptr,
+			TEXT("/Engine/EngineResources/WhiteSquareTexture.WhiteSquareTexture"));
+		EditorData->ExpressionCollection.Expressions.Add(CausticTex);
+
+		// CausticTint — scales the caustic brightness
+		auto* CausticTint = NewObject<UMaterialExpressionVectorParameter>(Mat);
+		CausticTint->ParameterName = TEXT("EmissiveColor");
+		CausticTint->DefaultValue = FLinearColor(0.1f, 0.2f, 0.3f);
+		EditorData->ExpressionCollection.Expressions.Add(CausticTint);
+
+		// Emissive = CausticTex × CausticTint (additive light pattern)
+		auto* EmissiveMul = NewObject<UMaterialExpressionMultiply>(Mat);
+		EmissiveMul->A.Expression = CausticTex;
+		EmissiveMul->B.Expression = CausticTint;
+		EditorData->ExpressionCollection.Expressions.Add(EmissiveMul);
+		EditorData->EmissiveColor.Expression = EmissiveMul;
+
+		// Opacity
+		auto* OpacityParam = NewObject<UMaterialExpressionScalarParameter>(Mat);
+		OpacityParam->ParameterName = TEXT("Opacity");
+		OpacityParam->DefaultValue = 0.55f;
+		EditorData->ExpressionCollection.Expressions.Add(OpacityParam);
+		EditorData->Opacity.Expression = OpacityParam;
+
+		// Metallic
+		auto* MetParam = NewObject<UMaterialExpressionScalarParameter>(Mat);
+		MetParam->ParameterName = TEXT("Metallic");
+		MetParam->DefaultValue = 0.2f;
+		EditorData->ExpressionCollection.Expressions.Add(MetParam);
+		EditorData->Metallic.Expression = MetParam;
+
+		// Roughness
+		auto* RghParam = NewObject<UMaterialExpressionScalarParameter>(Mat);
+		RghParam->ParameterName = TEXT("Roughness");
+		RghParam->DefaultValue = 0.06f;
+		EditorData->ExpressionCollection.Expressions.Add(RghParam);
+		EditorData->Roughness.Expression = RghParam;
+
+		// (EmissiveColor already connected via CausticTex × CausticTint above)
+
+		AddCurvatureWPO(Mat, EditorData);
+
+		Mat->PreEditChange(nullptr);
+		Mat->PostEditChange();
+
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		UPackage::SavePackage(Package, Mat, *FilePath, SaveArgs);
+
+		UE_LOG(LogPlayhouseCity, Log,
+			TEXT("PHC: Created and saved M_PHCWater material to %s"), *FilePath);
+		}
+	}
+
+	// ---------------------------------------------------------------------------
 	// M_PHCClearCoat -- automotive clear coat paint for vehicle bodies.
 	// ClearCoat shading model: glossy topcoat over metallic paint.
 	// ---------------------------------------------------------------------------
@@ -726,7 +820,19 @@ void FPlayhouseCityModule::StartupModule()
 			BaseColorTex->ParameterName = TEXT("BaseColorTex");
 			BaseColorTex->Coordinates.Expression = TiledUV;
 			EditorData->ExpressionCollection.Expressions.Add(BaseColorTex);
-			EditorData->BaseColor.Expression = BaseColorTex;
+
+			// Tint vector parameter (default white — multiplies with BaseColorTex)
+			auto* TintParam = NewObject<UMaterialExpressionVectorParameter>(Mat);
+			TintParam->ParameterName = TEXT("Tint");
+			TintParam->DefaultValue = FLinearColor::White;
+			EditorData->ExpressionCollection.Expressions.Add(TintParam);
+
+			// BaseColorTex × Tint → BaseColor
+			auto* TintMul = NewObject<UMaterialExpressionMultiply>(Mat);
+			TintMul->A.Expression = BaseColorTex;
+			TintMul->B.Expression = TintParam;
+			EditorData->ExpressionCollection.Expressions.Add(TintMul);
+			EditorData->BaseColor.Expression = TintMul;
 
 			// Normal Texture
 			auto* NormalTex = NewObject<UMaterialExpressionTextureSampleParameter2D>(Mat);

@@ -182,6 +182,8 @@ private:
 
 	// -- Fab Megascans material instances (pre-compiled, work on iOS) ----------
 	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> FabGrassMI;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> FabAsphaltMI;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> AdvancedWaterMI;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> FabSandMID;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> FabRoadMID;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> FabConcreteMID;
@@ -453,9 +455,12 @@ private:
 	TArray<int32> RiverWaterTris;
 	TArray<FVector2D> RiverWaterUVs;
 
+	/** Translucent water material with BaseColorTex for caustics. */
+	UPROPERTY(Transient) TObjectPtr<UMaterial> WaterMaterial;
+
 	// Animated caustics
 	UPROPERTY(Transient) TArray<TObjectPtr<UTexture2D>> CausticFrames;
-	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> CausticFloorMID;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> RiverWaterMID;
 	int32 CausticFrameIndex = 0;
 	float CausticTimer = 0.f;
 

@@ -195,6 +195,7 @@ void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	ChromaAberrationMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCChromaAberration.M_PHCChromaAberration"));
 	DecalMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCDecal.M_PHCDecal"));
 	TripSkyMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCTripSky.M_PHCTripSky"));
+	WaterMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCWater.M_PHCWater"));
 
 #if WITH_EDITORONLY_DATA
 	if (!ColorMaterial)
@@ -955,73 +956,40 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			}
 		}
 
-	// ---- Animated water caustics (riverbed floor below translucent water) ----
-	if (CausticFrames.Num() > 0 && FabGrassMI)
+	// ---- River: caustic texture directly on river PMC ----
+	if (RiverWaterPMC && !RiverWaterMID && RiverWaterBaseVerts.Num() > 0)
 	{
-		// Spawn caustic floor on first tick (once)
-		if (!CausticFloorMID && RiverWaterPMC)
+		// Re-tile UVs so caustics tile every 2000 UU
+		TArray<FVector2D> TiledUVs;
+		TiledUVs.Reserve(RiverWaterBaseVerts.Num());
+		for (const FVector& V : RiverWaterBaseVerts)
+			TiledUVs.Add(FVector2D(V.X / 2000.f, V.Y / 2000.f));
+		TArray<FVector> Normals;
+		Normals.Init(FVector(0.f, 0.f, 1.f), RiverWaterBaseVerts.Num());
+		RiverWaterPMC->UpdateMeshSection(0, RiverWaterBaseVerts, Normals, TiledUVs,
+			TArray<FColor>(), TArray<FProcMeshTangent>());
+
+		// Apply Advanced Water material (pre-built blue water with caustics/waves)
+		if (AdvancedWaterMI)
 		{
-			// Restore river to GlassMaterial (translucent water)
-			if (GlassMaterial)
+			RiverWaterMID = UMaterialInstanceDynamic::Create(AdvancedWaterMI, RiverWaterPMC);
+			if (RiverWaterMID)
+				RiverWaterPMC->SetMaterial(0, RiverWaterMID);
+		}
+		// Fallback to FabGrassMI with procedural blue caustics
+		if (!RiverWaterMID && FabGrassMI && CausticFrames.Num() > 0)
+		{
+			RiverWaterMID = UMaterialInstanceDynamic::Create(FabGrassMI, RiverWaterPMC);
+			if (RiverWaterMID)
 			{
-				UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(GlassMaterial, RiverWaterPMC);
-				if (WMat)
-				{
-					WMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.05f, 0.16f, 0.28f));
-					WMat->SetScalarParameterValue(TEXT("Opacity"), 0.50f);
-					WMat->SetScalarParameterValue(TEXT("Metallic"), 0.2f);
-					WMat->SetScalarParameterValue(TEXT("Roughness"), 0.06f);
-					WMat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.04f, 0.08f, 0.15f));
-					RiverWaterPMC->SetMaterial(0, WMat);
-				}
-			}
-
-			// Create caustic floor mesh (copy river verts but lower Z)
-			UWorld* CW = GetWorld();
-			if (CW && RiverWaterBaseVerts.Num() > 0)
-			{
-				AActor* CFA = CW->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator);
-				if (CFA)
-				{
-					TArray<FVector> FloorVerts;
-					FloorVerts.Reserve(RiverWaterBaseVerts.Num());
-					for (const FVector& V : RiverWaterBaseVerts)
-						FloorVerts.Add(FVector(V.X, V.Y, V.Z - 15.f)); // 15 UU below water
-
-					TArray<FVector> FloorNormals;
-					FloorNormals.Init(FVector(0.f, 0.f, 1.f), FloorVerts.Num());
-
-					auto* CaustPMC = NewObject<UProceduralMeshComponent>(CFA, TEXT("CausticFloor"));
-					CaustPMC->CreateMeshSection(0, FloorVerts, RiverWaterTris, FloorNormals,
-						RiverWaterUVs, TArray<FColor>(), TArray<FProcMeshTangent>(), false);
-					CaustPMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					CaustPMC->SetCastShadow(false);
-					CaustPMC->SetBoundsScale(100.f);
-					CaustPMC->RegisterComponent();
-					CFA->SetRootComponent(CaustPMC);
-					CFA->AddInstanceComponent(CaustPMC);
-
-					CausticFloorMID = UMaterialInstanceDynamic::Create(FabGrassMI, CaustPMC);
-					if (CausticFloorMID)
-					{
-						CaustPMC->SetMaterial(0, CausticFloorMID);
-					}
-				}
+				RiverWaterMID->SetTextureParameterValue(TEXT("BaseColorTexture"), CausticFrames[0]);
+				RiverWaterPMC->SetMaterial(0, RiverWaterMID);
 			}
 		}
-
-		// Animate caustic texture
-		CausticTimer += DeltaTime;
-		if (CausticTimer >= 0.06f && CausticFloorMID)
-		{
-			CausticTimer = 0.f;
-			CausticFrameIndex = (CausticFrameIndex + 1) % CausticFrames.Num();
-			if (CausticFrames[CausticFrameIndex])
-			{
-				CausticFloorMID->SetTextureParameterValue(TEXT("BaseColorTexture"), CausticFrames[CausticFrameIndex]);
-			}
-		}
+		if (!RiverWaterMID) RiverWaterMID = FabSandMID;
 	}
+
+	// Advanced Water material handles its own animation via shader — no frame cycling needed
 
 	// ---- Grass streaming (update instances around player) ----
 	{
@@ -1859,20 +1827,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 			if (bWaterTripping)
 			{
 				bWaterTripping = false;
-				// Restore river
-				if (RiverWaterPMC && GlassMaterial)
-				{
-					UMaterialInstanceDynamic* RR = UMaterialInstanceDynamic::Create(GlassMaterial, RiverWaterPMC);
-					if (RR)
-					{
-						RR->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.05f, 0.16f, 0.28f));
-						RR->SetScalarParameterValue(TEXT("Opacity"), 0.60f);
-						RR->SetScalarParameterValue(TEXT("Metallic"), 0.2f);
-						RR->SetScalarParameterValue(TEXT("Roughness"), 0.06f);
-						RR->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.04f, 0.08f, 0.15f));
-						RiverWaterPMC->SetMaterial(0, RR);
-					}
-				}
+				// River restored by caustic system in Tick (no manual restore needed)
 				// Restore ocean/bay surfaces
 				if (GetWorld() && GlassMaterial && TripSkyMaterial)
 				{
@@ -2134,20 +2089,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 					{
 						bWaterTripping = true;
 
-						// River PMC
-						if (RiverWaterPMC)
-						{
-							RiverTripMID = UMaterialInstanceDynamic::Create(TripSkyMaterial, RiverWaterPMC);
-							if (RiverTripMID)
-							{
-								RiverTripMID->SetScalarParameterValue(TEXT("Bass"), 0.4f);
-								RiverTripMID->SetScalarParameterValue(TEXT("High"), 0.3f);
-								RiverTripMID->SetScalarParameterValue(TEXT("Level"), 0.5f);
-								RiverTripMID->SetScalarParameterValue(TEXT("Mid"), 0.35f);
-								RiverTripMID->SetScalarParameterValue(TEXT("SceneIndex"), 0.f);
-								RiverWaterPMC->SetMaterial(0, RiverTripMID);
-							}
-						}
+						// River PMC — skip trip effect, caustics handle river visuals
+						// (trip sky removed from river to avoid conflicting with caustic texture)
 
 						// Ocean + bay: find large water surfaces using GlassMaterial
 						// Skip small surfaces (lakes/pools) by checking scale
@@ -3354,11 +3297,11 @@ void UPHCCitySubsystem::LoadMegascansTextures()
 	FabBarkMID       = MakeFabMID(MegaBarkBC, MegaBarkN, MegaBarkR);
 	FabWildGrassMID  = MakeFabMID(MegaWildGrassBC, MegaWildGrassN, MegaWildGrassR);
 
-	// Asphalt MI loaded directly (has its own compiled material)
-	UMaterialInterface* AsphaltMI = LoadObject<UMaterialInterface>(nullptr,
+	// Asphalt MI loaded directly (has its own compiled material — also used as neutral-gray base for river caustics)
+	FabAsphaltMI = LoadObject<UMaterialInterface>(nullptr,
 		TEXT("/Game/Fab/Megascans/Surfaces/Asphalt_sk0mci2c/High/sk0mci2c_tier_1/Materials/MI_sk0mci2c.MI_sk0mci2c"));
-	if (AsphaltMI)
-		FabRoadMID = UMaterialInstanceDynamic::Create(AsphaltMI, this);
+	if (FabAsphaltMI)
+		FabRoadMID = UMaterialInstanceDynamic::Create(FabAsphaltMI, this);
 
 	// Stone Tiles — use Fab MI base with Stone Tiles textures
 	UTexture2D* StoneBC = LoadObject<UTexture2D>(nullptr, TEXT("/Game/Fab/Megascans/Surfaces/Stone_Tiles_Facade_ub4nbiag/High/ub4nbiag_tier_1/Textures/T_ub4nbiag_4K_B"));
@@ -3370,15 +3313,41 @@ void UPHCCitySubsystem::LoadMegascansTextures()
 		FabGrassMI ? 1 : 0, FabSandMID ? 1 : 0, FabRoadMID ? 1 : 0, FabConcreteMID ? 1 : 0,
 		FabRockMID ? 1 : 0, FabBarkMID ? 1 : 0, FabWildGrassMID ? 1 : 0, FabStoneTilesMID ? 1 : 0);
 
-	// Load animated caustic frames (82 frames)
+	// Generate blue caustic frames procedurally (Megascans MI Tint can't produce blue)
 	CausticFrames.Empty();
-	for (int32 i = 1; i <= 82; ++i)
+	const int32 CausticRes = 256;
+	const int32 NumCausticFrames = 20;
+	for (int32 F = 0; F < NumCausticFrames; ++F)
 	{
-		FString Path = FString::Printf(TEXT("/Game/Caustics_Texture/T_Caustics_%02d.T_Caustics_%02d"), i, i);
-		UTexture2D* Frame = LoadObject<UTexture2D>(nullptr, *Path);
+		const float Phase = F * PI * 2.f / NumCausticFrames;
+		UTexture2D* Frame = CreateProceduralTexture(CausticRes, CausticRes, [&](int32 X, int32 Y) -> FColor
+		{
+			float u = (float)X / CausticRes;
+			float v = (float)Y / CausticRes;
+			// Multi-layered caustic pattern using overlapping sine waves
+			float c1 = FMath::Sin(u * 18.f + Phase) * FMath::Cos(v * 14.f + Phase * 0.6f);
+			float c2 = FMath::Sin(u * 11.f - Phase * 0.8f + v * 7.f) * FMath::Cos(v * 22.f + Phase * 1.2f);
+			float c3 = FMath::Sin((u + v) * 16.f + Phase * 0.4f) * FMath::Cos((u - v) * 13.f - Phase * 0.9f);
+			float c4 = FMath::Sin(u * 25.f + v * 9.f + Phase * 1.5f) * 0.5f;
+			float caustic = (c1 + c2 + c3 + c4) * 0.25f; // -1..1
+			caustic = FMath::Pow(FMath::Max(0.f, caustic), 0.6f); // sharpen bright peaks
+			// Blue water coloring: dark blue base with bright caustic highlights
+			uint8 R = (uint8)FMath::Clamp(15.f + caustic * 60.f, 0.f, 255.f);
+			uint8 G = (uint8)FMath::Clamp(40.f + caustic * 120.f, 0.f, 255.f);
+			uint8 B = (uint8)FMath::Clamp(100.f + caustic * 155.f, 0.f, 255.f);
+			return FColor(R, G, B, 255);
+		});
 		if (Frame) CausticFrames.Add(Frame);
 	}
-	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Loaded %d caustic frames"), CausticFrames.Num());
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Generated %d blue caustic frames"), CausticFrames.Num());
+
+	// Load Advanced Water material for all water surfaces
+	AdvancedWaterMI = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Advanced_Water_BP/Materials/M_Water_Opaque.M_Water_Opaque"));
+	if (!AdvancedWaterMI)
+		AdvancedWaterMI = LoadObject<UMaterialInterface>(nullptr,
+			TEXT("/Game/Advanced_Water_BP/Materials/M_Water_Inst.M_Water_Inst"));
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: AdvancedWaterMI loaded = %d"), AdvancedWaterMI ? 1 : 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -4698,7 +4667,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnGoldCoins();
 	SpawnCollectibleMushrooms();
 	SpawnGrassSystem();
-	SpawnFoliage();
+	// SpawnFoliage(); // disabled — too many mesh components causes memory crash
 
 	// --- PUBG 2026 DECIDUOUS FOREST ---
 	{
@@ -5022,7 +4991,16 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 		}
 		MC->RegisterComponent();
 		WA->SetRootComponent(MC);
-		if (bIsWater && GlassMaterial)
+		if (bIsWater && AdvancedWaterMI)
+		{
+			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, MC);
+			if (Mat)
+			{
+				MC->SetMaterial(0, Mat);
+				WaterMIDs.Add(Mat);
+			}
+		}
+		else if (bIsWater && GlassMaterial)
 		{
 			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(GlassMaterial, MC);
 			if (Mat)
@@ -5033,7 +5011,7 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 				Mat->SetScalarParameterValue(TEXT("Roughness"), 0.08f);
 				Mat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.04f, 0.08f, 0.14f));
 				MC->SetMaterial(0, Mat);
-				WaterMIDs.Add(Mat);  // Store for trip sky swap
+				WaterMIDs.Add(Mat);
 			}
 		}
 		else if (!bIsWater && FabSandMID)
@@ -7150,8 +7128,16 @@ void UPHCCitySubsystem::SpawnParkBlock(const FVector& ParkCenter, float ParkSize
 		Water->SetWorldLocation(FVector(ParkCenter.X, ParkCenter.Y, 40.f));
 		Water->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Water->RegisterComponent();
-		UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(Water->GetMaterial(0), Water);
-		if (WMat) { WMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.1f, 0.2f, 0.35f)); Water->SetMaterial(0, WMat); }
+		if (AdvancedWaterMI)
+		{
+			UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, Water);
+			if (WMat) Water->SetMaterial(0, WMat);
+		}
+		else
+		{
+			UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(Water->GetMaterial(0), Water);
+			if (WMat) { WMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.1f, 0.2f, 0.35f)); Water->SetMaterial(0, WMat); }
+		}
 		Park->AddInstanceComponent(Water);
 
 		// Center spout (sphere)
@@ -12924,7 +12910,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		return MC;
 	};
 
-	// Glass/water helper – uses GlassMaterial for translucent moat water
+	// Glass/water helper – uses Advanced Water material for moat water
 	auto MakeWater = [&](AActor* Owner, const FVector& Loc, const FVector& Scale3D,
 		const TCHAR* Name)
 	{
@@ -12936,8 +12922,14 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		ApplyPBRGlass(MC, GlassMaterial, FLinearColor(0.15f, 0.35f, 0.55f),
-			0.55f, 0.0f, 0.05f);
+		if (AdvancedWaterMI)
+		{
+			UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, MC);
+			if (WMat) MC->SetMaterial(0, WMat);
+		}
+		else
+			ApplyPBRGlass(MC, GlassMaterial, FLinearColor(0.15f, 0.35f, 0.55f),
+				0.55f, 0.0f, 0.05f);
 		Owner->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -14682,7 +14674,12 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 			WMC->SetBoundsScale(30.f);
 			WMC->RegisterComponent();
 			WA->SetRootComponent(WMC);
-			if (GlassMaterial)
+			if (AdvancedWaterMI)
+			{
+				UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, WMC);
+				if (WMat) WMC->SetMaterial(0, WMat);
+			}
+			else if (GlassMaterial)
 			{
 				ApplyPBRGlass(WMC, GlassMaterial,
 					FLinearColor(0.06f, 0.18f, 0.32f), 0.65f, 0.15f, 0.08f,
@@ -16047,7 +16044,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 						float WX = RiverStartX + VX * StepX;
 						float WCurveY = RiverCenterY + FMath::Sin(WX * 0.00004f) * 2500.f;
 						float WY = WCurveY - RiverWidth * 0.5f + VY * StepY;
-						float WZ = GetTerrainHeight(WX, WY) + 8.f;
+						float WZ = GetTerrainHeight(WX, WY) + 85.f;
 						RiverWaterBaseVerts.Add(FVector(WX, WY, WZ));
 						RiverWaterUVs.Add(FVector2D(float(VX) / ResX, float(VY) / ResY));
 						Normals.Add(FVector(0.f, 0.f, 1.f));
@@ -17690,7 +17687,13 @@ void UPHCCitySubsystem::SpawnLangtree()
 				PW->RegisterComponent();
 				PW->AttachToComponent(PDk, FAttachmentTransformRules::KeepWorldTransform);
 				PA->AddInstanceComponent(PW);
-				ApplyPBRGlass(PW, GlassMaterial, PoolBlue, 0.75f, 0.f, 0.02f);
+				if (AdvancedWaterMI)
+				{
+					UMaterialInstanceDynamic* PWMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, PW);
+					if (PWMat) PW->SetMaterial(0, PWMat);
+				}
+				else
+					ApplyPBRGlass(PW, GlassMaterial, PoolBlue, 0.75f, 0.f, 0.02f);
 				++CompCount;
 			}
 
@@ -17854,7 +17857,13 @@ void UPHCCitySubsystem::SpawnLangtree()
 			LakeWater->RegisterComponent();
 			LakeA->SetRootComponent(LakeWater);
 			LakeA->AddInstanceComponent(LakeWater);
-			ApplyPBRGlass(LakeWater, GlassMaterial, FLinearColor(0.04f, 0.12f, 0.22f), 0.8f, 0.f, 0.05f);
+			if (AdvancedWaterMI)
+			{
+				UMaterialInstanceDynamic* LWMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, LakeWater);
+				if (LWMat) LakeWater->SetMaterial(0, LWMat);
+			}
+			else
+				ApplyPBRGlass(LakeWater, GlassMaterial, FLinearColor(0.04f, 0.12f, 0.22f), 0.8f, 0.f, 0.05f);
 			++CompCount;
 
 			// Lake bed (dark bottom visible through water)
