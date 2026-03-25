@@ -3341,13 +3341,35 @@ void UPHCCitySubsystem::LoadMegascansTextures()
 	}
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Generated %d blue caustic frames"), CausticFrames.Num());
 
-	// Load Advanced Water material for all water surfaces
 	AdvancedWaterMI = LoadObject<UMaterialInterface>(nullptr,
 		TEXT("/Game/Advanced_Water_BP/Materials/M_Water_Opaque.M_Water_Opaque"));
-	if (!AdvancedWaterMI)
-		AdvancedWaterMI = LoadObject<UMaterialInterface>(nullptr,
-			TEXT("/Game/Advanced_Water_BP/Materials/M_Water_Inst.M_Water_Inst"));
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: AdvancedWaterMI loaded = %d"), AdvancedWaterMI ? 1 : 0);
+
+	// Snow textures — use existing 4K assets to avoid 8K memory issues on mobile
+	// Fresh Windswept Snow — use Concrete BC (light gray, snow-like at distance)
+	if (MegaConcreteBC && FabGrassMI)
+	{
+		UMaterialInstanceDynamic* SnowMID = UMaterialInstanceDynamic::Create(FabGrassMI, this);
+		if (SnowMID) { SnowMID->SetTextureParameterValue(TEXT("BaseColorTexture"), MegaConcreteBC); FabSnowMI = SnowMID; }
+	}
+
+	// Trampled Snow — use Concrete with normal for footprint-like texture
+	if (MegaConcreteBC && FabGrassMI)
+	{
+		UMaterialInstanceDynamic* TSnowMID = UMaterialInstanceDynamic::Create(FabGrassMI, this);
+		if (TSnowMID)
+		{
+			TSnowMID->SetTextureParameterValue(TEXT("BaseColorTexture"), MegaConcreteBC);
+			if (MegaConcreteN) TSnowMID->SetTextureParameterValue(TEXT("NormalTexture"), MegaConcreteN);
+			FabTrampleSnowMI = TSnowMID;
+		}
+	}
+
+	// Clover — use Wild Grass (already loaded 4K, provides natural variety vs Uncut Grass)
+	FabCloverMI = FabWildGrassMID;
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Snow=%d TrampleSnow=%d Clover=%d"),
+		FabSnowMI ? 1 : 0, FabTrampleSnowMI ? 1 : 0, FabCloverMI ? 1 : 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -3611,6 +3633,19 @@ float UPHCCitySubsystem::GetTerrainHeight(float X, float Y) const
 		}
 	}
 
+	// Add explicit hill shapes (sphere surfaces placed in SpawnHills)
+	for (const FHillShape& H : HillShapes)
+	{
+		float DX = (X - H.CenterX) / H.RadiusX;
+		float DY = (Y - H.CenterY) / H.RadiusY;
+		float D2 = DX * DX + DY * DY;
+		if (D2 < 1.f)
+		{
+			float HillH = H.Height * FMath::Sqrt(1.f - D2);
+			Result = FMath::Max(Result, HillH);
+		}
+	}
+
 	// Never return below ground — keeps character above surface everywhere.
 	// Underground areas (airport tunnel) are handled separately in character code.
 	return FMath::Max(Result, 0.f);
@@ -3633,7 +3668,7 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 #endif
 
 	const float ChunkSize = 10000.f;
-	const float HalfWorld = 150000.f; // how far out to generate terrain
+	const float HalfWorld = 150000.f; // 15×15 = 225 chunks (200k was 400 chunks, too many draw calls)
 	int32 ChunkIdx = 0;
 
 	for (float CX = -HalfWorld; CX < HalfWorld; CX += ChunkSize)
@@ -3642,22 +3677,13 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 		{
 			const float CenterDist = FMath::Sqrt(CX * CX + CY * CY);
 
-			// LOD based on distance from center
-			int32 GridRes;
-			if (CenterDist < 25000.f)
-				GridRes = 24;   // high detail near player
-			else if (CenterDist < 50000.f)
-				GridRes = 16;
-			else if (CenterDist < 100000.f)
-				GridRes = 8;
-			else
-				GridRes = 4;
+			// Uniform resolution — eliminates visible seam lines between LOD transitions
+			int32 GridRes = 8;
 
 			// Boost resolution for motocross park chunks so terrain features
 			// are smooth enough for natural dirt bike riding
-			const bool bInPark = (CX > -180000.f && CX + ChunkSize < -60000.f &&
-				CY > -40000.f && CY + ChunkSize < 80000.f);
-			if (bInPark) GridRes = FMath::Max(GridRes, 20);
+			// Motocross park — removed high-res override (was GridRes=20 for 144 chunks, caused memory kills)
+			// Park terrain uses standard LOD now
 
 			const float Step = ChunkSize / (float)GridRes;
 
@@ -3902,13 +3928,32 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 					bool bIsSnowy = (AvgColor.R > 0.7f && AvgColor.G > 0.7f && AvgColor.B > 0.7f);
 					bool bIsRocky = (ChunkRough > 0.92f || (AvgColor.R > 0.15f && FMath::Abs(AvgColor.R - AvgColor.G) < 0.05f && AvgColor.B < 0.15f));
 
-					if (bIsSnowy)
+					// Coordinate-based zone checks (more reliable than color sampling)
+					float ChunkMidX = CX + ChunkSize * 0.5f;
+					float ChunkMidY = CY + ChunkSize * 0.5f;
+					// Christmas/snowy zone: Y ~107k-141k
+					bool bInChristmasZone = (ChunkMidY > 105000.f && ChunkMidY < 143000.f);
+					// Sand castle/desert zone: near pyramids area
+					bool bInDesertZone = (ChunkMidY < -85000.f) ||
+						(ChunkMidX > 60000.f && ChunkMidY > 20000.f && ChunkMidY < 50000.f);
+
+					if (bInChristmasZone && FabTrampleSnowMI)
+						PMC->SetMaterial(0, FabTrampleSnowMI);
+					else if (bIsSnowy && FabTrampleSnowMI)
+						PMC->SetMaterial(0, FabTrampleSnowMI);
+					else if (bIsSnowy)
 					{
 						if (ColorMaterial) { Mat = UMaterialInstanceDynamic::Create(ColorMaterial, PMC); }
 						if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), AvgColor); Mat->SetScalarParameterValue(TEXT("Roughness"), ChunkRough); PMC->SetMaterial(0, Mat); }
 					}
-					else if (bIsSandy && FabSandMID)
+					else if ((bIsSandy || bIsRocky || bInDesertZone) && FabSandMID)
 						PMC->SetMaterial(0, FabSandMID);
+					else if (FabCloverMI && FabGrassMI)
+					{
+						// 50% clover, 50% uncut grass — deterministic per chunk
+						bool bUseClover = (ChunkHash & 1) != 0;
+						PMC->SetMaterial(0, bUseClover ? FabCloverMI : FabGrassMI);
+					}
 					else if (FabGrassMI)
 						PMC->SetMaterial(0, FabGrassMI);
 					else if (ColorMaterial)
@@ -4184,7 +4229,11 @@ void UPHCCitySubsystem::SpawnGrassSystem()
 		RockHISM->SetCullDistances(0.f, 8000.f);
 		RockHISM->RegisterComponent();
 		GrassActor->AddInstanceComponent(RockHISM);
-		if (FabRockMID)
+		if (FabSandMID)
+		{
+			RockHISM->SetMaterial(0, FabSandMID);
+		}
+		else if (FabRockMID)
 		{
 			RockHISM->SetMaterial(0, FabRockMID);
 		}
@@ -4663,7 +4712,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnLakeAndPirateShip();
 	SpawnJungle();
 	SpawnUndergroundCavern();
-	SpawnGiantCrab();
+	// SpawnGiantCrab(); // Disabled for multiplayer — re-enable for solo/testing
 	SpawnGoldCoins();
 	SpawnCollectibleMushrooms();
 	SpawnGrassSystem();
@@ -4851,7 +4900,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	}
 
 	SpawnVisualPolish();
-	SpawnNPCHelicopter();
+	// SpawnNPCHelicopter(); // Disabled for multiplayer — re-enable for solo/testing
 	// SpawnNPCPlayers(); // Disabled for now — re-enable for testing
 
 	// City is fully generated — dismiss the loading screen after a delay
@@ -4925,7 +4974,7 @@ void UPHCCitySubsystem::SpawnGround()
 		UTexture2D* BC = nullptr, UTexture2D* N = nullptr, UTexture2D* R = nullptr,
 		const FLinearColor& FallbackColor = FLinearColor(0.20f, 0.22f, 0.10f)) -> UMaterialInstanceDynamic*
 	{
-		const FVector Loc(XYLoc.X, XYLoc.Y, TopZ - 10.f);
+		const FVector Loc(XYLoc.X, XYLoc.Y, TopZ - 50.f);
 		AActor* GA = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
 		if (!GA) return nullptr;
 #if WITH_EDITOR
@@ -4991,7 +5040,8 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 		}
 		MC->RegisterComponent();
 		WA->SetRootComponent(MC);
-		if (bIsWater && AdvancedWaterMI)
+		// Ocean/bay water uses lightweight GlassMaterial (Advanced Water only on river)
+		if (false && bIsWater && AdvancedWaterMI) // Disabled — too heavy for mobile
 		{
 			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, MC);
 			if (Mat)
@@ -7128,12 +7178,6 @@ void UPHCCitySubsystem::SpawnParkBlock(const FVector& ParkCenter, float ParkSize
 		Water->SetWorldLocation(FVector(ParkCenter.X, ParkCenter.Y, 40.f));
 		Water->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Water->RegisterComponent();
-		if (AdvancedWaterMI)
-		{
-			UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, Water);
-			if (WMat) Water->SetMaterial(0, WMat);
-		}
-		else
 		{
 			UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(Water->GetMaterial(0), Water);
 			if (WMat) { WMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.1f, 0.2f, 0.35f)); Water->SetMaterial(0, WMat); }
@@ -8152,6 +8196,8 @@ void UPHCCitySubsystem::SpawnHills()
 	auto SpawnHill = [&](const FVector& Loc, float RadiusX, float RadiusY, float Height,
 		const FLinearColor& Color, const TCHAR* Label, bool bCollision = true)
 	{
+		// Store hill shape for GetTerrainHeight queries
+		HillShapes.Add({Loc.X, Loc.Y, RadiusX, RadiusY, Height});
 		AActor* Hill = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
 		if (!Hill) return;
 #if WITH_EDITOR
@@ -8339,7 +8385,7 @@ void UPHCCitySubsystem::SpawnJungle()
 			bool bIsBark = (Col.R > 0.2f && Col.G < Col.R && Col.B < 0.16f);
 			bool bIsRock = (Col.R > 0.15f && FMath::Abs(Col.R - Col.G) < 0.12f && Col.B < Col.R);
 			bool bIsGreen = (Col.G > Col.R && Col.G > 0.15f);
-			UMaterialInterface* JungleMI = bIsBark ? (UMaterialInterface*)FabBarkMID.Get() : bIsRock ? (UMaterialInterface*)FabRockMID.Get() : bIsGreen ? (UMaterialInterface*)FabWildGrassMID.Get() : nullptr;
+			UMaterialInterface* JungleMI = bIsBark ? (UMaterialInterface*)FabBarkMID.Get() : bIsRock ? (UMaterialInterface*)FabSandMID.Get() : bIsGreen ? (UMaterialInterface*)FabWildGrassMID.Get() : nullptr;
 			if (JungleMI) C->SetMaterial(0, JungleMI);
 			else
 				ApplyPBR(C, Col, Metal, Rough);
@@ -11739,7 +11785,9 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (bIcePeak)
+		if (bIcePeak && FabSnowMI)
+			MC->SetMaterial(0, FabSnowMI);
+		else if (bIcePeak)
 		{
 			float B = (Col.R + Col.G + Col.B) / 3.f;
 			FLinearColor IceRockCol(0.22f + B * 0.12f, 0.25f + B * 0.12f, 0.32f + B * 0.10f);
@@ -11774,7 +11822,9 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (bIcePeak)
+		if (bIcePeak && FabSnowMI)
+			MC->SetMaterial(0, FabSnowMI);
+		else if (bIcePeak)
 		{
 			float B = (Col.R + Col.G + Col.B) / 3.f;
 			FLinearColor IceRockCol(0.22f + B * 0.12f, 0.25f + B * 0.12f, 0.32f + B * 0.10f);
@@ -11808,7 +11858,9 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (bIcePeak)
+		if (bIcePeak && FabSnowMI)
+			MC->SetMaterial(0, FabSnowMI);
+		else if (bIcePeak)
 		{
 			float B = (Col.R + Col.G + Col.B) / 3.f;
 			FLinearColor IceRockCol(0.22f + B * 0.12f, 0.25f + B * 0.12f, 0.32f + B * 0.10f);
@@ -12848,7 +12900,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (FabSandMID && Metallic < 0.1f && Color.R > 0.3f && Color.B < 0.6f)
+		if (FabSandMID)
 			MC->SetMaterial(0, FabSandMID);
 		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
@@ -12866,7 +12918,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (FabSandMID && Metallic < 0.1f && Color.R > 0.3f && Color.B < 0.6f)
+		if (FabSandMID)
 			MC->SetMaterial(0, FabSandMID);
 		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
@@ -12884,7 +12936,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (FabSandMID && Metallic < 0.1f && Color.R > 0.3f && Color.B < 0.6f)
+		if (FabSandMID)
 			MC->SetMaterial(0, FabSandMID);
 		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
@@ -12903,7 +12955,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (FabSandMID && Metallic < 0.1f && Color.R > 0.3f && Color.B < 0.6f)
+		if (FabSandMID)
 			MC->SetMaterial(0, FabSandMID);
 		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Owner->AddInstanceComponent(MC);
@@ -12922,14 +12974,8 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (AdvancedWaterMI)
-		{
-			UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, MC);
-			if (WMat) MC->SetMaterial(0, WMat);
-		}
-		else
-			ApplyPBRGlass(MC, GlassMaterial, FLinearColor(0.15f, 0.35f, 0.55f),
-				0.55f, 0.0f, 0.05f);
+		ApplyPBRGlass(MC, GlassMaterial, FLinearColor(0.15f, 0.35f, 0.55f),
+			0.55f, 0.0f, 0.05f);
 		Owner->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -12951,7 +12997,7 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (FabSandMID && Color.R > 0.3f && Color.B < 0.6f)
+		if (FabSandMID)
 			MC->SetMaterial(0, FabSandMID);
 		else ApplyPBR(MC, Color, 0.f, Roughness);
 		Castle->AddInstanceComponent(MC);
@@ -12988,7 +13034,8 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (FabSandMID && Metallic < 0.1f) MC->SetMaterial(0, FabSandMID);
+		if (FabSandMID)
+			MC->SetMaterial(0, FabSandMID);
 		else ApplyPBR(MC, Color, Metallic, Roughness);
 		Castle->AddInstanceComponent(MC);
 		return MC;
@@ -14640,12 +14687,8 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 		MC->RegisterComponent();
 		A->SetRootComponent(MC);
 		float MaxScale = FMath::Max3(Scale.X, Scale.Y, Scale.Z);
-		bool bIsLimestone = (Metallic < 0.1f && Color.R > 0.4f && Color.G > 0.3f && Color.B < 0.4f && Roughness > 0.7f);
-		bool bIsSand = (Metallic < 0.1f && Color.R > 0.5f && Color.G > 0.4f && Color.B < 0.7f && Color.R > Color.B);
-		// Limestone (pyramid blocks) and sand: always apply texture
-		if (FabStoneTilesMID && bIsLimestone)
-			MC->SetMaterial(0, FabStoneTilesMID);
-		else if (FabSandMID && bIsSand)
+		// All non-metallic lake area pieces use rippled sand
+		if (FabSandMID && Metallic < 0.1f)
 			MC->SetMaterial(0, FabSandMID);
 		else
 			ApplyPBR(MC, Color, Metallic, Roughness);
@@ -14674,12 +14717,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 			WMC->SetBoundsScale(30.f);
 			WMC->RegisterComponent();
 			WA->SetRootComponent(WMC);
-			if (AdvancedWaterMI)
-			{
-				UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, WMC);
-				if (WMat) WMC->SetMaterial(0, WMat);
-			}
-			else if (GlassMaterial)
+			if (GlassMaterial)
 			{
 				ApplyPBRGlass(WMC, GlassMaterial,
 					FLinearColor(0.06f, 0.18f, 0.32f), 0.65f, 0.15f, 0.08f,
@@ -17687,13 +17725,7 @@ void UPHCCitySubsystem::SpawnLangtree()
 				PW->RegisterComponent();
 				PW->AttachToComponent(PDk, FAttachmentTransformRules::KeepWorldTransform);
 				PA->AddInstanceComponent(PW);
-				if (AdvancedWaterMI)
-				{
-					UMaterialInstanceDynamic* PWMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, PW);
-					if (PWMat) PW->SetMaterial(0, PWMat);
-				}
-				else
-					ApplyPBRGlass(PW, GlassMaterial, PoolBlue, 0.75f, 0.f, 0.02f);
+				ApplyPBRGlass(PW, GlassMaterial, PoolBlue, 0.75f, 0.f, 0.02f);
 				++CompCount;
 			}
 
@@ -17857,13 +17889,7 @@ void UPHCCitySubsystem::SpawnLangtree()
 			LakeWater->RegisterComponent();
 			LakeA->SetRootComponent(LakeWater);
 			LakeA->AddInstanceComponent(LakeWater);
-			if (AdvancedWaterMI)
-			{
-				UMaterialInstanceDynamic* LWMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, LakeWater);
-				if (LWMat) LakeWater->SetMaterial(0, LWMat);
-			}
-			else
-				ApplyPBRGlass(LakeWater, GlassMaterial, FLinearColor(0.04f, 0.12f, 0.22f), 0.8f, 0.f, 0.05f);
+			ApplyPBRGlass(LakeWater, GlassMaterial, FLinearColor(0.04f, 0.12f, 0.22f), 0.8f, 0.f, 0.05f);
 			++CompCount;
 
 			// Lake bed (dark bottom visible through water)

@@ -191,6 +191,9 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> FabBarkMID;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> FabWildGrassMID;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> FabStoneTilesMID;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> FabSnowMI;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> FabTrampleSnowMI;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> FabCloverMI;
 
 	// -- Procedural normal/roughness map textures (generated at startup) ------
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> GrassNormalMap;
@@ -528,6 +531,15 @@ private:
 public:
 	/** Get terrain height at world XY. Flat inside city, undulating outside. */
 	float GetTerrainHeight(float X, float Y) const;
+
+	/** Hill shape data for terrain height queries — populated by SpawnHills. */
+	struct FHillShape
+	{
+		float CenterX, CenterY;
+		float RadiusX, RadiusY;
+		float Height;
+	};
+	TArray<FHillShape> HillShapes;
 
 private:
 

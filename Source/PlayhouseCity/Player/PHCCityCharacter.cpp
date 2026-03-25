@@ -1635,28 +1635,45 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				}
 				if (bFoundSurface)
 				{
-					// Don't clamp to ground while jumping upward
-					if (ManualVelocityZ > 10.f && Pos.Z > BestZ - 5.f)
+					if (!bHasBeenGrounded)
 					{
+						// In-air after jump — apply gravity and move vertically
+						ManualVelocityZ -= 980.f * DeltaTime;
+						float NewZ = Pos.Z + ManualVelocityZ * DeltaTime;
+						if (NewZ <= BestZ)
+						{
+							// Landed
+							NewZ = BestZ;
+							ManualVelocityZ = 0.f;
+							bHasBeenGrounded = true;
+						}
+						SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
+					}
+					else if (ManualVelocityZ > 10.f)
+					{
+						// Jump just started — launch upward
 						bHasBeenGrounded = false;
+						ManualVelocityZ -= 980.f * DeltaTime;
+						float NewZ = Pos.Z + ManualVelocityZ * DeltaTime;
+						SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 					}
 					else
 					{
+						// On ground — snap to terrain
 						bHasBeenGrounded = true;
 						ManualVelocityZ = 0.f;
-						// Snap precisely to terrain — high interp speed prevents floating above hills
 						const float GndInterp = bRollerBladesEquipped ? 60.f : 50.f;
 						const float NewZ = FMath::FInterpTo(Pos.Z, BestZ, DeltaTime, GndInterp);
 						SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 					}
 				}
 			}
-			if (!bFoundSurface && bHasBeenGrounded)
+			if (!bFoundSurface)
 			{
-				if (bWasGrounded) ManualVelocityZ = 0.f;
+				// No surface — always apply gravity (whether jumping or falling off edge)
 				ManualVelocityZ -= 980.f * DeltaTime;
 				float NewZ = Pos.Z + ManualVelocityZ * DeltaTime;
-				if (NewZ <= FootOffset) { NewZ = FootOffset; ManualVelocityZ = 0.f; }
+				if (NewZ <= FootOffset) { NewZ = FootOffset; ManualVelocityZ = 0.f; bHasBeenGrounded = true; }
 				SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 			}
 			bWasGrounded = bFoundSurface;
