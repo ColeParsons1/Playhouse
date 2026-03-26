@@ -3303,11 +3303,13 @@ void UPHCCitySubsystem::LoadMegascansTextures()
 	if (FabAsphaltMI)
 		FabRoadMID = UMaterialInstanceDynamic::Create(FabAsphaltMI, this);
 
-	// Stone Tiles — use Fab MI base with Stone Tiles textures
-	UTexture2D* StoneBC = LoadObject<UTexture2D>(nullptr, TEXT("/Game/Fab/Megascans/Surfaces/Stone_Tiles_Facade_ub4nbiag/High/ub4nbiag_tier_1/Textures/T_ub4nbiag_4K_B"));
-	UTexture2D* StoneN  = LoadObject<UTexture2D>(nullptr, TEXT("/Game/Fab/Megascans/Surfaces/Stone_Tiles_Facade_ub4nbiag/High/ub4nbiag_tier_1/Textures/T_ub4nbiag_4K_N"));
-	UTexture2D* StoneR  = LoadObject<UTexture2D>(nullptr, TEXT("/Game/Fab/Megascans/Surfaces/Stone_Tiles_Facade_ub4nbiag/High/ub4nbiag_tier_1/Textures/T_ub4nbiag_4K_ORM"));
-	FabStoneTilesMID = MakeFabMID(StoneBC, StoneN, StoneR);
+	// Muddy Stone Wall — for pyramids (4K, no 4K Roman Limestone available)
+	{
+		UTexture2D* StoneBC = LoadObject<UTexture2D>(nullptr, TEXT("/Game/Fab/Megascans/Surfaces/Muddy_Stone_Wall_uekoajlcw/High/uekoajlcw_tier_1/Textures/T_uekoajlcw_4K_B"));
+		UTexture2D* StoneN  = LoadObject<UTexture2D>(nullptr, TEXT("/Game/Fab/Megascans/Surfaces/Muddy_Stone_Wall_uekoajlcw/High/uekoajlcw_tier_1/Textures/T_uekoajlcw_4K_N"));
+		UTexture2D* StoneR  = LoadObject<UTexture2D>(nullptr, TEXT("/Game/Fab/Megascans/Surfaces/Muddy_Stone_Wall_uekoajlcw/High/uekoajlcw_tier_1/Textures/T_uekoajlcw_4K_ORM"));
+		FabStoneTilesMID = MakeFabMID(StoneBC, StoneN, StoneR);
+	}
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Fab MIDs created — Grass=%d Sand=%d Road=%d Concrete=%d Rock=%d Bark=%d WildGrass=%d Stone=%d"),
 		FabGrassMI ? 1 : 0, FabSandMID ? 1 : 0, FabRoadMID ? 1 : 0, FabConcreteMID ? 1 : 0,
@@ -3617,16 +3619,16 @@ float UPHCCitySubsystem::GetTerrainHeight(float X, float Y) const
 	{
 		const float RiverCenterY = -97000.f + FMath::Sin(X * 0.00004f) * 2500.f;
 		const float RiverHalfW = 2000.f;   // half of 4000 UU river width
-		const float RiverBankW = 1500.f;   // smooth transition on banks
+		const float RiverSlopeW = 6000.f;  // gradual slope zone on each bank
 		float RiverDist = FMath::Abs(Y - RiverCenterY);
-		if (RiverDist < RiverHalfW + RiverBankW)
+		if (RiverDist < RiverHalfW + RiverSlopeW)
 		{
 			float RiverAlpha;
 			if (RiverDist < RiverHalfW)
 				RiverAlpha = 0.f; // fully flat inside river
 			else
 			{
-				RiverAlpha = (RiverDist - RiverHalfW) / RiverBankW;
+				RiverAlpha = (RiverDist - RiverHalfW) / RiverSlopeW;
 				RiverAlpha = RiverAlpha * RiverAlpha * (3.f - 2.f * RiverAlpha); // smoothstep
 			}
 			Result = FMath::Lerp(0.f, Result, RiverAlpha);
@@ -3946,6 +3948,18 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 						if (ColorMaterial) { Mat = UMaterialInstanceDynamic::Create(ColorMaterial, PMC); }
 						if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), AvgColor); Mat->SetScalarParameterValue(TEXT("Roughness"), ChunkRough); PMC->SetMaterial(0, Mat); }
 					}
+					// Jungle zone: Y -162k to -106k, X -45k to 75k — use clover/grass
+					else if (ChunkMidY < -106000.f && ChunkMidY > -162000.f && ChunkMidX > -45000.f && ChunkMidX < 75000.f && FabGrassMI)
+					{
+						UTexture2D* JCloverBC = LoadObject<UTexture2D>(nullptr,
+							TEXT("/Game/Fab/Megascans/Surfaces/Clover_Patches_on_Grass_sgmkajak/Raw/sgmkajak_tier_0/Textures/T_sgmkajak_8K_B"));
+						if (JCloverBC)
+						{
+							UMaterialInstanceDynamic* JCMID = UMaterialInstanceDynamic::Create(FabGrassMI, PMC);
+							if (JCMID) { JCMID->SetTextureParameterValue(TEXT("BaseColorTexture"), JCloverBC); PMC->SetMaterial(0, JCMID); }
+						}
+						else PMC->SetMaterial(0, FabGrassMI);
+					}
 					else if ((bIsSandy || bIsRocky || bInDesertZone) && FabSandMID)
 						PMC->SetMaterial(0, FabSandMID);
 					else if (FabCloverMI && FabGrassMI)
@@ -4120,13 +4134,13 @@ void UPHCCitySubsystem::SpawnCollectibleMushrooms()
 		MA->SetActorLabel(*FString::Printf(TEXT("CollectMushroom_%d"), MI));
 #endif
 
-		// Stem
+		// Stem — character height (~180 UU)
 		UStaticMeshComponent* Stem = NewObject<UStaticMeshComponent>(MA,
 			*FString::Printf(TEXT("MStem_%d"), MI));
 		Stem->SetStaticMesh(CylinderMesh);
 		Stem->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		Stem->SetWorldLocation(SpawnPos + FVector(0.f, 0.f, 20.f));
-		Stem->SetWorldScale3D(FVector(0.12f, 0.12f, 0.40f));
+		Stem->SetWorldLocation(SpawnPos + FVector(0.f, 0.f, 70.f));
+		Stem->SetWorldScale3D(FVector(0.30f, 0.30f, 1.40f));
 		Stem->RegisterComponent();
 		MA->SetRootComponent(Stem);
 		ApplyPBR(Stem, FLinearColor(0.75f, 0.70f, 0.80f), 0.f, 0.75f,
@@ -4137,8 +4151,8 @@ void UPHCCitySubsystem::SpawnCollectibleMushrooms()
 			*FString::Printf(TEXT("MCap_%d"), MI));
 		Cap->SetStaticMesh(SphereMesh);
 		Cap->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		Cap->SetWorldLocation(SpawnPos + FVector(0.f, 0.f, 55.f));
-		Cap->SetWorldScale3D(FVector(0.45f, 0.45f, 0.20f));
+		Cap->SetWorldLocation(SpawnPos + FVector(0.f, 0.f, 170.f));
+		Cap->SetWorldScale3D(FVector(1.2f, 1.2f, 0.50f));
 		Cap->AttachToComponent(Stem, FAttachmentTransformRules::KeepWorldTransform);
 		Cap->RegisterComponent();
 		const FLinearColor CapColor(0.55f, 0.10f, 0.75f);
@@ -8658,12 +8672,24 @@ void UPHCCitySubsystem::SpawnJungle()
 	};
 
 	// ================================================================
-	// LAYER 0: Jungle floor
+	// LAYER 0: Jungle floor — Clover Patches on Grass texture
 	// ================================================================
 	{
 		float FZ = GetTerrainHeight(JCX, JCY);
-		JC(PlaneMesh, FVector(JCX, JCY, FZ + 2.f), FRotator::ZeroRotator,
+		auto* FloorMC = JC(PlaneMesh, FVector(JCX, JCY, FZ + 2.f), FRotator::ZeroRotator,
 			FVector(1200.f, 560.f, 1.f), JungleFloor, 0.95f);
+		// Override with Clover texture
+		UTexture2D* CloverBC = LoadObject<UTexture2D>(nullptr,
+			TEXT("/Game/Fab/Megascans/Surfaces/Clover_Patches_on_Grass_sgmkajak/Raw/sgmkajak_tier_0/Textures/T_sgmkajak_8K_B"));
+		if (FloorMC && CloverBC && FabGrassMI)
+		{
+			UMaterialInstanceDynamic* CloverMID = UMaterialInstanceDynamic::Create(FabGrassMI, FloorMC);
+			if (CloverMID)
+			{
+				CloverMID->SetTextureParameterValue(TEXT("BaseColorTexture"), CloverBC);
+				FloorMC->SetMaterial(0, CloverMID);
+			}
+		}
 	}
 
 	// ================================================================
@@ -8686,7 +8712,7 @@ void UPHCCitySubsystem::SpawnJungle()
 	TArray<FVector> CanopyPos;
 	TArray<float> CanopyH;
 
-	const float CanopyCell = 6500.f;
+	const float CanopyCell = 999999.f; // disabled — trees removed from jungle
 	const int32 CGX = FMath::CeilToInt((JMaxX - JMinX) / CanopyCell);
 	const int32 CGY = FMath::CeilToInt((JMaxY - JMinY) / CanopyCell);
 
@@ -8713,7 +8739,7 @@ void UPHCCitySubsystem::SpawnJungle()
 	// ================================================================
 	// LAYER 3: Mid-story trees — smaller, thinner, more branches
 	// ================================================================
-	const float MidCell = 4500.f;
+	const float MidCell = 999999.f; // disabled — trees removed from jungle
 	const int32 MGX = FMath::CeilToInt((JMaxX - JMinX) / MidCell);
 	const int32 MGY = FMath::CeilToInt((JMaxY - JMinY) / MidCell);
 
@@ -8754,37 +8780,8 @@ void UPHCCitySubsystem::SpawnJungle()
 			float TZ = GetTerrainHeight(UX, UY);
 			float Roll = CityRandom.FRand();
 
-			if (Roll < 0.30f)
-			{
-				JC(ConeMesh, FVector(UX, UY, TZ + 80.f),
-					FRotator(CityRandom.FRandRange(-8.f, 8.f), CityRandom.FRandRange(0.f, 360.f), 0.f),
-					FVector(1.0f, 1.0f, 2.0f),
-					CityRandom.FRand() > 0.5f ? FernBright : FernDark, 0.80f);
-			}
-			else if (Roll < 0.55f)
-			{
-				for (int32 bs = 0; bs < 2; ++bs)
-				{
-					float BSz = CityRandom.FRandRange(0.6f, 1.2f);
-					JC(SphereMesh,
-						FVector(UX + CityRandom.FRandRange(-40.f, 40.f),
-								UY + CityRandom.FRandRange(-40.f, 40.f), TZ + BSz * 25.f),
-						FRotator::ZeroRotator, FVector(BSz, BSz, BSz * 0.7f), BushGreen, 0.85f);
-				}
-			}
-			else if (Roll < 0.80f)
-			{
-				JC(CubeMesh, FVector(UX, UY, TZ + CityRandom.FRandRange(50.f, 200.f)),
-					FRotator(CityRandom.FRandRange(20.f, 60.f), CityRandom.FRandRange(0.f, 360.f), 0.f),
-					FVector(2.0f, 1.2f, 0.02f), LeafGreen, 0.75f);
-			}
-			else
-			{
-				JC(CylinderMesh, FVector(UX, UY, TZ + 40.f), FRotator::ZeroRotator,
-					FVector(0.08f, 0.08f, 0.8f), FernDark, 0.80f);
-				JC(SphereMesh, FVector(UX, UY, TZ + 90.f), FRotator::ZeroRotator,
-					FVector(0.35f, 0.35f, 0.25f), FlowerCol[CityRandom.RandRange(0, 3)], 0.65f);
-			}
+			// Skip — replaced by Megascans plant foliage in LAYER 16
+			CityRandom.FRand(); // consume random to keep determinism
 		}
 	}
 
@@ -9181,10 +9178,10 @@ void UPHCCitySubsystem::SpawnJungle()
 
 		for (int32 mi = 0; mi < NM; ++mi)
 		{
-			float MX = CityRandom.FRandRange(-80.f, 80.f);
-			float MY = CityRandom.FRandRange(-80.f, 80.f);
-			float MH = CityRandom.FRandRange(25.f, 60.f);
-			float MR = CityRandom.FRandRange(8.f, 20.f);
+			float MX = CityRandom.FRandRange(-120.f, 120.f);
+			float MY = CityRandom.FRandRange(-120.f, 120.f);
+			float MH = CityRandom.FRandRange(140.f, 200.f); // character height (~180 UU)
+			float MR = CityRandom.FRandRange(40.f, 65.f);   // wider caps
 
 			// Stem
 			auto* StemC = NewObject<UStaticMeshComponent>(MA,
@@ -9241,6 +9238,56 @@ void UPHCCitySubsystem::SpawnJungle()
 		MD.CurrentPos = ClusterPos;
 		MD.BobPhase = CityRandom.FRand() * PI * 2.f;
 		CollectibleMushrooms.Add(MD);
+	}
+
+	// ================================================================
+	// LAYER 16: Dense green ground foliage — Megascans plant meshes
+	// ================================================================
+	{
+		UStaticMesh* FoliageMeshes[3];
+		FoliageMeshes[0] = LoadObject<UStaticMesh>(nullptr,
+			TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarA.SM_xh1kdfbqx_VarA"));
+		FoliageMeshes[1] = LoadObject<UStaticMesh>(nullptr,
+			TEXT("/Game/Fab/Megascans/Plants/Small_Balsam_xefmcgrqx/High/xefmcgrqx_tier_1/StaticMeshes/SM_xefmcgrqx_VarA.SM_xefmcgrqx_VarA"));
+		FoliageMeshes[2] = LoadObject<UStaticMesh>(nullptr,
+			TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarB.SM_xh1kdfbqx_VarB"));
+
+		// Individual StaticMeshComponents — same approach as tree canopy (works on iOS)
+		const float FoliageCell = 1150.f; // ~15% fewer than 1050
+		const int32 FGX = FMath::CeilToInt((JMaxX - JMinX) / FoliageCell);
+		const int32 FGY = FMath::CeilToInt((JMaxY - JMinY) / FoliageCell);
+		int32 FoliageCount = 0;
+		for (int32 GX = 0; GX < FGX; ++GX)
+		{
+			for (int32 GY = 0; GY < FGY; ++GY)
+			{
+				float FX = JMinX + GX * FoliageCell + CityRandom.FRandRange(FoliageCell * 0.05f, FoliageCell * 0.95f);
+				float FY = JMinY + GY * FoliageCell + CityRandom.FRandRange(FoliageCell * 0.05f, FoliageCell * 0.95f);
+				if (IsNearPath(FX, FY, PathHW)) continue;
+
+				float FZ = GetTerrainHeight(FX, FY);
+				UStaticMesh* PlantMesh = FoliageMeshes[CityRandom.RandRange(0, 2)];
+				if (!PlantMesh) continue;
+
+				float PlantScale = CityRandom.FRandRange(96.0f, 192.0f);
+				// Skip the shorter 20% of plants
+				if (PlantScale < 115.f) continue;
+				float PlantYaw = CityRandom.FRandRange(0.f, 360.f);
+
+				auto* PC = NewObject<UStaticMeshComponent>(JA, *FString::Printf(TEXT("JF_%d"), CI++));
+				PC->SetStaticMesh(PlantMesh);
+				PC->SetWorldLocation(FVector(FX, FY, FZ));
+				PC->SetWorldRotation(FRotator(0.f, PlantYaw, 0.f));
+				PC->SetWorldScale3D(FVector(PlantScale));
+				PC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				PC->SetCastShadow(false);
+				PC->AttachToComponent(JA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+				PC->RegisterComponent();
+				JA->AddInstanceComponent(PC);
+				++FoliageCount;
+			}
+		}
+		UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: added %d ground foliage plants"), FoliageCount);
 	}
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: spawned %d components + palm trees"), CI);
@@ -14687,8 +14734,11 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 		MC->RegisterComponent();
 		A->SetRootComponent(MC);
 		float MaxScale = FMath::Max3(Scale.X, Scale.Y, Scale.Z);
-		// All non-metallic lake area pieces use rippled sand
-		if (FabSandMID && Metallic < 0.1f)
+		// Pyramid blocks: limestone color (R>0.4, G>0.3, B<0.4, rough>0.7)
+		bool bIsLimestone = (Metallic < 0.1f && Color.R > 0.4f && Color.G > 0.3f && Color.B < 0.4f && Roughness > 0.7f);
+		if (FabStoneTilesMID && bIsLimestone)
+			MC->SetMaterial(0, FabStoneTilesMID);
+		else if (FabSandMID && Metallic < 0.1f)
 			MC->SetMaterial(0, FabSandMID);
 		else
 			ApplyPBR(MC, Color, Metallic, Roughness);
@@ -16082,7 +16132,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 						float WX = RiverStartX + VX * StepX;
 						float WCurveY = RiverCenterY + FMath::Sin(WX * 0.00004f) * 2500.f;
 						float WY = WCurveY - RiverWidth * 0.5f + VY * StepY;
-						float WZ = GetTerrainHeight(WX, WY) + 85.f;
+						float WZ = GetTerrainHeight(WX, WY) + 12.f;
 						RiverWaterBaseVerts.Add(FVector(WX, WY, WZ));
 						RiverWaterUVs.Add(FVector2D(float(VX) / ResX, float(VY) / ResY));
 						Normals.Add(FVector(0.f, 0.f, 1.f));

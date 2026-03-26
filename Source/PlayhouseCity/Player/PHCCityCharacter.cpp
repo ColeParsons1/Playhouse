@@ -2088,6 +2088,11 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		const FVector FPCamOrigin(0.f, 0.f, 96.f); // matches CameraBoom SocketOffset
 		const FRotator FPPitchRot(-FPCamPitch, 0.f, 0.f);
 
+		// Third-person grip: forearm rotation so weapon follows arm swing
+		const float ForearmPitch = (!bFirstPersonMode && RightForearmMesh)
+			? RightForearmMesh->GetRelativeRotation().Pitch
+			: 0.f;
+
 		// ---- FP Weapon Bob (figure-8 using WalkCyclePhase) ----
 		FVector FPWeaponOffset = FVector::ZeroVector;
 		if (bFirstPersonMode)
@@ -2142,10 +2147,10 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				const FVector RHand = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FVector(25.f, 12.f, -18.f) + FPWeaponOffset)
 					: (RightHandMesh
-						? RightHandMesh->GetRelativeLocation()
+						? RightHandMesh->GetRelativeLocation() + FVector(-3.f, 0.f, 0.f)
 						: FVector(0.f, 26.f, 6.f));
 
-				float HoldPitch = -15.f;
+				float HoldPitch = bFirstPersonMode ? -15.f : ForearmPitch - 15.f;
 
 				// Swing animation
 				if (SaberSwingTimer > 0.f)
@@ -2207,11 +2212,11 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				const FVector RHand = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FVector(25.f, 12.f, -18.f) + FPWeaponOffset)
 					: (RightHandMesh
-						? RightHandMesh->GetRelativeLocation()
+						? RightHandMesh->GetRelativeLocation() + FVector(-3.f, 0.f, 0.f)
 						: FVector(0.f, 26.f, 6.f));
 
-				// Hold angle: blade points upward by default
-				float HoldPitch = -15.f;
+				// Hold angle: blade points upward, follows forearm in 3P
+				float HoldPitch = bFirstPersonMode ? -15.f : ForearmPitch - 15.f;
 
 				// Stab thrust animation
 				if (DaggerStabTimer > 0.f)
@@ -2256,11 +2261,11 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				const FVector RHand = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FVector(25.f, 15.f, -21.f) + FPWeaponOffset)
 					: (RightHandMesh
-						? RightHandMesh->GetRelativeLocation()
+						? RightHandMesh->GetRelativeLocation() + FVector(-3.f, 0.f, 0.f)
 						: FVector(0.f, 26.f, 6.f));
 
-				// Hold angle: handle extends upward and slightly back
-				float HoldPitch = -15.f;
+				// Hold angle: follows forearm in 3P
+				float HoldPitch = bFirstPersonMode ? -15.f : ForearmPitch - 15.f;
 
 				// Swing arc when attacking
 				if (ScytheSwingTimer > 0.f)
@@ -2306,16 +2311,16 @@ void APHCCityCharacter::Tick(float DeltaTime)
 					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(MiniHip, MiniADS, ADSAlpha) + FPWeaponOffset)
 					: [&]() {
 						const FVector RH = RightHandMesh
-							? RightHandMesh->GetRelativeLocation()
+							? RightHandMesh->GetRelativeLocation() + FVector(-5.f, 0.f, 0.f)
 							: FVector(20.f, 26.f, 40.f);
 						const FVector LH = LeftHandMesh
-							? LeftHandMesh->GetRelativeLocation()
+							? LeftHandMesh->GetRelativeLocation() + FVector(-5.f, 0.f, 0.f)
 							: FVector(22.f, -26.f, 38.f);
 						return (RH + LH) * 0.5f;
 					}();
 
-				// Camera pitch so the gun aims where the player is looking
-				const float MinigunAimPitch = FPCamPitch;
+				// Aim pitch: camera in FP, forearm in TP
+				const float MinigunAimPitch = bFirstPersonMode ? FPCamPitch : -ForearmPitch;
 				const FRotator MiniAimRot(-MinigunAimPitch, 0.f, 0.f);
 
 				// Gun points forward (rotated 90 deg so cylinder axis = forward) + aim pitch
@@ -2394,12 +2399,13 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				const FVector RShoulder = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(BazHip, BazADSP, ADSAlpha) + FPWeaponOffset)
 					: (RightShoulderMesh
-						? RightShoulderMesh->GetRelativeLocation()
+						? RightShoulderMesh->GetRelativeLocation() + FVector(-3.f, 0.f, 0.f)
 						: FVector(0.f, 22.f, 46.f));
 
-				// Cylinder axis is Z, so Pitch 90 points it forward (actor X) + aim pitch
-				const FRotator BazGunRot(90.f - FPCamPitch, 0.f, 0.f);
-				const FRotator BazAimRot(-FPCamPitch, 0.f, 0.f);
+				// Cylinder axis is Z, so Pitch 90 points it forward + arm pitch in 3P
+				const float BazPitch = bFirstPersonMode ? FPCamPitch : -ForearmPitch;
+				const FRotator BazGunRot(90.f - BazPitch, 0.f, 0.f);
+				const FRotator BazAimRot(-BazPitch, 0.f, 0.f);
 				const FVector TubeCenter = RShoulder + BazAimRot.RotateVector(FVector(25.f, 4.f, 0.f));
 
 				if (BazookaTubeMesh)
@@ -2457,12 +2463,12 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				const FVector GripPt = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(AKHip, AKADSPos, ADSAlpha) + FPWeaponOffset)
 					: (RightHandMesh
-						? RightHandMesh->GetRelativeLocation()
+						? RightHandMesh->GetRelativeLocation() + FVector(-5.f, 0.f, 0.f)
 						: FVector(0.f, 26.f, 6.f));
 
-				// Get camera pitch so the gun aims where the player is looking
-				const float AimPitch = FPCamPitch;
-				const FRotator AimRot(-AimPitch, 0.f, 0.f); // negate: component-relative pitch
+				// Aim pitch: camera in FP, forearm in TP
+				const float AimPitch = bFirstPersonMode ? FPCamPitch : -ForearmPitch;
+				const FRotator AimRot(-AimPitch, 0.f, 0.f);
 
 				// Cylinder barrel needs 90 pitch + aim pitch
 				const FRotator BarrelRot(90.f - AimPitch, 0.f, 0.f);
