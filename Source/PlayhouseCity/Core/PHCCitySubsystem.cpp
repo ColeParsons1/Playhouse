@@ -14,6 +14,8 @@
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/DecalComponent.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 #include "Misc/FileHelper.h"
 #include "HAL/PlatformFileManager.h"
 #include "Engine/DirectionalLight.h"
@@ -3670,12 +3672,13 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 #endif
 
 	const float ChunkSize = 10000.f;
-	const float HalfWorld = 150000.f; // 15×15 = 225 chunks (200k was 400 chunks, too many draw calls)
+	const float HalfWorld = 150000.f;
+	const float SouthExtend = 165000.f; // extended south to cover jungle (Y to -162k)
 	int32 ChunkIdx = 0;
 
 	for (float CX = -HalfWorld; CX < HalfWorld; CX += ChunkSize)
 	{
-		for (float CY = -HalfWorld; CY < HalfWorld; CY += ChunkSize)
+		for (float CY = -SouthExtend; CY < HalfWorld; CY += ChunkSize)
 		{
 			const float CenterDist = FMath::Sqrt(CX * CX + CY * CY);
 
@@ -3935,9 +3938,11 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 					float ChunkMidY = CY + ChunkSize * 0.5f;
 					// Christmas/snowy zone: Y ~107k-141k
 					bool bInChristmasZone = (ChunkMidY > 105000.f && ChunkMidY < 143000.f);
-					// Sand castle/desert zone: near pyramids area
+					// Sand castle/desert zone: near pyramids area + pyramid surroundings
+					float PyramidDist = FMath::Sqrt(FMath::Square(ChunkMidX - 22248.f) + FMath::Square(ChunkMidY + 62419.f));
 					bool bInDesertZone = (ChunkMidY < -85000.f) ||
-						(ChunkMidX > 60000.f && ChunkMidY > 20000.f && ChunkMidY < 50000.f);
+						(ChunkMidX > 60000.f && ChunkMidY > 20000.f && ChunkMidY < 50000.f) ||
+						(PyramidDist < 55000.f); // pyramid area radius
 
 					if (bInChristmasZone && FabTrampleSnowMI)
 						PMC->SetMaterial(0, FabTrampleSnowMI);
@@ -3948,17 +3953,15 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 						if (ColorMaterial) { Mat = UMaterialInstanceDynamic::Create(ColorMaterial, PMC); }
 						if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), AvgColor); Mat->SetScalarParameterValue(TEXT("Roughness"), ChunkRough); PMC->SetMaterial(0, Mat); }
 					}
-					// Jungle zone: Y -162k to -106k, X -45k to 75k — use clover/grass
-					else if (ChunkMidY < -106000.f && ChunkMidY > -162000.f && ChunkMidX > -45000.f && ChunkMidX < 75000.f && FabGrassMI)
+					// Jungle zone: Y -162k to -106k, X -45k to 75k — Soil and Fern texture
+					else if (ChunkMidY < -106000.f && ChunkMidY > -162000.f && ChunkMidX > -45000.f && ChunkMidX < 75000.f)
 					{
-						UTexture2D* JCloverBC = LoadObject<UTexture2D>(nullptr,
-							TEXT("/Game/Fab/Megascans/Surfaces/Clover_Patches_on_Grass_sgmkajak/Raw/sgmkajak_tier_0/Textures/T_sgmkajak_8K_B"));
-						if (JCloverBC)
-						{
-							UMaterialInstanceDynamic* JCMID = UMaterialInstanceDynamic::Create(FabGrassMI, PMC);
-							if (JCMID) { JCMID->SetTextureParameterValue(TEXT("BaseColorTexture"), JCloverBC); PMC->SetMaterial(0, JCMID); }
-						}
-						else PMC->SetMaterial(0, FabGrassMI);
+						UMaterialInterface* SoilFernMI = LoadObject<UMaterialInterface>(nullptr,
+							TEXT("/Game/Fab/Megascans/Surfaces/Soil_and_Fern_olsgf0/High/olsgf0_tier_1/Materials/MI_olsgf0.MI_olsgf0"));
+						if (SoilFernMI)
+							PMC->SetMaterial(0, SoilFernMI);
+						else if (FabGrassMI)
+							PMC->SetMaterial(0, FabGrassMI);
 					}
 					else if ((bIsSandy || bIsRocky || bInDesertZone) && FabSandMID)
 						PMC->SetMaterial(0, FabSandMID);
@@ -4709,9 +4712,9 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnGround(); // flat ground slabs for city center collision
 	SpawnOceanAndBeach();
 	SpawnSkyAndLighting();
-	SpawnCityGrid();
-	SpawnBlockStreets();
-	SpawnSkyscrapers();
+	// SpawnCityGrid();      // Temporarily disabled — buildings removed
+	// SpawnBlockStreets();  // Temporarily disabled
+	// SpawnSkyscrapers();   // Temporarily disabled
 	// SpawnStreetLabels();  // removed per user request
 	// SpawnLangtree();  // removed per user request
 	// SpawnStreetLights();  // removed for mobile battery/thermal perf
@@ -8671,26 +8674,8 @@ void UPHCCitySubsystem::SpawnJungle()
 		}
 	};
 
-	// ================================================================
-	// LAYER 0: Jungle floor — Clover Patches on Grass texture
-	// ================================================================
-	{
-		float FZ = GetTerrainHeight(JCX, JCY);
-		auto* FloorMC = JC(PlaneMesh, FVector(JCX, JCY, FZ + 2.f), FRotator::ZeroRotator,
-			FVector(1200.f, 560.f, 1.f), JungleFloor, 0.95f);
-		// Override with Clover texture
-		UTexture2D* CloverBC = LoadObject<UTexture2D>(nullptr,
-			TEXT("/Game/Fab/Megascans/Surfaces/Clover_Patches_on_Grass_sgmkajak/Raw/sgmkajak_tier_0/Textures/T_sgmkajak_8K_B"));
-		if (FloorMC && CloverBC && FabGrassMI)
-		{
-			UMaterialInstanceDynamic* CloverMID = UMaterialInstanceDynamic::Create(FabGrassMI, FloorMC);
-			if (CloverMID)
-			{
-				CloverMID->SetTextureParameterValue(TEXT("BaseColorTexture"), CloverBC);
-				FloorMC->SetMaterial(0, CloverMID);
-			}
-		}
-	}
+	// LAYER 0: Jungle floor — REMOVED (flat plane caused Z mismatch with terrain chunks)
+	// Terrain chunks with Clover texture provide the actual ground surface
 
 	// ================================================================
 	// LAYER 1: Winding path
@@ -8788,9 +8773,12 @@ void UPHCCitySubsystem::SpawnJungle()
 	// ================================================================
 	// LAYER 5: Bamboo groves (28 clusters along edges)
 	// ================================================================
-	for (int32 b = 0; b < 40; ++b)
+	for (int32 b = 0; b < 80; ++b)
 	{
-		float BX = (b < 20) ? JMinX + CityRandom.FRandRange(0.f, 5000.f) : JMaxX - CityRandom.FRandRange(0.f, 5000.f);
+		// Spread bamboo across entire jungle, not just edges
+		float BX = (b < 20) ? JMinX + CityRandom.FRandRange(0.f, 5000.f)
+			: (b < 40) ? JMaxX - CityRandom.FRandRange(0.f, 5000.f)
+			: CityRandom.FRandRange(JMinX + 3000.f, JMaxX - 3000.f);
 		float BY = JMinY + CityRandom.FRandRange(1000.f, (JMaxY - JMinY) - 1000.f);
 		float BTZ = GetTerrainHeight(BX, BY);
 		int32 NS = CityRandom.RandRange(4, 6);
@@ -8830,44 +8818,42 @@ void UPHCCitySubsystem::SpawnJungle()
 	}
 
 	// ================================================================
-	// LAYER 7: Water — pond + stream
+	// LAYER 7: Water — pond + stream (Advanced Water material)
 	// ================================================================
 	{
 		float PZ = GetTerrainHeight(PondCenter.X, PondCenter.Y);
+		// Pond bed
 		JC(PlaneMesh, FVector(PondCenter.X, PondCenter.Y, PZ + 1.f), FRotator::ZeroRotator,
 			FVector(15.f, 12.f, 1.f), PondBed, 0.95f);
-		JC(PlaneMesh, FVector(PondCenter.X, PondCenter.Y, PZ + 3.f), FRotator::ZeroRotator,
+		// Pond water surface — Advanced Water
+		auto* PondWaterMC = JC(PlaneMesh, FVector(PondCenter.X, PondCenter.Y, PZ + 3.f), FRotator::ZeroRotator,
 			FVector(14.f, 11.f, 1.f), PondTeal, 0.02f, 0.f, true, 0.75f);
+		if (PondWaterMC && AdvancedWaterMI)
+		{
+			UMaterialInstanceDynamic* PWM = UMaterialInstanceDynamic::Create(AdvancedWaterMI, PondWaterMC);
+			if (PWM) PondWaterMC->SetMaterial(0, PWM);
+		}
 
 		for (int32 ss = 1; ss <= 4; ++ss)
 		{
 			float SX = PondCenter.X + ss * 2500.f;
 			float SY = PondCenter.Y + CityRandom.FRandRange(-1500.f, 1500.f);
 			float SZ = GetTerrainHeight(SX, SY);
+			// Stream bed
 			JC(PlaneMesh, FVector(SX, SY, SZ + 1.f), FRotator(0.f, CityRandom.FRandRange(-15.f, 15.f), 0.f),
 				FVector(2.5f, 14.f, 1.f), PondBed, 0.95f);
-			JC(PlaneMesh, FVector(SX, SY, SZ + 2.f), FRotator(0.f, CityRandom.FRandRange(-15.f, 15.f), 0.f),
+			// Stream water — Advanced Water
+			auto* StreamMC = JC(PlaneMesh, FVector(SX, SY, SZ + 2.f), FRotator(0.f, CityRandom.FRandRange(-15.f, 15.f), 0.f),
 				FVector(2.f, 13.f, 1.f), PondTeal, 0.02f, 0.f, true, 0.70f);
-		}
-
-		for (int32 pr = 0; pr < 16; ++pr)
-		{
-			float PAng = pr * (360.f / 16.f) + CityRandom.FRandRange(-8.f, 8.f);
-			float PD = CityRandom.FRandRange(1500.f, 2800.f);
-			float PX = PondCenter.X + PD * FMath::Cos(FMath::DegreesToRadians(PAng));
-			float PY = PondCenter.Y + PD * FMath::Sin(FMath::DegreesToRadians(PAng));
-			float PTZ = GetTerrainHeight(PX, PY);
-			if (CityRandom.FRand() < 0.5f)
-				JC(ConeMesh, FVector(PX, PY, PTZ + 80.f),
-					FRotator(CityRandom.FRandRange(-5.f, 5.f), CityRandom.FRandRange(0.f, 360.f), 0.f),
-					FVector(1.2f, 1.2f, 2.5f), FernBright, 0.80f);
-			else
+			if (StreamMC && AdvancedWaterMI)
 			{
-				float BSz = CityRandom.FRandRange(0.8f, 1.5f);
-				JC(SphereMesh, FVector(PX, PY, PTZ + BSz * 25.f),
-					FRotator::ZeroRotator, FVector(BSz, BSz, BSz * 0.7f), BushGreen, 0.85f);
+				UMaterialInstanceDynamic* SWM = UMaterialInstanceDynamic::Create(AdvancedWaterMI, StreamMC);
+				if (SWM) StreamMC->SetMaterial(0, SWM);
 			}
 		}
+
+		// Pond vegetation removed — replaced by Megascans foliage in LAYER 16
+		for (int32 pr = 0; pr < 16; ++pr) { CityRandom.FRandRange(0.f, 1.f); CityRandom.FRandRange(0.f, 1.f); CityRandom.FRand(); CityRandom.FRandRange(0.f, 1.f); }
 	}
 
 	// ================================================================
@@ -9270,20 +9256,47 @@ void UPHCCitySubsystem::SpawnJungle()
 				if (!PlantMesh) continue;
 
 				float PlantScale = CityRandom.FRandRange(96.0f, 192.0f);
-				// Skip the shorter 20% of plants
-				if (PlantScale < 115.f) continue;
+				if (PlantScale < 180.f)
+				{
+					// 75% of shorter plants get promoted to tallest height
+					if (CityRandom.FRand() < 0.25f) continue; // skip 25%
+					PlantScale = CityRandom.FRandRange(180.0f, 192.0f); // promote to tallest
+				}
 				float PlantYaw = CityRandom.FRandRange(0.f, 360.f);
 
-				auto* PC = NewObject<UStaticMeshComponent>(JA, *FString::Printf(TEXT("JF_%d"), CI++));
-				PC->SetStaticMesh(PlantMesh);
-				PC->SetWorldLocation(FVector(FX, FY, FZ));
-				PC->SetWorldRotation(FRotator(0.f, PlantYaw, 0.f));
-				PC->SetWorldScale3D(FVector(PlantScale));
-				PC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				PC->SetCastShadow(false);
-				PC->AttachToComponent(JA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
-				PC->RegisterComponent();
-				JA->AddInstanceComponent(PC);
+				bool bUseBamboo = (FoliageCount % 2 == 0); // 50% bamboo
+				if (CityRandom.FRand() < 0.10f) continue; // skip 10% more
+				const float PlantBury = 120.f; // sink deep into ground — GridRes=8 terrain can differ 100+ UU from exact height
+
+				if (bUseBamboo)
+				{
+					// Bamboo cluster — 3-5 stalks matching foliage height
+					float BambooH = PlantScale * 30.f; // match foliage height
+					int32 NStalks = CityRandom.RandRange(3, 5);
+					for (int32 bs = 0; bs < NStalks; ++bs)
+					{
+						float SX = FX + CityRandom.FRandRange(-100.f, 100.f);
+						float SY = FY + CityRandom.FRandRange(-100.f, 100.f);
+						float SR = CityRandom.FRandRange(12.f, 22.f);
+						float SH = BambooH * CityRandom.FRandRange(0.7f, 1.0f);
+						JC(CylinderMesh, FVector(SX, SY, FZ - PlantBury + SH * 0.5f),
+							FRotator(CityRandom.FRandRange(-4.f, 4.f), CityRandom.FRandRange(0.f, 360.f), CityRandom.FRandRange(-3.f, 3.f)),
+							FVector(SR / 50.f, SR / 50.f, SH / 100.f), BambooGreen, 0.60f, 0.05f);
+					}
+				}
+				else
+				{
+					auto* PC = NewObject<UStaticMeshComponent>(JA, *FString::Printf(TEXT("JF_%d"), CI++));
+					PC->SetStaticMesh(PlantMesh);
+					PC->SetWorldLocation(FVector(FX, FY, FZ - PlantBury));
+					PC->SetWorldRotation(FRotator(0.f, PlantYaw, 0.f));
+					PC->SetWorldScale3D(FVector(PlantScale));
+					PC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					PC->SetCastShadow(false);
+					PC->AttachToComponent(JA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+					PC->RegisterComponent();
+					JA->AddInstanceComponent(PC);
+				}
 				++FoliageCount;
 			}
 		}
@@ -15370,20 +15383,8 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 		const float SandSize = 120000.f;
 		const float HSand = SandSize * 0.5f;
 
-		// -- Base sand plane --
-		SpawnLakePiece(PlaneMesh,
-			LakeCenter + FVector(0.f, 0.f, 1.f), FRotator::ZeroRotator,
-			FVector(SandSize / 100.f, SandSize / 100.f, 1.f),
-			FLinearColor(0.82f, 0.76f, 0.58f), 0.95f, 0.f, TEXT("PirateBeachSand"));
-		// Extensions toward ocean
-		SpawnLakePiece(PlaneMesh,
-			LakeCenter + FVector(60000.f, 0.f, 1.f), FRotator::ZeroRotator,
-			FVector(600.f, SandSize / 100.f, 1.f),
-			FLinearColor(0.80f, 0.74f, 0.56f), 0.95f, 0.f, TEXT("PirateBeachExtendE"));
-		SpawnLakePiece(PlaneMesh,
-			LakeCenter + FVector(-60000.f, 0.f, 1.f), FRotator::ZeroRotator,
-			FVector(600.f, SandSize / 100.f, 1.f),
-			FLinearColor(0.80f, 0.74f, 0.56f), 0.95f, 0.f, TEXT("PirateBeachExtendW"));
+		// Base sand planes removed — terrain chunks with FabSandMID handle desert ground
+		// (keeping them caused Z-fighting flickering with terrain)
 
 		// Sand variation colors
 		const FLinearColor PSandDry(0.88f, 0.82f, 0.64f);
@@ -15470,9 +15471,9 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 				0.70f, 0.f, TEXT("PirateShell"));
 		}
 
-		// -- Wet sand strip near lake edge --
+		// -- Wet sand strip near lake edge (lowered to avoid Z-fighting) --
 		SpawnLakePiece(PlaneMesh,
-			LakeCenter + FVector(0.f, 0.f, 1.5f), FRotator::ZeroRotator,
+			LakeCenter + FVector(0.f, 0.f, -10.f), FRotator::ZeroRotator,
 			FVector(350.f, 350.f, 1.f),
 			PSandWet, 0.75f, 0.f, TEXT("PirateWetSandRing"));
 	}
@@ -15504,8 +15505,11 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 		const float TuraRough = 0.82f;   // rough hewn stone
 		const float TuraMetal = 0.0f;    // non-metallic stone
 
-		// Lambda: build a stepped Tura limestone block pyramid
-		// Stacks flat cube layers from base to top, each slightly smaller
+		// Load Muddy Stone Wall MI directly — its compiled shader handles UV tiling
+		UMaterialInterface* PyramidMI = LoadObject<UMaterialInterface>(nullptr,
+			TEXT("/Game/Fab/Megascans/Surfaces/Muddy_Stone_Wall_uekoajlcw/High/uekoajlcw_tier_1/Materials/MI_uekoajlcw.MI_uekoajlcw"));
+
+		// Lambda: build a stepped pyramid — single cube per layer, MI applied directly
 		auto BuildBlockPyramid = [&](const FVector& Base, float Height, float BaseWidth,
 			const TCHAR* Prefix, int32 NumLayers)
 		{
@@ -15513,24 +15517,33 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 			for (int32 L = 0; L < NumLayers; ++L)
 			{
 				const float Frac = (float)L / (float)NumLayers;
-				const float W = BaseWidth * (1.0f - Frac);     // each layer narrows
-				const float Z = L * LayerH + LayerH * 0.5f;    // center of this layer
+				const float W = BaseWidth * (1.0f - Frac);
+				const float Z = L * LayerH + LayerH * 0.5f;
 
-				// Alternate between two limestone tones for visible block courses
-				const FLinearColor& BlockColor = (L % 2 == 0) ? TuraLimestone
-					: FLinearColor(0.50f, 0.43f, 0.28f);   // slightly darker alternate
-				const float BlockRough = (L % 2 == 0) ? 0.82f : 0.88f;
-
-				SpawnLakePiece(CubeMesh,
-					Base + FVector(0.f, 0.f, Z),
-					FRotator::ZeroRotator,
-					FVector(W / 100.f, W / 100.f, LayerH / 100.f),
-					BlockColor, BlockRough, TuraMetal, Prefix);
+				FString Name = FString::Printf(TEXT("%s_%d"), Prefix, L);
+				AActor* BA = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(),
+					Base + FVector(0.f, 0.f, Z), FRotator::ZeroRotator);
+				if (!BA) continue;
+				UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(BA, *Name);
+				MC->SetStaticMesh(CubeMesh);
+				MC->SetWorldLocation(Base + FVector(0.f, 0.f, Z));
+				MC->SetWorldScale3D(FVector(W / 100.f, W / 100.f, LayerH / 100.f));
+				MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				MC->SetBoundsScale(50.f);
+				MC->RegisterComponent();
+				BA->SetRootComponent(MC);
+				// Apply MI directly — bypasses FabGrassMI MID UV issues
+				if (PyramidMI)
+					MC->SetMaterial(0, PyramidMI);
+				else if (FabSandMID)
+					MC->SetMaterial(0, FabSandMID);
+				else
+					ApplyPBR(MC, TuraLimestone, TuraMetal, TuraRough);
 			}
 		};
 
 		// Build Khufu from 30 stacked limestone block layers
-		BuildBlockPyramid(KhufuBase, KhufuHeight, KhufuBaseW, TEXT("Khufu_Block"), 30);
+		BuildBlockPyramid(KhufuBase, KhufuHeight, KhufuBaseW, TEXT("Khufu_Block"), 10);
 
 		// Gold pyramidion (capstone) at the very top
 		SpawnLakePiece(CubeMesh,
@@ -15713,7 +15726,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 		const float KhafreBaseW = 21500.f;    // ~430m (2x)
 
 		// Build Khafre from 28 stacked limestone block layers
-		BuildBlockPyramid(KhafreBase, KhafreHeight, KhafreBaseW, TEXT("Khafre_Block"), 28);
+		BuildBlockPyramid(KhafreBase, KhafreHeight, KhafreBaseW, TEXT("Khafre_Block"), 10);
 
 		// Gold pyramidion (capstone)
 		SpawnLakePiece(CubeMesh,
@@ -15817,7 +15830,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 		const float MenkaureBaseW = 10500.f;  // ~210m (2x)
 
 		// Build Menkaure from 20 stacked limestone block layers
-		BuildBlockPyramid(MenkaureBase, MenkaureHeight, MenkaureBaseW, TEXT("Menkaure_Block"), 20);
+		BuildBlockPyramid(MenkaureBase, MenkaureHeight, MenkaureBaseW, TEXT("Menkaure_Block"), 8);
 
 		// Gold capstone
 		SpawnLakePiece(CubeMesh,
@@ -15912,69 +15925,31 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 					AActor::StaticClass(), Pos, FRotator::ZeroRotator);
 				if (!TA) return;
 
-				// Charred bowl/mount on the pyramid surface
-				UStaticMeshComponent* Bowl = NewObject<UStaticMeshComponent>(
-					TA, *FString::Printf(TEXT("PyTBowl_%d"), PTorchIdx));
-				Bowl->SetStaticMesh(CylinderMesh);
-				Bowl->SetWorldLocation(Pos);
-				Bowl->SetWorldScale3D(FVector(0.45f, 0.45f, 0.20f));
-				Bowl->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Bowl->SetBoundsScale(30.f);
-				Bowl->RegisterComponent();
-				ApplyPBR(Bowl, PCharredWood, 0.f, 0.95f, FLinearColor(0.8f, 0.2f, 0.02f));
-				TA->SetRootComponent(Bowl);
-				TA->AddInstanceComponent(Bowl);
+				// Invisible root for flame attachment
+				USceneComponent* PyTorchRoot = NewObject<USceneComponent>(
+					TA, *FString::Printf(TEXT("PyTRoot_%d"), PTorchIdx));
+				PyTorchRoot->SetWorldLocation(Pos);
+				PyTorchRoot->RegisterComponent();
+				TA->SetRootComponent(PyTorchRoot);
 
-				// Flame core — white-hot
-				UStaticMeshComponent* FCore = NewObject<UStaticMeshComponent>(
-					TA, *FString::Printf(TEXT("PyTFCore_%d"), PTorchIdx));
-				FCore->SetStaticMesh(ConeMesh);
-				FCore->SetWorldLocation(Pos + FVector(0.f, 0.f, 30.f));
-				FCore->SetWorldScale3D(FVector(0.30f, 0.30f, 1.8f));
-				FCore->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				FCore->SetBoundsScale(30.f);
-				FCore->RegisterComponent();
-				ApplyPBR(FCore, PFlameCore, 0.f, 0.15f, PCoreEmissive);
-				TA->AddInstanceComponent(FCore);
-
-				// Mid flame — orange
-				UStaticMeshComponent* FMid = NewObject<UStaticMeshComponent>(
-					TA, *FString::Printf(TEXT("PyTFMid_%d"), PTorchIdx));
-				FMid->SetStaticMesh(ConeMesh);
-				FMid->SetWorldLocation(Pos + FVector(0.f, 0.f, 20.f));
-				FMid->SetWorldScale3D(FVector(0.50f, 0.50f, 2.2f));
-				FMid->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				FMid->SetBoundsScale(30.f);
-				FMid->RegisterComponent();
-				if (GlassMaterial)
-					ApplyPBRGlass(FMid, GlassMaterial, PFlameMid, 0.6f, 0.f, 0.1f, PMidEmissive);
-				TA->AddInstanceComponent(FMid);
-
-				// Outer flame — red-orange
-				UStaticMeshComponent* FOuter = NewObject<UStaticMeshComponent>(
-					TA, *FString::Printf(TEXT("PyTFOut_%d"), PTorchIdx));
-				FOuter->SetStaticMesh(ConeMesh);
-				FOuter->SetWorldLocation(Pos + FVector(0.f, 0.f, 10.f));
-				FOuter->SetWorldScale3D(FVector(0.70f, 0.70f, 2.8f));
-				FOuter->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				FOuter->SetBoundsScale(30.f);
-				FOuter->RegisterComponent();
-				if (GlassMaterial)
-					ApplyPBRGlass(FOuter, GlassMaterial, PFlameOuter, 0.4f, 0.f, 0.1f, POuterEmissive);
-				TA->AddInstanceComponent(FOuter);
-
-				// Ember glow sphere
-				UStaticMeshComponent* Ember = NewObject<UStaticMeshComponent>(
-					TA, *FString::Printf(TEXT("PyTEmber_%d"), PTorchIdx));
-				Ember->SetStaticMesh(SphereMesh);
-				Ember->SetWorldLocation(Pos + FVector(0.f, 0.f, 15.f));
-				Ember->SetWorldScale3D(FVector(0.55f, 0.55f, 0.35f));
-				Ember->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Ember->SetBoundsScale(30.f);
-				Ember->RegisterComponent();
-				ApplyPBR(Ember, FLinearColor(1.f, 0.4f, 0.02f), 0.f, 0.2f,
-					FLinearColor(12.f, 4.f, 0.3f));
-				TA->AddInstanceComponent(Ember);
+				// Niagara flame particle system
+				{
+					UNiagaraSystem* PFlameFX = LoadObject<UNiagaraSystem>(nullptr,
+						TEXT("/Game/F_FreeFlameFx_Pack/FX/NS_Flame_8_Torch.NS_Flame_8_Torch"));
+					if (PFlameFX)
+					{
+						UNiagaraComponent* PFlameComp = NewObject<UNiagaraComponent>(
+							TA, *FString::Printf(TEXT("PyTFlameNiagara_%d"), PTorchIdx));
+						PFlameComp->SetAsset(PFlameFX);
+						PFlameComp->SetWorldLocation(Pos + FVector(0.f, 0.f, 15.f));
+						PFlameComp->SetWorldScale3D(FVector(5.0f, 5.0f, 5.0f));
+						PFlameComp->SetAutoActivate(true);
+						PFlameComp->SetAutoDestroy(false);
+						PFlameComp->AttachToComponent(PyTorchRoot, FAttachmentTransformRules::KeepWorldTransform);
+						PFlameComp->RegisterComponent();
+						TA->AddInstanceComponent(PFlameComp);
+					}
+				}
 
 				// Point light — warm fire glow
 				UPointLightComponent* TLight = NewObject<UPointLightComponent>(
@@ -16301,106 +16276,27 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 				ApplyPBR(Pole, TorchWood, 0.f, 0.90f);
 				TorchActor->SetRootComponent(Pole);
 				TorchActor->AddInstanceComponent(Pole);
+				USceneComponent* TorchRoot = Pole;
 
-				// Iron band near top
-				UStaticMeshComponent* Band = NewObject<UStaticMeshComponent>(
-					TorchActor, *FString::Printf(TEXT("TorchBand_%d"), TorchIdx));
-				Band->SetStaticMesh(CylinderMesh);
-				Band->SetWorldLocation(FVector(TX, TY, TopZ - 40.f));
-				Band->SetWorldScale3D(FVector(0.35f, 0.35f, 0.15f));
-				Band->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Band->SetBoundsScale(30.f);
-				Band->RegisterComponent();
-				ApplyPBR(Band, IronBand, 0.7f, 0.45f);
-				TorchActor->AddInstanceComponent(Band);
-
-				// Charred wrap at top of pole
-				UStaticMeshComponent* Wrap = NewObject<UStaticMeshComponent>(
-					TorchActor, *FString::Printf(TEXT("TorchWrap_%d"), TorchIdx));
-				Wrap->SetStaticMesh(CylinderMesh);
-				Wrap->SetWorldLocation(FVector(TX, TY, TopZ));
-				Wrap->SetWorldScale3D(FVector(0.40f, 0.40f, 0.35f));
-				Wrap->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Wrap->SetBoundsScale(30.f);
-				Wrap->RegisterComponent();
-				ApplyPBR(Wrap, CharredWood, 0.f, 0.95f, FLinearColor(0.8f, 0.2f, 0.02f));
-				TorchActor->AddInstanceComponent(Wrap);
-
-				// Flame core — white-hot inner cone (brightest)
-				UStaticMeshComponent* FCore = NewObject<UStaticMeshComponent>(
-					TorchActor, *FString::Printf(TEXT("TorchFCore_%d"), TorchIdx));
-				FCore->SetStaticMesh(ConeMesh);
-				FCore->SetWorldLocation(FVector(TX, TY, TopZ + 30.f));
-				FCore->SetWorldScale3D(FVector(0.30f, 0.30f, 1.8f));
-				FCore->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				FCore->SetBoundsScale(30.f);
-				FCore->RegisterComponent();
-				ApplyPBR(FCore, FlameCore, 0.f, 0.15f, CoreEmissive);
-				TorchActor->AddInstanceComponent(FCore);
-
-				// Mid flame — orange cone, slightly wider
-				UStaticMeshComponent* FMid = NewObject<UStaticMeshComponent>(
-					TorchActor, *FString::Printf(TEXT("TorchFMid_%d"), TorchIdx));
-				FMid->SetStaticMesh(ConeMesh);
-				FMid->SetWorldLocation(FVector(TX, TY, TopZ + 20.f));
-				FMid->SetWorldScale3D(FVector(0.50f, 0.50f, 2.2f));
-				FMid->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				FMid->SetBoundsScale(30.f);
-				FMid->RegisterComponent();
-				if (GlassMaterial)
-					ApplyPBRGlass(FMid, GlassMaterial, FlameMid, 0.6f, 0.f, 0.1f, MidEmissive);
-				TorchActor->AddInstanceComponent(FMid);
-
-				// Outer flame — red-orange translucent cone, widest
-				UStaticMeshComponent* FOuter = NewObject<UStaticMeshComponent>(
-					TorchActor, *FString::Printf(TEXT("TorchFOut_%d"), TorchIdx));
-				FOuter->SetStaticMesh(ConeMesh);
-				FOuter->SetWorldLocation(FVector(TX, TY, TopZ + 10.f));
-				FOuter->SetWorldScale3D(FVector(0.70f, 0.70f, 2.8f));
-				FOuter->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				FOuter->SetBoundsScale(30.f);
-				FOuter->RegisterComponent();
-				if (GlassMaterial)
-					ApplyPBRGlass(FOuter, GlassMaterial, FlameOuter, 0.4f, 0.f, 0.1f, OuterEmissive);
-				TorchActor->AddInstanceComponent(FOuter);
-
-				// Flame tip — tall wispy cone at the very top
-				UStaticMeshComponent* FTip = NewObject<UStaticMeshComponent>(
-					TorchActor, *FString::Printf(TEXT("TorchFTip_%d"), TorchIdx));
-				FTip->SetStaticMesh(ConeMesh);
-				FTip->SetWorldLocation(FVector(TX, TY, TopZ + 100.f));
-				FTip->SetWorldScale3D(FVector(0.25f, 0.25f, 1.5f));
-				FTip->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				FTip->SetBoundsScale(30.f);
-				FTip->RegisterComponent();
-				if (GlassMaterial)
-					ApplyPBRGlass(FTip, GlassMaterial, FlameTip, 0.3f, 0.f, 0.1f, TipEmissive);
-				TorchActor->AddInstanceComponent(FTip);
-
-				// Store flame data for Tick animation
+				// Niagara flame particle system — realistic fire
 				{
-					FTorchFlameData FD;
-					FD.Core = FCore;
-					FD.Mid = FMid;
-					FD.Outer = FOuter;
-					FD.Tip = FTip;
-					FD.BasePos = FVector(TX, TY, TopZ);
-					FD.Phase = CityRandom.FRandRange(0.f, 6.28f);
-					TorchFlames.Add(FD);
+					UNiagaraSystem* FlameFX = LoadObject<UNiagaraSystem>(nullptr,
+						TEXT("/Game/F_FreeFlameFx_Pack/FX/NS_Flame_8_Torch.NS_Flame_8_Torch"));
+					if (FlameFX)
+					{
+						UNiagaraComponent* FlameComp = NewObject<UNiagaraComponent>(
+							TorchActor, *FString::Printf(TEXT("TorchFlameNiagara_%d"), TorchIdx));
+						FlameComp->SetAsset(FlameFX);
+						FlameComp->SetWorldLocation(FVector(TX, TY, TopZ + 15.f));
+						FlameComp->SetWorldScale3D(FVector(5.0f, 5.0f, 5.0f));
+						FlameComp->SetAutoActivate(true);
+						FlameComp->SetAutoDestroy(false);
+						FlameComp->AttachToComponent(TorchRoot,
+							FAttachmentTransformRules::KeepWorldTransform);
+						FlameComp->RegisterComponent();
+						TorchActor->AddInstanceComponent(FlameComp);
+					}
 				}
-
-				// Ember glow sphere at the base of the flame
-				UStaticMeshComponent* Ember = NewObject<UStaticMeshComponent>(
-					TorchActor, *FString::Printf(TEXT("TorchEmber_%d"), TorchIdx));
-				Ember->SetStaticMesh(SphereMesh);
-				Ember->SetWorldLocation(FVector(TX, TY, TopZ + 15.f));
-				Ember->SetWorldScale3D(FVector(0.55f, 0.55f, 0.35f));
-				Ember->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Ember->SetBoundsScale(30.f);
-				Ember->RegisterComponent();
-				ApplyPBR(Ember, FLinearColor(1.f, 0.4f, 0.02f), 0.f, 0.2f,
-					FLinearColor(12.f, 4.f, 0.3f));
-				TorchActor->AddInstanceComponent(Ember);
 
 				// Main torch light — strong warm glow
 				UPointLightComponent* TorchLight = NewObject<UPointLightComponent>(

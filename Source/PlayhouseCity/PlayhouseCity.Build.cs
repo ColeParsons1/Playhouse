@@ -42,7 +42,8 @@ public class PlayhouseCity : ModuleRules
 			"ProceduralMeshComponent",
 			"AudioMixer",
 			"AudioCapture",
-			"Voice"
+			"Voice",
+			"Niagara"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
