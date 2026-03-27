@@ -16,6 +16,9 @@
 #include "Components/DecalComponent.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Components/VolumetricCloudComponent.h"
 #include "Misc/FileHelper.h"
 #include "HAL/PlatformFileManager.h"
 #include "Engine/DirectionalLight.h"
@@ -3953,8 +3956,8 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 						if (ColorMaterial) { Mat = UMaterialInstanceDynamic::Create(ColorMaterial, PMC); }
 						if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), AvgColor); Mat->SetScalarParameterValue(TEXT("Roughness"), ChunkRough); PMC->SetMaterial(0, Mat); }
 					}
-					// Jungle zone: Y -162k to -106k, X -45k to 75k — Soil and Fern texture
-					else if (ChunkMidY < -106000.f && ChunkMidY > -162000.f && ChunkMidX > -45000.f && ChunkMidX < 75000.f)
+					// Jungle zone: Y -162k to -106k, X -45k to 110k — Soil and Fern texture
+					else if (ChunkMidY < -106000.f && ChunkMidY > -162000.f && ChunkMidX > -45000.f && ChunkMidX < 145000.f)
 					{
 						UMaterialInterface* SoilFernMI = LoadObject<UMaterialInterface>(nullptr,
 							TEXT("/Game/Fab/Megascans/Surfaces/Soil_and_Fern_olsgf0/High/olsgf0_tier_1/Materials/MI_olsgf0.MI_olsgf0"));
@@ -4108,7 +4111,7 @@ void UPHCCitySubsystem::SpawnCollectibleMushrooms()
 	if (!W || !SphereMesh || !CylinderMesh || !ColorMaterial) return;
 
 	// Jungle bounds
-	const float JMinX = -45000.f, JMaxX = 75000.f;
+	const float JMinX = -45000.f, JMaxX = 145000.f;
 	const float JMinY = -162000.f, JMaxY = -106000.f;
 
 	FRandomStream MushRand(7777);
@@ -4741,7 +4744,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 		if (TW && CylinderMesh && SphereMesh && ColorMaterial)
 		{
 			FRandomStream ForestRand(88888);
-			const int32 NumForestTrees = 800;
+			const int32 NumForestTrees = 480; // was 800 — reduced 40%
 			int32 SpawnedCount = 0;
 
 			// Define cluster centers for natural grouping (like PUBG forest patches)
@@ -4771,143 +4774,92 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 				}
 				// Skip inner city grid
 				if (FMath::Abs(TX) < 18000.f && FMath::Abs(TY) < 18000.f) continue;
-				// Skip desert
-				if (FMath::Square(TX - 22248.f) + FMath::Square(TY + 62419.f) < 45000.f * 45000.f) continue;
+				// Skip desert/pyramid area — wider exclusion + banana ring
+				float PyDist2 = FMath::Square(TX - 22248.f) + FMath::Square(TY + 62419.f);
+				if (PyDist2 < 60000.f * 60000.f)
+				{
+					// Within 45k-60k: replace with banana plant instead of tree
+					if (PyDist2 > 45000.f * 45000.f)
+					{
+						float TZ2 = GetTerrainHeight(TX, TY);
+						static UStaticMesh* BananaMesh = LoadObject<UStaticMesh>(nullptr,
+							TEXT("/Game/PN_Banana/Meshes/plants/banana_01_01.banana_01_01"));
+						if (BananaMesh)
+						{
+							AActor* BA = TW->SpawnActor<AActor>(AActor::StaticClass(),
+								FVector(TX, TY, TZ2), FRotator::ZeroRotator);
+							if (BA)
+							{
+								UStaticMeshComponent* BMC = NewObject<UStaticMeshComponent>(BA, TEXT("BananaPyramid"));
+								BMC->SetStaticMesh(BananaMesh);
+								BMC->SetWorldLocation(FVector(TX, TY, TZ2));
+								BMC->SetWorldRotation(FRotator(0.f, ForestRand.FRandRange(0.f, 360.f), 0.f));
+								BMC->SetWorldScale3D(FVector(ForestRand.FRandRange(8.f, 16.f)));
+								BMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+								BMC->SetCastShadow(true);
+								BMC->RegisterComponent();
+								BA->SetRootComponent(BMC);
+							}
+						}
+					}
+					continue;
+				}
 				// Skip snow
 				if (TX > 4000.f && TX < 74000.f && TY > 98000.f && TY < 136000.f) continue;
 				// Skip jungle zone
-				if (TY < -100000.f && TY > -170000.f && TX > -50000.f && TX < 80000.f) continue;
+				if (TY < -100000.f && TY > -170000.f && TX > -50000.f && TX < 150000.f) continue;
 
 				float TZ = GetTerrainHeight(TX, TY);
 				if (TZ > 300.f) continue;
 
+				// Swap specific trees near (84535,-72619) with banana
+				if (FMath::Square(TX - 84535.f) + FMath::Square(TY + 72619.f) < 3000.f * 3000.f)
+				{
+					static UStaticMesh* SwapBanana = LoadObject<UStaticMesh>(nullptr,
+						TEXT("/Game/PN_Banana/Meshes/plants/banana_01_02.banana_01_02"));
+					if (SwapBanana)
+					{
+						AActor* SBA = TW->SpawnActor<AActor>(AActor::StaticClass(), FVector(TX, TY, TZ), FRotator::ZeroRotator);
+						if (SBA)
+						{
+							UStaticMeshComponent* SBMC = NewObject<UStaticMeshComponent>(SBA, TEXT("BananaSwap"));
+							SBMC->SetStaticMesh(SwapBanana);
+							SBMC->SetWorldLocation(FVector(TX, TY, TZ));
+							SBMC->SetWorldRotation(FRotator(0.f, ForestRand.FRandRange(0.f, 360.f), 0.f));
+							SBMC->SetWorldScale3D(FVector(ForestRand.FRandRange(10.f, 18.f)));
+							SBMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+							SBMC->SetCastShadow(true);
+							SBMC->RegisterComponent();
+							SBA->SetRootComponent(SBMC);
+						}
+					}
+					continue;
+				}
+
 				const FVector TreeBase(TX, TY, TZ);
 
+			// Use real Fab tree mesh
+			static UStaticMesh* RealisticTreeMesh = LoadObject<UStaticMesh>(nullptr,
+				TEXT("/Game/Fab/Tree/realistic_tree/StaticMeshes/realistic_tree.realistic_tree"));
 			AActor* TreeA = TW->SpawnActor<AActor>(AActor::StaticClass(), TreeBase, FRotator::ZeroRotator);
-			if (TreeA)
+			if (TreeA && RealisticTreeMesh)
 			{
-				int32 TIdx = 0;
-				auto SP = [&](UStaticMesh* Mesh, const FVector& WLoc, const FVector& Scale,
-					const FLinearColor& Col, float Rough)
-				{
-					UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(TreeA,
-						*FString::Printf(TEXT("DT_%d"), TIdx++));
-					MC->SetStaticMesh(Mesh);
-					MC->SetWorldLocation(WLoc);
-					MC->SetWorldScale3D(Scale);
-					MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					MC->CastShadow = true;
-					MC->RegisterComponent();
-					TreeA->AddInstanceComponent(MC);
-					UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, MC);
-					if (Mat)
-					{
-						Mat->SetVectorParameterValue(TEXT("BaseColor"), Col);
-						Mat->SetScalarParameterValue(TEXT("Roughness"), Rough);
-						MC->SetMaterial(0, Mat);
-					}
-					if (TIdx == 1) TreeA->SetRootComponent(MC);
-				};
 
-				const float BX = TreeBase.X, BY = TreeBase.Y, BZ = TreeBase.Z;
-
-				// Randomized per-tree
 				const float SizeMul = ForestRand.FRandRange(0.6f, 1.2f);
-				const bool bAutumn = ForestRand.FRand() < 0.2f; // 20% autumn trees
+				ForestRand.FRand(); // consume for determinism
 
-				const float TrunkH = 1200.f * SizeMul;
-				const float TrunkR = 25.f * SizeMul;
-				const FLinearColor BarkCol(
-					0.28f + ForestRand.FRandRange(-0.03f, 0.03f),
-					0.24f + ForestRand.FRandRange(-0.03f, 0.03f),
-					0.18f + ForestRand.FRandRange(-0.02f, 0.02f));
-
-				// Lower trunk (slightly wider base)
-				SP(CylinderMesh,
-					FVector(BX, BY, BZ + TrunkH * 0.25f),
-					FVector(TrunkR * 1.3f / 50.f, TrunkR * 1.3f / 50.f, TrunkH * 0.5f / 100.f),
-					FLinearColor(0.24f, 0.20f, 0.14f), 0.92f);
-
-				// Upper trunk (tapered into canopy)
-				SP(CylinderMesh,
-					FVector(BX, BY, BZ + TrunkH * 0.75f),
-					FVector(TrunkR / 50.f, TrunkR / 50.f, TrunkH * 0.5f / 100.f),
-					BarkCol, 0.90f);
-
-				// === CANOPY ===
-				// PUBG: broccoli-head shape — wide lumpy dome, NOT smooth sphere
-				// Many small clusters (20+) creating bumpy organic silhouette
-				// Width ≈ Height, roughly 1200 UU diameter × 1000 UU tall
-				const float CanopyCenterZ = BZ + TrunkH - 100.f * SizeMul; // lower to overlap trunk
-				const float CanopyRadius = 700.f * SizeMul;  // wider
-				const float CanopyHeight = 700.f * SizeMul;  // taller for full coverage
-
-				FRandomStream CR(54321 + FTi * 137);
-
-				// Color palette — green or autumn
-				FLinearColor LeafDark, LeafMid, LeafBright, LeafSunlit;
-				if (bAutumn)
-				{
-					LeafDark = FLinearColor(0.30f, 0.18f, 0.04f);
-					LeafMid = FLinearColor(0.45f, 0.30f, 0.05f);
-					LeafBright = FLinearColor(0.60f, 0.40f, 0.06f);
-					LeafSunlit = FLinearColor(0.70f, 0.50f, 0.08f);
-				}
-				else
-				{
-					LeafDark = FLinearColor(0.06f, 0.18f, 0.04f);
-					LeafMid = FLinearColor(0.10f, 0.26f, 0.05f);
-					LeafBright = FLinearColor(0.16f, 0.32f, 0.06f);
-					LeafSunlit = FLinearColor(0.24f, 0.38f, 0.08f);
-				}
-
-				// Canopy: Megascans plant meshes (keep original leaf materials)
-				UStaticMesh* HempM = LoadObject<UStaticMesh>(nullptr,
-					TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarA.SM_xh1kdfbqx_VarA"));
-				UStaticMesh* BalsamM = LoadObject<UStaticMesh>(nullptr,
-					TEXT("/Game/Fab/Megascans/Plants/Small_Balsam_xefmcgrqx/High/xefmcgrqx_tier_1/StaticMeshes/SM_xefmcgrqx_VarA.SM_xefmcgrqx_VarA"));
-
-				// Dense overlapping foliage — 40 plants per tree for full coverage
-				const int32 NumPlants = 80;
-				// Also load additional variants for visual diversity
-				UStaticMesh* HempB = LoadObject<UStaticMesh>(nullptr,
-					TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarB.SM_xh1kdfbqx_VarB"));
-				UStaticMesh* BalsamB = LoadObject<UStaticMesh>(nullptr,
-					TEXT("/Game/Fab/Megascans/Plants/Small_Balsam_xefmcgrqx/High/xefmcgrqx_tier_1/StaticMeshes/SM_xefmcgrqx_VarB.SM_xefmcgrqx_VarB"));
-				UStaticMesh* PlantVariants[] = { HempM, BalsamM, HempB ? HempB : HempM, BalsamB ? BalsamB : BalsamM };
-
-				for (int32 Pi = 0; Pi < NumPlants; ++Pi)
-				{
-					float Ang = CR.FRandRange(0.f, 6.28f);
-					// Even spread — fill entire canopy volume uniformly
-					float Dist = CanopyRadius * CR.FRandRange(0.0f, 1.0f);
-					// Extend further down to overlap trunk, fill all gaps
-					float ZOff = CR.FRandRange(-CanopyHeight * 0.55f, CanopyHeight * 0.5f);
-					// Large plants for heavy overlap, no gaps
-					float Sz = CR.FRandRange(5.0f, 9.0f) * SizeMul;
-					float Yaw = CR.FRandRange(0.f, 360.f);
-					// More rotation variety for organic fill
-					float Pitch = CR.FRandRange(-25.f, 25.f);
-					float Roll = CR.FRandRange(-25.f, 25.f);
-
-					UStaticMesh* PM = PlantVariants[Pi % 4];
-					if (!PM) continue;
-
-					UStaticMeshComponent* LMC = NewObject<UStaticMeshComponent>(TreeA,
-						*FString::Printf(TEXT("DL_%d"), TIdx++));
-					LMC->SetStaticMesh(PM);
-					LMC->SetWorldLocation(FVector(
-						BX + FMath::Cos(Ang) * Dist,
-						BY + FMath::Sin(Ang) * Dist,
-						CanopyCenterZ + ZOff));
-					LMC->SetWorldRotation(FRotator(Pitch, Yaw, Roll));
-					LMC->SetWorldScale3D(FVector(Sz));
-					LMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					LMC->SetCastShadow(false);
-					LMC->RegisterComponent();
-					TreeA->AddInstanceComponent(LMC);
-				}
-
+				float TreeScale = SizeMul * 8.f;
+				UStaticMeshComponent* TMC = NewObject<UStaticMeshComponent>(TreeA,
+					*FString::Printf(TEXT("RT_%d"), SpawnedCount));
+				TMC->SetStaticMesh(RealisticTreeMesh);
+				TMC->SetWorldLocation(TreeBase);
+				TMC->SetWorldRotation(FRotator(0.f, ForestRand.FRandRange(0.f, 360.f), 0.f));
+				TMC->SetWorldScale3D(FVector(TreeScale));
+				TMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				TMC->SetCastShadow(true);
+				TMC->RegisterComponent();
+				TreeA->SetRootComponent(TMC);
+				TreeA->AddInstanceComponent(TMC);
 				SpawnedCount++;
 			}
 			} // end for loop
@@ -4917,6 +4869,49 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	}
 
 	SpawnVisualPolish();
+
+	// Kikuyu Grass patches — scattered across grassy areas
+	{
+		UStaticMesh* KGMeshes[3];
+		KGMeshes[0] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Kikuyu_Grass_wiljearqx/Raw/wiljearqx_tier_0/StaticMeshes/SM_wiljearqx_VarA.SM_wiljearqx_VarA"));
+		KGMeshes[1] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Kikuyu_Grass_wiljearqx/Raw/wiljearqx_tier_0/StaticMeshes/SM_wiljearqx_VarB.SM_wiljearqx_VarB"));
+		KGMeshes[2] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Kikuyu_Grass_wiljearqx/Raw/wiljearqx_tier_0/StaticMeshes/SM_wiljearqx_VarC.SM_wiljearqx_VarC"));
+		if (KGMeshes[0])
+		{
+			FRandomStream KGRand(54321);
+			int32 KGCount = 0;
+			for (int32 i = 0; i < 400; ++i)
+			{
+				float GX = KGRand.FRandRange(-120000.f, 120000.f);
+				float GY = KGRand.FRandRange(-100000.f, 100000.f);
+				if (FMath::Abs(GX) < 36000.f && FMath::Abs(GY) < 36000.f) continue;
+				if (FMath::Square(GX - 22248.f) + FMath::Square(GY + 62419.f) < 55000.f * 55000.f) continue;
+				if (GY < -106000.f && GX > -45000.f && GX < 145000.f) continue;
+				if (GY > 105000.f) continue;
+				float GZ = GetTerrainHeight(GX, GY);
+				if (GZ > 500.f) continue;
+				UStaticMesh* KGM = KGMeshes[KGRand.RandRange(0, 2)];
+				if (!KGM) KGM = KGMeshes[0];
+				float KGScaleXY = KGRand.FRandRange(20.0f, 50.0f);
+				float KGScaleZ = KGScaleXY * 0.15f; // waist height — short and wide
+				AActor* KGA = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(),
+					FVector(GX, GY, GZ - 10.f), FRotator::ZeroRotator);
+				if (!KGA) continue;
+				UStaticMeshComponent* KMC = NewObject<UStaticMeshComponent>(KGA, *FString::Printf(TEXT("KG_%d"), KGCount));
+				KMC->SetStaticMesh(KGM);
+				KMC->SetWorldLocation(FVector(GX, GY, GZ - 10.f));
+				KMC->SetWorldRotation(FRotator(0.f, KGRand.FRandRange(0.f, 360.f), 0.f));
+				KMC->SetWorldScale3D(FVector(KGScaleXY, KGScaleXY, KGScaleZ));
+				KMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				KMC->SetCastShadow(false);
+				KMC->RegisterComponent();
+				KGA->SetRootComponent(KMC);
+				++KGCount;
+			}
+			UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Spawned %d Kikuyu grass patches"), KGCount);
+		}
+	}
+
 	// SpawnNPCHelicopter(); // Disabled for multiplayer — re-enable for solo/testing
 	// SpawnNPCPlayers(); // Disabled for now — re-enable for testing
 
@@ -5057,8 +5052,8 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 		}
 		MC->RegisterComponent();
 		WA->SetRootComponent(MC);
-		// Ocean/bay water uses lightweight GlassMaterial (Advanced Water only on river)
-		if (false && bIsWater && AdvancedWaterMI) // Disabled — too heavy for mobile
+		// Use Advanced Water on all water bodies
+		if (bIsWater && AdvancedWaterMI)
 		{
 			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, MC);
 			if (Mat)
@@ -5106,7 +5101,7 @@ void UPHCCitySubsystem::SpawnOceanAndBeach()
 	const FLinearColor Sand(0.76f, 0.70f, 0.55f);
 
 	// Global ocean floor — massive, covers everything below land
-	SpawnWater(FVector(0.f, 0.f, -8.f), FVector(4000.f, 4000.f, 1.f), DeepOcean, TEXT("OceanFloor"), true);
+	SpawnWater(FVector(0.f, 0.f, -80.f), FVector(4000.f, 4000.f, 1.f), DeepOcean, TEXT("OceanFloor"), true);
 
 	// Bay inlet (NE corner) — shallow water sitting above ocean
 	SpawnWater(FVector(45000.f, 60000.f, -3.f), FVector(250.f, 150.f, 1.f), ShallowWater, TEXT("BayInlet"), true);
@@ -7195,6 +7190,12 @@ void UPHCCitySubsystem::SpawnParkBlock(const FVector& ParkCenter, float ParkSize
 		Water->SetWorldLocation(FVector(ParkCenter.X, ParkCenter.Y, 40.f));
 		Water->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Water->RegisterComponent();
+		if (AdvancedWaterMI)
+		{
+			UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, Water);
+			if (WMat) Water->SetMaterial(0, WMat);
+		}
+		else
 		{
 			UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(Water->GetMaterial(0), Water);
 			if (WMat) { WMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.1f, 0.2f, 0.35f)); Water->SetMaterial(0, WMat); }
@@ -7891,9 +7892,22 @@ void UPHCCitySubsystem::SpawnStreetLight(const FVector& Location)
 void UPHCCitySubsystem::SpawnPalmTree(const FVector& Location, float Height, bool bDetailed)
 {
 	UWorld* World = GetWorld();
-	if (!World || !CylinderMesh || !CubeMesh) return;
+	if (!World) return;
+
+	// Skip 50% of trees to reduce density
+	if (CityRandom.FRand() < 0.5f) return;
+
+	// Skip pyramid area
+	float PyDist = FMath::Sqrt(FMath::Square(Location.X - 22248.f) + FMath::Square(Location.Y + 62419.f));
+	if (PyDist < 55000.f) return;
+
+	// Use real palm tree mesh from Fab
+	static UStaticMesh* PalmMesh = LoadObject<UStaticMesh>(nullptr,
+		TEXT("/Game/Fab/Plant_Series_–_Palm_Tree/free_game_ready_palm/StaticMeshes/free_game_ready_palm.free_game_ready_palm"));
+	if (!PalmMesh) return;
 
 	Height *= 4.8f;
+	float Scale = Height / 800.f;
 
 	AActor* Tree = World->SpawnActor<AActor>(AActor::StaticClass(),
 		Location, FRotator::ZeroRotator);
@@ -7902,278 +7916,21 @@ void UPHCCitySubsystem::SpawnPalmTree(const FVector& Location, float Height, boo
 	Tree->SetActorLabel(TEXT("PalmTree"));
 #endif
 
-	int32 CompIdx = 0;
-
-	// Helper: attach a mesh component, apply PBR material, register
-	auto AddComp = [&](UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot,
-		const FVector& Scale, const FLinearColor& Color, float Roughness,
-		float Metallic = 0.f, bool bUseBarkTex = false) -> UStaticMeshComponent*
-	{
-		FString Name = FString::Printf(TEXT("P_%d"), CompIdx++);
-		UStaticMeshComponent* C = NewObject<UStaticMeshComponent>(Tree, *Name);
-		C->SetStaticMesh(Mesh);
-		C->SetWorldLocation(Loc);
-		C->SetWorldRotation(Rot);
-		C->SetWorldScale3D(Scale);
-		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		C->RegisterComponent();
-		if (CompIdx == 1) Tree->SetRootComponent(C);
-
-		if (bUseBarkTex && FabBarkMID)
-		{
-			C->SetMaterial(0, FabBarkMID);
-		}
-		else
-		{
-			UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(
-				C->GetMaterial(0), C);
-			if (M)
-			{
-				M->SetVectorParameterValue(TEXT("BaseColor"), Color);
-				M->SetScalarParameterValue(TEXT("Roughness"), Roughness);
-				M->SetScalarParameterValue(TEXT("Metallic"), Metallic);
-				C->SetMaterial(0, M);
-			}
-		}
-		Tree->AddInstanceComponent(C);
-		return C;
-	};
-
-	// ====================================================================
-	// TRUNK — multi-segment taper with natural S-curve and bark ring scars
-	// ====================================================================
-
-	const float BaseRadius = Height * 0.014f;
-	const float TopRadius  = Height * 0.005f;
-	const int32 TrunkSegs  = bDetailed ? 8 : 5;
-	const float SegH       = Height / TrunkSegs;
-
-	// S-curve: gentle sine wave creates organic lean
-	const float CurveAmp  = Height * 0.012f;
-	const float CurveYaw  = CityRandom.FRandRange(0.f, 360.f);
-	const float CurveYawR = FMath::DegreesToRadians(CurveYaw);
-
-	// Color gradient: gray-brown at base → warm tan at crown
-	const FLinearColor TrunkBase(
-		CityRandom.FRandRange(0.18f, 0.24f),
-		CityRandom.FRandRange(0.12f, 0.16f),
-		CityRandom.FRandRange(0.05f, 0.08f));
-	const FLinearColor TrunkTop(
-		CityRandom.FRandRange(0.30f, 0.38f),
-		CityRandom.FRandRange(0.24f, 0.30f),
-		CityRandom.FRandRange(0.12f, 0.18f));
-
-	// Ring scar color (lighter, slightly yellowish)
-	const FLinearColor RingScarColor(0.40f, 0.34f, 0.20f);
-
-	// Track crown position (accounts for S-curve offset)
-	FVector CrownPos = Location;
-	CrownPos.Z = Height;
-
-	for (int32 S = 0; S < TrunkSegs; ++S)
-	{
-		const float T = static_cast<float>(S) / TrunkSegs;
-		float Radius = FMath::Lerp(BaseRadius, TopRadius, T);
-		if (S == 0) Radius *= 1.25f; // slight base bulge
-
-		// S-curve offset at this height
-		const float CurveOff = CurveAmp * FMath::Sin(T * PI);
-		const float SegCX = Location.X + CurveOff * FMath::Cos(CurveYawR);
-		const float SegCY = Location.Y + CurveOff * FMath::Sin(CurveYawR);
-		const float SegZ  = S * SegH + SegH * 0.5f;
-
-		// Slight tilt to follow the curve tangent
-		const float dCurve = CurveAmp * PI * FMath::Cos(T * PI) / Height;
-		const float TiltDeg = FMath::RadiansToDegrees(FMath::Atan(dCurve));
-
-		const FLinearColor SegColor = FMath::Lerp(TrunkBase, TrunkTop, T);
-
-		AddComp(CylinderMesh,
-			FVector(SegCX, SegCY, SegZ),
-			FRotator(TiltDeg * FMath::Cos(CurveYawR),
-					 CurveYaw,
-					 TiltDeg * FMath::Sin(CurveYawR)),
-			FVector(Radius / 50.f, Radius / 50.f, SegH / 100.f),
-			SegColor, 0.88f, 0.f, true);
-
-		// Ring scars — thin discs at segment joints (every 2 segments)
-		const int32 RingFreq = bDetailed ? 2 : 3;
-		if (S > 0 && S % RingFreq == 0)
-		{
-			const float RingRadius = Radius * 1.18f;
-			AddComp(CylinderMesh,
-				FVector(SegCX, SegCY, S * SegH),
-				FRotator::ZeroRotator,
-				FVector(RingRadius / 50.f, RingRadius / 50.f, 0.015f),
-				RingScarColor, 0.75f);
-		}
-
-		// Update crown position to account for S-curve
-		if (S == TrunkSegs - 1)
-		{
-			const float TopT = 1.f;
-			const float TopOff = CurveAmp * FMath::Sin(TopT * PI);
-			CrownPos.X = Location.X + TopOff * FMath::Cos(CurveYawR);
-			CrownPos.Y = Location.Y + TopOff * FMath::Sin(CurveYawR);
-		}
-	}
-
-	// Crownshaft — bright green cylinder at top of trunk (detailed only)
-	if (bDetailed)
-	{
-		const float CSHeight = SegH * 0.6f;
-		const float CSRadius = TopRadius * 1.4f;
-		AddComp(CylinderMesh,
-			FVector(CrownPos.X, CrownPos.Y, Height - CSHeight * 0.3f),
-			FRotator::ZeroRotator,
-			FVector(CSRadius / 50.f, CSRadius / 50.f, CSHeight / 100.f),
-			FLinearColor(0.06f, 0.28f, 0.04f), 0.5f);
-	}
-
-	// ====================================================================
-	// FRONDS — pinnate compound leaves: rachis spine + V-folded leaf blades
-	// ====================================================================
-
-	const float FrondLen       = Height * 0.28f;
-	const float FrondWidth     = Height * 0.04f;
-	const float SpineThickness = Height * 0.003f;
-	const float BladeThickness = Height * 0.0015f;
-	const float VFoldAngle     = 18.f; // V-fold half-angle for leaf cross-section
-
-	// Frond tier definition
-	struct FFrondTier
-	{
-		int32 Count;
-		float MinDroop;
-		float MaxDroop;
-		FLinearColor Color;
-		float LengthMult;
-		float WidthMult;
-		float Roughness;
-		bool bDead;
-	};
-
-	TArray<FFrondTier> Tiers;
-	if (bDetailed)
-	{
-		// Upper tier — young, upright, bright green, waxy sheen
-		Tiers.Add({ CityRandom.RandRange(4, 5), 8.f, 22.f,
-			FLinearColor(
-				CityRandom.FRandRange(0.03f, 0.06f),
-				CityRandom.FRandRange(0.28f, 0.38f),
-				CityRandom.FRandRange(0.02f, 0.05f)),
-			0.8f, 0.9f, 0.45f, false });
-		// Middle tier — mature, drooping, deeper green
-		Tiers.Add({ CityRandom.RandRange(4, 6), 28.f, 50.f,
-			FLinearColor(
-				CityRandom.FRandRange(0.02f, 0.04f),
-				CityRandom.FRandRange(0.18f, 0.26f),
-				CityRandom.FRandRange(0.01f, 0.03f)),
-			1.0f, 1.0f, 0.55f, false });
-		// Dead tier — brown, hanging down along trunk
-		Tiers.Add({ CityRandom.RandRange(2, 3), 55.f, 78.f,
-			FLinearColor(
-				CityRandom.FRandRange(0.25f, 0.35f),
-				CityRandom.FRandRange(0.18f, 0.24f),
-				CityRandom.FRandRange(0.06f, 0.10f)),
-			0.65f, 0.6f, 0.80f, true });
-	}
-	else
-	{
-		// Single tier for simple trees
-		Tiers.Add({ CityRandom.RandRange(6, 8), 18.f, 48.f,
-			FLinearColor(
-				CityRandom.FRandRange(0.02f, 0.05f),
-				CityRandom.FRandRange(0.20f, 0.30f),
-				CityRandom.FRandRange(0.01f, 0.04f)),
-			1.0f, 1.0f, 0.55f, false });
-	}
-
-	float GlobalYawOffset = CityRandom.FRandRange(0.f, 360.f);
-
-	for (const FFrondTier& Tier : Tiers)
-	{
-		for (int32 F = 0; F < Tier.Count; ++F)
-		{
-			const float Yaw = GlobalYawOffset
-				+ (360.f / Tier.Count) * F
-				+ CityRandom.FRandRange(-12.f, 12.f);
-			const float Droop = CityRandom.FRandRange(Tier.MinDroop, Tier.MaxDroop);
-			const float FL = FrondLen * Tier.LengthMult;
-			const float FW = FrondWidth * Tier.WidthMult;
-
-			// Direction the frond extends outward from crown
-			const float YawR   = FMath::DegreesToRadians(Yaw);
-			const float DroopR = FMath::DegreesToRadians(Droop);
-			const FVector FrondDir(
-				FMath::Cos(DroopR) * FMath::Cos(YawR),
-				FMath::Cos(DroopR) * FMath::Sin(YawR),
-				-FMath::Sin(DroopR));
-			const FVector FrondCenter = CrownPos + FrondDir * (FL * 0.5f);
-
-			// Spine color — slightly darker than blade
-			const FLinearColor SpineColor(
-				Tier.Color.R * 0.6f,
-				Tier.Color.G * 0.7f,
-				Tier.Color.B * 0.5f);
-
-			// -- Rachis (spine): thin elongated cube, darker green --
-			AddComp(CubeMesh,
-				FrondCenter,
-				FRotator(-Droop, Yaw, 0.f),
-				FVector(FL / 100.f, SpineThickness / 100.f, SpineThickness / 100.f),
-				SpineColor, Tier.Roughness);
-
-			// -- Left leaf blade: flat wide section, angled up by -VFold --
-			const FRotator LeftRot(-Droop, Yaw, -VFoldAngle);
-			const FVector LeftRight = FRotationMatrix(FRotator(-Droop, Yaw, 0.f))
-				.GetUnitAxis(EAxis::Y);
-			const FVector LeftCenter = FrondCenter - LeftRight * (FW * 0.22f);
-
-			AddComp(CubeMesh,
-				LeftCenter,
-				LeftRot,
-				FVector(FL * 0.88f / 100.f, FW * 0.44f / 100.f, BladeThickness / 100.f),
-				Tier.Color, Tier.Roughness);
-
-			// -- Right leaf blade: mirror of left --
-			const FRotator RightRot(-Droop, Yaw, VFoldAngle);
-			const FVector RightCenter = FrondCenter + LeftRight * (FW * 0.22f);
-
-			AddComp(CubeMesh,
-				RightCenter,
-				RightRot,
-				FVector(FL * 0.88f / 100.f, FW * 0.44f / 100.f, BladeThickness / 100.f),
-				Tier.Color, Tier.Roughness);
-		}
-
-		// Rotate base offset so tiers don't overlap
-		GlobalYawOffset += CityRandom.FRandRange(15.f, 30.f);
-	}
-
-	// ====================================================================
-	// COCONUT CLUSTER — small brown-green spheres just below crown
-	// ====================================================================
-
-	if (bDetailed && SphereMesh && CityRandom.FRand() < 0.65f)
-	{
-		const int32 NumCocos = CityRandom.RandRange(3, 5);
-		const float CocoR = Height * 0.007f;
-		for (int32 C = 0; C < NumCocos; ++C)
-		{
-			const float CYaw = CityRandom.FRandRange(0.f, 360.f);
-			const float CDist = TopRadius + CocoR * 2.5f;
-			AddComp(SphereMesh,
-				FVector(
-					CrownPos.X + CDist * FMath::Cos(FMath::DegreesToRadians(CYaw)),
-					CrownPos.Y + CDist * FMath::Sin(FMath::DegreesToRadians(CYaw)),
-					Height - CocoR * 4.f),
-				FRotator::ZeroRotator,
-				FVector(CocoR / 50.f),
-				FLinearColor(0.22f, 0.16f, 0.05f), 0.65f);
-		}
-	}
+	UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(Tree, TEXT("PalmMesh"));
+	MC->SetStaticMesh(PalmMesh);
+	MC->SetWorldLocation(Location);
+	MC->SetWorldRotation(FRotator(0.f, CityRandom.FRandRange(0.f, 360.f), 0.f));
+	MC->SetWorldScale3D(FVector(Scale, Scale, Scale));
+	MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MC->SetCastShadow(true);
+	MC->RegisterComponent();
+	Tree->SetRootComponent(MC);
+	Tree->AddInstanceComponent(MC);
 }
+
+// Old procedural palm tree code removed — using real Fab palm mesh now
+
+
 
 // ---------------------------------------------------------------------------
 // Outskirts (extended highway + side roads + mountains + roadside content)
@@ -8369,10 +8126,10 @@ void UPHCCitySubsystem::SpawnJungle()
 	UWorld* W = GetWorld();
 	if (!W || !CubeMesh || !CylinderMesh || !SphereMesh || !ConeMesh || !PlaneMesh || !ColorMaterial) return;
 
-	// === JUNGLE BOUNDS — Zone B, far south coast (2x size) ===
-	const float JMinX = -45000.f, JMaxX = 75000.f;    // 120,000 wide
+	// === JUNGLE BOUNDS — Zone B, far south coast (extended east to river end at 145k) ===
+	const float JMinX = -45000.f, JMaxX = 145000.f;   // 190,000 wide
 	const float JMinY = -162000.f, JMaxY = -106000.f;  // 56,000 deep
-	const float JCX = (JMinX + JMaxX) * 0.5f;         // 15000
+	const float JCX = (JMinX + JMaxX) * 0.5f;         // 32500
 	const float JCY = (JMinY + JMaxY) * 0.5f;         // -134000
 
 	AActor* JA = W->SpawnActor<AActor>(AActor::StaticClass(), FVector(JCX, JCY, 0.f), FRotator::ZeroRotator);
@@ -9230,13 +8987,14 @@ void UPHCCitySubsystem::SpawnJungle()
 	// LAYER 16: Dense green ground foliage — Megascans plant meshes
 	// ================================================================
 	{
-		UStaticMesh* FoliageMeshes[3];
-		FoliageMeshes[0] = LoadObject<UStaticMesh>(nullptr,
-			TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarA.SM_xh1kdfbqx_VarA"));
-		FoliageMeshes[1] = LoadObject<UStaticMesh>(nullptr,
-			TEXT("/Game/Fab/Megascans/Plants/Small_Balsam_xefmcgrqx/High/xefmcgrqx_tier_1/StaticMeshes/SM_xefmcgrqx_VarA.SM_xefmcgrqx_VarA"));
-		FoliageMeshes[2] = LoadObject<UStaticMesh>(nullptr,
-			TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarB.SM_xh1kdfbqx_VarB"));
+		// Tropical banana vegetation pack — 6 variants for visual diversity
+		UStaticMesh* FoliageMeshes[6];
+		FoliageMeshes[0] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PN_Banana/Meshes/plants/banana_01_01.banana_01_01"));
+		FoliageMeshes[1] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PN_Banana/Meshes/plants/banana_01_03.banana_01_03"));
+		FoliageMeshes[2] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PN_Banana/Meshes/plants/banana_01_05.banana_01_05"));
+		FoliageMeshes[3] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PN_Banana/Meshes/plants/banana_02_01.banana_02_01"));
+		FoliageMeshes[4] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PN_Banana/Meshes/plants/banana_02_03.banana_02_03"));
+		FoliageMeshes[5] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PN_Banana/Meshes/plants/banana_02_05.banana_02_05"));
 
 		// Individual StaticMeshComponents — same approach as tree canopy (works on iOS)
 		const float FoliageCell = 1150.f; // ~15% fewer than 1050
@@ -9252,16 +9010,12 @@ void UPHCCitySubsystem::SpawnJungle()
 				if (IsNearPath(FX, FY, PathHW)) continue;
 
 				float FZ = GetTerrainHeight(FX, FY);
-				UStaticMesh* PlantMesh = FoliageMeshes[CityRandom.RandRange(0, 2)];
+				UStaticMesh* PlantMesh = FoliageMeshes[CityRandom.RandRange(0, 5)];
 				if (!PlantMesh) continue;
 
-				float PlantScale = CityRandom.FRandRange(96.0f, 192.0f);
-				if (PlantScale < 180.f)
-				{
-					// 75% of shorter plants get promoted to tallest height
-					if (CityRandom.FRand() < 0.25f) continue; // skip 25%
-					PlantScale = CityRandom.FRandRange(180.0f, 192.0f); // promote to tallest
-				}
+				// Tropical banana plants — scale for natural jungle look
+				float PlantScale = CityRandom.FRandRange(16.0f, 40.0f);
+				if (CityRandom.FRand() < 0.10f) continue; // skip 10% for natural variation
 				float PlantYaw = CityRandom.FRandRange(0.f, 360.f);
 
 				bool bUseBamboo = (FoliageCount % 2 == 0); // 50% bamboo
@@ -9302,6 +9056,9 @@ void UPHCCitySubsystem::SpawnJungle()
 		}
 		UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: added %d ground foliage plants"), FoliageCount);
 	}
+
+	// LAYER 17: Shrubs disabled — skeletal meshes too heavy for mobile
+
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: spawned %d components + palm trees"), CI);
 }
@@ -10448,82 +10205,57 @@ void UPHCCitySubsystem::SpawnCloudLayer()
 
 	FRandomStream CloudRand(333333);
 
-	// Spawn 25 cumulus cloud clusters at varying positions/heights
-	// Each cloud = 5-10 overlapping flattened spheres forming a puffy mass
-	const int32 NumClouds = 30;
-	int32 CloudCompIdx = 0;
+	// FastClouds billboard clouds — 4-vertex quad mesh with 25 cloud textures
+	UStaticMesh* CloudQuad = LoadObject<UStaticMesh>(nullptr,
+		TEXT("/Game/FastClouds/Meshes/SM_Cloudbase.SM_Cloudbase"));
+
+	UMaterialInterface* CloudMats[25];
+	for (int32 i = 0; i < 25; ++i)
+	{
+		FString MatPath = FString::Printf(TEXT("/Game/FastClouds/Materials/M_Cloud%02d.M_Cloud%02d"), i + 1, i + 1);
+		CloudMats[i] = LoadObject<UMaterialInterface>(nullptr, *MatPath);
+	}
+
+	const int32 NumClouds = 35;
 
 	for (int32 Ci = 0; Ci < NumClouds; ++Ci)
 	{
 		float CX = CloudRand.FRandRange(-150000.f, 150000.f);
 		float CY = CloudRand.FRandRange(-150000.f, 150000.f);
-		float CZ = CloudRand.FRandRange(50000.f, 80000.f);
+		float CZ = CloudRand.FRandRange(100000.f, 160000.f);
+		float CloudScale = CloudRand.FRandRange(500.f, 1200.f);
 
 		AActor* CA = World->SpawnActor<AActor>(AActor::StaticClass(),
 			FVector(CX, CY, CZ), FRotator::ZeroRotator);
 		if (!CA) continue;
 
-		// Store first 3 for legacy refs + all for drift
 		if (Ci == 0) CloudLayerActor = CA;
 		else if (Ci == 1) CloudLayerActor2 = CA;
 		else if (Ci == 2) CloudLayerActor3 = CA;
 		CloudActors.Add(CA);
 
-		int32 NumPuffs = CloudRand.RandRange(5, 10);
-		float CloudWidth = CloudRand.FRandRange(4000.f, 12000.f);
-		float CloudDepth = CloudWidth * CloudRand.FRandRange(0.5f, 0.9f);
-		float CloudHeight = CloudWidth * CloudRand.FRandRange(0.15f, 0.3f);
+		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(CA,
+			*FString::Printf(TEXT("Cloud_%d"), Ci));
+		MC->SetStaticMesh(CloudQuad ? CloudQuad : SphereMesh.Get());
+		MC->SetWorldLocation(FVector(CX, CY, CZ));
+		// Pitch 90 to lay quad flat (facing down) — visible from below
+		MC->SetWorldRotation(FRotator(90.f, CloudRand.FRandRange(0.f, 360.f), 0.f));
+		MC->SetWorldScale3D(FVector(CloudScale, CloudScale, CloudScale));
+		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MC->SetCastShadow(false);
+		MC->SetBoundsScale(50.f);
+		MC->bNeverDistanceCull = true;
+		MC->RegisterComponent();
+		CA->SetRootComponent(MC);
+		CA->AddInstanceComponent(MC);
 
-		bool bFirstComp = true;
-		for (int32 Pi = 0; Pi < NumPuffs; ++Pi)
-		{
-			float PX = CloudRand.FRandRange(-CloudWidth * 0.4f, CloudWidth * 0.4f);
-			float PY = CloudRand.FRandRange(-CloudDepth * 0.4f, CloudDepth * 0.4f);
-			float PZ = CloudRand.FRandRange(-CloudHeight * 0.3f, CloudHeight * 0.4f);
-			float PSz = CloudRand.FRandRange(CloudWidth * 0.2f, CloudWidth * 0.45f);
-
-			UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(CA,
-				*FString::Printf(TEXT("Cloud_%d_%d"), Ci, CloudCompIdx++));
-			MC->SetStaticMesh(SphereMesh);
-			MC->SetWorldLocation(FVector(CX + PX, CY + PY, CZ + PZ));
-			// Flat ellipsoid: wide, shallow
-			MC->SetWorldScale3D(FVector(PSz / 50.f, PSz / 50.f, PSz * 0.35f / 50.f));
-			MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			MC->SetCastShadow(false);
-			MC->SetBoundsScale(50.f);
-			MC->bNeverDistanceCull = true;
-			MC->RegisterComponent();
-
-			if (bFirstComp) { CA->SetRootComponent(MC); bFirstComp = false; }
-			CA->AddInstanceComponent(MC);
-
-			// White cloud with emissive brightness
-			// Top puffs brighter (sun-lit), bottom slightly darker (self-shadow)
-			float VertBrightness = FMath::GetMappedRangeValueClamped(
-				FVector2D(-CloudHeight * 0.3f, CloudHeight * 0.4f),
-				FVector2D(0.5f, 1.0f), PZ);
-			FLinearColor CloudCol(
-				0.85f * VertBrightness,
-				0.85f * VertBrightness,
-				0.88f * VertBrightness);
-			FLinearColor CloudEmis(
-				0.3f * VertBrightness,
-				0.3f * VertBrightness,
-				0.32f * VertBrightness);
-
-			UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, MC);
-			if (Mat)
-			{
-				Mat->SetVectorParameterValue(TEXT("BaseColor"), CloudCol);
-				Mat->SetScalarParameterValue(TEXT("Roughness"), 1.0f);
-				Mat->SetVectorParameterValue(TEXT("EmissiveColor"), CloudEmis);
-				MC->SetMaterial(0, Mat);
-				CloudMIDs.Add(Mat);
-			}
-		}
+		// Apply random cloud material
+		int32 MatIdx = CloudRand.RandRange(0, 24);
+		if (CloudMats[MatIdx])
+			MC->SetMaterial(0, CloudMats[MatIdx]);
 	}
 
-	UE_LOG(LogPlayhouseCity, Log, TEXT("Spawned %d PUBG cumulus clouds with %d sphere puffs"), NumClouds, CloudCompIdx);
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Spawned %d FastCloud billboard clouds"), NumClouds);
 }
 
 // ---------------------------------------------------------------------------
@@ -13034,8 +12766,14 @@ void UPHCCitySubsystem::SpawnSandCastle()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		ApplyPBRGlass(MC, GlassMaterial, FLinearColor(0.15f, 0.35f, 0.55f),
-			0.55f, 0.0f, 0.05f);
+		if (AdvancedWaterMI)
+		{
+			UMaterialInstanceDynamic* WMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, MC);
+			if (WMat) MC->SetMaterial(0, WMat);
+		}
+		else
+			ApplyPBRGlass(MC, GlassMaterial, FLinearColor(0.15f, 0.35f, 0.55f),
+				0.55f, 0.0f, 0.05f);
 		Owner->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -14780,7 +14518,12 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 			WMC->SetBoundsScale(30.f);
 			WMC->RegisterComponent();
 			WA->SetRootComponent(WMC);
-			if (GlassMaterial)
+			if (AdvancedWaterMI)
+			{
+				UMaterialInstanceDynamic* LWMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, WMC);
+				if (LWMat) WMC->SetMaterial(0, LWMat);
+			}
+			else if (GlassMaterial)
 			{
 				ApplyPBRGlass(WMC, GlassMaterial,
 					FLinearColor(0.06f, 0.18f, 0.32f), 0.65f, 0.15f, 0.08f,
@@ -17671,7 +17414,13 @@ void UPHCCitySubsystem::SpawnLangtree()
 				PW->RegisterComponent();
 				PW->AttachToComponent(PDk, FAttachmentTransformRules::KeepWorldTransform);
 				PA->AddInstanceComponent(PW);
-				ApplyPBRGlass(PW, GlassMaterial, PoolBlue, 0.75f, 0.f, 0.02f);
+				if (AdvancedWaterMI)
+				{
+					UMaterialInstanceDynamic* PWMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, PW);
+					if (PWMat) PW->SetMaterial(0, PWMat);
+				}
+				else
+					ApplyPBRGlass(PW, GlassMaterial, PoolBlue, 0.75f, 0.f, 0.02f);
 				++CompCount;
 			}
 
@@ -17835,7 +17584,13 @@ void UPHCCitySubsystem::SpawnLangtree()
 			LakeWater->RegisterComponent();
 			LakeA->SetRootComponent(LakeWater);
 			LakeA->AddInstanceComponent(LakeWater);
-			ApplyPBRGlass(LakeWater, GlassMaterial, FLinearColor(0.04f, 0.12f, 0.22f), 0.8f, 0.f, 0.05f);
+			if (AdvancedWaterMI)
+			{
+				UMaterialInstanceDynamic* LNMat = UMaterialInstanceDynamic::Create(AdvancedWaterMI, LakeWater);
+				if (LNMat) LakeWater->SetMaterial(0, LNMat);
+			}
+			else
+				ApplyPBRGlass(LakeWater, GlassMaterial, FLinearColor(0.04f, 0.12f, 0.22f), 0.8f, 0.f, 0.05f);
 			++CompCount;
 
 			// Lake bed (dark bottom visible through water)

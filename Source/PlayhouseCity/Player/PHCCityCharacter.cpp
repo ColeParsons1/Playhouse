@@ -319,7 +319,7 @@ APHCCityCharacter::APHCCityCharacter()
 	// ================================================================
 	//  50 CAL SNIPER RIFLE — long receiver + barrel + scope + stock + mag + muzzle
 	// ================================================================
-	SniperBodyMesh   = MakeCube(TEXT("SniperBody"),   FVector(0.f, 26.f, 40.f), FVector(44.f, 3.f, 4.5f));
+	SniperBodyMesh = MakeCube(TEXT("SniperBody"), FVector(0.f, 26.f, 40.f), FVector(44.f, 3.f, 4.5f));
 	SniperBarrelMesh = MakeCyl(TEXT("SniperBarrel"),  FVector(0.f, 26.f, 80.f), 1.4f, 80.f);
 	SniperScopeMesh  = MakeCyl(TEXT("SniperScope"),   FVector(0.f, 26.f, 55.f), 2.f, 20.f);
 	SniperStockMesh  = MakeCube(TEXT("SniperStock"),  FVector(0.f, 26.f, 34.f), FVector(30.f, 3.f, 5.f));
@@ -847,11 +847,20 @@ void APHCCityCharacter::BeginPlay()
 		}
 	}
 
-	// Sniper materials — dark gunmetal with cyan glow
+	// Sniper — swap to real Fab mesh (Yalguzag Beast Skin) in BeginPlay
+	{
+		UStaticMesh* SniperFabMesh = LoadObject<UStaticMesh>(nullptr,
+			TEXT("/Game/Fab/Yalguzag_Sniper__Beast_Skin_/yalguzag_sniper_beast_skin/StaticMeshes/yalguzag_sniper_beast_skin.yalguzag_sniper_beast_skin"));
+		if (SniperFabMesh && SniperBodyMesh)
+		{
+			SniperBodyMesh->SetStaticMesh(SniperFabMesh);
+			SniperBodyMesh->SetRelativeScale3D(FVector(0.04f, 0.04f, 0.04f));
+		}
+	}
 	const FLinearColor SniperMetal(0.15f, 0.15f, 0.18f);
 	const FLinearColor SniperStock(0.10f, 0.08f, 0.06f);
 	const FLinearColor SniperScope(0.05f, 0.05f, 0.08f);
-	ApplyColor(SniperBodyMesh,   SniperMetal, 0.30f, 0.9f);
+	// Don't apply flat color to Fab sniper — it has its own materials
 	ApplyColor(SniperBarrelMesh, SniperMetal, 0.20f, 0.95f);
 	ApplyColor(SniperScopeMesh,  SniperScope, 0.15f, 0.8f);
 	ApplyColor(SniperStockMesh,  SniperStock, 0.75f, 0.0f);
@@ -1572,7 +1581,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		const bool bInTunnel = (Pos.X >= 102000.f && Pos.X <= 116000.f &&
 			Pos.Y >= 28000.f && Pos.Y <= 32000.f);
 		const bool bInAirport = (Pos.X >= 100000.f && Pos.X <= 200000.f &&
-			Pos.Y >= -10000.f && Pos.Y <= 70000.f && Pos.Z < 60.f);
+			Pos.Y >= -10000.f && Pos.Y <= 70000.f && Pos.Z < -500.f); // only when already underground
 
 		// Character pivot is ~58 UU above their feet (floor clamp on surface = 58)
 		const float FootOffset = 58.f;
@@ -2529,31 +2538,32 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			const bool bScoped = bShowSniper && bFirstPersonMode && ADSAlpha > 0.5f;
 			const bool bShowMeshes = bShowSniper && !bScoped;
 			SniperBodyMesh->SetVisibility(bShowMeshes);
-			SniperBarrelMesh->SetVisibility(bShowMeshes);
-			SniperScopeMesh->SetVisibility(bShowMeshes);
-			SniperStockMesh->SetVisibility(bShowMeshes);
-			SniperMagMesh->SetVisibility(bShowMeshes);
+			// Hide old sub-components — real sniper mesh is single piece
+			SniperBarrelMesh->SetVisibility(false);
+			SniperScopeMesh->SetVisibility(false);
+			SniperStockMesh->SetVisibility(false);
+			SniperMagMesh->SetVisibility(false);
 			SniperMuzzleMesh->SetVisibility(bShowMeshes && SniperFireTimer > 1.6f);
 
 			if (bShowSniper)
 			{
 				if (SniperFireTimer > 0.f) SniperFireTimer -= DeltaTime;
 
-				const FVector SniperHip(35.f, 10.f, -22.f);
-				const FVector SniperADS(25.f, 0.f, -14.f);
+				const FVector SniperHip(20.f, 8.f, -15.f);
+				const FVector SniperADS(15.f, 0.f, -10.f);
 				const FVector GripPt = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(SniperHip, SniperADS, ADSAlpha) + FPWeaponOffset)
 					: (RightHandMesh
-						? RightHandMesh->GetRelativeLocation()
+						? RightHandMesh->GetRelativeLocation() + FVector(-5.f, 0.f, 0.f)
 						: FVector(0.f, 26.f, 6.f));
 
-				const float AimPitch = FPCamPitch;
+				const float AimPitch = bFirstPersonMode ? FPCamPitch : -ForearmPitch;
 				const FRotator AimRot(-AimPitch, 0.f, 0.f);
 				const FRotator BarrelRot(90.f - AimPitch, 0.f, 0.f);
 
-				// Body/receiver
-				SniperBodyMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(10.f, 0.f, 0.f)));
-				SniperBodyMesh->SetRelativeRotation(AimRot);
+				// Fab sniper mesh — single piece, positioned at grip with forward aim
+				SniperBodyMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(15.f, 0.f, -2.f)));
+				SniperBodyMesh->SetRelativeRotation(FRotator(-AimPitch, 90.f, 0.f));
 
 				// Long barrel
 				SniperBarrelMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(55.f, 0.f, 0.f)));
