@@ -737,6 +737,16 @@ void APHCPlayerController::SpawnAndEnterVehicle(int32 VehicleType)
 	APHCCityCharacter* Character = Cast<APHCCityCharacter>(GetPawn());
 	if (!Character) return;
 
+	// End mushroom trip if active — trip effects interfere with vehicle controls
+	if (UPHCCitySubsystem* CitySub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
+	{
+		if (CitySub->MushroomTripTimer >= 0.f)
+		{
+			CitySub->MushroomTripTimer = -1.f;
+			CitySub->MushroomTripDuration = 60.f;
+		}
+	}
+
 	// Roller blades are an equipment mode (like jetpack), not a vehicle.
 	if (VehicleType == 7)
 	{

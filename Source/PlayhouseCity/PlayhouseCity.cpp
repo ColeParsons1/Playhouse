@@ -1055,7 +1055,7 @@ void FPlayhouseCityModule::StartupModule()
 		// Full HLSL — Neon Circuitry translation from three.js
 		// Mandelbox fractal (box fold + sphere fold), dual scenes, Persian BG
 		CustomNode->Code = TEXT(
-			"float time = Time * 4.0;\n"
+			"float time = Time * 2.0;\n"
 			"float2 uv = UV * 2.0 - 1.0;\n"
 			"uv.x *= 2.0;\n"
 			"\n"

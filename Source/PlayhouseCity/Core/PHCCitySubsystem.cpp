@@ -3922,13 +3922,13 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 						if (ColorMaterial) { Mat = UMaterialInstanceDynamic::Create(ColorMaterial, PMC); }
 						if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), AvgColor); Mat->SetScalarParameterValue(TEXT("Roughness"), ChunkRough); PMC->SetMaterial(0, Mat); }
 					}
-					// Jungle zone — 8K Mossy Forest Floor
+					// Jungle zone — 8K Rippled Sand
 					else if (ChunkMidY < -106000.f && ChunkMidY > -162000.f && ChunkMidX > -45000.f && ChunkMidX < 145000.f)
 					{
-						if (Fab8KMossyFloorMI)
-							PMC->SetMaterial(0, Fab8KMossyFloorMI);
-						else if (FabGrassMI)
-							PMC->SetMaterial(0, FabGrassMI);
+						if (Fab8KSandMI)
+							PMC->SetMaterial(0, Fab8KSandMI);
+						else if (FabSandMID)
+							PMC->SetMaterial(0, FabSandMID);
 					}
 					// Desert/pyramid/sandy — 8K Rippled Sand
 					else if ((bIsSandy || bIsRocky || bInDesertZone) && Fab8KSandMI)
@@ -4712,7 +4712,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 		if (TW && CylinderMesh && SphereMesh && ColorMaterial)
 		{
 			FRandomStream ForestRand(88888);
-			const int32 NumForestTrees = 480; // was 800 — reduced 40%
+			const int32 NumForestTrees = 240; // was 480 — reduced 50%
 			int32 SpawnedCount = 0;
 
 			// Define cluster centers for natural grouping (like PUBG forest patches)
@@ -8500,28 +8500,7 @@ void UPHCCitySubsystem::SpawnJungle()
 	}
 
 	// ================================================================
-	// LAYER 5: Bamboo groves (28 clusters along edges)
-	// ================================================================
-	for (int32 b = 0; b < 80; ++b)
-	{
-		// Spread bamboo across entire jungle, not just edges
-		float BX = (b < 20) ? JMinX + CityRandom.FRandRange(0.f, 5000.f)
-			: (b < 40) ? JMaxX - CityRandom.FRandRange(0.f, 5000.f)
-			: CityRandom.FRandRange(JMinX + 3000.f, JMaxX - 3000.f);
-		float BY = JMinY + CityRandom.FRandRange(1000.f, (JMaxY - JMinY) - 1000.f);
-		float BTZ = GetTerrainHeight(BX, BY);
-		int32 NS = CityRandom.RandRange(4, 6);
-		for (int32 s = 0; s < NS; ++s)
-		{
-			float SX = BX + CityRandom.FRandRange(-150.f, 150.f);
-			float SY = BY + CityRandom.FRandRange(-150.f, 150.f);
-			float SH = CityRandom.FRandRange(1500.f, 3000.f);
-			float SR = CityRandom.FRandRange(12.f, 22.f);
-			JC(CylinderMesh, FVector(SX, SY, BTZ + SH * 0.5f),
-				FRotator(CityRandom.FRandRange(-5.f, 5.f), CityRandom.FRandRange(0.f, 360.f), CityRandom.FRandRange(-3.f, 3.f)),
-				FVector(SR / 50.f, SR / 50.f, SH / 100.f), BambooGreen, 0.60f, 0.05f);
-		}
-	}
+	// LAYER 5: Bamboo removed
 
 	// ================================================================
 	// LAYER 6: Hanging vines
@@ -8990,39 +8969,18 @@ void UPHCCitySubsystem::SpawnJungle()
 				if (CityRandom.FRand() < 0.10f) continue; // skip 10% for natural variation
 				float PlantYaw = CityRandom.FRandRange(0.f, 360.f);
 
-				bool bUseBamboo = (FoliageCount % 2 == 0); // 50% bamboo
-				if (CityRandom.FRand() < 0.10f) continue; // skip 10% more
-				const float PlantBury = 120.f; // sink deep into ground — GridRes=8 terrain can differ 100+ UU from exact height
+				const float PlantBury = 120.f;
 
-				if (bUseBamboo)
-				{
-					// Bamboo cluster — 3-5 stalks matching foliage height
-					float BambooH = PlantScale * 30.f; // match foliage height
-					int32 NStalks = CityRandom.RandRange(3, 5);
-					for (int32 bs = 0; bs < NStalks; ++bs)
-					{
-						float SX = FX + CityRandom.FRandRange(-100.f, 100.f);
-						float SY = FY + CityRandom.FRandRange(-100.f, 100.f);
-						float SR = CityRandom.FRandRange(12.f, 22.f);
-						float SH = BambooH * CityRandom.FRandRange(0.7f, 1.0f);
-						JC(CylinderMesh, FVector(SX, SY, FZ - PlantBury + SH * 0.5f),
-							FRotator(CityRandom.FRandRange(-4.f, 4.f), CityRandom.FRandRange(0.f, 360.f), CityRandom.FRandRange(-3.f, 3.f)),
-							FVector(SR / 50.f, SR / 50.f, SH / 100.f), BambooGreen, 0.60f, 0.05f);
-					}
-				}
-				else
-				{
-					auto* PC = NewObject<UStaticMeshComponent>(JA, *FString::Printf(TEXT("JF_%d"), CI++));
-					PC->SetStaticMesh(PlantMesh);
-					PC->SetWorldLocation(FVector(FX, FY, FZ - PlantBury));
-					PC->SetWorldRotation(FRotator(0.f, PlantYaw, 0.f));
-					PC->SetWorldScale3D(FVector(PlantScale));
-					PC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					PC->SetCastShadow(false);
-					PC->AttachToComponent(JA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
-					PC->RegisterComponent();
-					JA->AddInstanceComponent(PC);
-				}
+				auto* PC = NewObject<UStaticMeshComponent>(JA, *FString::Printf(TEXT("JF_%d"), CI++));
+				PC->SetStaticMesh(PlantMesh);
+				PC->SetWorldLocation(FVector(FX, FY, FZ - PlantBury));
+				PC->SetWorldRotation(FRotator(0.f, PlantYaw, 0.f));
+				PC->SetWorldScale3D(FVector(PlantScale));
+				PC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				PC->SetCastShadow(false);
+				PC->AttachToComponent(JA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+				PC->RegisterComponent();
+				JA->AddInstanceComponent(PC);
 				++FoliageCount;
 			}
 		}
