@@ -2549,8 +2549,8 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			{
 				if (SniperFireTimer > 0.f) SniperFireTimer -= DeltaTime;
 
-				const FVector SniperHip(20.f, 8.f, -15.f);
-				const FVector SniperADS(15.f, 0.f, -10.f);
+				const FVector SniperHip(25.f, 14.f, -22.f);
+				const FVector SniperADS(20.f, 2.f, -16.f);
 				const FVector GripPt = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(SniperHip, SniperADS, ADSAlpha) + FPWeaponOffset)
 					: (RightHandMesh
@@ -2561,8 +2561,10 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				const FRotator AimRot(-AimPitch, 0.f, 0.f);
 				const FRotator BarrelRot(90.f - AimPitch, 0.f, 0.f);
 
-				// Fab sniper mesh — single piece, positioned at grip with forward aim
-				SniperBodyMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(15.f, 0.f, -2.f)));
+				// Fab sniper mesh — scale down in FP, normal in TP
+				float SniperScale = bFirstPersonMode ? 0.025f : 0.04f;
+				SniperBodyMesh->SetRelativeScale3D(FVector(SniperScale));
+				SniperBodyMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(8.f, 0.f, -3.f)));
 				SniperBodyMesh->SetRelativeRotation(FRotator(-AimPitch, 90.f, 0.f));
 
 				// Long barrel

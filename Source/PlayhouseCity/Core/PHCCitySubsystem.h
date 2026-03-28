@@ -194,6 +194,8 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> FabSnowMI;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> FabTrampleSnowMI;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> FabCloverMI;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> Fab8KSandMI;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> Fab8KMossyFloorMI;
 
 	// -- Procedural normal/roughness map textures (generated at startup) ------
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> GrassNormalMap;

@@ -2065,6 +2065,11 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 						TripSkyMID->SetScalarParameterValue(TEXT("Level"), 0.5f);
 						TripSkyMID->SetScalarParameterValue(TEXT("Mid"), 0.f);
 						TripSkyMID->SetScalarParameterValue(TEXT("SceneIndex"), 0.f);
+						// Set 8K rippled sand texture for organic pattern overlay
+						UTexture2D* TripSandTex = LoadObject<UTexture2D>(nullptr,
+							TEXT("/Game/Fab/Megascans/Surfaces/Rippled_Sand_xd0mda1/Raw/xd0mda1_tier_0/Textures/T_xd0mda1_8K_B"));
+						if (TripSandTex)
+							TripSkyMID->SetTextureParameterValue(TEXT("SandTex"), TripSandTex);
 						TripSkyDome->SetMaterial(0, TripSkyMID);
 
 						// Hide existing sky elements
@@ -3329,8 +3334,15 @@ void UPHCCitySubsystem::LoadMegascansTextures()
 	// Clover — use Wild Grass (already loaded 4K, provides natural variety vs Uncut Grass)
 	FabCloverMI = FabWildGrassMID;
 
-	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Snow=%d TrampleSnow=%d Clover=%d"),
-		FabSnowMI ? 1 : 0, FabTrampleSnowMI ? 1 : 0, FabCloverMI ? 1 : 0);
+	// 8K terrain textures — loaded as direct MIs
+	Fab8KSandMI = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Fab/Megascans/Surfaces/Rippled_Sand_xd0mda1/Raw/xd0mda1_tier_0/Materials/MI_xd0mda1.MI_xd0mda1"));
+	Fab8KMossyFloorMI = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Fab/Megascans/Surfaces/Mossy_Forest_Floor_vfylbge/Raw/vfylbge_tier_0/Materials/MI_vfylbge.MI_vfylbge"));
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Snow=%d TrampleSnow=%d Clover=%d 8KSand=%d 8KMossy=%d"),
+		FabSnowMI ? 1 : 0, FabTrampleSnowMI ? 1 : 0, FabCloverMI ? 1 : 0,
+		Fab8KSandMI ? 1 : 0, Fab8KMossyFloorMI ? 1 : 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -3910,23 +3922,25 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 						if (ColorMaterial) { Mat = UMaterialInstanceDynamic::Create(ColorMaterial, PMC); }
 						if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), AvgColor); Mat->SetScalarParameterValue(TEXT("Roughness"), ChunkRough); PMC->SetMaterial(0, Mat); }
 					}
-					// Jungle zone: Y -162k to -106k, X -45k to 110k — Soil and Fern texture
+					// Jungle zone — 8K Mossy Forest Floor
 					else if (ChunkMidY < -106000.f && ChunkMidY > -162000.f && ChunkMidX > -45000.f && ChunkMidX < 145000.f)
 					{
-						UMaterialInterface* SoilFernMI = LoadObject<UMaterialInterface>(nullptr,
-							TEXT("/Game/Fab/Megascans/Surfaces/Soil_and_Fern_olsgf0/High/olsgf0_tier_1/Materials/MI_olsgf0.MI_olsgf0"));
-						if (SoilFernMI)
-							PMC->SetMaterial(0, SoilFernMI);
+						if (Fab8KMossyFloorMI)
+							PMC->SetMaterial(0, Fab8KMossyFloorMI);
 						else if (FabGrassMI)
 							PMC->SetMaterial(0, FabGrassMI);
 					}
+					// Desert/pyramid/sandy — 8K Rippled Sand
+					else if ((bIsSandy || bIsRocky || bInDesertZone) && Fab8KSandMI)
+						PMC->SetMaterial(0, Fab8KSandMI);
 					else if ((bIsSandy || bIsRocky || bInDesertZone) && FabSandMID)
 						PMC->SetMaterial(0, FabSandMID);
-					else if (FabCloverMI && FabGrassMI)
+					// Grassy areas — 8K Mossy Forest Floor for natural look
+					else if (Fab8KMossyFloorMI && FabGrassMI)
 					{
-						// 50% clover, 50% uncut grass — deterministic per chunk
-						bool bUseClover = (ChunkHash & 1) != 0;
-						PMC->SetMaterial(0, bUseClover ? FabCloverMI : FabGrassMI);
+						// 50% mossy floor, 50% uncut grass
+						bool bUseMossy = (ChunkHash & 1) != 0;
+						PMC->SetMaterial(0, bUseMossy ? Fab8KMossyFloorMI : FabGrassMI);
 					}
 					else if (FabGrassMI)
 						PMC->SetMaterial(0, FabGrassMI);
@@ -7854,6 +7868,10 @@ void UPHCCitySubsystem::SpawnPalmTree(const FVector& Location, float Height, boo
 	// Skip pyramid area
 	float PyDist = FMath::Sqrt(FMath::Square(Location.X - 22248.f) + FMath::Square(Location.Y + 62419.f));
 	if (PyDist < 55000.f) return;
+
+	// Skip only the 2 shortest palms directly in front of sand castle
+	float SCDist = FMath::Sqrt(FMath::Square(Location.X - 95000.f) + FMath::Square(Location.Y - 30000.f));
+	if (SCDist < 5000.f && Height < 650.f) return;
 
 	// Use real palm tree mesh from Fab
 	static UStaticMesh* PalmMesh = LoadObject<UStaticMesh>(nullptr,

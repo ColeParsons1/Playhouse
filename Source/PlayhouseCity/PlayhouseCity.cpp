@@ -1177,8 +1177,58 @@ void FPlayhouseCityModule::StartupModule()
 
 		EditorData->ExpressionCollection.Expressions.Add(CustomNode);
 
-		// Connect custom node output → EmissiveColor
-		EditorData->EmissiveColor.Expression = CustomNode;
+		// --- Sand ripple texture overlay ---
+		// Sample 8K Rippled Sand BC with animated/tiled UVs for organic trip patterns
+		auto* SandTexParam = NewObject<UMaterialExpressionTextureSampleParameter2D>(Mat);
+		SandTexParam->ParameterName = TEXT("SandTex");
+		SandTexParam->SamplerType = SAMPLERTYPE_Color;
+		EditorData->ExpressionCollection.Expressions.Add(SandTexParam);
+
+		// Animated UV: TexCoord * tiling + Time scroll
+		auto* SandTiling = NewObject<UMaterialExpressionConstant>(Mat);
+		SandTiling->R = 3.0f; // tile 3x for detail
+		EditorData->ExpressionCollection.Expressions.Add(SandTiling);
+
+		auto* SandUVScale = NewObject<UMaterialExpressionMultiply>(Mat);
+		SandUVScale->A.Expression = TexCoord;
+		SandUVScale->B.Expression = SandTiling;
+		EditorData->ExpressionCollection.Expressions.Add(SandUVScale);
+
+		// Slow scroll using Time
+		auto* ScrollSpeed = NewObject<UMaterialExpressionConstant>(Mat);
+		ScrollSpeed->R = 0.02f;
+		EditorData->ExpressionCollection.Expressions.Add(ScrollSpeed);
+
+		auto* ScrollOffset = NewObject<UMaterialExpressionMultiply>(Mat);
+		ScrollOffset->A.Expression = TimeNode;
+		ScrollOffset->B.Expression = ScrollSpeed;
+		EditorData->ExpressionCollection.Expressions.Add(ScrollOffset);
+
+		auto* AnimatedUV = NewObject<UMaterialExpressionAdd>(Mat);
+		AnimatedUV->A.Expression = SandUVScale;
+		AnimatedUV->B.Expression = ScrollOffset;
+		EditorData->ExpressionCollection.Expressions.Add(AnimatedUV);
+
+		SandTexParam->Coordinates.Expression = AnimatedUV;
+
+		// Blend: fractal * (0.5 + sandTex * 0.5) — sand ripples modulate the glow
+		auto* SandHalf = NewObject<UMaterialExpressionMultiply>(Mat);
+		SandHalf->A.Expression = SandTexParam;
+		SandHalf->ConstB = 0.7f;
+		EditorData->ExpressionCollection.Expressions.Add(SandHalf);
+
+		auto* SandBias = NewObject<UMaterialExpressionAdd>(Mat);
+		SandBias->A.Expression = SandHalf;
+		SandBias->ConstB = 0.3f;
+		EditorData->ExpressionCollection.Expressions.Add(SandBias);
+
+		auto* FinalBlend = NewObject<UMaterialExpressionMultiply>(Mat);
+		FinalBlend->A.Expression = CustomNode;
+		FinalBlend->B.Expression = SandBias;
+		EditorData->ExpressionCollection.Expressions.Add(FinalBlend);
+
+		// Connect blended output → EmissiveColor
+		EditorData->EmissiveColor.Expression = FinalBlend;
 
 		Mat->PreEditChange(nullptr);
 		Mat->PostEditChange();
