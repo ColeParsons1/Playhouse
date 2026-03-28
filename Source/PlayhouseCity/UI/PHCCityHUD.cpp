@@ -3566,10 +3566,9 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 							{
 								Char->JetpackVerticalInput = 1.f;
 							}
-							else if (Char->bHasBeenGrounded)
+							else
 							{
-								Char->ManualVelocityZ = 420.f;
-								Char->bWasGrounded = false;
+								Char->Jump();
 							}
 						}
 					}

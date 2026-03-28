@@ -7943,7 +7943,7 @@ void UPHCCitySubsystem::SpawnHills()
 		const FLinearColor& Color, const TCHAR* Label, bool bCollision = true)
 	{
 		// Store hill shape for GetTerrainHeight queries
-		HillShapes.Add({Loc.X, Loc.Y, RadiusX, RadiusY, Height});
+		HillShapes.Add({(float)Loc.X, (float)Loc.Y, RadiusX, RadiusY, Height});
 		AActor* Hill = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, FRotator::ZeroRotator);
 		if (!Hill) return;
 #if WITH_EDITOR

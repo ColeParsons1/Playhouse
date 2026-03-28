@@ -2,7 +2,8 @@
 
 #include "Player/PHCCityCharacter.h"
 #include "PlayhouseCity.h"
-#include "Components/BoxComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -39,6 +40,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Components/TextRenderComponent.h"
 #include "GameFramework/PlayerState.h"
+#include "Animation/AnimInstance.h"
+#include "Player/PHCAnimInstance.h"
 #include "Player/PHCPlayerState.h"
 
 // ---------------------------------------------------------------------------
@@ -56,16 +59,28 @@ APHCCityCharacter::APHCCityCharacter()
 	MinNetUpdateFrequency = 15.f;
 	bAlwaysRelevant = true;
 
-	// ---- Root: UBoxComponent — same pattern as vehicle ----
-	CharacterCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("CharacterCollision"));
-	CharacterCollision->SetBoxExtent(FVector(22.f, 26.f, 90.f));
-	CharacterCollision->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	CharacterCollision->SetCollisionResponseToAllChannels(ECR_Block);
-	CharacterCollision->SetSimulatePhysics(false);
-	CharacterCollision->SetHiddenInGame(true);
-	SetRootComponent(CharacterCollision);
+	// ---- Capsule (provided by ACharacter) ----
+	GetCapsuleComponent()->InitCapsuleSize(26.f, 90.f);
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECR_Block);
 
 	SpawnCollisionHandlingMethod = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	// ---- CharacterMovementComponent configuration ----
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	if (CMC)
+	{
+		CMC->MaxWalkSpeed = 500.f;
+		CMC->MaxWalkSpeedCrouched = 1200.f;
+		CMC->JumpZVelocity = 600.f;
+		CMC->AirControl = 0.35f;
+		CMC->GravityScale = 1.0f;
+		CMC->BrakingDecelerationWalking = 2048.f;
+		CMC->bOrientRotationToMovement = true;
+		CMC->RotationRate = FRotator(0.f, 500.f, 0.f);
+		CMC->bConstrainToPlane = false;
+		CMC->bSnapToPlaneAtStart = false;
+	}
 
 	// ---- Camera boom (Fortnite-style third-person) ----------------------
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -89,15 +104,33 @@ APHCCityCharacter::APHCCityCharacter()
 	bUseControllerRotationRoll = false;
 
 	// ====================================================================
-	//  Mixamo Skeletal Mesh Character
+	//  Character Mesh — UEFN Mannequin + Game Animation Sample ABP
 	// ====================================================================
-	CharacterSkelMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterSkelMesh"));
-	CharacterSkelMesh->SetupAttachment(RootComponent);
-	CharacterSkelMesh->SetRelativeLocation(FVector(0.f, 0.f, -50.f));
-	CharacterSkelMesh->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
-	CharacterSkelMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	CharacterSkelMesh->CastShadow = true;
-	CharacterSkelMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	// ACharacter already creates GetMesh(). Configure it for the
+	// Game Animation Sample traversal system.
+
+	// Load UEFN Mannequin skeletal mesh
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> MannequinFinder(
+		TEXT("/Game/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin.SKM_UEFN_Mannequin"));
+
+	if (GetMesh())
+	{
+		GetMesh()->SetRelativeLocation(FVector(0.f, 0.f, -90.f));
+		GetMesh()->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
+		GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		GetMesh()->CastShadow = true;
+
+		if (MannequinFinder.Succeeded())
+		{
+			GetMesh()->SetSkeletalMeshAsset(MannequinFinder.Object);
+		}
+
+		// Use SingleNode mode — driven by PHCAnimInstance from Tick
+		GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	}
+
+	// Keep CharacterSkelMesh as alias to GetMesh() for backward compatibility
+	CharacterSkelMesh = GetMesh();
 
 	// ====================================================================
 	//  Legacy 45-component body (hidden — kept for NPC system compatibility)
@@ -350,8 +383,6 @@ APHCCityCharacter::APHCCityCharacter()
 	MuzzleFlashLight->SetCastShadows(false);
 	MuzzleFlashLight->SetVisibility(false);
 
-	// Massive bounds to prevent any form of culling on mobile
-	CharacterCollision->SetBoundsScale(200.f);
 }
 
 // ---------------------------------------------------------------------------
@@ -532,41 +563,39 @@ void APHCCityCharacter::BeginPlay()
 		}
 	}
 
-	// ---- Mixamo skeletal mesh: load mesh + animations and hide old body ----
-	USkeletalMesh* MixamoMesh = LoadObject<USkeletalMesh>(nullptr,
-		TEXT("/Game/Characters/Mixamo/Ch15_nonPBR.Ch15_nonPBR"));
-	if (MixamoMesh && CharacterSkelMesh)
+	// ---- Load UEFN Mannequin animations for SingleNode playback ----
+	if (GetMesh() && GetMesh()->GetSkeletalMeshAsset())
 	{
-		CharacterSkelMesh->SetSkeletalMeshAsset(MixamoMesh);
-		UE_LOG(LogPlayhouseCity, Warning, TEXT("Mixamo mesh loaded: %s"), *MixamoMesh->GetName());
+		UE_LOG(LogPlayhouseCity, Warning, TEXT("UEFN Mannequin loaded: %s"),
+			*GetMesh()->GetSkeletalMeshAsset()->GetName());
+
+		// Load locomotion animations from UEFN Mannequin
+		IdleAnim = LoadObject<UAnimSequence>(nullptr,
+			TEXT("/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Idle_Loop.M_Neutral_Stand_Idle_Loop"));
+		WalkAnim = LoadObject<UAnimSequence>(nullptr,
+			TEXT("/Game/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Loop_F.M_Neutral_Walk_Loop_F"));
+		RunAnim = LoadObject<UAnimSequence>(nullptr,
+			TEXT("/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_F.M_Neutral_Run_Loop_F"));
+		JumpAnim = LoadObject<UAnimSequence>(nullptr,
+			TEXT("/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Neutral_Jump_Loop_Fall.M_Neutral_Jump_Loop_Fall"));
+
+		// Start with idle
+		if (IdleAnim)
+		{
+			GetMesh()->PlayAnimation(IdleAnim, true);
+			CurrentAnimState = 0;
+		}
+
+		UE_LOG(LogPlayhouseCity, Warning, TEXT("UEFN anims: idle=%d walk=%d run=%d jump=%d"),
+			IdleAnim ? 1 : 0, WalkAnim ? 1 : 0, RunAnim ? 1 : 0, JumpAnim ? 1 : 0);
 	}
 	else
 	{
-		UE_LOG(LogPlayhouseCity, Error, TEXT("Mixamo mesh FAILED to load! MixamoMesh=%d CharacterSkelMesh=%d"),
-			MixamoMesh ? 1 : 0, CharacterSkelMesh ? 1 : 0);
+		UE_LOG(LogPlayhouseCity, Error, TEXT("Character mesh not loaded! Check constructor ConstructorHelpers paths."));
 	}
 
-	IdleAnim = LoadObject<UAnimSequence>(nullptr,
-		TEXT("/Game/Characters/Mixamo/Animations/idle.idle"));
-	WalkAnim = LoadObject<UAnimSequence>(nullptr,
-		TEXT("/Game/Characters/Mixamo/Animations/walking.walking"));
-	RunAnim = LoadObject<UAnimSequence>(nullptr,
-		TEXT("/Game/Characters/Mixamo/Animations/running.running"));
-	JumpAnim = LoadObject<UAnimSequence>(nullptr,
-		TEXT("/Game/Characters/Mixamo/Animations/jumping_up.jumping_up"));
-	RollerBladeAnim = LoadObject<UAnimSequence>(nullptr,
-		TEXT("/Game/Characters/Mixamo/Animations/rollerblade_walk_Anim.rollerblade_walk_Anim"));
-
-	UE_LOG(LogPlayhouseCity, Warning, TEXT("Mixamo anims: idle=%d walk=%d run=%d jump=%d rollerblade=%d"),
-		IdleAnim ? 1 : 0, WalkAnim ? 1 : 0, RunAnim ? 1 : 0, JumpAnim ? 1 : 0, RollerBladeAnim ? 1 : 0);
-
-	if (CharacterSkelMesh && CharacterSkelMesh->GetSkeletalMeshAsset() && IdleAnim)
+	// Hide all old static mesh body parts (replaced by skeletal mesh)
 	{
-		CharacterSkelMesh->PlayAnimation(IdleAnim, true);
-		UE_LOG(LogPlayhouseCity, Log, TEXT("Mixamo character loaded with %d animations"),
-			(IdleAnim ? 1 : 0) + (WalkAnim ? 1 : 0) + (RunAnim ? 1 : 0) + (JumpAnim ? 1 : 0));
-
-		// Hide all old static mesh body parts
 		auto HideOld = [](UStaticMeshComponent* M) { if (M) M->SetVisibility(false); };
 		HideOld(HeadMesh); HideOld(JawMesh); HideOld(NeckMesh);
 		HideOld(LeftEyeWhiteMesh); HideOld(RightEyeWhiteMesh);
@@ -879,8 +908,7 @@ void APHCCityCharacter::BeginPlay()
 		}
 	}
 
-	// Mark as grounded immediately — ground plane has no collision.
-	bHasBeenGrounded = true;
+	// CMC handles grounding automatically.
 
 	// ---- Flashlight spotlight (created here, starts hidden) ----
 	{
@@ -1362,23 +1390,24 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	}
 	PendingMoveInput = FVector::ZeroVector;
 
-	Speed = bJetpackEquipped ? 3576.f : bClimbingGearEquipped ? 1500.f : bRollerBladesEquipped ? (WalkSpeed * 3.f) : (bIsSprinting ? SprintSpeed : WalkSpeed);
+	// ---- Update CMC speed based on equipment ----------------------------
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement())
+	{
+		if (bJetpackEquipped)
+			CMC->MaxWalkSpeed = 3576.f;
+		else if (bClimbingGearEquipped)
+			CMC->MaxWalkSpeed = 1500.f;
+		else if (bRollerBladesEquipped)
+			CMC->MaxWalkSpeed = WalkSpeed * 3.f;
+		else
+			CMC->MaxWalkSpeed = bIsSprinting ? SprintSpeed : WalkSpeed;
+	}
 
-	// ---- Smooth acceleration only (instant stop) ------------------------
-	if (!MoveDir.IsNearlyZero())
-	{
-		MoveSpeedAlpha = FMath::FInterpConstantTo(MoveSpeedAlpha, 1.f, DeltaTime, 5.f);
-		Speed *= MoveSpeedAlpha;
-	}
-	else
-	{
-		MoveSpeedAlpha = 0.f; // instant stop — no lingering traces
-	}
+	Speed = GetCharacterMovement() ? GetCharacterMovement()->MaxWalkSpeed : WalkSpeed;
 
 	// ---- Jetpack hover mode ---------------------------------------------
 	if (bJetpackEquipped)
 	{
-		const float JetpackSpeed = 3576.f; // 80 mph in UU/s
 		const float JetpackClimbSpeed = 1800.f; // vertical speed UU/s
 
 		// Mobile: use look-Y (right thumb vertical swipe) for altitude
@@ -1388,11 +1417,10 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			VertInput = FMath::Clamp(-TouchLookY * 3.f, -1.f, 1.f);
 		}
 
-		// Horizontal (sweep to avoid flying through buildings)
+		// Horizontal movement via CMC input
 		if (!MoveDir.IsNearlyZero())
 		{
-			const FVector Delta = MoveDir * JetpackSpeed * DeltaTime;
-			AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), false);
+			AddMovementInput(MoveDir, 1.f);
 		}
 
 		// Vertical — free flight up/down, floor clamp at 58 UU
@@ -1512,8 +1540,6 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			}
 
 			SetActorLocation(FVector(GetActorLocation().X, GetActorLocation().Y, NewZ));
-			ManualVelocityZ = 0.f;
-			bHasBeenGrounded = true;
 		}
 		else
 		{
@@ -1524,181 +1550,25 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), false);
 			}
 
-			ManualVelocityZ -= 980.f * DeltaTime;
-			float NewZ = Pos.Z + ManualVelocityZ * DeltaTime;
-			if (NewZ <= 58.f) { NewZ = 58.f; ManualVelocityZ = 0.f; bHasBeenGrounded = true; }
-			SetActorLocation(FVector(GetActorLocation().X, GetActorLocation().Y, NewZ));
+			// When climbing gear is equipped but not near a surface, CMC handles gravity
+			if (!MoveDir.IsNearlyZero())
+			{
+				AddMovementInput(MoveDir, 1.f);
+			}
 		}
 	}
 	else
 	{
 
-	// ---- Horizontal movement (with wall collision line trace) ----------------
+	// ---- Horizontal movement via CMC (handles collision, gravity, ground) ----
 	if (!MoveDir.IsNearlyZero())
 	{
-		const FVector Delta = MoveDir * Speed * DeltaTime;
-		const FVector OldPos = GetActorLocation();
-		const float MoveLen = FVector(Delta.X, Delta.Y, 0.f).Size();
-		const FVector MoveNorm = FVector(Delta.X, Delta.Y, 0.f).GetSafeNormal();
-
-		// Thin line trace at chest height (above terrain/road surface) to detect building walls
-		const FVector TraceStart(OldPos.X, OldPos.Y, OldPos.Z + 80.f);
-		const FVector TraceEnd = TraceStart + MoveNorm * (MoveLen + 50.f);
-		FCollisionQueryParams WallParams;
-		WallParams.AddIgnoredActor(this);
-		FHitResult WallHit;
-
-		bool bBlocked = GetWorld()->LineTraceSingleByChannel(
-			WallHit, TraceStart, TraceEnd, ECC_WorldStatic, WallParams);
-
-		if (bBlocked && !WallHit.bStartPenetrating && WallHit.Distance < MoveLen + 30.f)
-		{
-			// Wall ahead — move only up to 30 UU before the wall
-			const float SafeDist = FMath::Max(0.f, WallHit.Distance - 30.f);
-			if (SafeDist > 1.f)
-				AddActorWorldOffset(MoveNorm * FMath::Min(SafeDist, MoveLen), false);
-			// Slide along the wall
-			const FVector Remainder = MoveNorm * (MoveLen - FMath::Min(SafeDist, MoveLen));
-			const FVector SlideDir = FVector::VectorPlaneProject(Remainder, WallHit.Normal);
-			if (SlideDir.Size2D() > 1.f)
-				AddActorWorldOffset(FVector(SlideDir.X, SlideDir.Y, 0.f), false);
-		}
-		else
-		{
-			// No wall — move freely
-			AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), false);
-		}
+		AddMovementInput(MoveDir, 1.f);
 	}
 
-	// ---- Ground following -----------------------------------------------
-	{
-		const FVector Pos = GetActorLocation();
+	} // end else (not jetpack/climbing)
 
-		// --- Underground tunnel zone override ---
-		// Tunnel: X from 102000 to 116000, Y from 28000 to 32000
-		// Slope: Z=60 at X=116000, Z=-8000 at X=102000
-		// Airport floor: X from 100000 to 200000, Y from -10000 to 70000, Z=-8000
-		const bool bInTunnel = (Pos.X >= 102000.f && Pos.X <= 116000.f &&
-			Pos.Y >= 28000.f && Pos.Y <= 32000.f);
-		const bool bInAirport = (Pos.X >= 100000.f && Pos.X <= 200000.f &&
-			Pos.Y >= -10000.f && Pos.Y <= 70000.f && Pos.Z < -500.f); // only when already underground
-
-		// Character pivot is ~58 UU above their feet (floor clamp on surface = 58)
-		const float FootOffset = 58.f;
-
-		if (bInTunnel || bInAirport)
-		{
-			float TargetZ;
-			if (bInTunnel && Pos.X >= 102000.f && Pos.X <= 116000.f)
-			{
-				// Linear slope: X=116000 → Z=60,  X=102000 → Z=-8000+FootOffset
-				const float Alpha = (Pos.X - 102000.f) / (116000.f - 102000.f);
-				TargetZ = FMath::Lerp(-8000.f + FootOffset, 60.f, Alpha);
-				if (Pos.Z < TargetZ - 200.f) TargetZ = -8000.f + FootOffset;
-			}
-			else
-			{
-				TargetZ = -8000.f + FootOffset; // airport floor
-			}
-			bHasBeenGrounded = true;
-			bWasGrounded = true;
-			ManualVelocityZ = 0.f;
-			const float TerrainInterp = bRollerBladesEquipped ? 60.f : 50.f;
-			const float NewZ = FMath::FInterpTo(Pos.Z, TargetZ, DeltaTime, TerrainInterp);
-			SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
-		}
-		else
-		{
-			// Normal ground trace for above-ground areas
-			const FVector TraceStart(Pos.X, Pos.Y, Pos.Z + 5000.f);
-			const FVector TraceEnd(Pos.X, Pos.Y, Pos.Z - 2000.f);
-			FCollisionQueryParams Params;
-			Params.AddIgnoredActor(this);
-
-			TArray<FHitResult> Hits;
-			bool bFoundSurface = false;
-			if (GetWorld()->LineTraceMultiByChannel(Hits, TraceStart, TraceEnd, ECC_WorldStatic, Params))
-			{
-				// Find the highest surface at or near our feet
-				float BestZ = -1e9f;
-				for (const FHitResult& Hit : Hits)
-				{
-					if (Hit.bStartPenetrating) continue;
-					const float SurfZ = Hit.ImpactPoint.Z + FootOffset;
-					// Accept surfaces up to 200 UU above us (terrain slopes) and any below
-					if (SurfZ > BestZ && SurfZ < Pos.Z + 200.f)
-					{
-						BestZ = SurfZ;
-						bFoundSurface = true;
-					}
-				}
-				// Terrain height supplement (guaranteed terrain following via math)
-				if (UPHCCitySubsystem* CitySub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
-				{
-					const float TerrainZ = CitySub->GetTerrainHeight(Pos.X, Pos.Y) + FootOffset;
-					if (TerrainZ > BestZ && TerrainZ < Pos.Z + 200.f)
-					{
-						BestZ = TerrainZ;
-						bFoundSurface = true;
-					}
-				}
-				if (bFoundSurface)
-				{
-					if (!bHasBeenGrounded)
-					{
-						// In-air after jump — apply gravity and move vertically
-						ManualVelocityZ -= 980.f * DeltaTime;
-						float NewZ = Pos.Z + ManualVelocityZ * DeltaTime;
-						if (NewZ <= BestZ)
-						{
-							// Landed
-							NewZ = BestZ;
-							ManualVelocityZ = 0.f;
-							bHasBeenGrounded = true;
-						}
-						SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
-					}
-					else if (ManualVelocityZ > 10.f)
-					{
-						// Jump just started — launch upward
-						bHasBeenGrounded = false;
-						ManualVelocityZ -= 980.f * DeltaTime;
-						float NewZ = Pos.Z + ManualVelocityZ * DeltaTime;
-						SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
-					}
-					else
-					{
-						// On ground — snap to terrain
-						bHasBeenGrounded = true;
-						ManualVelocityZ = 0.f;
-						const float GndInterp = bRollerBladesEquipped ? 60.f : 50.f;
-						const float NewZ = FMath::FInterpTo(Pos.Z, BestZ, DeltaTime, GndInterp);
-						SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
-					}
-				}
-			}
-			if (!bFoundSurface)
-			{
-				// No surface — always apply gravity (whether jumping or falling off edge)
-				ManualVelocityZ -= 980.f * DeltaTime;
-				float NewZ = Pos.Z + ManualVelocityZ * DeltaTime;
-				if (NewZ <= FootOffset) { NewZ = FootOffset; ManualVelocityZ = 0.f; bHasBeenGrounded = true; }
-				SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
-			}
-			bWasGrounded = bFoundSurface;
-		}
-	}
-
-	} // end else (not jetpack)
-
-	// ---- Orient body to movement direction ------------------------------
-	if (!MoveDir.IsNearlyZero())
-	{
-		const FRotator DesiredRot = MoveDir.Rotation();
-		const FRotator CurrentRot = GetActorRotation();
-		const FRotator NewRot = FMath::RInterpTo(CurrentRot, DesiredRot, DeltaTime, 10.f);
-		SetActorRotation(FRotator(0.f, NewRot.Yaw, 0.f));
-	}
+	// Note: Body orientation handled by CMC bOrientRotationToMovement
 
 	} // end if (!bIsSimProxy) — local movement/ground following
 
@@ -1735,53 +1605,44 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		const float TargetBlend = bMoving ? 1.f : 0.f;
 		WalkAnimBlend = bJetpackEquipped ? 0.f : FMath::FInterpTo(WalkAnimBlend, TargetBlend, DeltaTime, 8.f);
 
-		// Mixamo animation state machine
-		// Mixamo animation state machine
-		if (CharacterSkelMesh && CharacterSkelMesh->GetSkeletalMeshAsset())
+		// Animation is now driven by the Animation Blueprint (SandboxCharacter_CMC_ABP).
+		// The ABP reads velocity, movement state, and traversal context automatically
+		// from the CharacterMovementComponent — no manual PlayAnimation() needed.
+		// Fallback: if ABP didn't load, use legacy Mixamo single-node playback
+		if (GetMesh() && GetMesh()->GetAnimationMode() == EAnimationMode::AnimationSingleNode)
 		{
+			// 0=idle, 1=walk, 2=run, 3=jump/fall, 4=rollerblade
 			int32 NewState = 0;
-			if (ManualVelocityZ > 50.f && JumpAnim) NewState = 3;
+			if (GetCharacterMovement() && GetCharacterMovement()->IsFalling() && JumpAnim) NewState = 3;
 			else if (bMoving && bRollerBladesEquipped && RollerBladeAnim) NewState = 4;
-			else if (bMoving && RunAnim) NewState = 2;
+			else if (bMoving && bIsSprinting && RunAnim) NewState = 2;
+			else if (bMoving && WalkAnim) NewState = 1;
 
 			if (NewState != CurrentAnimState)
 			{
 				CurrentAnimState = NewState;
 				if (NewState == 0 && IdleAnim)
-					CharacterSkelMesh->PlayAnimation(IdleAnim, true);
+					GetMesh()->PlayAnimation(IdleAnim, true);
+				else if (NewState == 1 && WalkAnim)
+				{
+					GetMesh()->PlayAnimation(WalkAnim, true);
+					GetMesh()->SetPlayRate(1.0f);
+				}
 				else if (NewState == 4 && RollerBladeAnim)
 				{
-					CharacterSkelMesh->PlayAnimation(RollerBladeAnim, true);
-					CharacterSkelMesh->SetPlayRate(0.5f); // slow walking pace
+					GetMesh()->PlayAnimation(RollerBladeAnim, true);
+					GetMesh()->SetPlayRate(0.5f);
 				}
 				else if (NewState == 2 && RunAnim)
 				{
-					CharacterSkelMesh->PlayAnimation(RunAnim, true);
-					CharacterSkelMesh->SetPlayRate(1.0f);
+					GetMesh()->PlayAnimation(RunAnim, true);
+					GetMesh()->SetPlayRate(1.0f);
 				}
 				else if (NewState == 3 && JumpAnim)
 				{
-					CharacterSkelMesh->PlayAnimation(JumpAnim, false);
-					CharacterSkelMesh->SetPlayRate(1.0f);
+					GetMesh()->PlayAnimation(JumpAnim, false);
+					GetMesh()->SetPlayRate(1.0f);
 				}
-			}
-
-			// Prevent the snap: when near the end of the run anim,
-			// smoothly wind back to the beginning by advancing past the end
-			// The engine's looping wraps automatically, but the snap happens
-			// because the last frame pose != first frame pose.
-			// Fix: when we're in the last 10% of the anim, speed up playback
-			// so the transition through the snap point is too fast to see
-			if (CurrentAnimState == 2 && RunAnim && CharacterSkelMesh->IsPlaying())
-			{
-				float Pos = CharacterSkelMesh->GetPosition();
-				float Length = RunAnim->GetPlayLength();
-				float NormPos = Pos / FMath::Max(Length, 0.01f);
-				// In the last 8% of the animation, speed through the snap
-				if (NormPos > 0.92f)
-					CharacterSkelMesh->SetPlayRate(4.0f);
-				else
-					CharacterSkelMesh->SetPlayRate(1.0f);
 			}
 		}
 
@@ -2912,18 +2773,14 @@ void APHCCityCharacter::HandleJumpStarted(const FInputActionValue& /*Value*/)
 		JetpackVerticalInput = 1.f; // ascend
 		return;
 	}
-	if (bHasBeenGrounded)
-	{
-		ManualVelocityZ = 420.f;
-		bHasBeenGrounded = true;
-		bWasGrounded = false;
-	}
+	Jump();
 }
 
 void APHCCityCharacter::HandleJumpCompleted(const FInputActionValue& /*Value*/)
 {
 	if (bClimbingGearEquipped) ClimbingVerticalInput = 0.f;
 	if (bJetpackEquipped) JetpackVerticalInput = 0.f;
+	StopJumping();
 }
 
 void APHCCityCharacter::HandleSprintStarted(const FInputActionValue& /*Value*/)

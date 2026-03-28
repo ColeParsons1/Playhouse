@@ -3,11 +3,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Pawn.h"
+#include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"
 #include "PHCCityCharacter.generated.h"
 
-class UBoxComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UStaticMeshComponent;
@@ -24,12 +23,12 @@ struct FInputActionValue;
 /**
  * Third-person player character for the PlayhouseCity open world.
  *
- * Derives from APawn (NOT ACharacter) to avoid the capsule/CMC physics
- * integration that launches the actor to Z≈90000 via depenetration.
- * All movement is manual — same pattern as the vehicle pawns.
+ * Derives from ACharacter for full CharacterMovementComponent support,
+ * enabling the Game Animation Sample traversal system (vault, mantle,
+ * climb, hurdle) with motion matching and IK retargeting.
  */
 UCLASS(Blueprintable)
-class PLAYHOUSECITY_API APHCCityCharacter : public APawn
+class PLAYHOUSECITY_API APHCCityCharacter : public ACharacter
 {
 	GENERATED_BODY()
 
@@ -42,9 +41,8 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// -- Components -----------------------------------------------------------
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Collision")
-	TObjectPtr<UBoxComponent> CharacterCollision;
+	// Note: ACharacter provides UCapsuleComponent (GetCapsuleComponent())
+	// and UCharacterMovementComponent (GetCharacterMovement()) automatically.
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PHC|Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom;
@@ -158,10 +156,10 @@ public:
 	// -- Movement parameters --------------------------------------------------
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Movement")
-	float WalkSpeed = 2360.f;
+	float WalkSpeed = 500.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Movement")
-	float SprintSpeed = 2600.f;
+	float SprintSpeed = 1200.f;
 
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Movement")
 	bool bIsSprinting = false;
@@ -180,20 +178,8 @@ public:
 	/** Accumulated movement direction from HandleMove (camera-relative). */
 	FVector PendingMoveInput = FVector::ZeroVector;
 
-	/** Current movement speed fraction (0-1) for smooth acceleration. */
-	float MoveSpeedAlpha = 0.f;
-
-	/** Manual vertical velocity for gravity + jump. */
-	float ManualVelocityZ = 0.f;
-
-	/** True after the character has touched ground at least once. */
-	bool bHasBeenGrounded = false;
-
 	/** True once the floating name text has been set from the player profile. */
 	bool bNameTextSet = false;
-
-	/** True when grounded on previous frame. */
-	bool bWasGrounded = false;
 
 	// -- R6 walk animation state ----------------------------------------------
 
@@ -395,7 +381,7 @@ public:
 
 	// -- Weapon state ---------------------------------------------------------
 
-	int32 CurrentWeaponType = 3; // -1=none, 0=Gun, 1=RPG, 2=Sword, 3=Scythe, 4=Dagger, 5=AK47, 6=Sniper
+	int32 CurrentWeaponType = -1; // -1=none, 0=Gun, 1=RPG, 2=Sword, 3=Scythe, 4=Dagger, 5=AK47, 6=Sniper
 
 	float ScytheSwingTimer = 0.f;  // >0 = currently swinging
 
