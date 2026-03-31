@@ -412,12 +412,16 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 
 	if (!bNightModeLocked)
 	{
-		DayNightTime += DeltaTime / FullCycleDuration;
+		// Night (T 0.5-1.0) advances at half speed — lasts twice as long
+		float TimeSpeed = (DayNightTime > 0.5f) ? 0.5f : 1.0f;
+		DayNightTime += (DeltaTime / FullCycleDuration) * TimeSpeed;
 		if (DayNightTime >= 1.f) DayNightTime -= 1.f;
 	}
 
 	const float T = DayNightTime;
 	const float SunSine = FMath::Sin(T * 2.f * UE_PI); // +1 at noon, -1 at midnight
+
+	// GoodSky manages its own time — no C++ override
 
 	// ---- Sun rotation ----
 	if (SunLightComp)
@@ -458,7 +462,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	{
 		// Bright during day, very dim at night.
 		const float DayFactor = FMath::Max(0.f, SunSine);
-		SkyLightComp->SetIntensity(FMath::Lerp(0.4f, 2.5f, DayFactor)); // brighter night ambient, brighter day
+		SkyLightComp->SetIntensity(FMath::Lerp(0.15f, 2.5f, DayFactor)); // darker night for visible stars
 
 		// Tint: blue-white during day, very deep blue at night.
 		const float NightFactor = FMath::Max(0.f, -SunSine);
@@ -4694,7 +4698,22 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	// SpawnHills();        // removed — spherical terrain
 	SpawnDirtBikePark();
 	SpawnStarfield();
-	SpawnCloudLayer();
+	// SpawnCloudLayer(); // Replaced by GoodSky
+
+	// GoodSky — let BP manage its own time cycle (don't override from C++)
+	{
+		UClass* GoodSkyClass = LoadClass<AActor>(nullptr,
+			TEXT("/Game/GoodSky/Blueprint/BP_GoodSky.BP_GoodSky_C"));
+		if (GoodSkyClass)
+		{
+			GoodSkyActor = GetWorld()->SpawnActor<AActor>(GoodSkyClass, FVector::ZeroVector, FRotator::ZeroRotator);
+			UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: GoodSky spawned — using BP internal time"));
+		}
+		else
+		{
+			SpawnCloudLayer();
+		}
+	}
 	SpawnMountainRange();
 	SpawnSandCastle();
 	SpawnLakeAndPirateShip();
@@ -5177,8 +5196,8 @@ void UPHCCitySubsystem::SpawnSkyAndLighting()
 	UWorld* World = GetWorld();
 	if (!World) return;
 
-	// Start at sunrise (T=0).
-	DayNightTime = 0.f;
+	// Start at sunrise (T=0). GoodSky handles sky visuals.
+	DayNightTime = 0.f; // 0=sunrise, 0.25=noon, 0.5=sunset, 0.75=midnight
 
 	// ---- Sun (directional light driving the sky atmosphere) ----
 	{
@@ -8948,7 +8967,7 @@ void UPHCCitySubsystem::SpawnJungle()
 		FoliageMeshes[5] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PN_Banana/Meshes/plants/banana_02_05.banana_02_05"));
 
 		// Individual StaticMeshComponents — same approach as tree canopy (works on iOS)
-		const float FoliageCell = 1150.f; // ~15% fewer than 1050
+		const float FoliageCell = 1300.f; // reduced 20% from 1150
 		const int32 FGX = FMath::CeilToInt((JMaxX - JMinX) / FoliageCell);
 		const int32 FGY = FMath::CeilToInt((JMaxY - JMinY) / FoliageCell);
 		int32 FoliageCount = 0;
@@ -8971,6 +8990,8 @@ void UPHCCitySubsystem::SpawnJungle()
 
 				const float PlantBury = 120.f;
 
+				// Palm trees in jungle handled below (after foliage loop)
+
 				auto* PC = NewObject<UStaticMeshComponent>(JA, *FString::Printf(TEXT("JF_%d"), CI++));
 				PC->SetStaticMesh(PlantMesh);
 				PC->SetWorldLocation(FVector(FX, FY, FZ - PlantBury));
@@ -8987,8 +9008,98 @@ void UPHCCitySubsystem::SpawnJungle()
 		UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: added %d ground foliage plants"), FoliageCount);
 	}
 
-	// LAYER 17: Shrubs disabled — skeletal meshes too heavy for mobile
+	// 10 palm trees scattered randomly across the full jungle area
+	{
+		UStaticMesh* JunglePalmMesh = LoadObject<UStaticMesh>(nullptr,
+			TEXT("/Game/Fab/Plant_Series_–_Palm_Tree/free_game_ready_palm/StaticMeshes/free_game_ready_palm.free_game_ready_palm"));
+		if (JunglePalmMesh)
+		{
+			FRandomStream PalmRand(77777);
+			for (int32 Pi = 0; Pi < 25; ++Pi)
+			{
+				// Fully random placement across the jungle
+				float PX = PalmRand.FRandRange(JMinX + 3000.f, JMaxX - 3000.f);
+				float PY = PalmRand.FRandRange(JMinY + 3000.f, JMaxY - 3000.f);
+				float PZ = GetTerrainHeight(PX, PY);
 
+				AActor* PA = W->SpawnActor<AActor>(AActor::StaticClass(),
+					FVector(PX, PY, PZ), FRotator::ZeroRotator);
+				if (!PA) continue;
+				UStaticMeshComponent* PMC = NewObject<UStaticMeshComponent>(PA,
+					*FString::Printf(TEXT("JunglePalm_%d"), Pi));
+				PMC->SetStaticMesh(JunglePalmMesh);
+				PMC->SetWorldLocation(FVector(PX, PY, PZ));
+				PMC->SetWorldRotation(FRotator(0.f, PalmRand.FRandRange(0.f, 360.f), 0.f));
+				PMC->SetWorldScale3D(FVector(PalmRand.FRandRange(8.f, 12.f)));
+				PMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				PMC->SetCastShadow(true);
+				PMC->RegisterComponent();
+				PA->SetRootComponent(PMC);
+			}
+			UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: added 10 palm trees"));
+		}
+	}
+
+	// Scattered torch flames throughout the jungle
+	{
+		UNiagaraSystem* JungleFlameFX = LoadObject<UNiagaraSystem>(nullptr,
+			TEXT("/Game/F_FreeFlameFx_Pack/FX/NS_Flame_8_Torch.NS_Flame_8_Torch"));
+		if (JungleFlameFX)
+		{
+			int32 TorchCount = 0;
+			const float TorchCell = 8000.f;
+			const int32 TGX = FMath::CeilToInt((JMaxX - JMinX) / TorchCell);
+			const int32 TGY = FMath::CeilToInt((JMaxY - JMinY) / TorchCell);
+			for (int32 GX = 0; GX < TGX; ++GX)
+			{
+				for (int32 GY = 0; GY < TGY; ++GY)
+				{
+					if (CityRandom.FRand() > 0.35f) continue; // 35% chance per cell
+					float TX = JMinX + GX * TorchCell + CityRandom.FRandRange(TorchCell * 0.1f, TorchCell * 0.9f);
+					float TY = JMinY + GY * TorchCell + CityRandom.FRandRange(TorchCell * 0.1f, TorchCell * 0.9f);
+					float TZ = GetTerrainHeight(TX, TY);
+
+					AActor* TA = W->SpawnActor<AActor>(AActor::StaticClass(),
+						FVector(TX, TY, TZ), FRotator::ZeroRotator);
+					if (!TA) continue;
+
+					// Pole
+					UStaticMeshComponent* Pole = NewObject<UStaticMeshComponent>(TA,
+						*FString::Printf(TEXT("JTorchPole_%d"), TorchCount));
+					Pole->SetStaticMesh(CylinderMesh);
+					Pole->SetWorldLocation(FVector(TX, TY, TZ + 300.f));
+					Pole->SetWorldScale3D(FVector(0.2f, 0.2f, 6.f));
+					Pole->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					Pole->RegisterComponent();
+					TA->SetRootComponent(Pole);
+
+					// Flame
+					UNiagaraComponent* Flame = NewObject<UNiagaraComponent>(TA,
+						*FString::Printf(TEXT("JTorchFlame_%d"), TorchCount));
+					Flame->SetAsset(JungleFlameFX);
+					Flame->SetWorldLocation(FVector(TX, TY, TZ + 615.f));
+					Flame->SetWorldScale3D(FVector(5.f, 5.f, 5.f));
+					Flame->SetAutoActivate(true);
+					Flame->SetAutoDestroy(false);
+					Flame->AttachToComponent(Pole, FAttachmentTransformRules::KeepWorldTransform);
+					Flame->RegisterComponent();
+
+					// Light
+					UPointLightComponent* TL = NewObject<UPointLightComponent>(TA,
+						*FString::Printf(TEXT("JTorchLight_%d"), TorchCount));
+					TL->SetWorldLocation(FVector(TX, TY, TZ + 650.f));
+					TL->SetIntensity(6000.f);
+					TL->SetAttenuationRadius(4000.f);
+					TL->SetLightColor(FColor(255, 140, 40));
+					TL->SetCastShadows(false);
+					TL->RegisterComponent();
+
+					++TorchCount;
+				}
+			}
+			UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: added %d torch flames"), TorchCount);
+		}
+	}
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: spawned %d components + palm trees"), CI);
 }
@@ -15285,113 +15396,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 			FVector(160.f, 0.6f, 4.f),
 			LimestoneMain, 0.90f, 0.f, TEXT("Khufu_CausewayWallS"));
 
-		// --- Khufu Interior — Mirror cone + floor matching outer pyramid shape ---
-		{
-			const FLinearColor ChromeMirror(0.92f, 0.92f, 0.95f);
-
-			// Mirror floor matching pyramid base (sunk below terrain so it's always underfoot)
-			SpawnLakePiece(CubeMesh, KhufuBase + FVector(0.f, 0.f, -200.f),
-				FRotator::ZeroRotator,
-				FVector(KhufuBaseW * 0.98f / 100.f, KhufuBaseW * 0.98f / 100.f, 2.f),
-				ChromeMirror, 0.02f, 1.0f, TEXT("Khufu_MirrorFloor"));
-			// Mirror inner cone walls matching outer pyramid shape
-			SpawnLakePiece(ConeMesh, KhufuBase + FVector(0.f, 0.f, KhufuHeight * 0.5f),
-				FRotator::ZeroRotator,
-				FVector(KhufuBaseW * 0.98f / 100.f, KhufuBaseW * 0.98f / 100.f, KhufuHeight * 0.98f / 100.f),
-				ChromeMirror, 0.02f, 1.0f, TEXT("Khufu_MirrorCone"));
-
-			// Floating emissive orbs — 16 spheres in two concentric rings
-			for (int32 o = 0; o < 16; ++o)
-			{
-				const bool bOuter = (o < 8);
-				const float Radius = bOuter ? 3200.f : 1600.f;
-				const int32 Ring = bOuter ? o : (o - 8);
-				const int32 RingCount = 8;
-				const float Angle = FMath::DegreesToRadians((float)Ring / (float)RingCount * 360.f);
-				const float Heights[] = {800.f, 1600.f, 2400.f, 3200.f, 4000.f, 4800.f, 1200.f, 3600.f};
-				const float OrbZ = Heights[Ring];
-				const float OrbScale = bOuter ? (1.5f + (float)(Ring % 3) * 0.5f) : (1.0f + (float)(Ring % 4) * 0.4f);
-
-				const FVector OrbPos = KhufuBase + FVector(
-					FMath::Cos(Angle) * Radius,
-					FMath::Sin(Angle) * Radius,
-					OrbZ);
-
-				UStaticMeshComponent* MC = SpawnLakePiece(SphereMesh, OrbPos,
-					FRotator::ZeroRotator,
-					FVector(OrbScale, OrbScale, OrbScale),
-					FLinearColor(1.f, 1.f, 1.f), 0.05f, 0.f, TEXT("Khufu_Orb"));
-				if (MC)
-				{
-					UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(MC->GetMaterial(0));
-					if (MID)
-					{
-						MID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(2.f, 0.f, 0.f));
-						PyramidInteriorMIDs.Add(MID);
-					}
-				}
-			}
-
-			// Emissive light panels — 8 tall thin slabs, 2 per wall
-			for (int32 p = 0; p < 8; ++p)
-			{
-				const int32 Wall = p / 2;
-				const float Offset = (p % 2 == 0) ? -1500.f : 1500.f;
-				FVector PanelPos;
-				FVector PanelScale;
-				switch (Wall)
-				{
-				case 0: // North
-					PanelPos = KhufuBase + FVector(Offset, 3800.f, 2800.f);
-					PanelScale = FVector(1.5f, 0.2f, 45.f);
-					break;
-				case 1: // South
-					PanelPos = KhufuBase + FVector(Offset, -3800.f, 2800.f);
-					PanelScale = FVector(1.5f, 0.2f, 45.f);
-					break;
-				case 2: // East
-					PanelPos = KhufuBase + FVector(3800.f, Offset, 2800.f);
-					PanelScale = FVector(0.2f, 1.5f, 45.f);
-					break;
-				default: // West
-					PanelPos = KhufuBase + FVector(-3800.f, Offset, 2800.f);
-					PanelScale = FVector(0.2f, 1.5f, 45.f);
-					break;
-				}
-
-				UStaticMeshComponent* MC = SpawnLakePiece(CubeMesh, PanelPos,
-					FRotator::ZeroRotator,
-					PanelScale,
-					FLinearColor(1.f, 1.f, 1.f), 0.05f, 0.f, TEXT("Khufu_Panel"));
-				if (MC)
-				{
-					UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(MC->GetMaterial(0));
-					if (MID)
-					{
-						MID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(0.f, 2.f, 0.f));
-						PyramidInteriorMIDs.Add(MID);
-					}
-				}
-			}
-
-			// Central crystal — large glowing sphere at room center
-			{
-				UStaticMeshComponent* MC = SpawnLakePiece(SphereMesh,
-					KhufuBase + FVector(0.f, 0.f, 2500.f),
-					FRotator::ZeroRotator,
-					FVector(5.f, 5.f, 5.f),
-					FLinearColor(1.f, 1.f, 1.f), 0.05f, 0.3f, TEXT("Khufu_Crystal"));
-				if (MC)
-				{
-					UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(MC->GetMaterial(0));
-					if (MID)
-					{
-						MID->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(3.f, 1.f, 3.f));
-						PyramidInteriorMIDs.Add(MID);
-					}
-				}
-			}
-		}
+		// Khufu interior removed (mirror, orbs, panels, crystal)
 
 		// --- Khafre (second pyramid) — slightly shorter but appears taller (2x scale) ---
 		const FVector KhafreBase = PyramidAreaCenter + FVector(16000.f, -6000.f, 0.f);

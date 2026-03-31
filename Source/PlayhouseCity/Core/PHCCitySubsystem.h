@@ -448,6 +448,9 @@ private:
 	UPROPERTY(Transient) TObjectPtr<AActor> CloudLayerActor2;
 	UPROPERTY(Transient) TObjectPtr<AActor> CloudLayerActor3;
 
+	/** GoodSky Blueprint actor — time-of-day driven sky system. */
+	UPROPERTY(Transient) TObjectPtr<AActor> GoodSkyActor;
+
 	/** Atmospheric dust motes near camera. */
 	UPROPERTY(Transient) TObjectPtr<AActor> DustMoteActor;
 	TArray<TObjectPtr<UStaticMeshComponent>> DustMotes;
