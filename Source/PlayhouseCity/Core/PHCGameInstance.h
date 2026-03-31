@@ -174,6 +174,25 @@ public:
 
 	// -- Push Notifications ---------------------------------------------------
 
+	// -- Session Logging ------------------------------------------------------
+
+	/** Server-assigned session log ID, used to update on exit. */
+	int32 SessionLogId = 0;
+
+	/** Time when the session started (for duration calculation). */
+	FDateTime SessionStartTime;
+
+	/** POST a session-start to the backend. Called from Init(). */
+	void StartSessionLog();
+
+	/** POST a session-end to the backend. Called from Shutdown() and app background. */
+	void EndSessionLog(const FString& ExitReason = TEXT("normal"));
+
+	/** True once EndSessionLog has fired (prevent double-send). */
+	bool bSessionEnded = false;
+
+	// -- Push Notifications ---------------------------------------------------
+
 	/** APNs device token (hex string), captured on iOS. */
 	FString APNsDeviceToken;
 

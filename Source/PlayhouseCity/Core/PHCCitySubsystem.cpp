@@ -1804,8 +1804,17 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 					if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
 					{
 						Char->FollowCamera->SetFieldOfView(TripBaseFOV);
-						Char->CameraBoom->TargetArmLength = 450.f;
-						Char->CameraBoom->SocketOffset = FVector(0.f, 75.f, 60.f);
+						// Restore correct arm length for current view mode
+						if (Char->bFirstPersonMode)
+						{
+							Char->CameraBoom->TargetArmLength = 0.f;
+							Char->CameraBoom->SocketOffset = FVector(0.f, 0.f, 96.f);
+						}
+						else
+						{
+							Char->CameraBoom->TargetArmLength = 320.f;
+							Char->CameraBoom->SocketOffset = FVector(0.f, 75.f, 60.f);
+						}
 						FRotator R = Char->GetActorRotation();
 						Char->SetActorRotation(FRotator(R.Pitch, R.Yaw, 0.f));
 						Char->bIsTripping = false;
@@ -2579,8 +2588,12 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 							FMath::Sin(GT * 0.628f + 2.1f + 1.571f) * 45.f +
 							FMath::Sin(GT * 1.885f + 0.7f + 1.571f) * 25.f;
 
-						Char->FollowCamera->SetFieldOfView(TripBaseFOV + FOVBreath * I);
-						Char->CameraBoom->TargetArmLength = 450.f + BoomBreathVal * I;
+						Char->FollowCamera->SetFieldOfView(TripBaseFOV + FOVBreath * I * 0.3f);
+						// Respect first/third person mode — don't override arm length
+						if (Char->bFirstPersonMode)
+							Char->CameraBoom->TargetArmLength = 0.f; // stay in FP
+						else
+							Char->CameraBoom->TargetArmLength = 320.f + BoomBreathVal * I * 0.1f;
 
 						// Camera roll — heavy swirl
 						const float SwirlSpeed = 0.21f;
@@ -3590,21 +3603,35 @@ float UPHCCitySubsystem::GetTerrainHeight(float X, float Y) const
 	}
 
 	// River channel: carve terrain to 0 along the river path
-	// River center follows Y = -97000 + sin(X * 0.00004) * 2500
+	// Flares wider at both ends to merge into ocean
 	{
 		const float RiverCenterY = -97000.f + FMath::Sin(X * 0.00004f) * 2500.f;
-		const float RiverHalfW = 2000.f;   // half of 4000 UU river width
-		const float RiverSlopeW = 6000.f;  // gradual slope zone on each bank
+		float RiverHalfW = 2000.f;
+		float RiverSlopeW = 6000.f;
+
+		// Flare at endpoints to connect with ocean
+		const float RiverStartX = -170000.f;
+		const float RiverEndX = 170000.f;
+		const float FlareZone = 50000.f;
+		float DistFromEnd = FMath::Min(X - RiverStartX, RiverEndX - X);
+		if (DistFromEnd < FlareZone && DistFromEnd >= 0.f)
+		{
+			float FlareFactor = 1.f - (DistFromEnd / FlareZone);
+			FlareFactor = FlareFactor * FlareFactor;
+			RiverHalfW += FlareFactor * 40000.f;
+			RiverSlopeW += FlareFactor * 20000.f;
+		}
+
 		float RiverDist = FMath::Abs(Y - RiverCenterY);
 		if (RiverDist < RiverHalfW + RiverSlopeW)
 		{
 			float RiverAlpha;
 			if (RiverDist < RiverHalfW)
-				RiverAlpha = 0.f; // fully flat inside river
+				RiverAlpha = 0.f;
 			else
 			{
 				RiverAlpha = (RiverDist - RiverHalfW) / RiverSlopeW;
-				RiverAlpha = RiverAlpha * RiverAlpha * (3.f - 2.f * RiverAlpha); // smoothstep
+				RiverAlpha = RiverAlpha * RiverAlpha * (3.f - 2.f * RiverAlpha);
 			}
 			Result = FMath::Lerp(0.f, Result, RiverAlpha);
 		}
@@ -15737,8 +15764,8 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 	{
 		const float RiverCenterY = -97000.f;
 		const float RiverWidth = 4000.f;
-		const float RiverStartX = -145000.f;
-		const float RiverEndX = 145000.f;
+		const float RiverStartX = -170000.f;
+		const float RiverEndX = 170000.f;
 		const float SegLen = 20000.f;
 		const int32 NumSegs = FMath::CeilToInt((RiverEndX - RiverStartX) / SegLen);
 
@@ -15755,10 +15782,18 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 			float CurveY = RiverCenterY + FMath::Sin(SX * 0.00004f) * 2500.f;
 			float TZ = GetTerrainHeight(SX, CurveY);
 
-			// River bed (dark muddy bottom)
+			// River bed — flares wider at endpoints
+			float BedWidth = RiverWidth * 1.15f;
+			float DistFromEnd = FMath::Min(SX - RiverStartX, RiverEndX - SX);
+			float FlareZone = 50000.f;
+			if (DistFromEnd < FlareZone && DistFromEnd >= 0.f)
+			{
+				float FF = 1.f - (DistFromEnd / FlareZone);
+				BedWidth += FF * FF * 80000.f;
+			}
 			SpawnLakePiece(PlaneMesh, FVector(SX, CurveY, TZ + 5.f),
 				FRotator::ZeroRotator,
-				FVector(SegLen / 100.f, RiverWidth * 1.15f / 100.f, 1.f),
+				FVector(SegLen / 100.f, BedWidth / 100.f, 1.f),
 				RiverBed, 0.95f, 0.f,
 				*FString::Printf(TEXT("River_Bed_%d"), s));
 
@@ -15784,7 +15819,16 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 					{
 						float WX = RiverStartX + VX * StepX;
 						float WCurveY = RiverCenterY + FMath::Sin(WX * 0.00004f) * 2500.f;
-						float WY = WCurveY - RiverWidth * 0.5f + VY * StepY;
+						// Flare water width at endpoints
+						float LocalWidth = RiverWidth;
+						float WDistFromEnd = FMath::Min(WX - RiverStartX, RiverEndX - WX);
+						float WFlareZone = 50000.f;
+						if (WDistFromEnd < WFlareZone && WDistFromEnd >= 0.f)
+						{
+							float WFF = 1.f - (WDistFromEnd / WFlareZone);
+							LocalWidth += WFF * WFF * 80000.f;
+						}
+						float WY = WCurveY - LocalWidth * 0.5f + VY * (LocalWidth / float(ResY));
 						float WZ = GetTerrainHeight(WX, WY) + 12.f;
 						RiverWaterBaseVerts.Add(FVector(WX, WY, WZ));
 						RiverWaterUVs.Add(FVector2D(float(VX) / ResX, float(VY) / ResY));

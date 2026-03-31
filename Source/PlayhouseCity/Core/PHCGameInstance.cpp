@@ -21,6 +21,11 @@
 #include "Interfaces/IHttpResponse.h"
 #include "Serialization/JsonSerializer.h"
 #include "Misc/CoreDelegates.h"
+#include "Misc/EngineVersion.h"
+#include "Misc/App.h"
+#include "Engine/GameViewportClient.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #if PLATFORM_IOS
 #import <UserNotifications/UserNotifications.h>
 #elif PLATFORM_ANDROID
@@ -71,6 +76,14 @@ void UPHCGameInstance::Init()
 
 	SetupPushNotifications();
 
+	StartSessionLog();
+
+	// Bind app lifecycle delegates so we can end the session on background/terminate
+	FCoreDelegates::ApplicationWillDeactivateDelegate.AddLambda([this]()
+	{
+		EndSessionLog(TEXT("background"));
+	});
+
 	// Agora voice is initialized later when player enters the world
 	// (not here — iOS audio session isn't ready during Init)
 }
@@ -79,6 +92,10 @@ void UPHCGameInstance::Shutdown()
 {
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCGameInstance::Shutdown -- Tearing down PlayhouseCity game instance."));
 
+	EndSessionLog(TEXT("normal"));
+
+	// ApplicationWillDeactivateDelegate was bound with a lambda — it will be
+	// cleaned up when the process exits.  No explicit removal needed.
 	FCoreDelegates::ApplicationRegisteredForRemoteNotificationsDelegate.RemoveAll(this);
 
 	DestroySubsystems();
@@ -350,6 +367,146 @@ void UPHCGameInstance::RegisterDeviceTokenWithBackend()
 			}
 		});
 	Request->ProcessRequest();
+}
+
+// ---------------------------------------------------------------------------
+// Session Logging
+// ---------------------------------------------------------------------------
+
+void UPHCGameInstance::StartSessionLog()
+{
+	SessionStartTime = FDateTime::UtcNow();
+
+	TSharedPtr<FJsonObject> Body = MakeShared<FJsonObject>();
+
+	// Device ID — use the platform device ID (stable per device)
+	FString DeviceId = FPlatformMisc::GetDeviceId();
+	if (DeviceId.IsEmpty())
+	{
+		DeviceId = FPlatformMisc::GetMachineId().ToString();
+	}
+	Body->SetStringField(TEXT("device_id"), DeviceId);
+
+	// Build info
+	Body->SetStringField(TEXT("build_version"), FApp::GetBuildVersion());
+#if UE_BUILD_SHIPPING
+	Body->SetStringField(TEXT("build_config"), TEXT("Shipping"));
+#elif UE_BUILD_DEVELOPMENT
+	Body->SetStringField(TEXT("build_config"), TEXT("Development"));
+#else
+	Body->SetStringField(TEXT("build_config"), TEXT("Debug"));
+#endif
+	Body->SetStringField(TEXT("engine_version"), FEngineVersion::Current().ToString());
+
+	// Platform
+#if PLATFORM_IOS
+	Body->SetStringField(TEXT("platform"), TEXT("IOS"));
+	Body->SetStringField(TEXT("device_model"), FPlatformMisc::GetDefaultDeviceProfileName());
+	Body->SetStringField(TEXT("os_version"), FPlatformMisc::GetOSVersion());
+#elif PLATFORM_ANDROID
+	Body->SetStringField(TEXT("platform"), TEXT("Android"));
+	Body->SetStringField(TEXT("device_model"), FPlatformMisc::GetDefaultDeviceProfileName());
+	Body->SetStringField(TEXT("os_version"), FPlatformMisc::GetOSVersion());
+#elif PLATFORM_MAC
+	Body->SetStringField(TEXT("platform"), TEXT("Mac"));
+#else
+	Body->SetStringField(TEXT("platform"), TEXT("Windows"));
+#endif
+
+	// Screen resolution
+	if (GEngine && GEngine->GameViewport)
+	{
+		FVector2D ViewportSize;
+		GEngine->GameViewport->GetViewportSize(ViewportSize);
+		Body->SetStringField(TEXT("screen_resolution"),
+			FString::Printf(TEXT("%dx%d"), (int32)ViewportSize.X, (int32)ViewportSize.Y));
+	}
+
+	// Player ID if already logged in (e.g. auto-login)
+	if (bIsLoggedIn && LocalPlayerProfile.PlayerId > 0)
+	{
+		Body->SetNumberField(TEXT("player_id"), LocalPlayerProfile.PlayerId);
+	}
+
+	FString BodyStr;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&BodyStr);
+	FJsonSerializer::Serialize(Body.ToSharedRef(), Writer);
+
+	const FString Url = ServerBaseUrl / TEXT("api/session/start/");
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetURL(Url);
+	Request->SetVerb(TEXT("POST"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetContentAsString(BodyStr);
+	Request->OnProcessRequestComplete().BindLambda(
+		[this](FHttpRequestPtr Req, FHttpResponsePtr Resp, bool bSuccess)
+		{
+			if (bSuccess && Resp.IsValid() && Resp->GetResponseCode() >= 200 && Resp->GetResponseCode() < 300)
+			{
+				TSharedPtr<FJsonObject> Json;
+				TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Resp->GetContentAsString());
+				if (FJsonSerializer::Deserialize(Reader, Json) && Json.IsValid())
+				{
+					SessionLogId = (int32)Json->GetNumberField(TEXT("session_id"));
+					UE_LOG(LogPlayhouseCity, Log, TEXT("Session log started: ID=%d"), SessionLogId);
+				}
+			}
+			else
+			{
+				UE_LOG(LogPlayhouseCity, Warning, TEXT("Failed to start session log. HTTP %d"),
+					Resp.IsValid() ? Resp->GetResponseCode() : 0);
+			}
+		});
+	Request->ProcessRequest();
+}
+
+void UPHCGameInstance::EndSessionLog(const FString& ExitReason)
+{
+	if (bSessionEnded || SessionLogId <= 0) return;
+	bSessionEnded = true;
+
+	const FTimespan Duration = FDateTime::UtcNow() - SessionStartTime;
+
+	TSharedPtr<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetNumberField(TEXT("session_id"), SessionLogId);
+	Body->SetNumberField(TEXT("duration_seconds"), (int32)Duration.GetTotalSeconds());
+	Body->SetStringField(TEXT("exit_reason"), ExitReason);
+
+	// Attach player ID if logged in (covers guest who logged in after session start)
+	if (bIsLoggedIn && LocalPlayerProfile.PlayerId > 0)
+	{
+		Body->SetNumberField(TEXT("player_id"), LocalPlayerProfile.PlayerId);
+	}
+
+	// Multiplayer state
+	Body->SetBoolField(TEXT("is_multiplayer"), bInMultiplayerSession);
+
+	// Gather stats from the character if we can find it
+	APlayerController* PC = GetFirstLocalPlayerController();
+	if (PC)
+	{
+		APawn* Pawn = PC->GetPawn();
+		if (Pawn)
+		{
+			Body->SetNumberField(TEXT("last_position_x"), Pawn->GetActorLocation().X);
+			Body->SetNumberField(TEXT("last_position_y"), Pawn->GetActorLocation().Y);
+		}
+	}
+
+	FString BodyStr;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&BodyStr);
+	FJsonSerializer::Serialize(Body.ToSharedRef(), Writer);
+
+	const FString Url = ServerBaseUrl / TEXT("api/session/end/");
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetURL(Url);
+	Request->SetVerb(TEXT("POST"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetContentAsString(BodyStr);
+	Request->ProcessRequest();
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Session log ended: ID=%d, Duration=%ds, Reason=%s"),
+		SessionLogId, (int32)Duration.GetTotalSeconds(), *ExitReason);
 }
 
 // ---------------------------------------------------------------------------

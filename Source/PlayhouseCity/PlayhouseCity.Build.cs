@@ -43,9 +43,7 @@ public class PlayhouseCity : ModuleRules
 			"AudioMixer",
 			"AudioCapture",
 			"Voice",
-			"Niagara",
-			"MotionWarping",
-			"AnimGraphRuntime"
+			"Niagara"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
@@ -94,9 +92,21 @@ public class PlayhouseCity : ModuleRules
 
 		if (Target.Platform == UnrealTargetPlatform.Win64)
 		{
-			// Agora C++ SDK for Windows — disabled until DLLs are present
-			// PublicDefinitions.Add("AGORA_NATIVE_CPP=1");
-			PublicDefinitions.Add("AGORA_VOICE_DISABLED=1");
+			// Agora C++ SDK for Windows
+			PublicDefinitions.Add("AGORA_NATIVE_CPP=1");
+			string AgoraWinPath = System.IO.Path.Combine(ModuleDirectory, "../../ThirdParty/Agora/Win/x86_64");
+			PublicIncludePaths.Add(System.IO.Path.Combine(ModuleDirectory, "../../ThirdParty/Agora/Include"));
+			PublicAdditionalLibraries.Add(System.IO.Path.Combine(AgoraWinPath, "agora_rtc_sdk.dll.lib"));
+			RuntimeDependencies.Add("$(BinaryOutputDir)/agora_rtc_sdk.dll",
+				System.IO.Path.Combine(AgoraWinPath, "agora_rtc_sdk.dll"));
+			RuntimeDependencies.Add("$(BinaryOutputDir)/libaosl.dll",
+				System.IO.Path.Combine(AgoraWinPath, "libaosl.dll"));
+			RuntimeDependencies.Add("$(BinaryOutputDir)/libagora-fdkaac.dll",
+				System.IO.Path.Combine(AgoraWinPath, "libagora-fdkaac.dll"));
+			RuntimeDependencies.Add("$(BinaryOutputDir)/libagora-ffmpeg.dll",
+				System.IO.Path.Combine(AgoraWinPath, "libagora-ffmpeg.dll"));
+			RuntimeDependencies.Add("$(BinaryOutputDir)/libagora-soundtouch.dll",
+				System.IO.Path.Combine(AgoraWinPath, "libagora-soundtouch.dll"));
 		}
 
 		if (Target.Platform == UnrealTargetPlatform.Mac)
