@@ -1754,35 +1754,6 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		}
 	}
 
-	// ---- Pyramid interior psychedelic color animation ----
-	if (PyramidInteriorMIDs.Num() > 0)
-	{
-		PyramidColorTime += DeltaTime;
-		const int32 NumMIDs = PyramidInteriorMIDs.Num();
-		for (int32 i = 0; i < NumMIDs; ++i)
-		{
-			if (!PyramidInteriorMIDs[i]) continue;
-
-			const float PhaseOffset = (float)i / (float)NumMIDs;
-
-			// Hue cycles full rainbow at 0.3 Hz (~3.3s per cycle), offset per element
-			float HueDeg = FMath::Fmod((PyramidColorTime * 0.3f + PhaseOffset) * 360.f, 360.f);
-			if (HueDeg < 0.f) HueDeg += 360.f;
-
-			// Brightness pulse at 1.5 Hz (540 deg/s), per-element phase offset
-			const float PulseAngle = FMath::DegreesToRadians(PyramidColorTime * 540.f + (float)i * 40.f);
-			const float Pulse = 0.6f + 0.4f * FMath::Sin(PulseAngle);
-
-			// HSV→RGB (H=degrees, S=1, V=Pulse)
-			FLinearColor RGB = FLinearColor(HueDeg, 1.f, Pulse, 1.f).HSVToLinearRGB();
-
-			// Scale to HDR for bright emissive glow
-			const float Intensity = 2.f + 3.f * Pulse;
-			PyramidInteriorMIDs[i]->SetVectorParameterValue(TEXT("EmissiveColor"),
-				FLinearColor(RGB.R * Intensity, RGB.G * Intensity, RGB.B * Intensity));
-		}
-	}
-
 	// ---- Mushroom Psychedelic Trip Effect ----
 	if (MushroomTripTimer >= 0.f && PostProcessVolume)
 	{
@@ -3328,16 +3299,23 @@ void UPHCCitySubsystem::LoadMegascansTextures()
 		TEXT("/Game/Advanced_Water_BP/Materials/M_Water_Opaque.M_Water_Opaque"));
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: AdvancedWaterMI loaded = %d"), AdvancedWaterMI ? 1 : 0);
 
-	// Snow textures — use existing 4K assets to avoid 8K memory issues on mobile
-	// Fresh Windswept Snow — use Concrete BC (light gray, snow-like at distance)
-	if (MegaConcreteBC && FabGrassMI)
+	// 8K Snow — load actual Fab MIs (Fresh Windswept Snow + Trampled Snow)
+	Fab8KSnowMI = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Fab/Megascans/Surfaces/Fresh_Windswept_Snow_ugspafgdy/Raw/ugspafgdy_tier_0/Materials/MI_ugspafgdy.MI_ugspafgdy"));
+	Fab8KTrampleSnowMI = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Fab/Megascans/Surfaces/Trampled_Snow_vcqnfdk/Raw/vcqnfdk_tier_0/Materials/MI_vcqnfdk.MI_vcqnfdk"));
+
+	// Use 8K snow as the primary snow materials
+	FabSnowMI = Fab8KSnowMI;
+	FabTrampleSnowMI = Fab8KTrampleSnowMI;
+
+	// Fallback: if 8K snow MIs not available, use concrete-based placeholder
+	if (!FabSnowMI && MegaConcreteBC && FabGrassMI)
 	{
 		UMaterialInstanceDynamic* SnowMID = UMaterialInstanceDynamic::Create(FabGrassMI, this);
 		if (SnowMID) { SnowMID->SetTextureParameterValue(TEXT("BaseColorTexture"), MegaConcreteBC); FabSnowMI = SnowMID; }
 	}
-
-	// Trampled Snow — use Concrete with normal for footprint-like texture
-	if (MegaConcreteBC && FabGrassMI)
+	if (!FabTrampleSnowMI && MegaConcreteBC && FabGrassMI)
 	{
 		UMaterialInstanceDynamic* TSnowMID = UMaterialInstanceDynamic::Create(FabGrassMI, this);
 		if (TSnowMID)
@@ -3348,18 +3326,35 @@ void UPHCCitySubsystem::LoadMegascansTextures()
 		}
 	}
 
-	// Clover — use Wild Grass (already loaded 4K, provides natural variety vs Uncut Grass)
-	FabCloverMI = FabWildGrassMID;
+	// 8K Clover Patches on Grass — for grass terrain zones
+	Fab8KCloverMI = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Fab/Megascans/Surfaces/Clover_Patches_on_Grass_sgmkajak/Raw/sgmkajak_tier_0/Materials/MI_sgmkajak.MI_sgmkajak"));
+	FabCloverMI = Fab8KCloverMI ? Fab8KCloverMI : FabWildGrassMID;
 
-	// 8K terrain textures — loaded as direct MIs
+	// 8K Roman Limestone Wall — for pyramid/stone areas
+	Fab8KLimestoneMI = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Fab/Megascans/Surfaces/Roman_Limestone_Wall_thzldg2qx/Raw/thzldg2qx_tier_0/Materials/MI_thzldg2qx.MI_thzldg2qx"));
+
+	// 8K Rippled Sand
 	Fab8KSandMI = LoadObject<UMaterialInterface>(nullptr,
 		TEXT("/Game/Fab/Megascans/Surfaces/Rippled_Sand_xd0mda1/Raw/xd0mda1_tier_0/Materials/MI_xd0mda1.MI_xd0mda1"));
+	if (!Fab8KSandMI) Fab8KSandMI = FabSandMID; // 4K rippled sand as fallback
+
+	// 8K Thai Beach Sand
+	Fab8KBeachSandMI = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Fab/Megascans/Surfaces/Thai_Beach_Sand_tdsmeeko/Raw/tdsmeeko_tier_0/Materials/MI_tdsmeeko.MI_tdsmeeko"));
+
+	// 8K Mossy Sandy Ground — jungle floor
+	Fab8KMossySandMI = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Fab/Megascans/Surfaces/Mossy_Sandy_Ground_veimacqs/Raw/veimacqs_tier_0/Materials/MI_veimacqs.MI_veimacqs"));
+
 	Fab8KMossyFloorMI = LoadObject<UMaterialInterface>(nullptr,
 		TEXT("/Game/Fab/Megascans/Surfaces/Mossy_Forest_Floor_vfylbge/Raw/vfylbge_tier_0/Materials/MI_vfylbge.MI_vfylbge"));
+	if (!Fab8KMossyFloorMI) Fab8KMossyFloorMI = Fab8KCloverMI; // 8K clover as mossy fallback
 
-	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Snow=%d TrampleSnow=%d Clover=%d 8KSand=%d 8KMossy=%d"),
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Snow=%d TrampleSnow=%d Clover=%d 8KSand=%d 8KBeachSand=%d 8KMossy=%d 8KSnow=%d 8KLimestone=%d"),
 		FabSnowMI ? 1 : 0, FabTrampleSnowMI ? 1 : 0, FabCloverMI ? 1 : 0,
-		Fab8KSandMI ? 1 : 0, Fab8KMossyFloorMI ? 1 : 0);
+		Fab8KSandMI ? 1 : 0, Fab8KBeachSandMI ? 1 : 0, Fab8KMossyFloorMI ? 1 : 0, Fab8KSnowMI ? 1 : 0, Fab8KLimestoneMI ? 1 : 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -3938,21 +3933,19 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 					float ChunkMidY = CY + ChunkSize * 0.5f;
 					// Christmas/snowy zone: Y ~107k-141k
 					bool bInChristmasZone = (ChunkMidY > 105000.f && ChunkMidY < 143000.f);
-					// Sand castle/desert zone: near pyramids area + pyramid surroundings
+					// Sand castle/desert zone: near pyramids + pirate beach + sandy outskirts
 					float PyramidDist = FMath::Sqrt(FMath::Square(ChunkMidX - 22248.f) + FMath::Square(ChunkMidY + 62419.f));
+					float PirateDist = FMath::Sqrt(FMath::Square(ChunkMidX + 248405.f) + FMath::Square(ChunkMidY - 7389.f));
 					bool bInDesertZone = (ChunkMidY < -85000.f) ||
 						(ChunkMidX > 60000.f && ChunkMidY > 20000.f && ChunkMidY < 50000.f) ||
-						(PyramidDist < 55000.f); // pyramid area radius
+						(PyramidDist < 80000.f) || // pyramid area
+						(PirateDist < 65000.f); // pirate beach/lake area
 
-					if (bInChristmasZone && FabTrampleSnowMI)
-						PMC->SetMaterial(0, FabTrampleSnowMI);
-					else if (bIsSnowy && FabTrampleSnowMI)
-						PMC->SetMaterial(0, FabTrampleSnowMI);
-					else if (bIsSnowy)
-					{
-						if (ColorMaterial) { Mat = UMaterialInstanceDynamic::Create(ColorMaterial, PMC); }
-						if (Mat) { Mat->SetVectorParameterValue(TEXT("BaseColor"), AvgColor); Mat->SetScalarParameterValue(TEXT("Roughness"), ChunkRough); PMC->SetMaterial(0, Mat); }
-					}
+					// Christmas/snow zone — 8K Fresh Windswept Snow
+					if (bInChristmasZone && FabSnowMI)
+						PMC->SetMaterial(0, FabSnowMI);
+					else if (bIsSnowy && FabSnowMI)
+						PMC->SetMaterial(0, FabSnowMI);
 					// Jungle zone — 8K Rippled Sand
 					else if (ChunkMidY < -106000.f && ChunkMidY > -162000.f && ChunkMidX > -45000.f && ChunkMidX < 145000.f)
 					{
@@ -3960,19 +3953,23 @@ void UPHCCitySubsystem::SpawnTerrainGrid()
 							PMC->SetMaterial(0, Fab8KSandMI);
 						else if (FabSandMID)
 							PMC->SetMaterial(0, FabSandMID);
+						else if (FabGrassMI)
+							PMC->SetMaterial(0, FabGrassMI);
 					}
-					// Desert/pyramid/sandy — 8K Rippled Sand
+					// Desert/pyramid/sandy — 8K Rippled Sand only
 					else if ((bIsSandy || bIsRocky || bInDesertZone) && Fab8KSandMI)
 						PMC->SetMaterial(0, Fab8KSandMI);
-					else if ((bIsSandy || bIsRocky || bInDesertZone) && FabSandMID)
-						PMC->SetMaterial(0, FabSandMID);
-					// Grassy areas — 8K Mossy Forest Floor for natural look
-					else if (Fab8KMossyFloorMI && FabGrassMI)
+					// Grassy areas — 8K Clover / Mossy Forest Floor mix
+					else if (Fab8KCloverMI && Fab8KMossyFloorMI)
 					{
-						// 50% mossy floor, 50% uncut grass
+						// Alternate between clover and mossy for natural variety
 						bool bUseMossy = (ChunkHash & 1) != 0;
-						PMC->SetMaterial(0, bUseMossy ? Fab8KMossyFloorMI : FabGrassMI);
+						PMC->SetMaterial(0, bUseMossy ? Fab8KMossyFloorMI : Fab8KCloverMI);
 					}
+					else if (Fab8KCloverMI)
+						PMC->SetMaterial(0, Fab8KCloverMI);
+					else if (Fab8KMossyFloorMI)
+						PMC->SetMaterial(0, Fab8KMossyFloorMI);
 					else if (FabGrassMI)
 						PMC->SetMaterial(0, FabGrassMI);
 					else if (ColorMaterial)
@@ -4790,7 +4787,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 				if (FMath::Abs(TX) < 18000.f && FMath::Abs(TY) < 18000.f) continue;
 				// Skip desert/pyramid area — wider exclusion + banana ring
 				float PyDist2 = FMath::Square(TX - 22248.f) + FMath::Square(TY + 62419.f);
-				if (PyDist2 < 60000.f * 60000.f)
+				if (PyDist2 < 75000.f * 75000.f)
 				{
 					// Within 45k-60k: replace with banana plant instead of tree
 					if (PyDist2 > 45000.f * 45000.f)
@@ -4926,6 +4923,76 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 		}
 	}
 
+	// Green ground vegetation — Megascans plants scattered across all non-desert, non-beach areas
+	{
+		UStaticMesh* VegMeshes[10];
+		VegMeshes[0] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Bigleaf_Hydrangea_vgztealha/High/vgztealha_tier_1/StaticMeshes/SM_vgztealha_VarA.SM_vgztealha_VarA"));
+		VegMeshes[1] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Bigleaf_Hydrangea_vgztealha/High/vgztealha_tier_1/StaticMeshes/SM_vgztealha_VarD.SM_vgztealha_VarD"));
+		VegMeshes[2] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Small_Balsam_xefmcgrqx/High/xefmcgrqx_tier_1/StaticMeshes/SM_xefmcgrqx_VarA.SM_xefmcgrqx_VarA"));
+		VegMeshes[3] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Small_Balsam_xefmcgrqx/High/xefmcgrqx_tier_1/StaticMeshes/SM_xefmcgrqx_VarE.SM_xefmcgrqx_VarE"));
+		VegMeshes[4] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarA.SM_xh1kdfbqx_VarA"));
+		VegMeshes[5] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarC.SM_xh1kdfbqx_VarC"));
+		VegMeshes[6] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Lily_of_the_Valley_xikkdhjja/High/xikkdhjja_tier_1/StaticMeshes/SM_xikkdhjja_VarA.SM_xikkdhjja_VarA"));
+		VegMeshes[7] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Lily_of_the_Valley_xikkdhjja/High/xikkdhjja_tier_1/StaticMeshes/SM_xikkdhjja_VarE.SM_xikkdhjja_VarE"));
+		VegMeshes[8] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Matted_Pratia_uegjcflia/High/uegjcflia_tier_1/StaticMeshes/SM_uegjcflia_VarA.SM_uegjcflia_VarA"));
+		VegMeshes[9] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Matted_Pratia_uegjcflia/High/uegjcflia_tier_1/StaticMeshes/SM_uegjcflia_VarC.SM_uegjcflia_VarC"));
+
+		int32 ValidVeg = 0;
+		for (int32 i = 0; i < 10; ++i) { if (VegMeshes[i]) ++ValidVeg; }
+
+		if (ValidVeg > 0)
+		{
+			FRandomStream VegRand(77123);
+			int32 VegCount = 0;
+			const float PyX = 22248.f, PyY = -62419.f;
+			const float PBX = -248405.f, PBY = 7389.f;
+
+			for (int32 i = 0; i < 800; ++i)
+			{
+				float VX = VegRand.FRandRange(-140000.f, 140000.f);
+				float VY = VegRand.FRandRange(-140000.f, 140000.f);
+
+				// Skip city center
+				if (FMath::Abs(VX) < 36000.f && FMath::Abs(VY) < 36000.f) continue;
+				// Skip pyramid/desert area
+				if (FMath::Square(VX - PyX) + FMath::Square(VY - PyY) < 80000.f * 80000.f) continue;
+				// Skip pirate beach
+				if (FMath::Square(VX - PBX) + FMath::Square(VY - PBY) < 65000.f * 65000.f) continue;
+				// Skip jungle zone
+				if (VY < -106000.f && VX > -45000.f && VX < 145000.f) continue;
+				// Skip christmas/snow zone
+				if (VY > 105000.f) continue;
+
+				float VZ = GetTerrainHeight(VX, VY);
+				if (VZ < -50.f || VZ > 500.f) continue;
+
+				int32 MIdx = VegRand.RandRange(0, 9);
+				for (int32 T = 0; T < 10 && !VegMeshes[MIdx]; ++T)
+					MIdx = (MIdx + 1) % 10;
+				if (!VegMeshes[MIdx]) continue;
+
+				float VScale = VegRand.FRandRange(8.f, 22.f);
+				float VYaw = VegRand.FRandRange(0.f, 360.f);
+
+				AActor* VA = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(),
+					FVector(VX, VY, VZ - 15.f), FRotator::ZeroRotator);
+				if (!VA) continue;
+				UStaticMeshComponent* VMC = NewObject<UStaticMeshComponent>(VA,
+					*FString::Printf(TEXT("Veg_%d"), VegCount));
+				VMC->SetStaticMesh(VegMeshes[MIdx]);
+				VMC->SetWorldLocation(FVector(VX, VY, VZ - 15.f));
+				VMC->SetWorldRotation(FRotator(0.f, VYaw, 0.f));
+				VMC->SetWorldScale3D(FVector(VScale));
+				VMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				VMC->SetCastShadow(false);
+				VMC->RegisterComponent();
+				VA->SetRootComponent(VMC);
+				++VegCount;
+			}
+			UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Spawned %d green vegetation plants across map"), VegCount);
+		}
+	}
+
 	// SpawnNPCHelicopter(); // Disabled for multiplayer — re-enable for solo/testing
 	// SpawnNPCPlayers(); // Disabled for now — re-enable for testing
 
@@ -5026,11 +5093,49 @@ void UPHCCitySubsystem::SpawnGround()
 	// Northwest fill: extends ground beyond north edge
 	SpawnGroundSlab(0.f, FVector(-30000.f, 75000.f, 0.f), FVector(700.f, 200.f, 1.f), TEXT("NorthwestFill"));
 
-	// Outskirts ground: west of city extending along highway
-	SpawnGroundSlab(0.f, FVector(-130000.f, 0.f, 0.f), FVector(2000.f, 1400.f, 1.f), TEXT("OutskirtsMain"));
+	// Outskirts ground: west of city extending along highway — sand
+	{
+		const FVector OutLoc(-130000.f, 0.f, -50.f);
+		AActor* OutGA = World->SpawnActor<AActor>(AActor::StaticClass(), OutLoc, FRotator::ZeroRotator);
+		if (OutGA)
+		{
+#if WITH_EDITOR
+			OutGA->SetActorLabel(TEXT("OutskirtsMain"));
+#endif
+			UStaticMeshComponent* OutMC = NewObject<UStaticMeshComponent>(OutGA, TEXT("GroundMesh"));
+			OutMC->SetStaticMesh(CubeMesh);
+			OutMC->SetWorldScale3D(FVector(2000.f, 1400.f, 0.02f));
+			OutMC->SetWorldLocation(OutLoc);
+			OutMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			OutMC->RegisterComponent();
+			OutGA->SetRootComponent(OutMC);
+			if (Fab8KSandMI) OutMC->SetMaterial(0, Fab8KSandMI);
+			else if (FabSandMID) OutMC->SetMaterial(0, FabSandMID);
+			OutGA->AddInstanceComponent(OutMC);
+		}
+	}
 
-	// Far outskirts: single solid ground plane (no cavern hole)
-	SpawnGroundSlab(0.f, FVector(-280000.f, 0.f, 0.f), FVector(1000.f, 1000.f, 1.f), TEXT("OutskirtsFar"));
+	// Far outskirts: single solid ground plane — use 8K Rippled Sand (pirate beach area)
+	{
+		const FVector FarLoc(-280000.f, 0.f, -50.f);
+		AActor* FarGA = World->SpawnActor<AActor>(AActor::StaticClass(), FarLoc, FRotator::ZeroRotator);
+		if (FarGA)
+		{
+#if WITH_EDITOR
+			FarGA->SetActorLabel(TEXT("OutskirtsFar"));
+#endif
+			UStaticMeshComponent* FarMC = NewObject<UStaticMeshComponent>(FarGA, TEXT("GroundMesh"));
+			FarMC->SetStaticMesh(CubeMesh);
+			FarMC->SetWorldScale3D(FVector(1000.f, 1000.f, 0.02f));
+			FarMC->SetWorldLocation(FarLoc);
+			FarMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			FarMC->RegisterComponent();
+			FarGA->SetRootComponent(FarMC);
+			if (Fab8KSandMI) FarMC->SetMaterial(0, Fab8KSandMI);
+			else if (FabSandMID) FarMC->SetMaterial(0, FabSandMID);
+			FarGA->AddInstanceComponent(FarMC);
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -8004,8 +8109,18 @@ void UPHCCitySubsystem::SpawnHills()
 		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);  // Visual only
 		MC->RegisterComponent();
 		Hill->SetRootComponent(MC);
-		// All hills use Uncut Grass texture
-		if (FabGrassMI) MC->SetMaterial(0, FabGrassMI);
+		// Hills use 8K materials — snow for christmas zone, sand for desert, clover elsewhere
+		bool bHillInSnow = (Loc.Y > 105000.f && Loc.Y < 143000.f);
+		float HillPyDist = FMath::Sqrt(FMath::Square(Loc.X - 22248.f) + FMath::Square(Loc.Y + 62419.f));
+		bool bHillInDesert = (HillPyDist < 80000.f) || (Loc.Y < -85000.f);
+		if (bHillInSnow && FabSnowMI)
+			MC->SetMaterial(0, FabSnowMI);
+		else if (bHillInDesert && Fab8KSandMI)
+			MC->SetMaterial(0, Fab8KSandMI);
+		else if (Fab8KCloverMI)
+			MC->SetMaterial(0, Fab8KCloverMI);
+		else if (FabGrassMI)
+			MC->SetMaterial(0, FabGrassMI);
 		else
 			ApplyPBR(MC, Color, 0.f, 0.85f);
 		Hill->AddInstanceComponent(MC);
@@ -8885,106 +9000,85 @@ void UPHCCitySubsystem::SpawnJungle()
 	}
 
 	// ================================================================
-	// LAYER 15: Mushroom clusters — collectible (added to CollectibleMushrooms)
+	// LAYER 15: Sci-Fi Mushroom foliage — collectible (added to CollectibleMushrooms)
 	// ================================================================
-	for (int32 mc = 0; mc < 40; ++mc)
 	{
-		float MCX = CityRandom.FRandRange(JMinX + 2000.f, JMaxX - 2000.f);
-		float MCY = CityRandom.FRandRange(JMinY + 2000.f, JMaxY - 2000.f);
-		if (IsNearPath(MCX, MCY, PathHW)) continue;
+		UStaticMesh* SciFiMushMesh = LoadObject<UStaticMesh>(nullptr,
+			TEXT("/Game/Fab/Sci_Fi_planet_foliage_assets/assets_for_mass_effect_environment/StaticMeshes/assets_for_mass_effect_environment.assets_for_mass_effect_environment"));
 
-		float MCTZ = GetTerrainHeight(MCX, MCY);
-		int32 NM = CityRandom.RandRange(3, 6);
+		for (int32 mc = 0; mc < 40; ++mc)
+		{
+			float MCX = CityRandom.FRandRange(JMinX + 2000.f, JMaxX - 2000.f);
+			float MCY = CityRandom.FRandRange(JMinY + 2000.f, JMaxY - 2000.f);
+			if (IsNearPath(MCX, MCY, PathHW)) continue;
 
-		// Bioluminescent purple palette for mushroom caps
-		FLinearColor MushroomCol[] = {
-			FLinearColor(0.45f, 0.05f, 0.65f), FLinearColor(0.55f, 0.10f, 0.80f),
-			FLinearColor(0.35f, 0.08f, 0.55f), FLinearColor(0.60f, 0.15f, 0.70f),
-		};
-		FLinearColor MCol = MushroomCol[CityRandom.RandRange(0, 3)];
+			float MCTZ = GetTerrainHeight(MCX, MCY);
+			// Consume random values for determinism (was NM + mushroom colors)
+			int32 NM = CityRandom.RandRange(3, 6);
+			CityRandom.RandRange(0, 3); // was color selection
 
-		const FVector ClusterPos(MCX, MCY, MCTZ + 40.f);
+			const FVector ClusterPos(MCX, MCY, MCTZ + 40.f);
 
-		// Spawn a collectible actor for this cluster
-		AActor* MA = W->SpawnActor<AActor>(AActor::StaticClass(),
-			ClusterPos, FRotator::ZeroRotator);
-		if (!MA) continue;
+			AActor* MA = W->SpawnActor<AActor>(AActor::StaticClass(),
+				ClusterPos, FRotator::ZeroRotator);
+			if (!MA) continue;
 #if WITH_EDITOR
-		MA->SetActorLabel(*FString::Printf(TEXT("JungleMushroom_%d"), mc));
+			MA->SetActorLabel(*FString::Printf(TEXT("JungleMushroom_%d"), mc));
 #endif
 
-		// First stem is root component
-		UStaticMeshComponent* RootStem = nullptr;
+			UStaticMeshComponent* RootMesh = nullptr;
 
-		for (int32 mi = 0; mi < NM; ++mi)
-		{
-			float MX = CityRandom.FRandRange(-120.f, 120.f);
-			float MY = CityRandom.FRandRange(-120.f, 120.f);
-			float MH = CityRandom.FRandRange(140.f, 200.f); // character height (~180 UU)
-			float MR = CityRandom.FRandRange(40.f, 65.f);   // wider caps
-
-			// Stem
-			auto* StemC = NewObject<UStaticMeshComponent>(MA,
-				*FString::Printf(TEXT("JS_%d_%d"), mc, mi));
-			StemC->SetStaticMesh(CylinderMesh);
-			StemC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			StemC->SetRelativeLocation(FVector(MX, MY, MH * 0.5f));
-			StemC->SetWorldScale3D(FVector(MR * 0.4f / 50.f, MR * 0.4f / 50.f, MH / 100.f));
-			StemC->SetCastShadow(false);
-			if (mi == 0)
+			if (SciFiMushMesh)
 			{
-				MA->SetRootComponent(StemC);
-				RootStem = StemC;
+				// Spawn Sci-Fi foliage mesh as the mushroom cluster
+				auto* MeshC = NewObject<UStaticMeshComponent>(MA,
+					*FString::Printf(TEXT("SciFiMush_%d"), mc));
+				MeshC->SetStaticMesh(SciFiMushMesh);
+				MeshC->SetWorldLocation(ClusterPos);
+				MeshC->SetWorldRotation(FRotator(0.f, CityRandom.FRandRange(0.f, 360.f), 0.f));
+				MeshC->SetWorldScale3D(FVector(CityRandom.FRandRange(3.f, 6.f)));
+				MeshC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				MeshC->SetCastShadow(false);
+				MeshC->RegisterComponent();
+				MA->SetRootComponent(MeshC);
+				RootMesh = MeshC;
 			}
-			else if (RootStem)
-			{
-				StemC->AttachToComponent(RootStem, FAttachmentTransformRules::KeepRelativeTransform);
-			}
-			StemC->RegisterComponent();
-			ApplyPBR(StemC, FLinearColor(0.70f, 0.65f, 0.75f), 0.f, 0.75f,
-				FLinearColor(0.15f, 0.02f, 0.25f));
 
-			// Cap
-			auto* CapC = NewObject<UStaticMeshComponent>(MA,
-				*FString::Printf(TEXT("JC_%d_%d"), mc, mi));
-			CapC->SetStaticMesh(SphereMesh);
-			CapC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			CapC->SetRelativeLocation(FVector(MX, MY, MH));
-			CapC->SetWorldScale3D(FVector(MR / 50.f, MR / 50.f, MR * 0.4f / 50.f));
-			CapC->SetCastShadow(false);
-			if (RootStem)
-				CapC->AttachToComponent(RootStem, FAttachmentTransformRules::KeepRelativeTransform);
-			CapC->RegisterComponent();
-			ApplyPBR(CapC, MCol, 0.f, 0.70f, MCol * 3.f);
+			// Consume random values that old procedural mushrooms used (for determinism)
+			for (int32 mi = 0; mi < NM; ++mi)
+			{
+				CityRandom.FRandRange(-120.f, 120.f); CityRandom.FRandRange(-120.f, 120.f);
+				CityRandom.FRandRange(140.f, 200.f); CityRandom.FRandRange(40.f, 65.f);
+			}
+
+			// Point light — bioluminescent glow
+			UPointLightComponent* PL = NewObject<UPointLightComponent>(MA,
+				*FString::Printf(TEXT("JML_%d"), mc));
+			PL->SetWorldLocation(ClusterPos + FVector(0.f, 0.f, 20.f));
+			PL->SetIntensity(5000.f);
+			PL->SetAttenuationRadius(600.f);
+			PL->SetLightColor(FLinearColor(0.50f, 0.08f, 0.75f));
+			PL->CastShadows = false;
+			if (RootMesh)
+				PL->AttachToComponent(RootMesh, FAttachmentTransformRules::KeepWorldTransform);
+			PL->RegisterComponent();
+
+			// Register as collectible
+			FMushroomData MD;
+			MD.Actor = MA;
+			MD.GlowLight = PL;
+			MD.OriginalSpawnPos = ClusterPos;
+			MD.CurrentPos = ClusterPos;
+			MD.BobPhase = CityRandom.FRand() * PI * 2.f;
+			CollectibleMushrooms.Add(MD);
 		}
-
-		// Point light — purple bioluminescent glow
-		UPointLightComponent* PL = NewObject<UPointLightComponent>(MA,
-			*FString::Printf(TEXT("JML_%d"), mc));
-		PL->SetWorldLocation(ClusterPos + FVector(0.f, 0.f, 20.f));
-		PL->SetIntensity(5000.f);
-		PL->SetAttenuationRadius(600.f);
-		PL->SetLightColor(FLinearColor(0.50f, 0.08f, 0.75f));
-		PL->CastShadows = false;
-		if (RootStem)
-			PL->AttachToComponent(RootStem, FAttachmentTransformRules::KeepWorldTransform);
-		PL->RegisterComponent();
-
-		// Register as collectible
-		FMushroomData MD;
-		MD.Actor = MA;
-		MD.GlowLight = PL;
-		MD.OriginalSpawnPos = ClusterPos;
-		MD.CurrentPos = ClusterPos;
-		MD.BobPhase = CityRandom.FRand() * PI * 2.f;
-		CollectibleMushrooms.Add(MD);
 	}
 
 	// ================================================================
-	// LAYER 16: Dense green ground foliage — Megascans plant meshes
+	// LAYER 16: Mixed foliage — tall banana trees + desert imposter trees for shorter ones
 	// ================================================================
 	{
-		// Tropical banana vegetation pack — 6 variants for visual diversity
+		// Banana vegetation — 6 variants
 		UStaticMesh* FoliageMeshes[6];
 		FoliageMeshes[0] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PN_Banana/Meshes/plants/banana_01_01.banana_01_01"));
 		FoliageMeshes[1] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PN_Banana/Meshes/plants/banana_01_03.banana_01_03"));
@@ -8993,11 +9087,21 @@ void UPHCCitySubsystem::SpawnJungle()
 		FoliageMeshes[4] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PN_Banana/Meshes/plants/banana_02_03.banana_02_03"));
 		FoliageMeshes[5] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PN_Banana/Meshes/plants/banana_02_05.banana_02_05"));
 
-		// Individual StaticMeshComponents — same approach as tree canopy (works on iOS)
-		const float FoliageCell = 1300.f; // reduced 20% from 1150
+		// Desert tree imposters — 16 variants
+		UStaticMesh* DesertTreeMeshes[16];
+		int32 ValidDesertTrees = 0;
+		for (int32 i = 0; i < 16; ++i)
+		{
+			FString MPath = FString::Printf(TEXT("/Game/Desert_Tree_Pack/Meshes/Imposter/SM_Imposter_%d.SM_Imposter_%d"), i + 1, i + 1);
+			DesertTreeMeshes[i] = LoadObject<UStaticMesh>(nullptr, *MPath);
+			if (DesertTreeMeshes[i]) ++ValidDesertTrees;
+		}
+
+		const float FoliageCell = 1300.f;
 		const int32 FGX = FMath::CeilToInt((JMaxX - JMinX) / FoliageCell);
 		const int32 FGY = FMath::CeilToInt((JMaxY - JMinY) / FoliageCell);
 		int32 FoliageCount = 0;
+		int32 DesertCount = 0;
 		for (int32 GX = 0; GX < FGX; ++GX)
 		{
 			for (int32 GY = 0; GY < FGY; ++GY)
@@ -9008,31 +9112,122 @@ void UPHCCitySubsystem::SpawnJungle()
 
 				float FZ = GetTerrainHeight(FX, FY);
 				UStaticMesh* PlantMesh = FoliageMeshes[CityRandom.RandRange(0, 5)];
-				if (!PlantMesh) continue;
-
-				// Tropical banana plants — scale for natural jungle look
-				float PlantScale = CityRandom.FRandRange(16.0f, 40.0f);
-				if (CityRandom.FRand() < 0.10f) continue; // skip 10% for natural variation
+				float PlantScale = CityRandom.FRandRange(32.0f, 80.0f);
+				if (CityRandom.FRand() < 0.325f) continue;
 				float PlantYaw = CityRandom.FRandRange(0.f, 360.f);
 
-				const float PlantBury = 120.f;
+				// Tall bananas (scale >= 50) stay as banana trees
+				if (PlantScale >= 50.f && PlantMesh)
+				{
+					auto* PC = NewObject<UStaticMeshComponent>(JA, *FString::Printf(TEXT("JF_%d"), CI++));
+					PC->SetStaticMesh(PlantMesh);
+					PC->SetWorldLocation(FVector(FX, FY, FZ - 120.f));
+					PC->SetWorldRotation(FRotator(0.f, PlantYaw, 0.f));
+					PC->SetWorldScale3D(FVector(PlantScale));
+					PC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					PC->SetCastShadow(false);
+					PC->AttachToComponent(JA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+					PC->RegisterComponent();
+					JA->AddInstanceComponent(PC);
+					++FoliageCount;
+				}
+				// Shorter ones replaced with desert imposter trees (cross-billboard)
+				else if (ValidDesertTrees > 0)
+				{
+					int32 MIdx = (GX * FGY + GY) % 16;
+					for (int32 T = 0; T < 16 && !DesertTreeMeshes[MIdx]; ++T)
+						MIdx = (MIdx + 1) % 16;
+					if (!DesertTreeMeshes[MIdx]) continue;
 
-				// Palm trees in jungle handled below (after foliage loop)
-
-				auto* PC = NewObject<UStaticMeshComponent>(JA, *FString::Printf(TEXT("JF_%d"), CI++));
-				PC->SetStaticMesh(PlantMesh);
-				PC->SetWorldLocation(FVector(FX, FY, FZ - PlantBury));
-				PC->SetWorldRotation(FRotator(0.f, PlantYaw, 0.f));
-				PC->SetWorldScale3D(FVector(PlantScale));
-				PC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				PC->SetCastShadow(false);
-				PC->AttachToComponent(JA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
-				PC->RegisterComponent();
-				JA->AddInstanceComponent(PC);
-				++FoliageCount;
+					for (int32 Card = 0; Card < 3; ++Card)
+					{
+						auto* PC = NewObject<UStaticMeshComponent>(JA, *FString::Printf(TEXT("JF_%d"), CI++));
+						PC->SetStaticMesh(DesertTreeMeshes[MIdx]);
+						PC->SetWorldLocation(FVector(FX, FY, FZ));
+						PC->SetWorldRotation(FRotator(0.f, PlantYaw + Card * 60.f, 0.f));
+						PC->SetWorldScale3D(FVector(PlantScale));
+						PC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+						PC->SetCastShadow(false);
+						PC->AttachToComponent(JA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+						PC->RegisterComponent();
+						JA->AddInstanceComponent(PC);
+					}
+					++DesertCount;
+				}
 			}
 		}
-		UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: added %d ground foliage plants"), FoliageCount);
+		UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: added %d tall banana + %d desert trees"), FoliageCount, DesertCount);
+	}
+
+	// ================================================================
+	// LAYER 17: Megascans shrubs — scattered small plants for ground detail
+	// ================================================================
+	{
+		// Load 5 Megascans plant types (2 variants each = 10 meshes)
+		UStaticMesh* ShrubMeshes[10];
+		ShrubMeshes[0] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Bigleaf_Hydrangea_vgztealha/High/vgztealha_tier_1/StaticMeshes/SM_vgztealha_VarA.SM_vgztealha_VarA"));
+		ShrubMeshes[1] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Bigleaf_Hydrangea_vgztealha/High/vgztealha_tier_1/StaticMeshes/SM_vgztealha_VarC.SM_vgztealha_VarC"));
+		ShrubMeshes[2] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Small_Balsam_xefmcgrqx/High/xefmcgrqx_tier_1/StaticMeshes/SM_xefmcgrqx_VarA.SM_xefmcgrqx_VarA"));
+		ShrubMeshes[3] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Small_Balsam_xefmcgrqx/High/xefmcgrqx_tier_1/StaticMeshes/SM_xefmcgrqx_VarD.SM_xefmcgrqx_VarD"));
+		ShrubMeshes[4] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarA.SM_xh1kdfbqx_VarA"));
+		ShrubMeshes[5] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarE.SM_xh1kdfbqx_VarE"));
+		ShrubMeshes[6] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Lily_of_the_Valley_xikkdhjja/High/xikkdhjja_tier_1/StaticMeshes/SM_xikkdhjja_VarA.SM_xikkdhjja_VarA"));
+		ShrubMeshes[7] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Lily_of_the_Valley_xikkdhjja/High/xikkdhjja_tier_1/StaticMeshes/SM_xikkdhjja_VarC.SM_xikkdhjja_VarC"));
+		ShrubMeshes[8] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Matted_Pratia_uegjcflia/High/uegjcflia_tier_1/StaticMeshes/SM_uegjcflia_VarA.SM_uegjcflia_VarA"));
+		ShrubMeshes[9] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fab/Megascans/Plants/Matted_Pratia_uegjcflia/High/uegjcflia_tier_1/StaticMeshes/SM_uegjcflia_VarE.SM_uegjcflia_VarE"));
+
+		// Count valid meshes
+		int32 ValidShrubs = 0;
+		for (int32 i = 0; i < 10; ++i) { if (ShrubMeshes[i]) ++ValidShrubs; }
+
+		if (ValidShrubs > 0)
+		{
+			const float ShrubCell = 2500.f; // spacing between shrub clusters
+			const int32 SGX = FMath::CeilToInt((JMaxX - JMinX) / ShrubCell);
+			const int32 SGY = FMath::CeilToInt((JMaxY - JMinY) / ShrubCell);
+			int32 ShrubCount = 0;
+			FRandomStream ShrubRand(54321);
+
+			for (int32 GX = 0; GX < SGX; ++GX)
+			{
+				for (int32 GY = 0; GY < SGY; ++GY)
+				{
+					// 40% chance to skip for natural clustering
+					if (ShrubRand.FRand() < 0.40f) continue;
+
+					float SX = JMinX + GX * ShrubCell + ShrubRand.FRandRange(ShrubCell * 0.1f, ShrubCell * 0.9f);
+					float SY = JMinY + GY * ShrubCell + ShrubRand.FRandRange(ShrubCell * 0.1f, ShrubCell * 0.9f);
+					if (IsNearPath(SX, SY, PathHW)) continue;
+
+					float SZ = GetTerrainHeight(SX, SY);
+
+					// Pick a random valid shrub mesh
+					UStaticMesh* ShrubMesh = nullptr;
+					for (int32 Tries = 0; Tries < 10; ++Tries)
+					{
+						int32 Idx = ShrubRand.RandRange(0, 9);
+						if (ShrubMeshes[Idx]) { ShrubMesh = ShrubMeshes[Idx]; break; }
+					}
+					if (!ShrubMesh) continue;
+
+					float ShrubScale = ShrubRand.FRandRange(8.0f, 20.0f);
+					float ShrubYaw = ShrubRand.FRandRange(0.f, 360.f);
+
+					auto* SC = NewObject<UStaticMeshComponent>(JA, *FString::Printf(TEXT("JShrub_%d"), CI++));
+					SC->SetStaticMesh(ShrubMesh);
+					SC->SetWorldLocation(FVector(SX, SY, SZ - 30.f));
+					SC->SetWorldRotation(FRotator(0.f, ShrubYaw, 0.f));
+					SC->SetWorldScale3D(FVector(ShrubScale));
+					SC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					SC->SetCastShadow(false);
+					SC->AttachToComponent(JA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+					SC->RegisterComponent();
+					JA->AddInstanceComponent(SC);
+					++ShrubCount;
+				}
+			}
+			UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: added %d Megascans shrubs"), ShrubCount);
+		}
 	}
 
 	// 10 palm trees scattered randomly across the full jungle area
@@ -9125,6 +9320,145 @@ void UPHCCitySubsystem::SpawnJungle()
 				}
 			}
 			UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: added %d torch flames"), TorchCount);
+		}
+	}
+
+	// ================================================================
+	// Desert trees scattered across all sandy areas of the map
+	// (pyramid/desert zone, pirate beach, river banks)
+	// ================================================================
+	{
+		UStaticMesh* SandyTreeMeshes[16];
+		int32 ValidSandyTrees = 0;
+		for (int32 i = 0; i < 16; ++i)
+		{
+			FString MPath = FString::Printf(TEXT("/Game/Desert_Tree_Pack/Meshes/Imposter/SM_Imposter_%d.SM_Imposter_%d"), i + 1, i + 1);
+			SandyTreeMeshes[i] = LoadObject<UStaticMesh>(nullptr, *MPath);
+			if (SandyTreeMeshes[i]) ++ValidSandyTrees;
+		}
+
+		if (ValidSandyTrees > 0)
+		{
+			FRandomStream SandyRand(44556);
+			int32 SandyCount = 0;
+
+			// Pyramid/desert area — scatter in 80k radius around pyramids
+			const float PyX = 22248.f, PyY = -62419.f;
+			for (int32 i = 0; i < 120; ++i)
+			{
+				float Angle = SandyRand.FRandRange(0.f, 2.f * PI);
+				float Dist = SandyRand.FRandRange(5000.f, 75000.f);
+				float TX = PyX + Dist * FMath::Cos(Angle);
+				float TY = PyY + Dist * FMath::Sin(Angle);
+				float TZ = GetTerrainHeight(TX, TY);
+				if (TZ < -50.f) continue; // skip underwater
+
+				float TScale = SandyRand.FRandRange(20.f, 60.f);
+				float TYaw = SandyRand.FRandRange(0.f, 360.f);
+				int32 MIdx = SandyRand.RandRange(0, 15);
+				for (int32 T = 0; T < 16 && !SandyTreeMeshes[MIdx]; ++T)
+					MIdx = (MIdx + 1) % 16;
+				if (!SandyTreeMeshes[MIdx]) continue;
+
+				AActor* TA = W->SpawnActor<AActor>(AActor::StaticClass(),
+					FVector(TX, TY, TZ), FRotator::ZeroRotator);
+				if (!TA) continue;
+				for (int32 Card = 0; Card < 3; ++Card)
+				{
+					auto* TC = NewObject<UStaticMeshComponent>(TA,
+						*FString::Printf(TEXT("SandTree_%d_%d"), SandyCount, Card));
+					TC->SetStaticMesh(SandyTreeMeshes[MIdx]);
+					TC->SetWorldLocation(FVector(TX, TY, TZ));
+					TC->SetWorldScale3D(FVector(TScale));
+					TC->SetWorldRotation(FRotator(0.f, TYaw + Card * 60.f, 0.f));
+					TC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					TC->SetCastShadow(false);
+					TC->SetBoundsScale(50.f);
+					TC->RegisterComponent();
+					if (Card == 0) TA->SetRootComponent(TC);
+					TA->AddInstanceComponent(TC);
+				}
+				++SandyCount;
+			}
+
+			// Pirate beach area — scatter around (-248405, 7389) in 50k radius
+			const float PBX = -248405.f, PBY = 7389.f;
+			for (int32 i = 0; i < 60; ++i)
+			{
+				float Angle = SandyRand.FRandRange(0.f, 2.f * PI);
+				float Dist = SandyRand.FRandRange(3000.f, 50000.f);
+				float TX = PBX + Dist * FMath::Cos(Angle);
+				float TY = PBY + Dist * FMath::Sin(Angle);
+				float TZ = GetTerrainHeight(TX, TY);
+				if (TZ < -50.f) continue;
+
+				float TScale = SandyRand.FRandRange(15.f, 45.f);
+				float TYaw = SandyRand.FRandRange(0.f, 360.f);
+				int32 MIdx = SandyRand.RandRange(0, 15);
+				for (int32 T = 0; T < 16 && !SandyTreeMeshes[MIdx]; ++T)
+					MIdx = (MIdx + 1) % 16;
+				if (!SandyTreeMeshes[MIdx]) continue;
+
+				AActor* TA = W->SpawnActor<AActor>(AActor::StaticClass(),
+					FVector(TX, TY, TZ), FRotator::ZeroRotator);
+				if (!TA) continue;
+				for (int32 Card = 0; Card < 3; ++Card)
+				{
+					auto* TC = NewObject<UStaticMeshComponent>(TA,
+						*FString::Printf(TEXT("BeachTree_%d_%d"), SandyCount, Card));
+					TC->SetStaticMesh(SandyTreeMeshes[MIdx]);
+					TC->SetWorldLocation(FVector(TX, TY, TZ));
+					TC->SetWorldScale3D(FVector(TScale));
+					TC->SetWorldRotation(FRotator(0.f, TYaw + Card * 60.f, 0.f));
+					TC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					TC->SetCastShadow(false);
+					TC->SetBoundsScale(50.f);
+					TC->RegisterComponent();
+					if (Card == 0) TA->SetRootComponent(TC);
+					TA->AddInstanceComponent(TC);
+				}
+				++SandyCount;
+			}
+
+			// River banks — along the river at Y~-97000
+			for (int32 i = 0; i < 80; ++i)
+			{
+				float TX = SandyRand.FRandRange(-130000.f, 130000.f);
+				float RiverY = -97000.f + FMath::Sin(TX * 0.00004f) * 2500.f;
+				float Side = (SandyRand.FRand() < 0.5f) ? 1.f : -1.f;
+				float TY = RiverY + Side * SandyRand.FRandRange(2000.f, 8000.f);
+				float TZ = GetTerrainHeight(TX, TY);
+				if (TZ < -50.f) continue;
+
+				float TScale = SandyRand.FRandRange(15.f, 50.f);
+				float TYaw = SandyRand.FRandRange(0.f, 360.f);
+				int32 MIdx = SandyRand.RandRange(0, 15);
+				for (int32 T = 0; T < 16 && !SandyTreeMeshes[MIdx]; ++T)
+					MIdx = (MIdx + 1) % 16;
+				if (!SandyTreeMeshes[MIdx]) continue;
+
+				AActor* TA = W->SpawnActor<AActor>(AActor::StaticClass(),
+					FVector(TX, TY, TZ), FRotator::ZeroRotator);
+				if (!TA) continue;
+				for (int32 Card = 0; Card < 3; ++Card)
+				{
+					auto* TC = NewObject<UStaticMeshComponent>(TA,
+						*FString::Printf(TEXT("RiverTree_%d_%d"), SandyCount, Card));
+					TC->SetStaticMesh(SandyTreeMeshes[MIdx]);
+					TC->SetWorldLocation(FVector(TX, TY, TZ));
+					TC->SetWorldScale3D(FVector(TScale));
+					TC->SetWorldRotation(FRotator(0.f, TYaw + Card * 60.f, 0.f));
+					TC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					TC->SetCastShadow(false);
+					TC->SetBoundsScale(50.f);
+					TC->RegisterComponent();
+					if (Card == 0) TA->SetRootComponent(TC);
+					TA->AddInstanceComponent(TC);
+				}
+				++SandyCount;
+			}
+
+			UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: scattered %d desert trees across sandy areas"), SandyCount);
 		}
 	}
 
@@ -11645,20 +11979,11 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (bIcePeak && FabSnowMI)
+		// All mountain pieces use 8K Fresh Windswept Snow
+		if (FabSnowMI)
 			MC->SetMaterial(0, FabSnowMI);
-		else if (bIcePeak)
-		{
-			float B = (Col.R + Col.G + Col.B) / 3.f;
-			FLinearColor IceRockCol(0.22f + B * 0.12f, 0.25f + B * 0.12f, 0.32f + B * 0.10f);
-			ApplyPBR(MC, IceRockCol, 0.08f, 0.88f,
-				FLinearColor(0.01f, 0.03f, 0.06f));
-		}
 		else
-		{
-			if (FabGrassMI) MC->SetMaterial(0, FabGrassMI);
-			else ApplyPBR(MC, Col, 0.f, Rough);
-		}
+			ApplyPBR(MC, Col, 0.f, Rough);
 		O->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -11682,19 +12007,11 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (bIcePeak && FabSnowMI)
+		// All mountain pieces use 8K Fresh Windswept Snow
+		if (FabSnowMI)
 			MC->SetMaterial(0, FabSnowMI);
-		else if (bIcePeak)
-		{
-			float B = (Col.R + Col.G + Col.B) / 3.f;
-			FLinearColor IceRockCol(0.22f + B * 0.12f, 0.25f + B * 0.12f, 0.32f + B * 0.10f);
-			ApplyPBR(MC, IceRockCol, 0.08f, 0.88f,
-				FLinearColor(0.01f, 0.03f, 0.06f));
-		}
 		else
-		{
 			ApplyPBR(MC, Col, Metal, Rough);
-		}
 		O->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -11718,19 +12035,11 @@ void UPHCCitySubsystem::SpawnMountainRange()
 		}
 		MC->SetBoundsScale(50.f);
 		MC->RegisterComponent();
-		if (bIcePeak && FabSnowMI)
+		// All mountain pieces use 8K Fresh Windswept Snow
+		if (FabSnowMI)
 			MC->SetMaterial(0, FabSnowMI);
-		else if (bIcePeak)
-		{
-			float B = (Col.R + Col.G + Col.B) / 3.f;
-			FLinearColor IceRockCol(0.22f + B * 0.12f, 0.25f + B * 0.12f, 0.32f + B * 0.10f);
-			ApplyPBR(MC, IceRockCol, 0.08f, 0.88f,
-				FLinearColor(0.01f, 0.03f, 0.06f));
-		}
 		else
-		{
 			ApplyPBR(MC, Col, Metal, Rough);
-		}
 		O->AddInstanceComponent(MC);
 		return MC;
 	};
@@ -11957,181 +12266,85 @@ void UPHCCitySubsystem::SpawnMountainRange()
 			}
 		}
 
-		// ---- GIANT CHRISTMAS TREES ----
-		// 5 giant trees spread across the expanded area (reduced from 10)
-		struct FXmasTreeDef { float X; float Y; float Height; };
-		const FXmasTreeDef Trees[] = {
-			{  61500.f, 111000.f, 12000.f },
-			{  16500.f, 123000.f, 12000.f },
-		};
-		const int32 NumXmasTrees = UE_ARRAY_COUNT(Trees);
-
-		// Christmas colors
-		const FLinearColor TreeGreenDark(0.02f, 0.14f, 0.03f);
-		const FLinearColor TreeGreenLight(0.05f, 0.20f, 0.06f);
+		// Christmas colors (used by snowmen + decorations below)
 		const FLinearColor TrunkBrown(0.22f, 0.14f, 0.07f);
-		const FLinearColor StarGold(1.0f, 0.85f, 0.1f);
 
-		// Christmas light colors (emissive)
-		const FLinearColor LightRed(3.0f, 0.1f, 0.05f);
-		const FLinearColor LightGreen(0.1f, 3.0f, 0.15f);
-		const FLinearColor LightBlue(0.1f, 0.3f, 3.5f);
-		const FLinearColor LightGold(3.0f, 2.2f, 0.3f);
-		const FLinearColor LightWhite(3.0f, 3.0f, 3.5f);
-		const FLinearColor LightPurple(2.0f, 0.2f, 3.0f);
-		const FLinearColor BulbColors[] = { LightRed, LightGreen, LightBlue, LightGold, LightWhite, LightPurple };
-		const int32 NumBulbColors = UE_ARRAY_COUNT(BulbColors);
-
-		for (int32 T = 0; T < NumXmasTrees; ++T)
+		// ---- GIANT PINE TREES — Pine Imposter Pack meshes ----
+		// Load all 10 pine mesh variants (do NOT override materials — let mesh defaults apply)
+		UStaticMesh* PineMeshes[10];
+		int32 ValidPines = 0;
+		for (int32 i = 0; i < 10; ++i)
 		{
-			const FXmasTreeDef& TD = Trees[T];
-			const float TH = TD.Height;
-			const float BaseRadius = TH * 0.35f;  // wide conical tree
+			FString MeshPath = FString::Printf(TEXT("/Game/Pine_Imposter_Pack/Meshes/Imposter/SM_Imposter_%d.SM_Imposter_%d"), i + 1, i + 1);
+			PineMeshes[i] = LoadObject<UStaticMesh>(nullptr, *MeshPath);
+			if (PineMeshes[i]) ++ValidPines;
+		}
+		UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Pine Imposter Pack — loaded %d/10 meshes"), ValidPines);
 
-			AActor* TA = World->SpawnActor<AActor>(AActor::StaticClass(),
-				FVector(TD.X, TD.Y, 0.f), FRotator::ZeroRotator);
-			if (!TA) continue;
+		// Helper: spawn a pine tree as cross-billboard (3 planes at 60° angles)
+		// Imposter meshes are flat planes — need multiple rotations to be visible from all directions
+		auto SpawnPineTree = [&](const FVector& Pos, float Scale, float Yaw, int32 Variant, const TCHAR* Label)
+		{
+			int32 MeshIdx = Variant % 10;
+			for (int32 Tries = 0; Tries < 10 && !PineMeshes[MeshIdx]; ++Tries)
+				MeshIdx = (MeshIdx + 1) % 10;
+			if (!PineMeshes[MeshIdx]) return;
+
+			AActor* TA = World->SpawnActor<AActor>(AActor::StaticClass(), Pos, FRotator::ZeroRotator);
+			if (!TA) return;
 #if WITH_EDITOR
-			TA->SetActorLabel(*FString::Printf(TEXT("XmasTree_%d"), T));
+			TA->SetActorLabel(Label);
 #endif
-
-			// A. TRUNK — thick brown cylinder
-			const float TrunkH = TH * 0.12f;
-			const float TrunkR = TH * 0.04f;
-			UStaticMeshComponent* TrunkComp = MC_Cyl(TA,
-				FVector(TD.X, TD.Y, TrunkH * 0.5f),
-				FVector(TrunkR / 50.f, TrunkR / 50.f, TrunkH / 100.f),
-				FRotator::ZeroRotator,
-				TrunkBrown, 0.85f, 0.f);
-			TA->SetRootComponent(TrunkComp);
-
-			// B. FOLIAGE TIERS — 4 stacked cones getting smaller toward top
-			const int32 NumTiers = 4;
-			for (int32 Tier = 0; Tier < NumTiers; ++Tier)
+			// 3 copies at 60° intervals — creates a 3D cross-billboard
+			for (int32 Card = 0; Card < 3; ++Card)
 			{
-				const float TierFrac = (float)Tier / (float)NumTiers;
-				const float TierZ = TrunkH + TH * TierFrac * 0.85f;
-				const float TierRadius = BaseRadius * (1.0f - TierFrac * 0.75f);
-				const float TierH = TH * 0.35f * (1.0f - TierFrac * 0.3f);
-				const FLinearColor TierCol = (Tier % 2 == 0) ? TreeGreenDark : TreeGreenLight;
-
-				MC_Cone(TA,
-					FVector(TD.X, TD.Y, TierZ),
-					FVector(TierRadius / 50.f, TierRadius / 50.f, TierH / 100.f),
-					FRotator::ZeroRotator,
-					TierCol, 0.80f, 0.f);
+				float CardYaw = Yaw + Card * 60.f;
+				FString CN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
+				UStaticMeshComponent* PC = NewObject<UStaticMeshComponent>(TA, *CN);
+				PC->SetStaticMesh(PineMeshes[MeshIdx]);
+				PC->SetWorldLocation(Pos);
+				PC->SetWorldScale3D(FVector(Scale));
+				PC->SetWorldRotation(FRotator(0.f, CardYaw, 0.f));
+				PC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				PC->bNeverDistanceCull = true;
+				PC->SetBoundsScale(50.f);
+				PC->RegisterComponent();
+				if (Card == 0) TA->SetRootComponent(PC);
+				TA->AddInstanceComponent(PC);
 			}
+		};
 
-			// C. REFLECTIVE GOLD COIN ON TOP — mirror-polished gold (matches collectible coins)
+		if (ValidPines > 0)
+		{
+			// 2 giant centerpiece pine trees
+			SpawnPineTree(FVector(61500.f, 111000.f, GetTerrainHeight(61500.f, 111000.f)),
+				200.f, 0.f, 0, TEXT("GiantPine_0"));
+			SpawnPineTree(FVector(16500.f, 123000.f, GetTerrainHeight(16500.f, 123000.f)),
+				200.f, 137.f, 3, TEXT("GiantPine_1"));
+		}
+		// Consume random stream to keep deterministic seed in sync
+		for (int32 i = 0; i < 100; ++i) CityRandom.FRandRange(0.f, 1.f);
+
+		// 40 scattered pine trees throughout the christmas area
+		{
+			FRandomStream PineRand(99887);
+			int32 PineCount = 0;
+			for (int32 P = 0; P < 40; ++P)
 			{
-				const float StarZ = TrunkH + TH * 0.92f;
-				FString SN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
-				UStaticMeshComponent* CoinComp = NewObject<UStaticMeshComponent>(TA, *SN);
-				CoinComp->SetStaticMesh(CylinderMesh);
-				CoinComp->SetMaterial(0, ColorMaterial);
-				CoinComp->SetWorldLocation(FVector(TD.X, TD.Y, StarZ));
-				CoinComp->SetWorldScale3D(FVector(7.f, 7.f, 0.7f));
-				CoinComp->SetWorldRotation(FRotator(90.f, 0.f, 0.f));
-				CoinComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				CoinComp->bNeverDistanceCull = true;
-				CoinComp->SetBoundsScale(50.f);
-				CoinComp->RegisterComponent();
-				TA->AddInstanceComponent(CoinComp);
-				ApplyPBR(CoinComp,
-					FLinearColor(1.0f, 0.84f, 0.0f), 1.0f, 0.05f,
-					FLinearColor::Black);
-			}
+				float PX = PineRand.FRandRange(XmasMinX, XmasMaxX);
+				float PY = PineRand.FRandRange(XmasMinY, XmasMaxY);
+				float PZ = GetTerrainHeight(PX, PY);
+				float PScale = PineRand.FRandRange(60.f, 120.f); // giant scale
+				float PYaw = PineRand.FRandRange(0.f, 360.f);
 
-			// D. CHRISTMAS LIGHTS — glowing ornament spheres spiraling around tree
-			const int32 NumLights = 30 + CityRandom.RandRange(0, 15);
-			for (int32 L = 0; L < NumLights; ++L)
-			{
-				const float LFrac = (float)L / (float)NumLights;
-				const float LZ = TrunkH + TH * 0.05f + LFrac * TH * 0.85f;
-				// Spiral pattern
-				const float Angle = LFrac * 8.0f * PI + CityRandom.FRandRange(0.f, 0.5f);
-				const float RadAtHeight = BaseRadius * (1.0f - LFrac * 0.8f) * 0.85f;
-				const float LX = TD.X + RadAtHeight * FMath::Cos(Angle);
-				const float LY = TD.Y + RadAtHeight * FMath::Sin(Angle);
-				const float BulbSize = TH * CityRandom.FRandRange(0.012f, 0.022f);
-
-				const FLinearColor& BulbEmissive = BulbColors[CityRandom.RandRange(0, NumBulbColors - 1)];
-
-				FString BN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
-				UStaticMeshComponent* Bulb = NewObject<UStaticMeshComponent>(TA, *BN);
-				Bulb->SetStaticMesh(SphereMesh);
-				Bulb->SetWorldLocation(FVector(LX, LY, LZ));
-				Bulb->SetWorldScale3D(FVector(BulbSize / 50.f));
-				Bulb->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Bulb->SetBoundsScale(50.f);
-				Bulb->RegisterComponent();
-				TA->AddInstanceComponent(Bulb);
-
-				// Bright base color + strong emissive for magic glow
-				FLinearColor BulbBase(
-					FMath::Clamp(BulbEmissive.R * 0.25f, 0.f, 1.f),
-					FMath::Clamp(BulbEmissive.G * 0.25f, 0.f, 1.f),
-					FMath::Clamp(BulbEmissive.B * 0.25f, 0.f, 1.f));
-				ApplyPBR(Bulb, BulbBase, 0.3f, 0.6f);
-				if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(Bulb->GetMaterial(0)))
+				if (ValidPines > 0)
 				{
-					MI->SetVectorParameterValue(TEXT("EmissiveColor"), BulbEmissive);
+					SpawnPineTree(FVector(PX, PY, PZ), PScale, PYaw, P,
+						*FString::Printf(TEXT("XmasPine_%d"), P));
 				}
+				++PineCount;
 			}
-
-			// E. GARLAND STRANDS — thin bright cylinders wrapping horizontally
-			const int32 NumGarlands = 3;
-			for (int32 G = 0; G < NumGarlands; ++G)
-			{
-				const float GFrac = 0.2f + 0.25f * (float)G;
-				const float GZ = TrunkH + GFrac * TH * 0.85f;
-				const float GRad = BaseRadius * (1.0f - GFrac * 0.75f) * 0.82f;
-
-				// 8 short cylinder segments forming a ring
-				for (int32 Seg = 0; Seg < 8; ++Seg)
-				{
-					const float A1 = (float)Seg / 8.f * 2.f * PI;
-					const float A2 = (float)(Seg + 1) / 8.f * 2.f * PI;
-					const float GX = TD.X + GRad * FMath::Cos((A1 + A2) * 0.5f);
-					const float GY = TD.Y + GRad * FMath::Sin((A1 + A2) * 0.5f);
-					const float SegLen = GRad * 2.f * PI / 8.f;
-					const float SegYaw = FMath::RadiansToDegrees((A1 + A2) * 0.5f + PI * 0.5f);
-
-					FString GN = FString::Printf(TEXT("Mtn_%d"), CompIdx++);
-					UStaticMeshComponent* Garl = NewObject<UStaticMeshComponent>(TA, *GN);
-					Garl->SetStaticMesh(CylinderMesh);
-					Garl->SetWorldLocation(FVector(GX, GY, GZ));
-					Garl->SetWorldScale3D(FVector(TH * 0.003f / 50.f, SegLen * 0.55f / 50.f, TH * 0.003f / 100.f));
-					Garl->SetWorldRotation(FRotator(90.f, SegYaw, 0.f));
-					Garl->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					Garl->SetBoundsScale(50.f);
-					Garl->RegisterComponent();
-					TA->AddInstanceComponent(Garl);
-
-					const FLinearColor GarlCol = (G == 0) ? LightGold : ((G == 1) ? LightRed : LightWhite);
-					ApplyPBR(Garl, FLinearColor(0.8f, 0.7f, 0.2f), 0.2f, 0.8f);
-					if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(Garl->GetMaterial(0)))
-					{
-						MI->SetVectorParameterValue(TEXT("EmissiveColor"), GarlCol * 0.5f);
-					}
-				}
-			}
-
-			// F. SNOW ON BRANCHES — white patches on the foliage tiers
-			for (int32 SP = 0; SP < 6; ++SP)
-			{
-				const float SPFrac = CityRandom.FRandRange(0.1f, 0.8f);
-				const float SPZ = TrunkH + SPFrac * TH * 0.85f;
-				const float SPRad = BaseRadius * (1.0f - SPFrac * 0.75f) * 0.7f;
-				const float SPAngle = CityRandom.FRandRange(0.f, 2.f * PI);
-
-				MC_Cube(TA,
-					FVector(TD.X + SPRad * FMath::Cos(SPAngle),
-							TD.Y + SPRad * FMath::Sin(SPAngle), SPZ),
-					FVector(TH * 0.04f / 100.f, TH * 0.03f / 100.f, TH * 0.005f / 100.f),
-					FRotator(CityRandom.FRandRange(-5.f, 5.f), CityRandom.FRandRange(0.f, 360.f), 0.f),
-					SnowFresh, 0.50f, 0.f);
-			}
+			UE_LOG(LogPlayhouseCity, Log, TEXT("PHC: Christmas area — spawned 2 giant + %d scattered pine trees (pack meshes=%d)"), PineCount, ValidPines);
 		}
 
 		// ---- SNOWMEN ----
@@ -14557,6 +14770,8 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 		bool bIsLimestone = (Metallic < 0.1f && Color.R > 0.4f && Color.G > 0.3f && Color.B < 0.4f && Roughness > 0.7f);
 		if (FabStoneTilesMID && bIsLimestone)
 			MC->SetMaterial(0, FabStoneTilesMID);
+		else if (Fab8KSandMI && Metallic < 0.1f)
+			MC->SetMaterial(0, Fab8KSandMI);
 		else if (FabSandMID && Metallic < 0.1f)
 			MC->SetMaterial(0, FabSandMID);
 		else
@@ -15363,13 +15578,6 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 			FVector(6.f, 6.f, 4.f),
 			CapstoneGold, 0.4f, 0.5f, TEXT("Khufu_Capstone"));
 
-		// Base platform — limestone foundation
-		SpawnLakePiece(CubeMesh,
-			KhufuBase + FVector(0.f, 0.f, -15.f),
-			FRotator::ZeroRotator,
-			FVector(KhufuBaseW * 1.15f / 100.f, KhufuBaseW * 1.15f / 100.f, 0.3f),
-			LimestoneDark, 0.92f, 0.f, TEXT("Khufu_Platform"));
-
 		// Mortuary temple — east side of Khufu
 		const FVector TemplePos = KhufuBase + FVector(KhufuBaseW * 0.6f + 1000.f, 0.f, 0.f);
 		// Temple base
@@ -15439,28 +15647,6 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 			FRotator::ZeroRotator,
 			FVector(5.f, 5.f, 3.5f),
 			CapstoneGold, 0.4f, 0.5f, TEXT("Khafre_Capstone"));
-
-		// Platform
-		SpawnLakePiece(CubeMesh,
-			KhafreBase + FVector(0.f, 0.f, -15.f),
-			FRotator::ZeroRotator,
-			FVector(KhafreBaseW * 1.12f / 100.f, KhafreBaseW * 1.12f / 100.f, 0.3f),
-			LimestoneDark, 0.92f, 0.f, TEXT("Khafre_Platform"));
-
-		// --- Khafre Interior — Mirror cone + floor matching outer pyramid shape ---
-		{
-			const FLinearColor ChromeMirror(0.92f, 0.92f, 0.95f);
-			// Mirror floor matching pyramid base (sunk below terrain so it's always underfoot)
-			SpawnLakePiece(CubeMesh, KhafreBase + FVector(0.f, 0.f, -200.f),
-				FRotator::ZeroRotator,
-				FVector(KhafreBaseW * 0.98f / 100.f, KhafreBaseW * 0.98f / 100.f, 2.f),
-				ChromeMirror, 0.02f, 1.0f, TEXT("Khafre_MirrorFloor"));
-			// Mirror inner cone walls matching outer pyramid shape
-			SpawnLakePiece(ConeMesh, KhafreBase + FVector(0.f, 0.f, KhafreHeight * 0.5f),
-				FRotator::ZeroRotator,
-				FVector(KhafreBaseW * 0.98f / 100.f, KhafreBaseW * 0.98f / 100.f, KhafreHeight * 0.98f / 100.f),
-				ChromeMirror, 0.02f, 1.0f, TEXT("Khafre_MirrorCone"));
-		}
 
 		// Khafre mortuary temple — east side (2x)
 		const FVector KTemplePos = KhafreBase + FVector(KhafreBaseW * 0.55f + 800.f, 0.f, 0.f);
@@ -15544,28 +15730,6 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 			FVector(3.f, 3.f, 2.f),
 			FLinearColor(0.58f, 0.50f, 0.30f), 0.3f, 0.5f, TEXT("Menkaure_Capstone"));
 
-		// Platform
-		SpawnLakePiece(CubeMesh,
-			MenkaureBase + FVector(0.f, 0.f, -15.f),
-			FRotator::ZeroRotator,
-			FVector(MenkaureBaseW * 1.1f / 100.f, MenkaureBaseW * 1.1f / 100.f, 0.3f),
-			LimestoneDark, 0.92f, 0.f, TEXT("Menkaure_Platform"));
-
-		// --- Menkaure Interior — Mirror cone + floor matching outer pyramid shape ---
-		{
-			const FLinearColor ChromeMirror(0.92f, 0.92f, 0.95f);
-			// Mirror floor matching pyramid base (sunk below terrain so it's always underfoot)
-			SpawnLakePiece(CubeMesh, MenkaureBase + FVector(0.f, 0.f, -200.f),
-				FRotator::ZeroRotator,
-				FVector(MenkaureBaseW * 0.98f / 100.f, MenkaureBaseW * 0.98f / 100.f, 2.f),
-				ChromeMirror, 0.02f, 1.0f, TEXT("Menkaure_MirrorFloor"));
-			// Mirror inner cone walls matching outer pyramid shape
-			SpawnLakePiece(ConeMesh, MenkaureBase + FVector(0.f, 0.f, MenkaureHeight * 0.5f),
-				FRotator::ZeroRotator,
-				FVector(MenkaureBaseW * 0.98f / 100.f, MenkaureBaseW * 0.98f / 100.f, MenkaureHeight * 0.98f / 100.f),
-				ChromeMirror, 0.02f, 1.0f, TEXT("Menkaure_MirrorCone"));
-		}
-
 		// Three Queens' Pyramids (small satellites south of Menkaure, 2x)
 		for (int32 q = 0; q < 3; ++q)
 		{
@@ -15647,7 +15811,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 							TA, *FString::Printf(TEXT("PyTFlameNiagara_%d"), PTorchIdx));
 						PFlameComp->SetAsset(PFlameFX);
 						PFlameComp->SetWorldLocation(Pos + FVector(0.f, 0.f, 15.f));
-						PFlameComp->SetWorldScale3D(FVector(5.0f, 5.0f, 5.0f));
+						PFlameComp->SetWorldScale3D(FVector(15.0f, 15.0f, 15.0f));
 						PFlameComp->SetAutoActivate(true);
 						PFlameComp->SetAutoDestroy(false);
 						PFlameComp->AttachToComponent(PyTorchRoot, FAttachmentTransformRules::KeepWorldTransform);
@@ -15914,20 +16078,13 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 				RiverMud, 0.94f, 0.f,
 				*FString::Printf(TEXT("River_MudS_%d"), s));
 
-			// Shore rocks (3-4 per segment per side)
+			// Shore rocks removed — consume random stream to maintain determinism
 			for (int32 r = 0; r < 7; ++r)
 			{
-				float RX = SX + CityRandom.FRandRange(-SegLen * 0.45f, SegLen * 0.45f);
-				float Side = (r < 4) ? 1.f : -1.f;
-				float RY = CurveY + Side * (RiverWidth * 0.5f + CityRandom.FRandRange(50.f, 600.f));
-				float RZ = GetTerrainHeight(RX, RY);
-				float RS = CityRandom.FRandRange(0.3f, 1.2f);
-
-				SpawnLakePiece(SphereMesh, FVector(RX, RY, RZ + RS * 20.f),
-					FRotator(CityRandom.FRandRange(-10.f, 10.f), CityRandom.FRandRange(0.f, 360.f), 0.f),
-					FVector(RS, RS * CityRandom.FRandRange(0.7f, 1.3f), RS * CityRandom.FRandRange(0.3f, 0.6f)),
-					ShoreRock, CityRandom.FRandRange(0.80f, 0.95f), 0.f,
-					*FString::Printf(TEXT("River_Rock_%d_%d"), s, r));
+				CityRandom.FRandRange(0.f, 1.f); CityRandom.FRandRange(0.f, 1.f);
+				CityRandom.FRandRange(0.f, 1.f); CityRandom.FRandRange(0.f, 1.f);
+				CityRandom.FRandRange(0.f, 1.f); CityRandom.FRandRange(0.f, 1.f);
+				CityRandom.FRandRange(0.f, 1.f);
 			}
 
 			// Dense reeds / vegetation (10 per segment)
@@ -15948,10 +16105,10 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 		}
 	}
 
-	// --- Torch lights along the river near the pyramids ---
+	// --- Torch lights along the river — full length, stopping before ocean ---
 	{
-		const float TorchStartX = -20000.f;
-		const float TorchEndX = 60000.f;
+		const float TorchStartX = -140000.f;
+		const float TorchEndX = 140000.f;
 		const float TorchSpacing = 5000.f;
 		const int32 NumTorches = FMath::CeilToInt((TorchEndX - TorchStartX) / TorchSpacing);
 		const FLinearColor TorchWood(0.12f, 0.07f, 0.03f);
@@ -15978,6 +16135,9 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 				const float BankOffset = (Side == 0) ? 3000.f : -3000.f;
 				const float TY = RiverY + BankOffset;
 				const float TZ = GetTerrainHeight(TX, TY);
+
+				// Skip torches below water level (ocean/river)
+				if (TZ < -50.f) continue;
 
 				AActor* TorchActor = World->SpawnActor<AActor>(
 					AActor::StaticClass(), FVector(TX, TY, TZ), FRotator::ZeroRotator);
@@ -16010,7 +16170,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 							TorchActor, *FString::Printf(TEXT("TorchFlameNiagara_%d"), TorchIdx));
 						FlameComp->SetAsset(FlameFX);
 						FlameComp->SetWorldLocation(FVector(TX, TY, TopZ + 15.f));
-						FlameComp->SetWorldScale3D(FVector(5.0f, 5.0f, 5.0f));
+						FlameComp->SetWorldScale3D(FVector(15.0f, 15.0f, 15.0f));
 						FlameComp->SetAutoActivate(true);
 						FlameComp->SetAutoDestroy(false);
 						FlameComp->AttachToComponent(TorchRoot,

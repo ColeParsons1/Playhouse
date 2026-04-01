@@ -54,7 +54,7 @@ PROJECT_FILE="$PROJECT_DIR/PlayhouseCity.uproject"
 UE_ROOT="/Users/Shared/Epic Games/UE_5.7"
 RUNUAT="$UE_ROOT/Engine/Build/BatchFiles/RunUAT.sh"
 RUNUBT="$UE_ROOT/Engine/Build/BatchFiles/RunUBT.sh"
-ARCHIVE_DIR="$PROJECT_DIR/TestFlightBuild"
+ARCHIVE_DIR="/Volumes/Untitled/PlayhouseCity/TestFlightBuild"
 IPA_DIR="$ARCHIVE_DIR/IOS"
 
 # App Store Connect API Key (set these after step 4 above)

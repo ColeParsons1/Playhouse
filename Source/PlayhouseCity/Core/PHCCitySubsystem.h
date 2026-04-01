@@ -196,6 +196,12 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> FabCloverMI;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> Fab8KSandMI;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> Fab8KMossyFloorMI;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> Fab8KSnowMI;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> Fab8KTrampleSnowMI;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> Fab8KCloverMI;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> Fab8KLimestoneMI;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> Fab8KBeachSandMI;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> Fab8KMossySandMI;
 
 	// -- Procedural normal/roughness map textures (generated at startup) ------
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> GrassNormalMap;
@@ -494,10 +500,6 @@ private:
 	/** Road materials for wet road effect at night. */
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> RoadMaterials;
 	float GlobalWetness = 0.f;
-
-	/** Khufu pyramid interior — animated psychedelic emissive MIDs. */
-	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> PyramidInteriorMIDs;
-	float PyramidColorTime = 0.f;
 
 	/** Weather state. */
 	float WeatherTimer = 0.f;

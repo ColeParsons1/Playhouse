@@ -67,6 +67,41 @@ ssh root@GAME_SERVER_IP 'su - gameserver -c "cd /home/gameserver/PlayhouseCity/B
 
 **Important:** Always use `RunUBT.sh` for builds, NOT `xcodebuild`. Build time is ~11 seconds for incremental changes.
 
+### Deploying Staged Builds to Device (Critical Steps)
+
+After `RunUAT BuildCookRun -cook -stage`, the staged `.app` requires **three manual steps** before it will run on device:
+
+```bash
+APP="/Users/coleparsons/PlayhouseCity/Saved/StagedBuilds/IOS/PlayhouseCity.app"
+XCENT="/Users/coleparsons/PlayhouseCity/Saved/StagedBuilds/PlayhouseCity (IOS).build/IOS/PlayhouseCity.build/PlayhouseCity.app.xcent"
+
+# 1. Clear uecommandline.txt — contains -project path that doesn't exist on device
+#    WITHOUT THIS: app crashes with "Failed to open descriptor file"
+printf '' > "$APP/uecommandline.txt"
+
+# 2. Delete Saved/Cooked BEFORE signing — codesign needs ~500MB+ free disk space
+#    WITHOUT THIS: codesign fails with "internal error in Code Signing subsystem"
+rm -rf /Users/coleparsons/PlayhouseCity/Saved/Cooked
+
+# 3. Re-sign frameworks then main app with entitlements from the build
+for FW in "$APP/Frameworks"/*.framework; do
+    /usr/bin/codesign --force --sign 482BFA54A521F21BAA12ECC68F45469EDF3F4F48 --timestamp=none "$FW"
+done
+/usr/bin/codesign --force --sign 482BFA54A521F21BAA12ECC68F45469EDF3F4F48 \
+    --entitlements "$XCENT" --timestamp=none --generate-entitlement-der "$APP"
+
+# 4. Install and launch
+xcrun devicectl device install app --device 00008130-000251843CF3803A "$APP"
+xcrun devicectl device process launch --device 00008130-000251843CF3803A com.playhousecity.PlayhouseCity
+```
+
+**Build artifacts on external drive:** Heavy build outputs are symlinked to `/Volumes/Untitled/PlayhouseCity/` (466 GB external drive) to avoid filling the 228 GB internal SSD:
+- `Saved/Cooked` -> `/Volumes/Untitled/PlayhouseCity/Cooked` (~2.5 GB per cook)
+- `Saved/StagedBuilds` -> `/Volumes/Untitled/PlayhouseCity/StagedBuilds` (~3.3 GB per stage)
+- `TestFlightBuild` -> `/Volumes/Untitled/PlayhouseCity/TestFlightBuild`
+
+**Important:** The external drive must be mounted at `/Volumes/Untitled` before running builds. The symlinks are transparent — all existing build commands and paths work unchanged.
+
 ---
 
 ## Architecture
