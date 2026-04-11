@@ -62,6 +62,10 @@
 		{
 			"Name": "SmartObjects",
 			"Enabled": true
+		},
+		{
+			"Name": "Synthesis",
+			"Enabled": true
 		}
 	]
 }

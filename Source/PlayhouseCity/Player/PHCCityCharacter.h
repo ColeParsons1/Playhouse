@@ -19,6 +19,8 @@ class UPointLightComponent;
 class USpotLightComponent;
 class UMaterialInstanceDynamic;
 class UTextRenderComponent;
+class UNiagaraComponent;
+class UNiagaraSystem;
 struct FInputActionValue;
 
 /**
@@ -70,7 +72,13 @@ public:
 	UPROPERTY(Transient) TObjectPtr<UAnimSequence> RunAnim;
 	UPROPERTY(Transient) TObjectPtr<UAnimSequence> JumpAnim;
 	UPROPERTY(Transient) TObjectPtr<UAnimSequence> RollerBladeAnim;
-	int32 CurrentAnimState = 0; // 0=idle, 1=walk, 2=run, 3=jump
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> WallRunLeftAnim;
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> WallRunRightAnim;
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> RifleRunAnim;
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> RunRightAnim;
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> RunLeftAnim;
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> SwordRunAnim;
+	int32 CurrentAnimState = 0; // 0=idle, 1=walk, 2=run, 3=jump, 5=wallRunL, 6=wallRunR, 7=rifleRun, 8=swordRun, 9=runRight, 10=runLeft
 
 	// -- Legacy body components (hidden, kept for NPC compatibility) ----------
 
@@ -195,6 +203,46 @@ public:
 	/** True when grounded on previous frame. */
 	bool bWasGrounded = false;
 
+	// -- Parkour system -------------------------------------------------------
+
+	enum class EParkourState : uint8
+	{
+		None,
+		WallRunL,    // running along wall on character's left
+		WallRunR,    // running along wall on character's right
+		Sliding,
+		Vaulting
+	};
+
+	EParkourState ParkourState = EParkourState::None;
+	float ParkourTimer = 0.f;           // time spent in current parkour state
+	FVector ParkourWallNormal = FVector::ZeroVector; // outward normal of wall being run on
+	FVector ParkourWallPoint = FVector::ZeroVector;  // closest point on wall
+	FVector ParkourForward = FVector::ZeroVector;    // direction of travel along wall
+	FVector ParkourStartPos = FVector::ZeroVector;   // position when parkour state began
+	float ParkourWallRunSpeed = 2800.f;  // target wall run speed (NOSHOT: 17 m/s scaled to UU)
+	float ParkourWallRunMaxTime = 1.2f;  // max wall run duration (NOSHOT: 1.0s, ours slightly longer)
+	float ParkourWallJumpUp = 500.f;     // vertical impulse on wall jump
+	float ParkourWallJumpOut = 500.f;    // horizontal impulse away from wall on wall jump
+	float ParkourSlideMaxTime = 1.0f;    // slide timer (NOSHOT: 1.0s countdown)
+	FVector ParkourSlideDir = FVector::ZeroVector;
+	float ParkourVaultMaxTime = 0.4f;    // vault Bezier duration
+	FVector ParkourVaultStart = FVector::ZeroVector;
+	FVector ParkourVaultEnd = FVector::ZeroVector;
+	FVector ParkourVaultMid = FVector::ZeroVector;   // Bezier control point
+	float ParkourCooldown = 0.f;
+	float ParkourAirTime = 0.f;          // time spent airborne (NOSHOT: must be < 2.0s for wall run)
+	float ParkourWallRunCurrentSpeed = 0.f; // current speed during wall run (ramps up)
+
+	/** Try to enter wall run. Called every frame while moving near a wall. */
+	bool TryStartWallRun();
+
+	/** Try to detect and start a vault over an obstacle ahead. Returns true if vault started. */
+	bool TryStartVault();
+
+	/** Exit current parkour state and return to normal movement. */
+	void EndParkour();
+
 	// -- R6 walk animation state ----------------------------------------------
 
 	float WalkCyclePhase = 0.f;
@@ -300,6 +348,12 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SniperMagMesh;
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SniperMuzzleMesh;
 
+	// -- Flamethrower weapon mesh --
+	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> FlamethrowerMesh;
+	UPROPERTY(Transient) TObjectPtr<UNiagaraComponent> FlamethrowerFlameComp;
+	bool bFlamethrowerFiring = false;
+	float FlamethrowerFuelTimer = 0.f; // continuous fire timer
+
 	// -- Health ---------------------------------------------------------------
 	float Health = 100.f;
 	float MaxHealth = 100.f;
@@ -334,6 +388,37 @@ public:
 	int32 KillStreakCount = 0;
 	float KillStreakTimer = 0.f;  // resets to 5s on each kill, decrements
 	float KillStreakMultiplier() const;
+
+	// -- Kill Streak Perks ----------------------------------------------------
+	enum class EKillStreakPerk : uint8 { None, ChopperGunner, AC130, TacticalNuke };
+	EKillStreakPerk ActiveKillStreak = EKillStreakPerk::None;
+	float KillStreakPerkTimer = 0.f;
+	bool bTacticalNukeCountdown = false;
+	float TacticalNukeCountdownTimer = 0.f;
+	bool bTacticalNukeDetonated = false;
+	float TacticalNukeFlashTimer = 0.f;
+
+	// Chopper Gunner state
+	bool bChopperGunnerActive = false;
+	float ChopperGunnerTimer = 0.f;
+	FVector ChopperGunnerPos = FVector::ZeroVector;
+	float ChopperGunnerYaw = 0.f;
+	float ChopperGunnerPitch = -60.f;
+	float SavedArmLength = 320.f;
+	FVector SavedSocketOffset = FVector::ZeroVector;
+
+	// AC-130 state
+	bool bAC130Active = false;
+	float AC130Timer = 0.f;
+	int32 AC130WeaponMode = 0; // 0=25mm, 1=40mm, 2=105mm
+	float AC130OrbitAngle = 0.f;
+	float AC130Pitch = -70.f;
+	float AC130FireCooldown = 0.f;
+
+	void ActivateChopperGunner();
+	void ActivateAC130();
+	void ActivateTacticalNuke();
+	void DeactivateKillStreak();
 
 	// -- Loot crate system ----------------------------------------------------
 	bool bLootCrateActive = false;
@@ -395,7 +480,7 @@ public:
 
 	// -- Weapon state ---------------------------------------------------------
 
-	int32 CurrentWeaponType = 3; // -1=none, 0=Gun, 1=RPG, 2=Sword, 3=Scythe, 4=Dagger, 5=AK47, 6=Sniper
+	int32 CurrentWeaponType = 3; // -1=none, 0=Gun, 1=RPG, 2=Sword, 3=Scythe, 4=Dagger, 5=AK47, 6=Sniper, 7=Flamethrower
 
 	float ScytheSwingTimer = 0.f;  // >0 = currently swinging
 

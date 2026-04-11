@@ -451,7 +451,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	if (MoonLightComp)
 	{
 		const float MoonElevation = FMath::Max(0.f, -SunSine);
-		MoonLightComp->SetIntensity(MoonElevation * 0.5f);
+		MoonLightComp->SetIntensity(MoonElevation * 0.15f);  // dimmer moon — less horizon glow
 		const float MoonPitch = -60.f * MoonElevation;
 		const float MoonYaw = 90.f - T * 360.f + 180.f;
 		MoonLightComp->SetWorldRotation(FRotator(MoonPitch, MoonYaw, 0.f));
@@ -462,13 +462,13 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	{
 		// Bright during day, very dim at night.
 		const float DayFactor = FMath::Max(0.f, SunSine);
-		SkyLightComp->SetIntensity(FMath::Lerp(0.15f, 2.5f, DayFactor)); // darker night for visible stars
+		SkyLightComp->SetIntensity(FMath::Lerp(0.04f, 2.5f, DayFactor)); // very dark night sky for visible stars
 
 		// Tint: blue-white during day, very deep blue at night.
 		const float NightFactor = FMath::Max(0.f, -SunSine);
 		// PUBG 2026: neutral pale blue sky light
 		const FLinearColor DayTint(0.7f, 0.75f, 0.85f);
-		const FLinearColor NightTint(0.15f, 0.12f, 0.22f);
+		const FLinearColor NightTint(0.06f, 0.05f, 0.10f);  // much darker ambient at night
 		SkyLightComp->SetLightColor(FMath::Lerp(DayTint, NightTint, NightFactor));
 
 		// RecaptureSky is extremely expensive (full cubemap capture).
@@ -496,7 +496,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		// PUBG 2026: neutral blue-gray daytime fog, subtle warm haze at horizon
 		const FLinearColor NeutralFog(0.55f, 0.58f, 0.65f); // cool blue-gray
 		const FLinearColor WarmHaze(0.9f, 0.7f, 0.4f);      // reduced warmth
-		const FLinearColor NightFog(0.06f, 0.04f, 0.10f);
+		const FLinearColor NightFog(0.01f, 0.008f, 0.02f);  // much darker night fog — reduces horizon glow
 		FLinearColor InscatterColor = FMath::Lerp(NeutralFog, WarmHaze, DawnDusk);
 		InscatterColor = FMath::Lerp(InscatterColor, NightFog, NightFactor);
 		FogComp->SetFogInscatteringColor(InscatterColor);
@@ -537,9 +537,9 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		}
 		else
 		{
-			// Night: darker cool blue
-			TargetGain = FVector4(0.18f, 0.22f, 0.35f, 1.0f);
-			TargetOffset = FVector4(-0.015f, -0.006f, 0.006f, 0.0f);
+			// Night: very dark cool blue — no bright horizon
+			TargetGain = FVector4(0.10f, 0.12f, 0.20f, 1.0f);
+			TargetOffset = FVector4(-0.02f, -0.01f, 0.003f, 0.0f);
 		}
 		// Smooth interpolation to target
 		PP.ColorGain = FMath::Lerp(PP.ColorGain, TargetGain, FMath::Min(1.f, DeltaTime * 2.f));
@@ -4721,6 +4721,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	SpawnOutskirts();
 	// SpawnHills();        // removed — spherical terrain
 	SpawnDirtBikePark();
+	// SpawnParkourCourse(); // Disabled — re-enable for parkour testing
 	SpawnStarfield();
 	// SpawnCloudLayer(); // Replaced by GoodSky
 
@@ -4993,7 +4994,7 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 		}
 	}
 
-	// SpawnNPCHelicopter(); // Disabled for multiplayer — re-enable for solo/testing
+	SpawnNPCHelicopter();
 	// SpawnNPCPlayers(); // Disabled for now — re-enable for testing
 
 	// City is fully generated — dismiss the loading screen after a delay
@@ -8232,6 +8233,161 @@ void UPHCCitySubsystem::SpawnHills()
 
 // ---------------------------------------------------------------------------
 // Motocross Dirt Bike Park — rolling hills designed for jumping
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Parkour Test Course — abstract architectural obstacles near spawn
+// ---------------------------------------------------------------------------
+
+void UPHCCitySubsystem::SpawnParkourCourse()
+{
+	UWorld* W = GetWorld();
+	if (!W || !CubeMesh || !CylinderMesh || !ColorMaterial) return;
+
+	// Center near spawn (-28000, -28000, 58)
+	const float CX = -26500.f;
+	const float CY = -28000.f;
+	const float FZ = 0.f;
+
+	// 8K rippled sand texture — use Fab8KSandMI with FabSandMID as fallback
+	UMaterialInterface* SandMat = Fab8KSandMI ? (UMaterialInterface*)Fab8KSandMI.Get() : FabSandMID ? (UMaterialInterface*)FabSandMID.Get() : nullptr;
+
+	AActor* PA = W->SpawnActor<AActor>(AActor::StaticClass(), FVector(CX, CY, 0.f), FRotator::ZeroRotator);
+	if (!PA) return;
+#if WITH_EDITOR
+	PA->SetActorLabel(TEXT("ParkourCourse"));
+#endif
+
+	int32 CI = 0;
+	auto PC = [&](UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot,
+		const FVector& S) -> UStaticMeshComponent*
+	{
+		auto* C = NewObject<UStaticMeshComponent>(PA, *FString::Printf(TEXT("PK_%d"), CI++));
+		C->SetStaticMesh(Mesh);
+		C->SetWorldLocation(Loc);
+		C->SetWorldRotation(Rot);
+		C->SetWorldScale3D(S);
+		C->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		C->SetCollisionResponseToAllChannels(ECR_Block);
+		C->SetCastShadow(true);
+		C->SetBoundsScale(10.f);
+		// Apply 8K rippled sand texture to every structure
+		if (SandMat)
+			C->SetMaterial(0, SandMat);
+		else
+			ApplyPBR(C, FLinearColor(0.6f, 0.5f, 0.35f), 0.f, 0.8f); // sandy fallback color
+		if (CI == 1) { C->RegisterComponent(); PA->SetRootComponent(C); }
+		else { C->AttachToComponent(PA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform); C->RegisterComponent(); }
+		PA->AddInstanceComponent(C);
+		return C;
+	};
+
+	// All structures spread 3x wider for a big open parkour playground
+
+	// ======= GROUND PLANE =======
+	PC(CubeMesh, FVector(CX, CY, FZ - 25.f), FRotator::ZeroRotator,
+		FVector(500.f, 500.f, 0.5f));
+
+	// ======= A: ENTRY RAMP + TALL WALL =======
+	PC(CubeMesh, FVector(CX - 2000.f, CY, FZ + 150.f), FRotator(12.f, 0.f, 0.f),
+		FVector(25.f, 30.f, 0.6f));
+	PC(CubeMesh, FVector(CX + 1200.f, CY - 600.f, FZ + 1200.f), FRotator::ZeroRotator,
+		FVector(1.5f, 12.f, 24.f));
+
+	// ======= B: WALL-RUN CORRIDOR (500 UU gap) =======
+	const float CorX = CX + 5000.f;
+	PC(CubeMesh, FVector(CorX, CY - 250.f, FZ + 1350.f), FRotator::ZeroRotator,
+		FVector(80.f, 1.5f, 27.f));
+	PC(CubeMesh, FVector(CorX, CY + 250.f, FZ + 1350.f), FRotator::ZeroRotator,
+		FVector(80.f, 1.5f, 27.f));
+
+	// ======= C: LARGE CUBE BLOCKS =======
+	PC(CubeMesh, FVector(CX + 12000.f, CY + 2000.f, FZ + 500.f), FRotator::ZeroRotator,
+		FVector(10.f, 10.f, 10.f));
+	PC(CubeMesh, FVector(CX + 10000.f, CY - 2500.f, FZ + 350.f), FRotator::ZeroRotator,
+		FVector(7.f, 7.f, 7.f));
+	PC(CubeMesh, FVector(CX + 5000.f, CY, FZ + 2200.f), FRotator::ZeroRotator,
+		FVector(6.f, 4.f, 4.f));
+
+	// ======= D: CURVED HALF-PIPE =======
+	const float HpX = CX - 7000.f;
+	const float HpY = CY + 5000.f;
+	for (int32 i = 0; i < 10; ++i)
+	{
+		const float Ang = -50.f + i * 11.f;
+		const float AR = FMath::DegreesToRadians(Ang);
+		const float R = 1500.f;
+		PC(CubeMesh, FVector(HpX, HpY + FMath::Sin(AR) * R, FZ + 1000.f + FMath::Cos(AR) * R - R),
+			FRotator(0.f, 0.f, Ang), FVector(50.f, 0.5f, 10.f));
+	}
+
+	// ======= E: STAGGERED WALL-JUMP CHAINING WALLS =======
+	const float SwX = CX + 18000.f;
+	PC(CubeMesh, FVector(SwX,          CY - 400.f, FZ + 1200.f), FRotator::ZeroRotator, FVector(30.f, 1.5f, 24.f));
+	PC(CubeMesh, FVector(SwX + 4000.f, CY + 400.f, FZ + 1200.f), FRotator::ZeroRotator, FVector(30.f, 1.5f, 24.f));
+	PC(CubeMesh, FVector(SwX + 8000.f, CY - 400.f, FZ + 1200.f), FRotator::ZeroRotator, FVector(30.f, 1.5f, 24.f));
+	PC(CubeMesh, FVector(SwX + 12000.f,CY + 400.f, FZ + 1200.f), FRotator::ZeroRotator, FVector(30.f, 1.5f, 24.f));
+	PC(CubeMesh, FVector(SwX + 16000.f,CY - 400.f, FZ + 1200.f), FRotator::ZeroRotator, FVector(30.f, 1.5f, 24.f));
+
+	// ======= F: LEANING SLABS =======
+	PC(CubeMesh, FVector(CX - 10000.f, CY - 2000.f, FZ + 1000.f), FRotator(0.f, 0.f, -12.f),
+		FVector(40.f, 2.f, 20.f));
+	PC(CubeMesh, FVector(CX - 10000.f, CY + 3000.f, FZ + 900.f), FRotator(0.f, 0.f, 10.f),
+		FVector(35.f, 2.f, 18.f));
+
+	// ======= G: ELEVATED RAMP + PLATFORM =======
+	const float RpX = CX + 25000.f;
+	PC(CubeMesh, FVector(RpX, CY, FZ + 300.f), FRotator(18.f, 0.f, 0.f),
+		FVector(30.f, 22.f, 0.8f));
+	PC(CubeMesh, FVector(RpX + 3000.f, CY, FZ + 600.f), FRotator::ZeroRotator,
+		FVector(25.f, 25.f, 0.8f));
+	PC(CubeMesh, FVector(RpX + 3000.f, CY - 1200.f, FZ + 1500.f), FRotator::ZeroRotator,
+		FVector(25.f, 1.f, 18.f));
+	PC(CubeMesh, FVector(RpX + 3000.f, CY + 1200.f, FZ + 1500.f), FRotator::ZeroRotator,
+		FVector(25.f, 1.f, 18.f));
+
+	// ======= H: FLOATING SKY BLOCKS =======
+	PC(CubeMesh, FVector(CX + 8000.f, CY - 6000.f, FZ + 2500.f), FRotator(5.f, 15.f, 8.f), FVector(8.f, 5.f, 6.f));
+	PC(CubeMesh, FVector(CX + 15000.f, CY + 5000.f, FZ + 3000.f), FRotator(-3.f, 25.f, -5.f), FVector(6.f, 8.f, 5.f));
+	PC(CubeMesh, FVector(CX - 5000.f, CY + 8000.f, FZ + 2800.f), FRotator(8.f, -10.f, 12.f), FVector(7.f, 6.f, 7.f));
+	PC(CubeMesh, FVector(CX + 20000.f, CY - 4000.f, FZ + 2200.f), FRotator(0.f, 30.f, 0.f), FVector(9.f, 4.f, 5.f));
+
+	// ======= I: ANGULAR PLATFORMS =======
+	PC(CubeMesh, FVector(CX + 14000.f, CY - 5000.f, FZ + 200.f), FRotator(0.f, 35.f, 0.f),
+		FVector(14.f, 6.f, 4.f));
+	PC(CubeMesh, FVector(CX + 20000.f, CY + 4000.f, FZ + 150.f), FRotator(0.f, -20.f, 0.f),
+		FVector(12.f, 7.f, 3.f));
+
+	// ======= J: SECOND CORRIDOR =======
+	const float C2X = CX + 35000.f;
+	PC(CubeMesh, FVector(C2X, CY - 300.f, FZ + 1500.f), FRotator::ZeroRotator, FVector(60.f, 1.5f, 30.f));
+	PC(CubeMesh, FVector(C2X, CY + 300.f, FZ + 1500.f), FRotator::ZeroRotator, FVector(60.f, 1.5f, 30.f));
+
+	// ======= K: VAULT BARRIERS =======
+	PC(CubeMesh, FVector(CX + 8000.f, CY, FZ + 45.f), FRotator::ZeroRotator, FVector(0.8f, 10.f, 0.9f));
+	PC(CubeMesh, FVector(CX + 16000.f, CY - 500.f, FZ + 50.f), FRotator::ZeroRotator, FVector(0.8f, 8.f, 1.f));
+	PC(CubeMesh, FVector(CX + 22000.f, CY + 300.f, FZ + 45.f), FRotator::ZeroRotator, FVector(0.8f, 9.f, 0.9f));
+
+	// ======= L: ADDITIONAL WIDE-SPACED WALLS FOR RUNNING =======
+	// Long walls at various angles across the field
+	PC(CubeMesh, FVector(CX - 5000.f, CY - 4000.f, FZ + 1000.f), FRotator(0.f, 30.f, 0.f),
+		FVector(60.f, 1.5f, 20.f));
+	PC(CubeMesh, FVector(CX + 15000.f, CY - 3000.f, FZ + 1000.f), FRotator(0.f, -15.f, 0.f),
+		FVector(50.f, 1.5f, 20.f));
+	PC(CubeMesh, FVector(CX + 8000.f, CY + 5000.f, FZ + 1200.f), FRotator(0.f, 45.f, 0.f),
+		FVector(45.f, 1.5f, 24.f));
+
+	// ======= M: PILLARS =======
+	PC(CubeMesh, FVector(CX + 3000.f, CY - 3000.f, FZ + 600.f), FRotator::ZeroRotator, FVector(3.f, 3.f, 12.f));
+	PC(CubeMesh, FVector(CX + 7000.f, CY + 3000.f, FZ + 600.f), FRotator::ZeroRotator, FVector(3.f, 3.f, 12.f));
+	PC(CubeMesh, FVector(CX + 11000.f, CY - 1500.f, FZ + 600.f), FRotator::ZeroRotator, FVector(3.f, 3.f, 12.f));
+	PC(CubeMesh, FVector(CX + 17000.f, CY + 2000.f, FZ + 600.f), FRotator::ZeroRotator, FVector(3.f, 3.f, 12.f));
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCitySubsystem: Parkour course spawned — spread out, 8K sand texture"));
+}
+
+// ---------------------------------------------------------------------------
+// Dirt Bike Park — motocross terrain
 // ---------------------------------------------------------------------------
 
 void UPHCCitySubsystem::SpawnDirtBikePark()
@@ -16132,7 +16288,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 
 			for (int32 Side = 0; Side < 2; ++Side)
 			{
-				const float BankOffset = (Side == 0) ? 3000.f : -3000.f;
+				const float BankOffset = (Side == 0) ? 2000.f : -2000.f; // closer to water (was 3000)
 				const float TY = RiverY + BankOffset;
 				const float TZ = GetTerrainHeight(TX, TY);
 
@@ -16143,7 +16299,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 					AActor::StaticClass(), FVector(TX, TY, TZ), FRotator::ZeroRotator);
 				if (!TorchActor) continue;
 
-				const float PoleH = 600.f;
+				const float PoleH = 300.f; // reduced 50% from 600
 				const float TopZ = TZ + PoleH;
 
 				// Torch pole — dark wood stake
@@ -16170,7 +16326,7 @@ void UPHCCitySubsystem::SpawnLakeAndPirateShip()
 							TorchActor, *FString::Printf(TEXT("TorchFlameNiagara_%d"), TorchIdx));
 						FlameComp->SetAsset(FlameFX);
 						FlameComp->SetWorldLocation(FVector(TX, TY, TopZ + 15.f));
-						FlameComp->SetWorldScale3D(FVector(15.0f, 15.0f, 15.0f));
+						FlameComp->SetWorldScale3D(FVector(30.0f, 30.0f, 30.0f)); // doubled flame size
 						FlameComp->SetAutoActivate(true);
 						FlameComp->SetAutoDestroy(false);
 						FlameComp->AttachToComponent(TorchRoot,

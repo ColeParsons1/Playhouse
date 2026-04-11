@@ -85,6 +85,7 @@ private:
 	void SpawnTerrainGrid();
 	void SpawnGrassSystem();
 	void SpawnDirtBikePark();
+	void SpawnParkourCourse();
 	void SpawnGoldCoins();
 	void SpawnJungle();
 	void SpawnOakGrove();

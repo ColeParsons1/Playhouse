@@ -9,6 +9,7 @@
 class UStaticMeshComponent;
 class UPointLightComponent;
 class UMaterialInstanceDynamic;
+class UNiagaraComponent;
 
 /**
  * Large dynamite explosion effect built from basic shapes.
@@ -64,6 +65,9 @@ private:
 	TArray<FVector> EmberVelocities;
 	TArray<FVector> EmberPositions;
 
+	// -- Niagara flame jets (F_FreeFlameFx_Pack) — added on top of mesh effects --
+	UPROPERTY() TArray<TObjectPtr<UNiagaraComponent>> FlameJets;
+
 	float ElapsedTime = 0.f;
-	static constexpr float TotalDuration = 5.f;
+	static constexpr float TotalDuration = 8.f;
 };

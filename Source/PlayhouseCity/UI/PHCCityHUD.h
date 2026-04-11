@@ -179,6 +179,9 @@ protected:
 	TObjectPtr<UButton> SelectSniperBtn;
 
 	UPROPERTY()
+	TObjectPtr<UButton> SelectFlamethrowerBtn;
+
+	UPROPERTY()
 	TObjectPtr<UButton> WeaponFireButton;
 
 	UPROPERTY()
@@ -467,6 +470,9 @@ private:
 	void OnSelectSniper();
 
 	UFUNCTION()
+	void OnSelectFlamethrower();
+
+	UFUNCTION()
 	void OnADSPressed();
 
 	UFUNCTION()
@@ -539,6 +545,14 @@ private:
 	void ShowDisasterSelection();
 	void HideDisasterSelection();
 
+	UFUNCTION() void OnKillStreaksButtonClicked();
+	UFUNCTION() void OnSelectChopperGunner();
+	UFUNCTION() void OnSelectAC130();
+	UFUNCTION() void OnSelectTacticalNuke();
+
+	void ShowKillStreakSelection();
+	void HideKillStreakSelection();
+
 	// -- Camera mode toggle ---------------------------------------------------
 
 	UPROPERTY()
@@ -563,6 +577,26 @@ private:
 	// -- Kill streak display --------------------------------------------------
 
 	UPROPERTY() TObjectPtr<UTextBlock> KillStreakText;
+
+	// -- Kill streak perk selection overlay ------------------------------------
+
+	UPROPERTY() TObjectPtr<UButton> KillStreaksButton;
+
+	UPROPERTY() TObjectPtr<UBorder> KillStreakSelectOverlay;
+	UPROPERTY() TObjectPtr<UButton> SelectChopperGunnerBtn;
+	UPROPERTY() TObjectPtr<UButton> SelectAC130Btn;
+	UPROPERTY() TObjectPtr<UButton> SelectTacticalNukeBtn;
+
+	bool bKillStreakSelectOpen = false;
+
+	// -- Nuke flash overlay (full-screen white flash) -------------------------
+
+	UPROPERTY() TObjectPtr<UBorder> NukeFlashOverlay;
+	UPROPERTY() TObjectPtr<UTextBlock> NukeCountdownText;
+
+	// -- AC-130 weapon mode label ---------------------------------------------
+
+	UPROPERTY() TObjectPtr<UTextBlock> AC130WeaponLabel;
 
 	// -- Level-up flash overlay -----------------------------------------------
 

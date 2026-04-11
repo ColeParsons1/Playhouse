@@ -26,6 +26,7 @@
 #include "Core/PHCCitySubsystem.h"
 #include "Core/PHCGameInstance.h"
 #include "Vehicle/PHCMissileProjectile.h"
+#include "Vehicle/PHCNukeExplosion.h"
 #include "Vehicle/PHCRaptorPawn.h"
 #include "Vehicle/PHCBlackbirdPawn.h"
 #include "Vehicle/PHCBlackHawkPawn.h"
@@ -40,6 +41,8 @@
 #include "Components/TextRenderComponent.h"
 #include "GameFramework/PlayerState.h"
 #include "Player/PHCPlayerState.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 
 // ---------------------------------------------------------------------------
 // Constructor — Fortnite-quality character from basic shapes
@@ -326,6 +329,16 @@ APHCCityCharacter::APHCCityCharacter()
 	SniperMagMesh    = MakeCube(TEXT("SniperMag"),    FVector(0.f, 26.f, 28.f), FVector(4.f, 2.5f, 14.f));
 	SniperMuzzleMesh = MakeSph(TEXT("SniperMuzzle"),  FVector(0.f, 26.f, 125.f), 6.f);
 
+	// ================================================================
+	//  FLAMETHROWER — single Fab mesh, Niagara flame stream in BeginPlay
+	// ================================================================
+	FlamethrowerMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FlamethrowerMesh"));
+	FlamethrowerMesh->SetupAttachment(RootComponent);
+	FlamethrowerMesh->SetRelativeLocation(FVector(0.f, 26.f, 6.f));
+	FlamethrowerMesh->SetRelativeScale3D(FVector(0.04f));
+	FlamethrowerMesh->SetVisibility(false);
+	FlamethrowerMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
 	// (Flashlight spotlight created in BeginPlay)
 
 	// Enable shadows on major body parts for visual depth and grounding
@@ -556,9 +569,23 @@ void APHCCityCharacter::BeginPlay()
 		TEXT("/Game/Characters/Mixamo/Animations/jumping_up.jumping_up"));
 	RollerBladeAnim = LoadObject<UAnimSequence>(nullptr,
 		TEXT("/Game/Characters/Mixamo/Animations/rollerblade_walk_Anim.rollerblade_walk_Anim"));
+	WallRunLeftAnim = LoadObject<UAnimSequence>(nullptr,
+		TEXT("/Game/Characters/Mixamo/Animations/wall_run_left.wall_run_left"));
+	WallRunRightAnim = LoadObject<UAnimSequence>(nullptr,
+		TEXT("/Game/Characters/Mixamo/Animations/wall_run_right.wall_run_right"));
+	RifleRunAnim = LoadObject<UAnimSequence>(nullptr,
+		TEXT("/Game/Characters/Mixamo/Animations/rifle_run.rifle_run"));
+	RunRightAnim = LoadObject<UAnimSequence>(nullptr,
+		TEXT("/Game/Characters/Mixamo/Animations/run_right.run_right"));
+	RunLeftAnim = LoadObject<UAnimSequence>(nullptr,
+		TEXT("/Game/Characters/Mixamo/Animations/run_left.run_left"));
+	SwordRunAnim = LoadObject<UAnimSequence>(nullptr,
+		TEXT("/Game/Characters/Mixamo/Animations/sword_run.sword_run"));
 
-	UE_LOG(LogPlayhouseCity, Warning, TEXT("Mixamo anims: idle=%d walk=%d run=%d jump=%d rollerblade=%d"),
-		IdleAnim ? 1 : 0, WalkAnim ? 1 : 0, RunAnim ? 1 : 0, JumpAnim ? 1 : 0, RollerBladeAnim ? 1 : 0);
+	UE_LOG(LogPlayhouseCity, Warning, TEXT("Mixamo anims: idle=%d walk=%d run=%d jump=%d rb=%d wrL=%d wrR=%d rifle=%d swd=%d rR=%d rL=%d"),
+		IdleAnim ? 1 : 0, WalkAnim ? 1 : 0, RunAnim ? 1 : 0, JumpAnim ? 1 : 0, RollerBladeAnim ? 1 : 0,
+		WallRunLeftAnim ? 1 : 0, WallRunRightAnim ? 1 : 0,
+		RifleRunAnim ? 1 : 0, SwordRunAnim ? 1 : 0, RunRightAnim ? 1 : 0, RunLeftAnim ? 1 : 0);
 
 	if (CharacterSkelMesh && CharacterSkelMesh->GetSkeletalMeshAsset() && IdleAnim)
 	{
@@ -857,6 +884,34 @@ void APHCCityCharacter::BeginPlay()
 			SniperBodyMesh->SetRelativeScale3D(FVector(0.04f, 0.04f, 0.04f));
 		}
 	}
+
+	// Flamethrower — swap to Fab mesh (Apocalyptic Flamethrower)
+	{
+		UStaticMesh* FTFabMesh = LoadObject<UStaticMesh>(nullptr,
+			TEXT("/Game/Fab/Apocalyptic_Flamethrower/apocalyptic_flamethrower/StaticMeshes/apocalyptic_flamethrower.apocalyptic_flamethrower"));
+		if (FTFabMesh && FlamethrowerMesh)
+		{
+			FlamethrowerMesh->SetStaticMesh(FTFabMesh);
+			FlamethrowerMesh->SetRelativeScale3D(FVector(0.04f));
+		}
+	}
+
+	// Flamethrower flame stream (Niagara)
+	{
+		UNiagaraSystem* FTFlameFX = LoadObject<UNiagaraSystem>(nullptr,
+			TEXT("/Game/F_FreeFlameFx_Pack/FX/NS_Flame_8_Torch.NS_Flame_8_Torch"));
+		if (FTFlameFX && FlamethrowerMesh)
+		{
+			FlamethrowerFlameComp = NewObject<UNiagaraComponent>(this, TEXT("FTFlameStream"));
+			FlamethrowerFlameComp->SetAsset(FTFlameFX);
+			// Attach to root — we position it manually each frame in Tick
+			// so the flame projects FORWARD from the character, not from weapon local space
+			FlamethrowerFlameComp->SetupAttachment(RootComponent);
+			FlamethrowerFlameComp->SetAutoActivate(false);
+			FlamethrowerFlameComp->RegisterComponent();
+		}
+	}
+
 	const FLinearColor SniperMetal(0.15f, 0.15f, 0.18f);
 	const FLinearColor SniperStock(0.10f, 0.08f, 0.06f);
 	const FLinearColor SniperScope(0.05f, 0.05f, 0.08f);
@@ -1288,8 +1343,11 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	// estimated from position delta for sim proxies.
 	float Speed = 0.f;
 
+	// ---- Skip all normal movement during active kill streaks ---------------
+	const bool bInKillStreak = (bChopperGunnerActive || bAC130Active || bTacticalNukeCountdown);
+
 	// ---- Local-only movement, input, and ground following ---------------
-	if (!bIsSimProxy)
+	if (!bIsSimProxy && !bInKillStreak)
 	{
 
 	// ---- Process deferred vehicle interaction ---------------------------
@@ -1533,8 +1591,156 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	else
 	{
 
-	// ---- Horizontal movement (with wall collision line trace) ----------------
-	if (!MoveDir.IsNearlyZero())
+	// ---- Parkour cooldown & air time tracking --------------------------------
+	if (ParkourCooldown > 0.f)
+		ParkourCooldown -= DeltaTime;
+	if (!bHasBeenGrounded)
+		ParkourAirTime += DeltaTime;
+	else
+		ParkourAirTime = 0.f;
+
+	// ==== WALL RUN: Auto-initiate on wall contact while moving ====
+	if (ParkourState == EParkourState::None
+		&& !MoveDir.IsNearlyZero() && ParkourCooldown <= 0.f)
+	{
+		TryStartWallRun();
+	}
+
+	// ---- Vault auto-detection (while grounded and moving forward) --------
+	if (ParkourState == EParkourState::None && bHasBeenGrounded && !MoveDir.IsNearlyZero()
+		&& Speed > 800.f && ParkourCooldown <= 0.f)
+	{
+		TryStartVault();
+	}
+
+	// ---- Parkour state machine ------------------------------------------
+	bool bParkourHandledMovement = false;
+
+	if (ParkourState == EParkourState::WallRunL || ParkourState == EParkourState::WallRunR)
+	{
+		bParkourHandledMovement = true;
+		ParkourTimer += DeltaTime;
+
+		FVector Pos = GetActorLocation();
+		const FVector ToWall = -ParkourWallNormal.GetSafeNormal2D();
+		FCollisionQueryParams WRParams;
+		WRParams.AddIgnoredActor(this);
+
+		// Re-trace wall — side ray in the direction of the known wall
+		FHitResult WRHit;
+		bool bStillOnWall = false;
+		float WallDist = 200.f;
+		for (float TZ : {30.f, 55.f, 80.f})
+		{
+			const FVector Origin(Pos.X, Pos.Y, Pos.Z + TZ);
+			FHitResult H;
+			if (GetWorld()->LineTraceSingleByChannel(H, Origin, Origin + ToWall * 300.f, ECC_WorldStatic, WRParams))
+			{
+				if (!H.bStartPenetrating && H.Distance < WallDist)
+				{
+					WallDist = H.Distance;
+					WRHit = H;
+					bStillOnWall = true;
+				}
+			}
+		}
+
+		if (bStillOnWall)
+		{
+			ParkourWallNormal = WRHit.ImpactNormal;
+			ParkourWallPoint = WRHit.ImpactPoint;
+		}
+
+		if (ParkourTimer > ParkourWallRunMaxTime || !bStillOnWall)
+		{
+			EndParkour();
+		}
+		else
+		{
+			// === NOSHOT ALGORITHM: gravity ramp + speed ramp ===
+			const float T = ParkourTimer / ParkourWallRunMaxTime; // 0..1 normalized time
+
+			// Direction: lerp toward wall-parallel (NOSHOT: wall normal rotated 90 deg)
+			const FVector WallParallel = FVector::CrossProduct(ParkourWallNormal, FVector::UpVector).GetSafeNormal();
+			FVector TargetForward = WallParallel;
+			if (FVector::DotProduct(TargetForward, ParkourForward) < 0.f)
+				TargetForward = -TargetForward;
+			ParkourForward = FMath::Lerp(ParkourForward, TargetForward, FMath::Min(DeltaTime * 8.f, 1.f)).GetSafeNormal();
+
+			// Speed: ramp toward target (NOSHOT: Lerp toward 17.0)
+			ParkourWallRunCurrentSpeed = FMath::Lerp(ParkourWallRunCurrentSpeed, ParkourWallRunSpeed, T);
+			AddActorWorldOffset(ParkourForward * ParkourWallRunCurrentSpeed * DeltaTime, false);
+
+			// Pin to wall surface — maintain 25 UU distance
+			if (FMath::Abs(WallDist - 25.f) > 2.f)
+				AddActorWorldOffset(ToWall * (WallDist - 25.f), false);
+
+			// NOSHOT gravity ramp: starts at 5% (0.05 * 980 = 49), ramps via Lerp
+			// frictionForce starts at 0.05*gravity, ramps toward full gravity over duration/4
+			const float GravFraction = FMath::Lerp(0.05f, 1.0f, FMath::Min(T * 4.f, 1.f));
+			ManualVelocityZ -= 980.f * GravFraction * DeltaTime;
+
+			Pos = GetActorLocation();
+			float NewZ = Pos.Z + ManualVelocityZ * DeltaTime;
+			SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
+
+			// Orient body along wall run direction (fast snap)
+			const FRotator DesiredRot = ParkourForward.Rotation();
+			const FRotator NewRot = FMath::RInterpTo(GetActorRotation(), DesiredRot, DeltaTime, 15.f);
+			SetActorRotation(FRotator(0.f, NewRot.Yaw, 0.f));
+		}
+	}
+	else if (ParkourState == EParkourState::Sliding)
+	{
+		bParkourHandledMovement = true;
+		ParkourTimer += DeltaTime;
+
+		// NOSHOT slide formula: speed = (remainingTimer + 0.1) * 20
+		// Timer counts DOWN from 1.0 to 0, giving 22→2 UU/s deceleration
+		const float Remaining = FMath::Max(ParkourSlideMaxTime - ParkourTimer, 0.f);
+		const float SlideSpeed = (Remaining + 0.1f) * 3000.f; // scaled to our UU
+
+		if (ParkourTimer > ParkourSlideMaxTime)
+		{
+			EndParkour();
+		}
+		else
+		{
+			const FVector Delta = ParkourSlideDir * SlideSpeed * DeltaTime;
+			AddActorWorldOffset(FVector(Delta.X, Delta.Y, 0.f), false);
+		}
+	}
+	else if (ParkourState == EParkourState::Vaulting)
+	{
+		bParkourHandledMovement = true;
+		ParkourTimer += DeltaTime;
+
+		if (ParkourTimer >= ParkourVaultMaxTime)
+		{
+			SetActorLocation(ParkourVaultEnd);
+			EndParkour();
+		}
+		else
+		{
+			// NOSHOT: Quadratic Bezier arc — P = (1-t)^2*Start + 2(1-t)t*Mid + t^2*End
+			const float T = FMath::Clamp(ParkourTimer / ParkourVaultMaxTime, 0.f, 1.f);
+			const float OneMinusT = 1.f - T;
+			const FVector BezierPos = OneMinusT * OneMinusT * ParkourVaultStart
+				+ 2.f * OneMinusT * T * ParkourVaultMid
+				+ T * T * ParkourVaultEnd;
+			SetActorLocation(BezierPos);
+
+			const FVector VaultDir = (ParkourVaultEnd - ParkourVaultStart).GetSafeNormal2D();
+			if (!VaultDir.IsNearlyZero())
+			{
+				const FRotator DesiredRot = VaultDir.Rotation();
+				SetActorRotation(FRotator(0.f, DesiredRot.Yaw, 0.f));
+			}
+		}
+	}
+
+	// ---- Normal horizontal movement (with wall collision line trace) --------
+	if (!bParkourHandledMovement && !MoveDir.IsNearlyZero())
 	{
 		const FVector Delta = MoveDir * Speed * DeltaTime;
 		const FVector OldPos = GetActorLocation();
@@ -1570,7 +1776,9 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		}
 	}
 
-	// ---- Ground following -----------------------------------------------
+	// ---- Ground following (skipped during wall run & vault — they handle Z) --
+	if (ParkourState != EParkourState::WallRunL && ParkourState != EParkourState::WallRunR
+		&& ParkourState != EParkourState::Vaulting)
 	{
 		const FVector Pos = GetActorLocation();
 
@@ -1655,6 +1863,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 							NewZ = BestZ;
 							ManualVelocityZ = 0.f;
 							bHasBeenGrounded = true;
+							ParkourCooldown = 0.f; // reset cooldown on landing
 						}
 						SetActorLocation(FVector(Pos.X, Pos.Y, NewZ));
 					}
@@ -1740,8 +1949,37 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		if (CharacterSkelMesh && CharacterSkelMesh->GetSkeletalMeshAsset())
 		{
 			int32 NewState = 0;
-			if (ManualVelocityZ > 50.f && JumpAnim) NewState = 3;
+			// Determine weapon category for animation selection
+			// Gun types: 0=Minigun, 1=RPG, 5=AK47, 6=Sniper, 7=Flamethrower
+			// Melee types: 2=Sword/Saber, 3=Scythe, 4=Dagger
+			const bool bGunEquipped = (CurrentWeaponType == 0 || CurrentWeaponType == 1
+				|| CurrentWeaponType == 5 || CurrentWeaponType == 6 || CurrentWeaponType == 7);
+			const bool bMeleeEquipped = (CurrentWeaponType == 2 || CurrentWeaponType == 3
+				|| CurrentWeaponType == 4);
+
+			// Determine lateral movement direction for gun strafe anims
+			// Dot the move direction with the actor's right vector
+			float StrafeDot = 0.f;
+			if (bMoving && !MoveDir.IsNearlyZero())
+			{
+				const FVector ActorRight = FVector::CrossProduct(FVector::UpVector, GetActorForwardVector()).GetSafeNormal();
+				StrafeDot = FVector::DotProduct(MoveDir.GetSafeNormal(), ActorRight);
+			}
+
+			// Wall run takes priority
+			const bool bWallRunning = (ParkourState == EParkourState::WallRunL || ParkourState == EParkourState::WallRunR);
+			if (bWallRunning && ParkourState == EParkourState::WallRunL && WallRunLeftAnim) NewState = 5;
+			else if (bWallRunning && ParkourState == EParkourState::WallRunR && WallRunRightAnim) NewState = 6;
+			else if (bWallRunning && RunAnim) NewState = 2;
+			else if (ManualVelocityZ > 50.f && !bWallRunning && JumpAnim) NewState = 3;
 			else if (bMoving && bRollerBladesEquipped && RollerBladeAnim) NewState = 4;
+			// Gun equipped: rifle run forward, strafe left/right
+			else if (bMoving && bGunEquipped && StrafeDot > 0.5f && RunRightAnim) NewState = 9;  // strafing right
+			else if (bMoving && bGunEquipped && StrafeDot < -0.5f && RunLeftAnim) NewState = 10; // strafing left
+			else if (bMoving && bGunEquipped && RifleRunAnim) NewState = 7; // forward rifle run
+			// Melee equipped: sword run
+			else if (bMoving && bMeleeEquipped && SwordRunAnim) NewState = 8;
+			// Default run
 			else if (bMoving && RunAnim) NewState = 2;
 
 			if (NewState != CurrentAnimState)
@@ -1749,10 +1987,40 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				CurrentAnimState = NewState;
 				if (NewState == 0 && IdleAnim)
 					CharacterSkelMesh->PlayAnimation(IdleAnim, true);
+				else if (NewState == 5 && WallRunLeftAnim)
+				{
+					CharacterSkelMesh->PlayAnimation(WallRunLeftAnim, true);
+					CharacterSkelMesh->SetPlayRate(1.0f);
+				}
+				else if (NewState == 6 && WallRunRightAnim)
+				{
+					CharacterSkelMesh->PlayAnimation(WallRunRightAnim, true);
+					CharacterSkelMesh->SetPlayRate(1.0f);
+				}
 				else if (NewState == 4 && RollerBladeAnim)
 				{
 					CharacterSkelMesh->PlayAnimation(RollerBladeAnim, true);
-					CharacterSkelMesh->SetPlayRate(0.5f); // slow walking pace
+					CharacterSkelMesh->SetPlayRate(0.5f);
+				}
+				else if (NewState == 7 && RifleRunAnim)
+				{
+					CharacterSkelMesh->PlayAnimation(RifleRunAnim, true);
+					CharacterSkelMesh->SetPlayRate(1.0f);
+				}
+				else if (NewState == 8 && SwordRunAnim)
+				{
+					CharacterSkelMesh->PlayAnimation(SwordRunAnim, true);
+					CharacterSkelMesh->SetPlayRate(1.0f);
+				}
+				else if (NewState == 9 && RunRightAnim)
+				{
+					CharacterSkelMesh->PlayAnimation(RunRightAnim, true);
+					CharacterSkelMesh->SetPlayRate(1.0f);
+				}
+				else if (NewState == 10 && RunLeftAnim)
+				{
+					CharacterSkelMesh->PlayAnimation(RunLeftAnim, true);
+					CharacterSkelMesh->SetPlayRate(1.0f);
 				}
 				else if (NewState == 2 && RunAnim)
 				{
@@ -1782,6 +2050,44 @@ void APHCCityCharacter::Tick(float DeltaTime)
 					CharacterSkelMesh->SetPlayRate(4.0f);
 				else
 					CharacterSkelMesh->SetPlayRate(1.0f);
+			}
+
+			// ---- Parkour lean on skeletal mesh ----
+			if (ParkourState != EParkourState::None && CharacterSkelMesh)
+			{
+				float PkPitch = 0.f;
+				float PkRoll = 0.f;
+				float PkZOffset = -50.f; // base Z offset
+				if (ParkourState == EParkourState::WallRunL || ParkourState == EParkourState::WallRunR)
+				{
+					// Full 90-degree tilt — feet on wall, body horizontal
+					// With the -90 Yaw Mixamo correction, we need to use Pitch to tilt
+					// the character sideways (toward the wall) in world space
+					const float WallSign = (ParkourState == EParkourState::WallRunL) ? -1.f : 1.f;
+					const float Ramp = FMath::Clamp(ParkourTimer / 0.12f, 0.f, 1.f);
+					// Try BOTH axes to ensure one of them creates the correct visual
+					PkPitch = WallSign * 80.f * Ramp;  // tilt body toward wall
+					PkRoll = 0.f;
+					PkZOffset = -50.f + 30.f * Ramp; // raise to keep feet at wall height
+				}
+				else if (ParkourState == EParkourState::Sliding)
+				{
+					const float Ramp = FMath::Clamp(ParkourTimer / 0.12f, 0.f, 1.f);
+					PkPitch = 30.f * Ramp;
+					PkZOffset = -50.f - 25.f * Ramp; // lower body during slide
+				}
+				else if (ParkourState == EParkourState::Vaulting)
+				{
+					const float A = FMath::Clamp(ParkourTimer / ParkourVaultMaxTime, 0.f, 1.f);
+					PkPitch = FMath::Sin(A * PI) * 35.f;
+				}
+				CharacterSkelMesh->SetRelativeLocation(FVector(0.f, 0.f, PkZOffset));
+				CharacterSkelMesh->SetRelativeRotation(FRotator(PkPitch, -90.f, PkRoll));
+			}
+			else if (CharacterSkelMesh)
+			{
+				CharacterSkelMesh->SetRelativeLocation(FVector(0.f, 0.f, -50.f));
+				CharacterSkelMesh->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
 			}
 		}
 
@@ -1851,10 +2157,33 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		// Project acceleration into actor-local forward/right for pitch/roll lean
 		const FRotator ActorYaw(0.f, GetActorRotation().Yaw, 0.f);
 		const FVector LocalAccel = ActorYaw.UnrotateVector(Accel);
-		const float MomentumPitch = LeanPitchSpring.Update(
+		float MomentumPitch = LeanPitchSpring.Update(
 			FMath::Clamp(-LocalAccel.X * 0.003f, -12.f, 12.f), 80.f, 12.f, DeltaTime);
-		const float MomentumRoll  = LeanRollSpring.Update(
+		float MomentumRoll  = LeanRollSpring.Update(
 			FMath::Clamp(LocalAccel.Y * 0.002f, -8.f, 8.f), 80.f, 12.f, DeltaTime);
+
+		// ---- Parkour animation overrides ----
+		if (ParkourState == EParkourState::WallRunL || ParkourState == EParkourState::WallRunR)
+		{
+			// Heavy body rotation toward wall — matches the 75-degree skeletal mesh tilt
+			const float WallLeanSign = (ParkourState == EParkourState::WallRunL) ? -1.f : 1.f;
+			const float LeanRamp = FMath::Clamp(ParkourTimer / 0.15f, 0.f, 1.f);
+			MomentumRoll += WallLeanSign * 45.f * LeanRamp;
+			MomentumPitch += 10.f * LeanRamp;
+		}
+		else if (ParkourState == EParkourState::Sliding)
+		{
+			// Heavy forward lean + slight lower to ground effect
+			const float SlideAlpha = FMath::Clamp(ParkourTimer / 0.15f, 0.f, 1.f);
+			MomentumPitch += 25.f * SlideAlpha;  // deep forward crouch lean
+		}
+		else if (ParkourState == EParkourState::Vaulting)
+		{
+			// Arc body forward over the obstacle
+			const float VaultAlpha = FMath::Clamp(ParkourTimer / ParkourVaultMaxTime, 0.f, 1.f);
+			const float ArcPitch = FMath::Sin(VaultAlpha * PI) * 30.f; // peak lean at midpoint
+			MomentumPitch += ArcPitch;
+		}
 
 		// ---- Idle animation (visible when standing still) ----
 		const float WorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
@@ -2601,6 +2930,64 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			}
 		}
 
+		// ---- Flamethrower visibility + positioning ----
+		if (FlamethrowerMesh)
+		{
+			const bool bShowFT = (CurrentWeaponType == 7);
+			FlamethrowerMesh->SetVisibility(bShowFT);
+
+			if (bShowFT)
+			{
+				// Position at right hand, barrel pointing forward
+				const FVector GripPt = RightHandMesh
+					? RightHandMesh->GetRelativeLocation() + FVector(10.f, 0.f, -5.f)
+					: FVector(15.f, 26.f, 6.f);
+				FlamethrowerMesh->SetRelativeLocation(GripPt);
+				// Rotate so the barrel points forward — Fab mesh is oriented along its local axis
+				// Try 0,0,0 first since the mesh import orientation varies
+				FlamethrowerMesh->SetRelativeRotation(FRotator(0.f, 0.f, 0.f));
+				FlamethrowerMesh->SetRelativeScale3D(FVector(0.06f)); // bigger so it's visible
+			}
+		}
+
+		// ---- Flamethrower firing (Niagara flame stream projected FORWARD) ----
+		if (CurrentWeaponType == 7 && bFlamethrowerFiring)
+		{
+			if (FlamethrowerFlameComp)
+			{
+				if (!FlamethrowerFlameComp->IsActive())
+					FlamethrowerFlameComp->Activate();
+
+				// Position the flame ahead of the character — projected FORWARD.
+				// The Niagara flame emits upward in local +Z. To make it go forward,
+				// we pitch it -90 so local +Z becomes the actor's forward direction.
+				const FVector CharFwd = GetActorForwardVector();
+				const FVector CharPos = GetActorLocation();
+				// Start 120 UU ahead at chest height — flames begin past the character
+				const FVector FlameOrigin = CharPos + CharFwd * 120.f + FVector(0.f, 0.f, 50.f);
+				FlamethrowerFlameComp->SetWorldLocation(FlameOrigin);
+
+				// Get the actor's yaw, then pitch the flame -90 so +Z (up) becomes forward
+				const float ActorYaw = GetActorRotation().Yaw;
+				FlamethrowerFlameComp->SetWorldRotation(FRotator(-90.f, ActorYaw, 0.f));
+
+				// Wide billowing scale — X/Y = width, Z = length (which is now forward)
+				FlamethrowerFlameComp->SetWorldScale3D(FVector(50.f, 50.f, 150.f));
+			}
+
+			// Continuous damage via FireWeapon at ~10 ticks/sec
+			FlamethrowerFuelTimer -= DeltaTime;
+			if (FlamethrowerFuelTimer <= 0.f)
+			{
+				FlamethrowerFuelTimer = 0.1f;
+				FireWeapon();
+			}
+		}
+		else if (FlamethrowerFlameComp && FlamethrowerFlameComp->IsActive())
+		{
+			FlamethrowerFlameComp->Deactivate();
+		}
+
 		// ---- Muzzle flash dynamic light (shared by all ranged weapons) ----
 		if (bFirstPersonMode && MuzzleFlashLight)
 		{
@@ -2661,6 +3048,144 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			if (KillStreakTimer <= 0.f)
 			{
 				KillStreakCount = 0;
+			}
+		}
+
+		// ---- Kill Streak Perk Tick -----------------------------------------------
+
+		// Chopper Gunner camera override — touch controls aim
+		if (bChopperGunnerActive)
+		{
+			ChopperGunnerTimer += DeltaTime;
+
+			// Touch input drives yaw/pitch to let player aim
+			if (bHUDTouchActive)
+			{
+				ChopperGunnerYaw += TouchLookX * 60.f;
+				ChopperGunnerPitch = FMath::Clamp(
+					ChopperGunnerPitch + TouchLookY * 40.f, -85.f, -20.f);
+			}
+			else
+			{
+				// Slow auto-orbit if no touch
+				ChopperGunnerYaw += 15.f * DeltaTime;
+			}
+
+			const float OrbitRadius = 5000.f;
+			const float YawRad = FMath::DegreesToRadians(ChopperGunnerYaw);
+			ChopperGunnerPos = FVector(
+				FMath::Cos(YawRad) * OrbitRadius,
+				FMath::Sin(YawRad) * OrbitRadius,
+				3000.f);
+
+			if (CameraBoom)
+			{
+				CameraBoom->TargetArmLength = 0.f;
+				CameraBoom->SocketOffset = FVector::ZeroVector;
+				SetActorLocation(ChopperGunnerPos);
+				if (AController* C = GetController())
+				{
+					C->SetControlRotation(FRotator(ChopperGunnerPitch, ChopperGunnerYaw + 180.f, 0.f));
+				}
+			}
+
+			if (ChopperGunnerTimer > 30.f)
+			{
+				DeactivateKillStreak();
+			}
+		}
+
+		// AC-130 camera override — touch controls aim
+		if (bAC130Active)
+		{
+			AC130Timer += DeltaTime;
+			AC130FireCooldown -= DeltaTime;
+
+			// Touch input drives orbit angle and pitch
+			if (bHUDTouchActive)
+			{
+				AC130OrbitAngle += TouchLookX * 40.f;
+				AC130Pitch = FMath::Clamp(AC130Pitch + TouchLookY * 30.f, -89.f, -30.f);
+			}
+			else
+			{
+				AC130OrbitAngle += 10.f * DeltaTime; // slow auto-orbit
+			}
+
+			const float OrbitRadius = 12000.f;
+			const float AngleRad = FMath::DegreesToRadians(AC130OrbitAngle);
+			const FVector CamPos = FVector(
+				FMath::Cos(AngleRad) * OrbitRadius,
+				FMath::Sin(AngleRad) * OrbitRadius,
+				8000.f);
+
+			if (CameraBoom)
+			{
+				CameraBoom->TargetArmLength = 0.f;
+				CameraBoom->SocketOffset = FVector::ZeroVector;
+				SetActorLocation(CamPos);
+				if (AController* C = GetController())
+				{
+					C->SetControlRotation(FRotator(AC130Pitch, AC130OrbitAngle + 180.f, 0.f));
+				}
+			}
+
+			// Angel flares when timer < 10s
+			if (AC130Timer > 30.f && GetWorld())
+			{
+				const float FlareT = AC130Timer - 30.f;
+				if (FMath::Fmod(FlareT, 2.f) < DeltaTime) // every 2 seconds
+				{
+					FActorSpawnParameters FlareSP;
+					FlareSP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+					const FVector FlarePos = CamPos + FVector(
+						FMath::FRandRange(-500.f, 500.f),
+						FMath::FRandRange(-500.f, 500.f),
+						FMath::FRandRange(-200.f, 0.f));
+					// Spawn a small explosion as a flare effect
+					GetWorld()->SpawnActor<APHCNukeExplosion>(
+						APHCNukeExplosion::StaticClass(), FlarePos, FRotator::ZeroRotator, FlareSP);
+				}
+			}
+
+			if (AC130Timer > 40.f)
+			{
+				DeactivateKillStreak();
+			}
+		}
+
+		// Tactical Nuke countdown
+		if (bTacticalNukeCountdown && !bTacticalNukeDetonated)
+		{
+			TacticalNukeCountdownTimer -= DeltaTime;
+			if (TacticalNukeCountdownTimer <= 0.f)
+			{
+				bTacticalNukeDetonated = true;
+				TacticalNukeFlashTimer = 5.f;
+				TacticalNukeCountdownTimer = 0.f;
+
+				// Spawn MASSIVE nuke at map center
+				if (UWorld* W = GetWorld())
+				{
+					FActorSpawnParameters NukeSP;
+					NukeSP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+					APHCNukeExplosion* Nuke = W->SpawnActor<APHCNukeExplosion>(
+						APHCNukeExplosion::StaticClass(), FVector(0.f, 0.f, 0.f), FRotator::ZeroRotator, NukeSP);
+					if (Nuke)
+					{
+						Nuke->SetActorScale3D(FVector(10.f, 10.f, 10.f)); // MASSIVE
+					}
+				}
+			}
+		}
+
+		// Tactical Nuke flash fade
+		if (bTacticalNukeDetonated && TacticalNukeFlashTimer > 0.f)
+		{
+			TacticalNukeFlashTimer -= DeltaTime;
+			if (TacticalNukeFlashTimer <= 0.f)
+			{
+				DeactivateKillStreak();
 			}
 		}
 
@@ -2912,10 +3437,43 @@ void APHCCityCharacter::HandleJumpStarted(const FInputActionValue& /*Value*/)
 		JetpackVerticalInput = 1.f; // ascend
 		return;
 	}
+
+	// ---- Parkour: Wall Jump (while wall running) ----------------------------
+	// NOSHOT: velocity.y = wallJumpSpeed/2. Horizontal = (wallNormal + cameraForward*0.25) * 0.625
+	// Godot Parkour: velocity.y SET to 4.0, horizontal = local X * 5.0 away from wall
+	if (ParkourState == EParkourState::WallRunL || ParkourState == EParkourState::WallRunR)
+	{
+		// Vertical: strong upward launch
+		ManualVelocityZ = ParkourWallJumpUp;
+		// Horizontal: NOSHOT formula — wall normal + slight forward bias
+		const FVector WallNorm2D = ParkourWallNormal.GetSafeNormal2D();
+		const FVector Fwd2D = GetActorForwardVector().GetSafeNormal2D();
+		const FVector LaunchDir = (WallNorm2D + Fwd2D * 0.25f).GetSafeNormal();
+		AddActorWorldOffset(LaunchDir * ParkourWallJumpOut * 0.3f, false);
+		bHasBeenGrounded = false;
+		ParkourAirTime = 0.f; // reset air time so wall run can re-trigger on opposite wall
+		ParkourCooldown = 0.3f;
+		EndParkour();
+		return;
+	}
+
+	// ---- Parkour: Slide (grounded + sprinting + jump) -----------------------
+	if (bHasBeenGrounded && bIsSprinting && ParkourState == EParkourState::None
+		&& ParkourCooldown <= 0.f)
+	{
+		ParkourState = EParkourState::Sliding;
+		ParkourTimer = 0.f;
+		ParkourSlideDir = GetActorForwardVector().GetSafeNormal2D();
+		ParkourCooldown = 0.3f;
+		return;
+	}
+
+	// ---- Normal jump --------------------------------------------------------
+	// (Wall run is now auto-detected in Tick when airborne near a wall)
 	if (bHasBeenGrounded)
 	{
-		ManualVelocityZ = 420.f;
-		bHasBeenGrounded = true;
+		ManualVelocityZ = 500.f; // higher jump to make wall run easier to reach
+		bHasBeenGrounded = false;
 		bWasGrounded = false;
 	}
 }
@@ -3619,6 +4177,104 @@ void APHCCityCharacter::FireWeapon()
 			break;
 		}
 	}
+	else if (CurrentWeaponType == 7) // Flamethrower — cone-based continuous damage (5 per tick @ 10 Hz = 50 DPS)
+	{
+		const FVector MyLoc = GetActorLocation();
+		const FVector Forward = GetActorForwardVector();
+		const float FlameRange = 2000.f;
+		const float FlameDamage = 5.f;
+		const float ConeHalfAngleCos = FMath::Cos(FMath::DegreesToRadians(30.f)); // 30 degree cone
+
+		UPHCCitySubsystem* CitySub = World->GetSubsystem<UPHCCitySubsystem>();
+
+		// Flamethrower vs Crabs
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			AActor* A = *It;
+			if (!A || A->IsHidden() || !A->ActorHasTag(FName("GiantCrab"))) continue;
+
+			const FVector CrabLoc = A->GetActorLocation();
+			if (FVector::Dist2D(MyLoc, CrabLoc) > FlameRange) continue;
+
+			const FVector ToCrab = (CrabLoc - MyLoc).GetSafeNormal2D();
+			if (FVector::DotProduct(Forward.GetSafeNormal2D(), ToCrab) < ConeHalfAngleCos) continue;
+
+			if (CitySub)
+			{
+				for (int32 CI = 0; CI < UPHCCitySubsystem::NumGiantCrabs; ++CI)
+				{
+					if (CitySub->Crabs[CI].Actor == A)
+					{
+						CitySub->Crabs[CI].Health -= FlameDamage;
+						CitySub->Crabs[CI].DamageFlashTimer = 0.15f;
+						HitMarkerTimer = 0.25f;
+						if (CitySub->Crabs[CI].Health <= 0.f)
+						{
+							CrabKills++;
+							KillStreakCount++; KillStreakTimer = 5.f;
+							AddXP(50);
+							StartLootCrate();
+							APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
+								APHCMissileProjectile::StaticClass(), CrabLoc, FRotator::ZeroRotator);
+							if (TempProj) { TempProj->SpawnExplosion(CrabLoc); TempProj->Destroy(); }
+							CitySub->RespawnCrab(CI);
+						}
+						break;
+					}
+				}
+			}
+		}
+
+		// Flamethrower vs other players (PvP)
+		for (TActorIterator<APHCCityCharacter> PIt(World); PIt; ++PIt)
+		{
+			APHCCityCharacter* Other = *PIt;
+			if (!Other || Other == this || Other->IsHidden()) continue;
+
+			const FVector PLoc = Other->GetActorLocation();
+			if (FVector::Dist2D(MyLoc, PLoc) > FlameRange) continue;
+
+			const FVector ToP = (PLoc - MyLoc).GetSafeNormal2D();
+			if (FVector::DotProduct(Forward.GetSafeNormal2D(), ToP) < ConeHalfAngleCos) continue;
+
+			ServerInflictDamage(Other, FlameDamage);
+			HitMarkerTimer = 0.25f;
+		}
+
+		// Flamethrower vs NPC players
+		for (TActorIterator<AActor> It2(World); It2; ++It2)
+		{
+			AActor* A = *It2;
+			if (!A || A->IsHidden() || !A->ActorHasTag(FName("NPCPlayer"))) continue;
+
+			const FVector NLoc = A->GetActorLocation();
+			if (FVector::Dist2D(MyLoc, NLoc) > FlameRange) continue;
+
+			const FVector ToNPC = (NLoc - MyLoc).GetSafeNormal2D();
+			if (FVector::DotProduct(Forward.GetSafeNormal2D(), ToNPC) < ConeHalfAngleCos) continue;
+
+			if (CitySub)
+			{
+				for (int32 NI = 0; NI < UPHCCitySubsystem::NumNPCPlayers; ++NI)
+				{
+					if (CitySub->NPCPlayers[NI].Actor == A)
+					{
+						CitySub->NPCPlayers[NI].Health -= FlameDamage;
+						CitySub->NPCPlayers[NI].DamageFlashTimer = 0.15f;
+						HitMarkerTimer = 0.25f;
+						if (CitySub->NPCPlayers[NI].Health <= 0.f)
+						{
+							APHCMissileProjectile* TempProj = World->SpawnActor<APHCMissileProjectile>(
+								APHCMissileProjectile::StaticClass(), NLoc, FRotator::ZeroRotator);
+							if (TempProj) { TempProj->SpawnExplosion(NLoc); TempProj->Destroy(); }
+							CitySub->RespawnNPCPlayer(NI);
+						}
+						break;
+					}
+				}
+			}
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -4062,6 +4718,94 @@ float APHCCityCharacter::KillStreakMultiplier() const
 }
 
 // ---------------------------------------------------------------------------
+// Kill Streak Perk Activation / Deactivation
+// ---------------------------------------------------------------------------
+
+void APHCCityCharacter::ActivateChopperGunner()
+{
+	if (ActiveKillStreak != EKillStreakPerk::None) return;
+	ActiveKillStreak = EKillStreakPerk::ChopperGunner;
+	bChopperGunnerActive = true;
+	ChopperGunnerTimer = 0.f;
+	ChopperGunnerYaw = 0.f;
+	ChopperGunnerPos = FVector(0.f, 0.f, 3000.f);
+
+	// Save camera state
+	if (CameraBoom)
+	{
+		SavedArmLength = CameraBoom->TargetArmLength;
+		SavedSocketOffset = CameraBoom->SocketOffset;
+	}
+
+	// Hide character mesh
+	if (CharacterSkelMesh) CharacterSkelMesh->SetVisibility(false);
+}
+
+void APHCCityCharacter::ActivateAC130()
+{
+	if (ActiveKillStreak != EKillStreakPerk::None) return;
+	ActiveKillStreak = EKillStreakPerk::AC130;
+	bAC130Active = true;
+	AC130Timer = 0.f;
+	AC130OrbitAngle = 0.f;
+	AC130WeaponMode = 0;
+	AC130FireCooldown = 0.f;
+
+	// Save camera state
+	if (CameraBoom)
+	{
+		SavedArmLength = CameraBoom->TargetArmLength;
+		SavedSocketOffset = CameraBoom->SocketOffset;
+	}
+
+	// Hide character mesh
+	if (CharacterSkelMesh) CharacterSkelMesh->SetVisibility(false);
+}
+
+void APHCCityCharacter::ActivateTacticalNuke()
+{
+	if (ActiveKillStreak != EKillStreakPerk::None) return;
+	ActiveKillStreak = EKillStreakPerk::TacticalNuke;
+	bTacticalNukeCountdown = true;
+	bTacticalNukeDetonated = false;
+	TacticalNukeCountdownTimer = 10.f;
+	TacticalNukeFlashTimer = 0.f;
+}
+
+void APHCCityCharacter::DeactivateKillStreak()
+{
+	// Restore camera
+	if (CameraBoom)
+	{
+		CameraBoom->TargetArmLength = SavedArmLength;
+		CameraBoom->SocketOffset = SavedSocketOffset;
+	}
+
+	// Show character mesh
+	if (CharacterSkelMesh) CharacterSkelMesh->SetVisibility(true);
+
+	// Reset all kill streak state
+	ActiveKillStreak = EKillStreakPerk::None;
+	KillStreakPerkTimer = 0.f;
+
+	bChopperGunnerActive = false;
+	ChopperGunnerTimer = 0.f;
+	ChopperGunnerYaw = 0.f;
+	ChopperGunnerPos = FVector::ZeroVector;
+
+	bAC130Active = false;
+	AC130Timer = 0.f;
+	AC130WeaponMode = 0;
+	AC130OrbitAngle = 0.f;
+	AC130FireCooldown = 0.f;
+
+	bTacticalNukeCountdown = false;
+	TacticalNukeCountdownTimer = 0.f;
+	bTacticalNukeDetonated = false;
+	TacticalNukeFlashTimer = 0.f;
+}
+
+// ---------------------------------------------------------------------------
 // Daily Login Reward
 // ---------------------------------------------------------------------------
 
@@ -4293,5 +5037,173 @@ void APHCCityCharacter::CheckWeeklyReset()
 		WeeklyKills = 0;
 		WeeklyCoins = 0;
 		LastResetWeek = ThisWeek;
+	}
+}
+
+// =============================================================================
+//  Parkour System
+// =============================================================================
+
+bool APHCCityCharacter::TryStartWallRun()
+{
+	// === WALL RUN DETECTION (based on NOSHOT + Unity-Parkour-Example research) ===
+	// NOSHOT: uses MoveAndSlide collision + 25-105 degree angle check
+	// We use: radial line traces + angle validation
+
+	const FVector Pos = GetActorLocation();
+	const FVector Forward = GetActorForwardVector();
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Forward).GetSafeNormal();
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(this);
+
+	// NOSHOT uses airTime < 2.0s check — skip if been airborne too long
+	if (ParkourAirTime > 2.0f) return false;
+
+	// Radial wall search — 12 directions, 3 heights, 150 UU range
+	const float TraceLen = 150.f;
+	FHitResult BestHit;
+	float BestDist = TraceLen + 1.f;
+	bool bFound = false;
+
+	for (float TraceZ : {30.f, 55.f, 80.f})
+	{
+		const FVector Origin(Pos.X, Pos.Y, Pos.Z + TraceZ);
+		for (int32 D = 0; D < 12; ++D)
+		{
+			const float Angle = D * 30.f;
+			const float AR = FMath::DegreesToRadians(Angle);
+			const FVector Dir(FMath::Cos(AR), FMath::Sin(AR), 0.f);
+			FHitResult Hit;
+			if (GetWorld()->LineTraceSingleByChannel(Hit, Origin, Origin + Dir * TraceLen, ECC_WorldStatic, Params))
+			{
+				if (Hit.bStartPenetrating) continue;
+				// Must be near-vertical (not floor/ceiling)
+				if (FMath::Abs(Hit.ImpactNormal.Z) > 0.3f) continue;
+				if (Hit.Distance >= BestDist) continue;
+
+				// NOSHOT angle check: angle between forward and wall normal must be 25-105 degrees
+				// This prevents wall running when facing directly away from or directly into the wall
+				const float FwdDot = FVector::DotProduct(Forward, Hit.ImpactNormal);
+				const float AngleDeg = FMath::Acos(FMath::Clamp(FwdDot, -1.f, 1.f)) * (180.f / PI);
+				if (AngleDeg < 25.f || AngleDeg > 160.f) continue;
+
+				BestDist = Hit.Distance;
+				BestHit = Hit;
+				bFound = true;
+			}
+		}
+	}
+
+	if (!bFound) return false;
+
+	// Determine which side the wall is on
+	const float SideDot = FVector::DotProduct(BestHit.ImpactNormal, Right);
+	ParkourState = (SideDot > 0.f) ? EParkourState::WallRunL : EParkourState::WallRunR;
+	ParkourTimer = 0.f;
+	ParkourWallNormal = BestHit.ImpactNormal;
+	ParkourWallPoint = BestHit.ImpactPoint;
+	ParkourCooldown = 0.f;
+	ParkourStartPos = Pos;
+	ParkourWallRunCurrentSpeed = FMath::Max(WalkSpeed * MoveSpeedAlpha, WalkSpeed); // enter with current speed
+
+	// Compute forward direction along wall surface
+	// (NOSHOT: wall normal rotated 90 degrees around Y axis)
+	ParkourForward = FVector::CrossProduct(ParkourWallNormal, FVector::UpVector);
+	if (FVector::DotProduct(ParkourForward, Forward) < 0.f)
+		ParkourForward = -ParkourForward;
+	ParkourForward.Normalize();
+
+	// NOSHOT: initial upward velocity for the arc
+	// Gravity starts at 5% and ramps up, so initial upward gives the characteristic rise
+	ManualVelocityZ = 250.f;
+	bHasBeenGrounded = false;
+
+	// Snap close to wall (Godot Parkour: push into wall with -normal*10)
+	const FVector ToWall = -ParkourWallNormal.GetSafeNormal2D();
+	const float SnapDist = FMath::Max(0.f, BestDist - 25.f);
+	if (SnapDist > 3.f)
+		AddActorWorldOffset(ToWall * SnapDist, false);
+
+	return true;
+}
+
+bool APHCCityCharacter::TryStartVault()
+{
+	// === VAULT DETECTION (based on Dynamic Parkour System + NOSHOT research) ===
+	// DPS: knee-height forward ray + landing ray behind obstacle
+	// NOSHOT: downward ray projected ahead, Bezier arc
+
+	const FVector Pos = GetActorLocation();
+	const FVector Forward = GetActorForwardVector();
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(this);
+
+	// Forward trace at waist height (DPS: kneeRaycastOrigin = (0, 0.8, 0))
+	const float WaistZ = Pos.Z + 40.f;
+	const float TraceLen = 120.f;
+	FHitResult WaistHit;
+	bool bWaistBlocked = GetWorld()->LineTraceSingleByChannel(
+		WaistHit, FVector(Pos.X, Pos.Y, WaistZ),
+		FVector(Pos.X, Pos.Y, WaistZ) + Forward * TraceLen,
+		ECC_WorldStatic, Params);
+
+	if (!bWaistBlocked || WaistHit.bStartPenetrating) return false;
+
+	// Head height must be clear (not a full wall)
+	FHitResult HeadHit;
+	bool bHeadBlocked = GetWorld()->LineTraceSingleByChannel(
+		HeadHit, FVector(Pos.X, Pos.Y, Pos.Z + 100.f),
+		FVector(Pos.X, Pos.Y, Pos.Z + 100.f) + Forward * TraceLen,
+		ECC_WorldStatic, Params);
+
+	if (bHeadBlocked && !HeadHit.bStartPenetrating && HeadHit.Distance < WaistHit.Distance + 30.f)
+		return false;
+
+	// DPS: landing ray — cast downward on far side of obstacle (landOffset = 0.7)
+	const FVector OverTop = Pos + Forward * (WaistHit.Distance + 80.f);
+	FHitResult DropHit;
+	bool bFoundLanding = GetWorld()->LineTraceSingleByChannel(
+		DropHit, FVector(OverTop.X, OverTop.Y, Pos.Z + 150.f),
+		FVector(OverTop.X, OverTop.Y, Pos.Z - 200.f),
+		ECC_WorldStatic, Params);
+
+	if (!bFoundLanding || DropHit.bStartPenetrating) return false;
+
+	// Start vault with Bezier arc (NOSHOT approach)
+	ParkourState = EParkourState::Vaulting;
+	ParkourTimer = 0.f;
+	ParkourVaultStart = Pos;
+	ParkourVaultEnd = FVector(DropHit.ImpactPoint.X, DropHit.ImpactPoint.Y, DropHit.ImpactPoint.Z + 58.f);
+	// NOSHOT: Bezier midpoint height = distance/2 above linear midpoint
+	const float VaultDist = FVector::Dist(ParkourVaultStart, ParkourVaultEnd);
+	ParkourVaultMid = (ParkourVaultStart + ParkourVaultEnd) * 0.5f;
+	ParkourVaultMid.Z = FMath::Max(ParkourVaultStart.Z, ParkourVaultEnd.Z) + VaultDist * 0.5f;
+	// NOSHOT: duration = clamp(distance/speed, 0.2, 0.5)
+	ParkourVaultMaxTime = FMath::Clamp(VaultDist / FMath::Max(WalkSpeed, 1.f), 0.2f, 0.5f);
+	ParkourCooldown = 0.3f;
+	ManualVelocityZ = 0.f;
+	bHasBeenGrounded = false;
+
+	return true;
+}
+
+void APHCCityCharacter::EndParkour()
+{
+	const EParkourState PrevState = ParkourState;
+	ParkourState = EParkourState::None;
+	ParkourTimer = 0.f;
+	ParkourCooldown = 0.3f;
+	ParkourWallRunCurrentSpeed = 0.f;
+
+	if (PrevState == EParkourState::WallRunL || PrevState == EParkourState::WallRunR)
+	{
+		// After wall run ends, give slight downward velocity (gravity takes over)
+		if (ManualVelocityZ > -50.f)
+			ManualVelocityZ = -50.f;
+	}
+
+	if (PrevState == EParkourState::Sliding)
+	{
+		bHasBeenGrounded = true;
 	}
 }

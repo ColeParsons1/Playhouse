@@ -6,6 +6,8 @@
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 
 APHCNukeExplosion::APHCNukeExplosion()
 {
@@ -178,6 +180,131 @@ void APHCNukeExplosion::BeginPlay()
 			FMath::Sin(FMath::DegreesToRadians(Angle)) * HorizSpeed,
 			VertSpeed));
 	}
+
+	// === Niagara flame jets from F_FreeFlameFx_Pack — combined with mesh effects ===
+	UNiagaraSystem* FlameFX_8 = LoadObject<UNiagaraSystem>(nullptr,
+		TEXT("/Game/F_FreeFlameFx_Pack/FX/NS_Flame_8_Torch.NS_Flame_8_Torch"));
+	UNiagaraSystem* FlameFX_4 = LoadObject<UNiagaraSystem>(nullptr,
+		TEXT("/Game/F_FreeFlameFx_Pack/FX/NS_Flame_4.NS_Flame_4"));
+
+	if (FlameFX_8 || FlameFX_4)
+	{
+		FRandomStream FR(FMath::Rand());
+
+		auto SpawnFlame = [&](UNiagaraSystem* FX, const FVector& Off, const FRotator& Rot, const FVector& Scale, const TCHAR* Name)
+		{
+			if (!FX) return;
+			UNiagaraComponent* F = NewObject<UNiagaraComponent>(this, Name);
+			F->SetAsset(FX);
+			F->SetupAttachment(GetRootComponent());
+			F->SetRelativeLocation(Off);
+			F->SetRelativeRotation(Rot);
+			F->SetRelativeScale3D(Scale);
+			F->SetAutoActivate(true);
+			F->SetAutoDestroy(false);
+			F->RegisterComponent();
+			FlameJets.Add(F);
+		};
+
+		// Colossal central flame column
+		SpawnFlame(FlameFX_8, FVector(0.f, 0.f, 1200.f), FRotator::ZeroRotator,
+			FVector(800.f, 800.f, 1300.f), TEXT("MainColumn"));
+
+		// Inner secondary columns for chaos
+		for (int32 i = 0; i < 4; ++i)
+		{
+			const float Ang = FR.FRandRange(0.f, UE_PI * 2.f);
+			const FVector Off(FMath::Cos(Ang) * 250.f, FMath::Sin(Ang) * 250.f, FR.FRandRange(600.f, 1200.f));
+			SpawnFlame(FlameFX_8, Off,
+				FRotator(FR.FRandRange(-15.f, 15.f), FR.FRandRange(0.f, 360.f), 0.f),
+				FVector(FR.FRandRange(550.f, 700.f), FR.FRandRange(550.f, 700.f), FR.FRandRange(800.f, 1100.f)),
+				*FString::Printf(TEXT("InnerCol_%d"), i));
+		}
+
+		// First shockwave ring — 16 outward jets
+		for (int32 i = 0; i < 16; ++i)
+		{
+			const float Ang = (UE_PI * 2.f / 16.f) * i;
+			const float Radius = 800.f + FR.FRandRange(-80.f, 80.f);
+			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(150.f, 350.f));
+			const FRotator Rot(FR.FRandRange(50.f, 70.f), FMath::RadiansToDegrees(Ang) + FR.FRandRange(-15.f, 15.f), 0.f);
+			SpawnFlame(FlameFX_8, Off, Rot,
+				FVector(FR.FRandRange(400.f, 550.f), FR.FRandRange(400.f, 550.f), FR.FRandRange(550.f, 750.f)),
+				*FString::Printf(TEXT("Ring1_%d"), i));
+		}
+
+		// Second shockwave ring — 14 wider jets
+		for (int32 i = 0; i < 14; ++i)
+		{
+			const float Ang = (UE_PI * 2.f / 14.f) * i + 0.2f;
+			const float Radius = 1500.f + FR.FRandRange(-150.f, 150.f);
+			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(100.f, 500.f));
+			const FRotator Rot(FR.FRandRange(60.f, 85.f), FMath::RadiansToDegrees(Ang) + FR.FRandRange(-20.f, 20.f), 0.f);
+			SpawnFlame(FlameFX_8, Off, Rot,
+				FVector(FR.FRandRange(450.f, 600.f), FR.FRandRange(450.f, 600.f), FR.FRandRange(600.f, 800.f)),
+				*FString::Printf(TEXT("Ring2_%d"), i));
+		}
+
+		// Mid-altitude billowing flames — 12 jets
+		for (int32 i = 0; i < 12; ++i)
+		{
+			const float Ang = (UE_PI * 2.f / 12.f) * i + 0.5f;
+			const float Radius = 700.f + FR.FRandRange(-150.f, 250.f);
+			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(900.f, 1500.f));
+			const FRotator Rot(FR.FRandRange(20.f, 50.f), FMath::RadiansToDegrees(Ang), 0.f);
+			SpawnFlame(FlameFX_4 ? FlameFX_4 : FlameFX_8, Off, Rot,
+				FVector(FR.FRandRange(500.f, 650.f), FR.FRandRange(500.f, 650.f), FR.FRandRange(650.f, 900.f)),
+				*FString::Printf(TEXT("Mid_%d"), i));
+		}
+
+		// Mushroom crown — 10 flames at top arching outward
+		for (int32 i = 0; i < 10; ++i)
+		{
+			const float Ang = (UE_PI * 2.f / 10.f) * i;
+			const float Radius = 1000.f + FR.FRandRange(-150.f, 150.f);
+			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(2000.f, 2500.f));
+			const FRotator Rot(FR.FRandRange(0.f, 25.f), FMath::RadiansToDegrees(Ang), 0.f);
+			SpawnFlame(FlameFX_4 ? FlameFX_4 : FlameFX_8, Off, Rot,
+				FVector(FR.FRandRange(550.f, 700.f), FR.FRandRange(550.f, 700.f), FR.FRandRange(750.f, 1000.f)),
+				*FString::Printf(TEXT("Crown_%d"), i));
+		}
+
+		// Ground-level fire storm — 14 horizontal blasts
+		for (int32 i = 0; i < 14; ++i)
+		{
+			const float Ang = (UE_PI * 2.f / 14.f) * i + 0.1f;
+			const float Radius = 1200.f + FR.FRandRange(-150.f, 250.f);
+			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(30.f, 200.f));
+			const FRotator Rot(FR.FRandRange(80.f, 100.f), FMath::RadiansToDegrees(Ang) + FR.FRandRange(-15.f, 15.f), 0.f);
+			SpawnFlame(FlameFX_8, Off, Rot,
+				FVector(FR.FRandRange(450.f, 600.f), FR.FRandRange(450.f, 600.f), FR.FRandRange(600.f, 850.f)),
+				*FString::Printf(TEXT("GroundJet_%d"), i));
+		}
+
+		// Far-reaching outer blast — 12 distant flames
+		for (int32 i = 0; i < 12; ++i)
+		{
+			const float Ang = (UE_PI * 2.f / 12.f) * i + 0.3f;
+			const float Radius = 2300.f + FR.FRandRange(-200.f, 250.f);
+			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(100.f, 400.f));
+			const FRotator Rot(FR.FRandRange(70.f, 90.f), FMath::RadiansToDegrees(Ang), 0.f);
+			SpawnFlame(FlameFX_8, Off, Rot,
+				FVector(FR.FRandRange(400.f, 550.f), FR.FRandRange(400.f, 550.f), FR.FRandRange(550.f, 750.f)),
+				*FString::Printf(TEXT("FarBlast_%d"), i));
+		}
+
+		// Random chaos flames — 20 randomly placed
+		for (int32 i = 0; i < 20; ++i)
+		{
+			const float Ang = FR.FRandRange(0.f, UE_PI * 2.f);
+			const float Radius = FR.FRandRange(300.f, 2000.f);
+			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(80.f, 1900.f));
+			const FRotator Rot(FR.FRandRange(0.f, 90.f), FR.FRandRange(0.f, 360.f), FR.FRandRange(0.f, 360.f));
+			SpawnFlame(FR.FRand() < 0.5f ? FlameFX_8 : FlameFX_4, Off, Rot,
+				FVector(FR.FRandRange(380.f, 580.f), FR.FRandRange(380.f, 580.f), FR.FRandRange(500.f, 800.f)),
+				*FString::Printf(TEXT("Chaos_%d"), i));
+		}
+	}
 }
 
 void APHCNukeExplosion::Tick(float DeltaTime)
@@ -194,6 +321,16 @@ void APHCNukeExplosion::Tick(float DeltaTime)
 		SetActorTickEnabled(false);
 		Destroy();
 		return;
+	}
+
+	// Deactivate flame jets in last 1.5 seconds for fade-out
+	if (t > TotalDuration - 1.5f)
+	{
+		for (UNiagaraComponent* F : FlameJets)
+		{
+			if (F && F->IsActive())
+				F->Deactivate();
+		}
 	}
 
 	// Phase helper: 0..1 ramp between Start and End

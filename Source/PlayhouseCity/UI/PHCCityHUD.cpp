@@ -15,6 +15,8 @@
 #include "Vehicle/PHCDirtBikePawn.h"
 #include "Vehicle/PHCBlackbirdPawn.h"
 #include "Vehicle/PHCBlackHawkPawn.h"
+#include "Vehicle/PHCNukeExplosion.h"
+#include "Camera/CameraComponent.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "PlayhouseCity.h"
@@ -28,6 +30,8 @@
 #include "Components/Border.h"
 #include "Components/Spacer.h"
 #include "Components/SizeBox.h"
+#include "Components/UniformGridPanel.h"
+#include "Components/UniformGridSlot.h"
 #include "Components/ScrollBox.h"
 #include "Components/Image.h"
 #include "Engine/Texture2D.h"
@@ -936,6 +940,32 @@ bool UPHCCityHUD::Initialize()
 		DisastersButton->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
+		//  BOTTOM-LEFT: "KillStreaks" button
+		// ============================================================
+		KillStreaksButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), TEXT("KillStreaksButton"));
+
+		FButtonStyle KSBtnStyle = KillStreaksButton->GetStyle();
+		KSBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.82f, 0.86f, 0.92f, 0.22f));
+		KSBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.88f, 0.92f, 0.97f, 0.35f));
+		KSBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.95f, 0.97f, 1.00f, 0.50f));
+		KillStreaksButton->SetStyle(KSBtnStyle);
+
+		UTextBlock* KSLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("KillStreaksLabel"));
+		KSLabel->SetText(FText::FromString(TEXT("KillStreaks")));
+		KSLabel->SetFont(BtnFont);
+		KSLabel->SetColorAndOpacity(FSlateColor(White));
+		KSLabel->SetJustification(ETextJustify::Center);
+		KillStreaksButton->AddChild(KSLabel);
+
+		UCanvasPanelSlot* KSBtnSlot = RootCanvas->AddChildToCanvas(KillStreaksButton);
+		KSBtnSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f)); // same as Car button
+		KSBtnSlot->SetAlignment(FVector2D(0.f, 0.f));
+		// Right next to Vehicle button: Vehicle is at (50, 80, 130, 55), so KillStreaks starts at X=190
+		KSBtnSlot->SetOffsets(FMargin(190.f, 80.f, 130.f, 55.f)); // same size as Vehicle button
+
+		// ============================================================
 		//  Camera mode toggle (below Disasters)
 		// ============================================================
 		CameraModeButton = WidgetTree->ConstructWidget<UButton>(
@@ -1389,226 +1419,48 @@ bool UPHCCityHUD::Initialize()
 		VehicleSelectPanel->SetVerticalAlignment(VAlign_Center);
 		VehicleSelectOverlay->SetContent(VehicleSelectPanel);
 
-		UHorizontalBox* SelectHBox = WidgetTree->ConstructWidget<UHorizontalBox>(
-			UHorizontalBox::StaticClass(), TEXT("VehicleSelectHBox"));
-		VehicleSelectPanel->SetContent(SelectHBox);
+		// Vehicle selection: 4×2 uniform grid — fits all screen sizes
+		UUniformGridPanel* VehGrid = WidgetTree->ConstructWidget<UUniformGridPanel>(
+			UUniformGridPanel::StaticClass(), TEXT("VehicleSelectGrid"));
+		VehGrid->SetSlotPadding(FMargin(6.f));
+		VehGrid->SetMinDesiredSlotWidth(120.f);
+		VehGrid->SetMinDesiredSlotHeight(48.f);
+		VehicleSelectPanel->SetContent(VehGrid);
 
-		// -- Aventador button (burnt orange) --
-		SelectAventadorBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectAventadorBtn"));
+		// Button style (shared)
+		FButtonStyle VehBtnStyle;
+		VehBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+		VehBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+		VehBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+		VehBtnStyle.NormalPadding = FMargin(24.f, 14.f);
+		VehBtnStyle.PressedPadding = FMargin(24.f, 14.f);
+
+		auto MakeVehBtn = [&](TObjectPtr<UButton>& OutBtn, const TCHAR* BtnName, const TCHAR* LabelName,
+			const TCHAR* Text, int32 Col, int32 Row)
 		{
-			FButtonStyle Style = SelectAventadorBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectAventadorBtn->SetStyle(Style);
-		}
-		UTextBlock* AventadorLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("AventadorSelectLabel"));
-		AventadorLabel->SetText(FText::FromString(TEXT("Lamborghini")));
-		AventadorLabel->SetFont(PopupBtnFont);
-		AventadorLabel->SetColorAndOpacity(FSlateColor(White));
-		AventadorLabel->SetJustification(ETextJustify::Center);
-		SelectAventadorBtn->AddChild(AventadorLabel);
+			OutBtn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), BtnName);
+			OutBtn->SetStyle(VehBtnStyle);
+			UTextBlock* Lbl = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), LabelName);
+			Lbl->SetText(FText::FromString(Text));
+			Lbl->SetFont(PopupBtnFont);
+			Lbl->SetColorAndOpacity(FSlateColor(White));
+			Lbl->SetJustification(ETextJustify::Center);
+			OutBtn->AddChild(Lbl);
+			UUniformGridSlot* Slot = VehGrid->AddChildToUniformGrid(OutBtn, Row, Col);
+			Slot->SetHorizontalAlignment(HAlign_Fill);
+			Slot->SetVerticalAlignment(VAlign_Fill);
+		};
 
-		UHorizontalBoxSlot* AvSlot = SelectHBox->AddChildToHorizontalBox(SelectAventadorBtn);
-		AvSlot->SetPadding(FMargin(12.f));
-		AvSlot->SetVerticalAlignment(VAlign_Center);
-		AvSlot->SetHorizontalAlignment(HAlign_Center);
-
-		// Spacer between buttons.
-		USpacer* BtnSpacer = WidgetTree->ConstructWidget<USpacer>(
-			USpacer::StaticClass(), TEXT("VehicleBtnSpacer"));
-		BtnSpacer->SetSize(FVector2D(8.f, 0.f));
-		SelectHBox->AddChildToHorizontalBox(BtnSpacer);
-
-		// -- Dune Buggy button (olive green) --
-		SelectBuggyBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectBuggyBtn"));
-		{
-			FButtonStyle Style = SelectBuggyBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectBuggyBtn->SetStyle(Style);
-		}
-		UTextBlock* BuggyLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("BuggySelectLabel"));
-		BuggyLabel->SetText(FText::FromString(TEXT("Dune Buggy")));
-		BuggyLabel->SetFont(PopupBtnFont);
-		BuggyLabel->SetColorAndOpacity(FSlateColor(White));
-		BuggyLabel->SetJustification(ETextJustify::Center);
-		SelectBuggyBtn->AddChild(BuggyLabel);
-
-		UHorizontalBoxSlot* BgSlot = SelectHBox->AddChildToHorizontalBox(SelectBuggyBtn);
-		BgSlot->SetPadding(FMargin(12.f));
-		BgSlot->SetVerticalAlignment(VAlign_Center);
-		BgSlot->SetHorizontalAlignment(HAlign_Center);
-
-		// Spacer between Buggy and Raptor buttons.
-		USpacer* BtnSpacer2 = WidgetTree->ConstructWidget<USpacer>(
-			USpacer::StaticClass(), TEXT("VehicleBtnSpacer2"));
-		BtnSpacer2->SetSize(FVector2D(8.f, 0.f));
-		SelectHBox->AddChildToHorizontalBox(BtnSpacer2);
-
-		// -- F-22 Raptor button (stealth gray) --
-		SelectRaptorBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectRaptorBtn"));
-		{
-			FButtonStyle Style = SelectRaptorBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectRaptorBtn->SetStyle(Style);
-		}
-		UTextBlock* RaptorLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("RaptorSelectLabel"));
-		RaptorLabel->SetText(FText::FromString(TEXT("F-22 Raptor")));
-		RaptorLabel->SetFont(PopupBtnFont);
-		RaptorLabel->SetColorAndOpacity(FSlateColor(White));
-		RaptorLabel->SetJustification(ETextJustify::Center);
-		SelectRaptorBtn->AddChild(RaptorLabel);
-
-		UHorizontalBoxSlot* RpSlot = SelectHBox->AddChildToHorizontalBox(SelectRaptorBtn);
-		RpSlot->SetPadding(FMargin(12.f));
-		RpSlot->SetVerticalAlignment(VAlign_Center);
-		RpSlot->SetHorizontalAlignment(HAlign_Center);
-
-		USpacer* VehSpacer3 = WidgetTree->ConstructWidget<USpacer>(
-			USpacer::StaticClass(), TEXT("VehBtnSpacer3"));
-		VehSpacer3->SetSize(FVector2D(8.f, 0.f));
-		SelectHBox->AddChildToHorizontalBox(VehSpacer3);
-
-		// -- Jetpack button (sky blue) --
-		SelectJetpackBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectJetpackBtn"));
-		{
-			FButtonStyle Style = SelectJetpackBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectJetpackBtn->SetStyle(Style);
-		}
-		UTextBlock* JetpackLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("JetpackSelectLabel"));
-		JetpackLabel->SetText(FText::FromString(TEXT("AirBoots")));
-		JetpackLabel->SetFont(PopupBtnFont);
-		JetpackLabel->SetColorAndOpacity(FSlateColor(White));
-		JetpackLabel->SetJustification(ETextJustify::Center);
-		SelectJetpackBtn->AddChild(JetpackLabel);
-
-		UHorizontalBoxSlot* JpSlot = SelectHBox->AddChildToHorizontalBox(SelectJetpackBtn);
-		JpSlot->SetPadding(FMargin(12.f));
-		JpSlot->SetVerticalAlignment(VAlign_Center);
-		JpSlot->SetHorizontalAlignment(HAlign_Center);
-
-		// -- M60 Tank button (olive green) --
-		SelectTankBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectTankBtn"));
-		{
-			FButtonStyle Style = SelectTankBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectTankBtn->SetStyle(Style);
-		}
-		UTextBlock* TankLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("TankSelectLabel"));
-		TankLabel->SetText(FText::FromString(TEXT("M60 Tank")));
-		TankLabel->SetFont(PopupBtnFont);
-		TankLabel->SetColorAndOpacity(FSlateColor(White));
-		TankLabel->SetJustification(ETextJustify::Center);
-		SelectTankBtn->AddChild(TankLabel);
-
-		UHorizontalBoxSlot* TankSlot = SelectHBox->AddChildToHorizontalBox(SelectTankBtn);
-		TankSlot->SetPadding(FMargin(12.f));
-		TankSlot->SetVerticalAlignment(VAlign_Center);
-		TankSlot->SetHorizontalAlignment(HAlign_Center);
-
-		// -- Dirt Bike button (red/orange) --
-		SelectDirtBikeBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectDirtBikeBtn"));
-		{
-			FButtonStyle Style = SelectDirtBikeBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectDirtBikeBtn->SetStyle(Style);
-		}
-		UTextBlock* DirtBikeLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("DirtBikeSelectLabel"));
-		DirtBikeLabel->SetText(FText::FromString(TEXT("Mountain Bike")));
-		DirtBikeLabel->SetFont(PopupBtnFont);
-		DirtBikeLabel->SetColorAndOpacity(FSlateColor(White));
-		DirtBikeLabel->SetJustification(ETextJustify::Center);
-		SelectDirtBikeBtn->AddChild(DirtBikeLabel);
-
-		UHorizontalBoxSlot* BikeSlot = SelectHBox->AddChildToHorizontalBox(SelectDirtBikeBtn);
-		BikeSlot->SetPadding(FMargin(12.f));
-		BikeSlot->SetVerticalAlignment(VAlign_Center);
-		BikeSlot->SetHorizontalAlignment(HAlign_Center);
-
-		// -- Black Hawk button (dark military green) --
-		SelectBlackHawkBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectBlackHawkBtn"));
-		{
-			FButtonStyle Style = SelectBlackHawkBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectBlackHawkBtn->SetStyle(Style);
-		}
-		UTextBlock* BlackHawkLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("BlackHawkSelectLabel"));
-		BlackHawkLabel->SetText(FText::FromString(TEXT("Black Hawk")));
-		BlackHawkLabel->SetFont(PopupBtnFont);
-		BlackHawkLabel->SetColorAndOpacity(FSlateColor(White));
-		BlackHawkLabel->SetJustification(ETextJustify::Center);
-		SelectBlackHawkBtn->AddChild(BlackHawkLabel);
-
-		UHorizontalBoxSlot* HawkSlot = SelectHBox->AddChildToHorizontalBox(SelectBlackHawkBtn);
-		HawkSlot->SetPadding(FMargin(12.f));
-		HawkSlot->SetVerticalAlignment(VAlign_Center);
-		HawkSlot->SetHorizontalAlignment(HAlign_Center);
-
-		// -- Roller Blades button (matching style) --
-		SelectRollerBladesBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectRollerBladesBtn"));
-		{
-			FButtonStyle Style = SelectRollerBladesBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectRollerBladesBtn->SetStyle(Style);
-		}
-		UTextBlock* RollerBladesLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("RollerBladesSelectLabel"));
-		RollerBladesLabel->SetText(FText::FromString(TEXT("Roller Blades")));
-		RollerBladesLabel->SetFont(PopupBtnFont);
-		RollerBladesLabel->SetColorAndOpacity(FSlateColor(White));
-		RollerBladesLabel->SetJustification(ETextJustify::Center);
-		SelectRollerBladesBtn->AddChild(RollerBladesLabel);
-
-		UHorizontalBoxSlot* BladesSlot = SelectHBox->AddChildToHorizontalBox(SelectRollerBladesBtn);
-		BladesSlot->SetPadding(FMargin(12.f));
-		BladesSlot->SetVerticalAlignment(VAlign_Center);
-		BladesSlot->SetHorizontalAlignment(HAlign_Center);
+		// Row 0: Lamborghini, Dune Buggy, F-22 Raptor, AirBoots
+		MakeVehBtn(SelectAventadorBtn,    TEXT("SelectAventadorBtn"),    TEXT("AventadorSelectLabel"),    TEXT("Lamborghini"),   0, 0);
+		MakeVehBtn(SelectBuggyBtn,        TEXT("SelectBuggyBtn"),        TEXT("BuggySelectLabel"),        TEXT("Dune Buggy"),    1, 0);
+		MakeVehBtn(SelectRaptorBtn,       TEXT("SelectRaptorBtn"),       TEXT("RaptorSelectLabel"),       TEXT("F-22 Raptor"),   2, 0);
+		MakeVehBtn(SelectJetpackBtn,      TEXT("SelectJetpackBtn"),      TEXT("JetpackSelectLabel"),      TEXT("AirBoots"),      3, 0);
+		// Row 1: M60 Tank, Mountain Bike, Black Hawk, Roller Blades
+		MakeVehBtn(SelectTankBtn,         TEXT("SelectTankBtn"),         TEXT("TankSelectLabel"),         TEXT("M60 Tank"),      0, 1);
+		MakeVehBtn(SelectDirtBikeBtn,     TEXT("SelectDirtBikeBtn"),     TEXT("DirtBikeSelectLabel"),     TEXT("Mountain Bike"), 1, 1);
+		MakeVehBtn(SelectBlackHawkBtn,    TEXT("SelectBlackHawkBtn"),    TEXT("BlackHawkSelectLabel"),    TEXT("Black Hawk"),    2, 1);
+		MakeVehBtn(SelectRollerBladesBtn, TEXT("SelectRollerBladesBtn"), TEXT("RollerBladesSelectLabel"), TEXT("Roller Blades"), 3, 1);
 
 		VehicleSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
@@ -1632,216 +1484,42 @@ bool UPHCCityHUD::Initialize()
 		WepSelectPanel->SetVerticalAlignment(VAlign_Center);
 		WeaponSelectOverlay->SetContent(WepSelectPanel);
 
-		UHorizontalBox* WepHBox = WidgetTree->ConstructWidget<UHorizontalBox>(
-			UHorizontalBox::StaticClass(), TEXT("WeaponSelectHBox"));
-		WepSelectPanel->SetContent(WepHBox);
+		// Weapon selection: 4×2 uniform grid — matches vehicle grid layout
+		UUniformGridPanel* WepGrid = WidgetTree->ConstructWidget<UUniformGridPanel>(
+			UUniformGridPanel::StaticClass(), TEXT("WeaponSelectGrid"));
+		WepGrid->SetSlotPadding(FMargin(6.f));
+		WepGrid->SetMinDesiredSlotWidth(120.f);
+		WepGrid->SetMinDesiredSlotHeight(48.f);
+		WepSelectPanel->SetContent(WepGrid);
 
-		// -- Gun button (steel gray) --
-		SelectGunBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectGunBtn"));
+		// Reuse same button style for weapons
+		auto MakeWepBtn = [&](TObjectPtr<UButton>& OutBtn, const TCHAR* BtnName, const TCHAR* LabelName,
+			const TCHAR* Text, int32 Col, int32 Row)
 		{
-			FButtonStyle Style = SelectGunBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectGunBtn->SetStyle(Style);
-		}
-		UTextBlock* GunLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("GunSelectLabel"));
-		GunLabel->SetText(FText::FromString(TEXT("Minigun")));
-		GunLabel->SetFont(PopupBtnFont);
-		GunLabel->SetColorAndOpacity(FSlateColor(White));
-		GunLabel->SetJustification(ETextJustify::Center);
-		SelectGunBtn->AddChild(GunLabel);
+			OutBtn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), BtnName);
+			OutBtn->SetStyle(VehBtnStyle);
+			UTextBlock* Lbl = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), LabelName);
+			Lbl->SetText(FText::FromString(Text));
+			Lbl->SetFont(PopupBtnFont);
+			Lbl->SetColorAndOpacity(FSlateColor(White));
+			Lbl->SetJustification(ETextJustify::Center);
+			OutBtn->AddChild(Lbl);
+			UUniformGridSlot* Slot = WepGrid->AddChildToUniformGrid(OutBtn, Row, Col);
+			Slot->SetHorizontalAlignment(HAlign_Fill);
+			Slot->SetVerticalAlignment(VAlign_Fill);
+		};
 
-		UHorizontalBoxSlot* GunSlot = WepHBox->AddChildToHorizontalBox(SelectGunBtn);
-		GunSlot->SetPadding(FMargin(12.f));
-		GunSlot->SetVerticalAlignment(VAlign_Center);
-		GunSlot->SetHorizontalAlignment(HAlign_Center);
-
-		USpacer* WepSpacer1 = WidgetTree->ConstructWidget<USpacer>(
-			USpacer::StaticClass(), TEXT("WepBtnSpacer1"));
-		WepSpacer1->SetSize(FVector2D(8.f, 0.f));
-		WepHBox->AddChildToHorizontalBox(WepSpacer1);
-
-		// -- RPG button (dark red) --
-		SelectRPGBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectRPGBtn"));
-		{
-			FButtonStyle Style = SelectRPGBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectRPGBtn->SetStyle(Style);
-		}
-		UTextBlock* RPGLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("RPGSelectLabel"));
-		RPGLabel->SetText(FText::FromString(TEXT("RPG")));
-		RPGLabel->SetFont(PopupBtnFont);
-		RPGLabel->SetColorAndOpacity(FSlateColor(White));
-		RPGLabel->SetJustification(ETextJustify::Center);
-		SelectRPGBtn->AddChild(RPGLabel);
-
-		UHorizontalBoxSlot* RPGSlot = WepHBox->AddChildToHorizontalBox(SelectRPGBtn);
-		RPGSlot->SetPadding(FMargin(12.f));
-		RPGSlot->SetVerticalAlignment(VAlign_Center);
-		RPGSlot->SetHorizontalAlignment(HAlign_Center);
-
-		USpacer* WepSpacer2 = WidgetTree->ConstructWidget<USpacer>(
-			USpacer::StaticClass(), TEXT("WepBtnSpacer2"));
-		WepSpacer2->SetSize(FVector2D(8.f, 0.f));
-		WepHBox->AddChildToHorizontalBox(WepSpacer2);
-
-		// -- Sword button (gold) --
-		SelectSwordBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectSwordBtn"));
-		{
-			FButtonStyle Style = SelectSwordBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectSwordBtn->SetStyle(Style);
-		}
-		UTextBlock* SwordLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("SwordSelectLabel"));
-		SwordLabel->SetText(FText::FromString(TEXT("Light Saber")));
-		SwordLabel->SetFont(PopupBtnFont);
-		SwordLabel->SetColorAndOpacity(FSlateColor(White));
-		SwordLabel->SetJustification(ETextJustify::Center);
-		SelectSwordBtn->AddChild(SwordLabel);
-
-		UHorizontalBoxSlot* SwordSlot = WepHBox->AddChildToHorizontalBox(SelectSwordBtn);
-		SwordSlot->SetPadding(FMargin(12.f));
-		SwordSlot->SetVerticalAlignment(VAlign_Center);
-		SwordSlot->SetHorizontalAlignment(HAlign_Center);
-
-		USpacer* WepSpacer3 = WidgetTree->ConstructWidget<USpacer>(
-			USpacer::StaticClass(), TEXT("WepBtnSpacer3"));
-		WepSpacer3->SetSize(FVector2D(8.f, 0.f));
-		WepHBox->AddChildToHorizontalBox(WepSpacer3);
-
-		// -- Scythe button (dark purple) --
-		SelectScytheBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectScytheBtn"));
-		{
-			FButtonStyle Style = SelectScytheBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectScytheBtn->SetStyle(Style);
-		}
-		UTextBlock* ScytheLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("ScytheSelectLabel"));
-		ScytheLabel->SetText(FText::FromString(TEXT("Scythe")));
-		ScytheLabel->SetFont(PopupBtnFont);
-		ScytheLabel->SetColorAndOpacity(FSlateColor(White));
-		ScytheLabel->SetJustification(ETextJustify::Center);
-		SelectScytheBtn->AddChild(ScytheLabel);
-
-		UHorizontalBoxSlot* ScytheSlot = WepHBox->AddChildToHorizontalBox(SelectScytheBtn);
-		ScytheSlot->SetPadding(FMargin(12.f));
-		ScytheSlot->SetVerticalAlignment(VAlign_Center);
-		ScytheSlot->SetHorizontalAlignment(HAlign_Center);
-
-		USpacer* WepSpacer4 = WidgetTree->ConstructWidget<USpacer>(
-			USpacer::StaticClass(), TEXT("WepBtnSpacer4"));
-		WepSpacer4->SetSize(FVector2D(8.f, 0.f));
-		WepHBox->AddChildToHorizontalBox(WepSpacer4);
-
-		// -- Dagger button (crimson red — 1-hit kill) --
-		SelectDaggerBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectDaggerBtn"));
-		{
-			FButtonStyle Style = SelectDaggerBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectDaggerBtn->SetStyle(Style);
-		}
-		UTextBlock* DaggerLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("DaggerSelectLabel"));
-		DaggerLabel->SetText(FText::FromString(TEXT("1-Hit Dagger")));
-		DaggerLabel->SetFont(PopupBtnFont);
-		DaggerLabel->SetColorAndOpacity(FSlateColor(White));
-		DaggerLabel->SetJustification(ETextJustify::Center);
-		SelectDaggerBtn->AddChild(DaggerLabel);
-
-		UHorizontalBoxSlot* DaggerSlot = WepHBox->AddChildToHorizontalBox(SelectDaggerBtn);
-		DaggerSlot->SetPadding(FMargin(12.f));
-		DaggerSlot->SetVerticalAlignment(VAlign_Center);
-		DaggerSlot->SetHorizontalAlignment(HAlign_Center);
-
-		USpacer* WepSpacer5 = WidgetTree->ConstructWidget<USpacer>(
-			USpacer::StaticClass(), TEXT("WepBtnSpacer5"));
-		WepSpacer5->SetSize(FVector2D(8.f, 0.f));
-		WepHBox->AddChildToHorizontalBox(WepSpacer5);
-
-		// -- AK-47 button (dark olive/military green) --
-		SelectAK47Btn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectAK47Btn"));
-		{
-			FButtonStyle Style = SelectAK47Btn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectAK47Btn->SetStyle(Style);
-		}
-		UTextBlock* AK47Label = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("AK47SelectLabel"));
-		AK47Label->SetText(FText::FromString(TEXT("AK-47")));
-		AK47Label->SetFont(PopupBtnFont);
-		AK47Label->SetColorAndOpacity(FSlateColor(White));
-		AK47Label->SetJustification(ETextJustify::Center);
-		SelectAK47Btn->AddChild(AK47Label);
-
-		UHorizontalBoxSlot* AK47Slot = WepHBox->AddChildToHorizontalBox(SelectAK47Btn);
-		AK47Slot->SetPadding(FMargin(12.f));
-		AK47Slot->SetVerticalAlignment(VAlign_Center);
-		AK47Slot->SetHorizontalAlignment(HAlign_Center);
+		// Row 0: Minigun, RPG, Light Saber, Scythe
+		MakeWepBtn(SelectGunBtn,    TEXT("SelectGunBtn"),    TEXT("GunSelectLabel"),    TEXT("Minigun"),       0, 0);
+		MakeWepBtn(SelectRPGBtn,    TEXT("SelectRPGBtn"),    TEXT("RPGSelectLabel"),    TEXT("RPG"),           1, 0);
+		MakeWepBtn(SelectSwordBtn,  TEXT("SelectSwordBtn"),  TEXT("SwordSelectLabel"),  TEXT("Light Saber"),   2, 0);
+		MakeWepBtn(SelectScytheBtn, TEXT("SelectScytheBtn"), TEXT("ScytheSelectLabel"), TEXT("Scythe"),        3, 0);
+		// Row 1: 1-Hit Dagger, AK-47, 50 Cal Sniper
+		MakeWepBtn(SelectDaggerBtn, TEXT("SelectDaggerBtn"), TEXT("DaggerSelectLabel"), TEXT("1-Hit Dagger"),  0, 1);
+		MakeWepBtn(SelectAK47Btn,   TEXT("SelectAK47Btn"),   TEXT("AK47SelectLabel"),   TEXT("AK-47"),         1, 1);
 		SelectAK47Btn->SetVisibility(ESlateVisibility::Collapsed);
-
-		// Spacer between AK-47 and Sniper
-		USpacer* WepSpacer6 = WidgetTree->ConstructWidget<USpacer>(
-			USpacer::StaticClass(), TEXT("WepBtnSpacer6"));
-		WepSpacer6->SetSize(FVector2D(8.f, 0.f));
-		WepHBox->AddChildToHorizontalBox(WepSpacer6);
-
-		// -- 50 Cal Sniper button (dark steel/black) --
-		SelectSniperBtn = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("SelectSniperBtn"));
-		{
-			FButtonStyle Style = SelectSniperBtn->GetStyle();
-			Style.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
-			Style.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
-			Style.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
-			Style.NormalPadding = FMargin(28.f, 18.f);
-			Style.PressedPadding = FMargin(28.f, 18.f);
-			SelectSniperBtn->SetStyle(Style);
-		}
-		UTextBlock* SniperLabel = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), TEXT("SniperSelectLabel"));
-		SniperLabel->SetText(FText::FromString(TEXT("50 Cal Sniper")));
-		SniperLabel->SetFont(PopupBtnFont);
-		SniperLabel->SetColorAndOpacity(FSlateColor(White));
-		SniperLabel->SetJustification(ETextJustify::Center);
-		SelectSniperBtn->AddChild(SniperLabel);
-
-		UHorizontalBoxSlot* SniperSlot = WepHBox->AddChildToHorizontalBox(SelectSniperBtn);
-		SniperSlot->SetPadding(FMargin(12.f));
-		SniperSlot->SetVerticalAlignment(VAlign_Center);
-		SniperSlot->SetHorizontalAlignment(HAlign_Center);
+		MakeWepBtn(SelectSniperBtn, TEXT("SelectSniperBtn"), TEXT("SniperSelectLabel"), TEXT("50 Cal Sniper"), 2, 1);
+		MakeWepBtn(SelectFlamethrowerBtn, TEXT("SelectFlamethrowerBtn"), TEXT("FlamethrowerSelectLabel"), TEXT("Flamethrower"), 3, 1);
 
 		WeaponSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
@@ -2013,6 +1691,112 @@ bool UPHCCityHUD::Initialize()
 		}
 
 		DisasterSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
+
+		// ============================================================
+		//  Kill Streak selection popup (3 buttons: Chopper Gunner, AC-130, Tactical Nuke)
+		// ============================================================
+		KillStreakSelectOverlay = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("KillStreakSelectOverlay"));
+		KillStreakSelectOverlay->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.6f));
+		KillStreakSelectOverlay->SetPadding(FMargin(0.f));
+
+		UCanvasPanelSlot* KSOverlaySlot = RootCanvas->AddChildToCanvas(KillStreakSelectOverlay);
+		KSOverlaySlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+		KSOverlaySlot->SetOffsets(FMargin(0.f));
+
+		UBorder* KSSelectPanel = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("KSSelectPanel"));
+		KSSelectPanel->SetBrushColor(FLinearColor(0.12f, 0.14f, 0.20f, 0.55f));
+		KSSelectPanel->SetPadding(FMargin(40.f, 28.f, 40.f, 28.f));
+		KSSelectPanel->SetHorizontalAlignment(HAlign_Center);
+		KSSelectPanel->SetVerticalAlignment(VAlign_Center);
+		KillStreakSelectOverlay->SetContent(KSSelectPanel);
+
+		UUniformGridPanel* KSGrid = WidgetTree->ConstructWidget<UUniformGridPanel>(
+			UUniformGridPanel::StaticClass(), TEXT("KillStreakGrid"));
+		KSGrid->SetSlotPadding(FMargin(6.f));
+		KSGrid->SetMinDesiredSlotWidth(140.f);
+		KSGrid->SetMinDesiredSlotHeight(48.f);
+		KSSelectPanel->SetContent(KSGrid);
+
+		// Shared button style (same as vehicle popup)
+		FButtonStyle KSPopBtnStyle;
+		KSPopBtnStyle.Normal.TintColor  = FSlateColor(FLinearColor(0.78f, 0.82f, 0.90f, 0.18f));
+		KSPopBtnStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.85f, 0.90f, 0.97f, 0.30f));
+		KSPopBtnStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.95f, 1.00f, 0.45f));
+		KSPopBtnStyle.NormalPadding = FMargin(24.f, 14.f);
+		KSPopBtnStyle.PressedPadding = FMargin(24.f, 14.f);
+
+		auto MakeKSBtn = [&](TObjectPtr<UButton>& OutBtn, const TCHAR* BtnName,
+			const TCHAR* LabelName, const TCHAR* Text, int32 Col)
+		{
+			OutBtn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), BtnName);
+			OutBtn->SetStyle(KSPopBtnStyle);
+			UTextBlock* Lbl = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(), LabelName);
+			Lbl->SetText(FText::FromString(Text));
+			Lbl->SetFont(PopupBtnFont);
+			Lbl->SetColorAndOpacity(FSlateColor(White));
+			Lbl->SetJustification(ETextJustify::Center);
+			OutBtn->AddChild(Lbl);
+			UUniformGridSlot* Slot = KSGrid->AddChildToUniformGrid(OutBtn, 0, Col);
+			Slot->SetHorizontalAlignment(HAlign_Fill);
+			Slot->SetVerticalAlignment(VAlign_Fill);
+		};
+
+		MakeKSBtn(SelectChopperGunnerBtn, TEXT("SelectChopperGunnerBtn"),
+			TEXT("ChopperGunnerLabel"), TEXT("Chopper Gunner"), 0);
+		MakeKSBtn(SelectAC130Btn, TEXT("SelectAC130Btn"),
+			TEXT("AC130Label"), TEXT("AC-130"), 1);
+		MakeKSBtn(SelectTacticalNukeBtn, TEXT("SelectTacticalNukeBtn"),
+			TEXT("TacticalNukeLabel"), TEXT("Tactical Nuke"), 2);
+
+		KillStreakSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
+
+		// ============================================================
+		//  Nuke flash overlay — full-screen white, starts collapsed
+		// ============================================================
+		NukeFlashOverlay = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("NukeFlashOverlay"));
+		NukeFlashOverlay->SetBrushColor(FLinearColor(1.f, 1.f, 1.f, 0.f));
+		NukeFlashOverlay->SetPadding(FMargin(0.f));
+
+		UCanvasPanelSlot* NukeFlashSlot = RootCanvas->AddChildToCanvas(NukeFlashOverlay);
+		NukeFlashSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+		NukeFlashSlot->SetOffsets(FMargin(0.f));
+		NukeFlashOverlay->SetVisibility(ESlateVisibility::Collapsed);
+
+		// Nuke countdown text — large centered text "10... 9... 8..."
+		NukeCountdownText = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("NukeCountdownText"));
+		NukeCountdownText->SetText(FText::FromString(TEXT("")));
+		const FSlateFontInfo NukeFont = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 64);
+		NukeCountdownText->SetFont(NukeFont);
+		NukeCountdownText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.2f, 0.2f)));
+		NukeCountdownText->SetJustification(ETextJustify::Center);
+
+		UCanvasPanelSlot* NukeTextSlot = RootCanvas->AddChildToCanvas(NukeCountdownText);
+		NukeTextSlot->SetAnchors(FAnchors(0.5f, 0.4f, 0.5f, 0.4f));
+		NukeTextSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+		NukeTextSlot->SetOffsets(FMargin(0.f, 0.f, 400.f, 80.f));
+		NukeCountdownText->SetVisibility(ESlateVisibility::Collapsed);
+
+		// AC-130 weapon mode label (top center during AC-130)
+		AC130WeaponLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(), TEXT("AC130WeaponLabel"));
+		AC130WeaponLabel->SetText(FText::FromString(TEXT("25mm Gatling")));
+		const FSlateFontInfo AC130Font = FSlateFontInfo(
+			FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 28);
+		AC130WeaponLabel->SetFont(AC130Font);
+		AC130WeaponLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.f, 1.f, 0.4f)));
+		AC130WeaponLabel->SetJustification(ETextJustify::Center);
+
+		UCanvasPanelSlot* AC130LabelSlot = RootCanvas->AddChildToCanvas(AC130WeaponLabel);
+		AC130LabelSlot->SetAnchors(FAnchors(0.5f, 0.08f, 0.5f, 0.08f));
+		AC130LabelSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+		AC130LabelSlot->SetOffsets(FMargin(0.f, 0.f, 300.f, 40.f));
+		AC130WeaponLabel->SetVisibility(ESlateVisibility::Collapsed);
 
 		// ============================================================
 		//  Weapon fire panel (large, barely visible — like steering panel)
@@ -2551,6 +2335,22 @@ void UPHCCityHUD::NativeConstruct()
 	{
 		CameraModeButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnCameraModeButtonClicked);
 	}
+	if (KillStreaksButton)
+	{
+		KillStreaksButton->OnClicked.AddDynamic(this, &UPHCCityHUD::OnKillStreaksButtonClicked);
+	}
+	if (SelectChopperGunnerBtn)
+	{
+		SelectChopperGunnerBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectChopperGunner);
+	}
+	if (SelectAC130Btn)
+	{
+		SelectAC130Btn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectAC130);
+	}
+	if (SelectTacticalNukeBtn)
+	{
+		SelectTacticalNukeBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectTacticalNuke);
+	}
 	if (TorchButton)
 	{
 		TorchButton->SetTouchMethod(EButtonTouchMethod::DownAndUp);
@@ -2622,6 +2422,10 @@ void UPHCCityHUD::NativeConstruct()
 	{
 		SelectSniperBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectSniper);
 	}
+	if (SelectFlamethrowerBtn)
+	{
+		SelectFlamethrowerBtn->OnClicked.AddDynamic(this, &UPHCCityHUD::OnSelectFlamethrower);
+	}
 	if (WeaponFireButton)
 	{
 		WeaponFireButton->OnPressed.AddDynamic(this, &UPHCCityHUD::OnWeaponFirePressed);
@@ -2689,6 +2493,10 @@ void UPHCCityHUD::NativeDestruct()
 	if (SelectRaptorBtn)
 	{
 		SelectRaptorBtn->OnClicked.RemoveAll(this);
+	}
+	if (SelectFlamethrowerBtn)
+	{
+		SelectFlamethrowerBtn->OnClicked.RemoveAll(this);
 	}
 	if (FireButton)
 	{
@@ -2907,6 +2715,73 @@ void UPHCCityHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 				{
 					DamageFlashOverlay->SetBrushColor(FLinearColor(0.85f, 0.05f, 0.05f, 0.0f));
 				}
+			}
+		}
+	}
+
+	// ---- Kill Streak Perk HUD updates ----
+	if (APlayerController* KSPC = GetOwningPlayer())
+	{
+		if (APHCCityCharacter* KSChar = Cast<APHCCityCharacter>(KSPC->GetPawn()))
+		{
+			// Nuke countdown text
+			if (KSChar->bTacticalNukeCountdown && !KSChar->bTacticalNukeDetonated)
+			{
+				if (NukeCountdownText)
+				{
+					NukeCountdownText->SetVisibility(ESlateVisibility::HitTestInvisible);
+					const int32 Secs = FMath::CeilToInt(KSChar->TacticalNukeCountdownTimer);
+					NukeCountdownText->SetText(FText::FromString(
+						FString::Printf(TEXT("TACTICAL NUKE\n%d"), FMath::Max(Secs, 0))));
+				}
+			}
+			else if (NukeCountdownText)
+			{
+				NukeCountdownText->SetVisibility(ESlateVisibility::Collapsed);
+			}
+
+			// Nuke flash overlay
+			if (KSChar->bTacticalNukeDetonated && KSChar->TacticalNukeFlashTimer > 0.f)
+			{
+				if (NukeFlashOverlay)
+				{
+					NukeFlashOverlay->SetVisibility(ESlateVisibility::HitTestInvisible);
+					const float Alpha = FMath::Clamp(KSChar->TacticalNukeFlashTimer / 5.f, 0.f, 1.f);
+					NukeFlashOverlay->SetBrushColor(FLinearColor(1.f, 1.f, 1.f, Alpha));
+				}
+			}
+			else if (NukeFlashOverlay)
+			{
+				NukeFlashOverlay->SetVisibility(ESlateVisibility::Collapsed);
+				NukeFlashOverlay->SetBrushColor(FLinearColor(1.f, 1.f, 1.f, 0.f));
+			}
+
+			// AC-130 weapon mode label
+			if (KSChar->bAC130Active)
+			{
+				if (AC130WeaponLabel)
+				{
+					AC130WeaponLabel->SetVisibility(ESlateVisibility::HitTestInvisible);
+					switch (KSChar->AC130WeaponMode)
+					{
+					case 0: AC130WeaponLabel->SetText(FText::FromString(TEXT("25mm Gatling"))); break;
+					case 1: AC130WeaponLabel->SetText(FText::FromString(TEXT("40mm Bofors"))); break;
+					case 2: AC130WeaponLabel->SetText(FText::FromString(TEXT("105mm Howitzer"))); break;
+					}
+				}
+			}
+			else if (AC130WeaponLabel)
+			{
+				AC130WeaponLabel->SetVisibility(ESlateVisibility::Collapsed);
+			}
+
+			// Restore HUD buttons when killstreak ends
+			if (KSChar->ActiveKillStreak == APHCCityCharacter::EKillStreakPerk::None)
+			{
+				if (CarButton && CarButton->GetVisibility() == ESlateVisibility::Collapsed)
+					CarButton->SetVisibility(ESlateVisibility::Visible);
+				if (KillStreaksButton && KillStreaksButton->GetVisibility() == ESlateVisibility::Collapsed)
+					KillStreaksButton->SetVisibility(ESlateVisibility::Visible);
 			}
 		}
 	}
@@ -4881,6 +4756,23 @@ void UPHCCityHUD::OnSelectSniper()
 	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
 }
 
+void UPHCCityHUD::OnSelectFlamethrower()
+{
+	HideWeaponSelection();
+	EquippedWeaponType = 7;
+
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->CurrentWeaponType = 7;
+		}
+	}
+
+	if (WeaponFireLabel) WeaponFireLabel->SetText(FText::FromString(TEXT("FIRE")));
+	if (WeaponFireButton) WeaponFireButton->SetVisibility(ESlateVisibility::Visible);
+}
+
 void UPHCCityHUD::OnWeaponFirePressed()
 {
 	bWeaponFireHeld = true;
@@ -4889,6 +4781,82 @@ void UPHCCityHUD::OnWeaponFirePressed()
 	{
 		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
 		{
+			// Kill streak fire modes override normal weapon fire
+			if (Char->bChopperGunnerActive)
+			{
+				// Chopper Gunner: line trace from camera downward, spawn explosion at hit
+				UWorld* W = Char->GetWorld();
+				if (W && Char->FollowCamera)
+				{
+					const FVector TraceStart = Char->FollowCamera->GetComponentLocation();
+					const FVector TraceDir = Char->FollowCamera->GetForwardVector();
+					const FVector TraceEnd = TraceStart + TraceDir * 50000.f;
+
+					FCollisionQueryParams Params;
+					Params.AddIgnoredActor(Char);
+					FHitResult Hit;
+					if (W->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, Params))
+					{
+						FActorSpawnParameters SP;
+						SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+						W->SpawnActor<APHCNukeExplosion>(
+							APHCNukeExplosion::StaticClass(), Hit.ImpactPoint, FRotator::ZeroRotator, SP);
+					}
+				}
+				return;
+			}
+
+			if (Char->bAC130Active)
+			{
+				// AC-130: fire based on weapon mode, spawn explosion at ground hit
+				if (Char->AC130FireCooldown > 0.f) return;
+
+				UWorld* W = Char->GetWorld();
+				if (W && Char->FollowCamera)
+				{
+					const FVector TraceStart = Char->FollowCamera->GetComponentLocation();
+					const FVector TraceDir = Char->FollowCamera->GetForwardVector();
+					const FVector TraceEnd = TraceStart + TraceDir * 80000.f;
+
+					FCollisionQueryParams Params;
+					Params.AddIgnoredActor(Char);
+					FHitResult Hit;
+					if (W->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, Params))
+					{
+						FActorSpawnParameters SP;
+						SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+						switch (Char->AC130WeaponMode)
+						{
+						case 0: // 25mm — rapid, small explosion
+						{
+							Char->AC130FireCooldown = 0.15f;
+							APHCNukeExplosion* Exp = W->SpawnActor<APHCNukeExplosion>(
+								APHCNukeExplosion::StaticClass(), Hit.ImpactPoint, FRotator::ZeroRotator, SP);
+							if (Exp) Exp->SetActorScale3D(FVector(0.3f));
+							break;
+						}
+						case 1: // 40mm — medium
+						{
+							Char->AC130FireCooldown = 0.5f;
+							APHCNukeExplosion* Exp = W->SpawnActor<APHCNukeExplosion>(
+								APHCNukeExplosion::StaticClass(), Hit.ImpactPoint, FRotator::ZeroRotator, SP);
+							if (Exp) Exp->SetActorScale3D(FVector(0.7f));
+							break;
+						}
+						case 2: // 105mm — massive
+						{
+							Char->AC130FireCooldown = 2.0f;
+							W->SpawnActor<APHCNukeExplosion>(
+								APHCNukeExplosion::StaticClass(), Hit.ImpactPoint, FRotator::ZeroRotator, SP);
+							break;
+						}
+						}
+					}
+				}
+				return;
+			}
+
 			if (EquippedWeaponType == 0) // Minigun — hold to spray
 			{
 				Char->bMinigunFiring = true;
@@ -4896,6 +4864,10 @@ void UPHCCityHUD::OnWeaponFirePressed()
 			else if (EquippedWeaponType == 5) // AK-47 — hold to spray
 			{
 				Char->bAK47Firing = true;
+			}
+			else if (EquippedWeaponType == 7) // Flamethrower — hold to spray
+			{
+				Char->bFlamethrowerFiring = true;
 			}
 			else // All other weapons — single fire on press
 			{
@@ -4915,6 +4887,7 @@ void UPHCCityHUD::OnWeaponFireReleased()
 		{
 			Char->bMinigunFiring = false;
 			Char->bAK47Firing = false;
+			Char->bFlamethrowerFiring = false;
 		}
 	}
 }
@@ -5105,6 +5078,12 @@ void UPHCCityHUD::OnADSPressed()
 	{
 		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
 		{
+			// AC-130 active: ADS button cycles weapon modes instead
+			if (Char->bAC130Active)
+			{
+				Char->AC130WeaponMode = (Char->AC130WeaponMode + 1) % 3;
+				return;
+			}
 			// Toggle ADS on press (tap to scope in, tap again to scope out)
 			Char->SetADS(!Char->bADS);
 		}
@@ -5446,6 +5425,80 @@ UTexture2D* UPHCCityHUD::GenerateTripTexture(int32 Pattern, int32 Size)
 	Mip.BulkData.Unlock();
 	Tex->UpdateResource();
 	return Tex;
+}
+
+// ---------------------------------------------------------------------------
+// Kill Streak Selection
+// ---------------------------------------------------------------------------
+
+void UPHCCityHUD::OnKillStreaksButtonClicked()
+{
+	ShowKillStreakSelection();
+}
+
+void UPHCCityHUD::ShowKillStreakSelection()
+{
+	if (KillStreakSelectOverlay)
+	{
+		KillStreakSelectOverlay->SetVisibility(ESlateVisibility::Visible);
+		bKillStreakSelectOpen = true;
+	}
+}
+
+void UPHCCityHUD::HideKillStreakSelection()
+{
+	if (KillStreakSelectOverlay)
+	{
+		KillStreakSelectOverlay->SetVisibility(ESlateVisibility::Collapsed);
+		bKillStreakSelectOpen = false;
+	}
+}
+
+void UPHCCityHUD::OnSelectChopperGunner()
+{
+	HideKillStreakSelection();
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->ActivateChopperGunner();
+		}
+	}
+	// Show fire button, hide character walk controls
+	if (WeaponFireButton) { WeaponFireButton->SetVisibility(ESlateVisibility::Visible); }
+	if (WeaponFireLabel) { WeaponFireLabel->SetText(FText::FromString(TEXT("FIRE"))); }
+	if (CarButton) CarButton->SetVisibility(ESlateVisibility::Collapsed);
+	if (KillStreaksButton) KillStreaksButton->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void UPHCCityHUD::OnSelectAC130()
+{
+	HideKillStreakSelection();
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->ActivateAC130();
+		}
+	}
+	// Show fire button + AC130 weapon label, hide walk controls
+	if (WeaponFireButton) { WeaponFireButton->SetVisibility(ESlateVisibility::Visible); }
+	if (WeaponFireLabel) { WeaponFireLabel->SetText(FText::FromString(TEXT("FIRE"))); }
+	if (AC130WeaponLabel) AC130WeaponLabel->SetVisibility(ESlateVisibility::Visible);
+	if (CarButton) CarButton->SetVisibility(ESlateVisibility::Collapsed);
+	if (KillStreaksButton) KillStreaksButton->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void UPHCCityHUD::OnSelectTacticalNuke()
+{
+	HideKillStreakSelection();
+	if (APHCPlayerController* PC = Cast<APHCPlayerController>(GetOwningPlayer()))
+	{
+		if (APHCCityCharacter* Char = Cast<APHCCityCharacter>(PC->GetPawn()))
+		{
+			Char->ActivateTacticalNuke();
+		}
+	}
 }
 
 void UPHCCityHUD::CreateTripOverlays()
