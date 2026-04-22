@@ -13,6 +13,7 @@
 #include "EngineUtils.h"
 #include "Core/PHCCitySubsystem.h"
 #include "Player/PHCCityCharacter.h"
+#include "Vehicle/PHCNukeExplosion.h"
 
 APHCMissileProjectile::APHCMissileProjectile()
 {
@@ -323,7 +324,7 @@ void APHCMissileProjectile::SpawnTrailDot()
 }
 
 // ---------------------------------------------------------------------------
-// RPG Explosion (GTA V style)
+// RPG Explosion — uses APHCNukeExplosion (flame pack), matching AC-130 missiles
 // ---------------------------------------------------------------------------
 
 void APHCMissileProjectile::SpawnExplosion(const FVector& Location)
@@ -331,142 +332,37 @@ void APHCMissileProjectile::SpawnExplosion(const FVector& Location)
 	UWorld* World = GetWorld();
 	if (!World) return;
 
-	UStaticMesh* SphereMesh = LoadObject<UStaticMesh>(nullptr,
-		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-	UStaticMesh* CylMesh = LoadObject<UStaticMesh>(nullptr,
-		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
-	UMaterial* ColorMat = LoadObject<UMaterial>(nullptr,
-		TEXT("/Game/Materials/M_PHCColor.M_PHCColor"));
-	UMaterial* GlassMat = LoadObject<UMaterial>(nullptr,
-		TEXT("/Game/Materials/M_PHCGlass.M_PHCGlass"));
-
+	// Spawn APHCNukeExplosion at impact — same as AC-130 105mm howitzer.
+	// RPG rockets get a 0.5× actor scale so their blast reads as a tactical
+	// strike rather than a full nuke; the scale cascades to the NS_NuclearExplosion
+	// Niagara (child of the root) via normal transform inheritance.
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	auto SpawnMeshActor = [&](UStaticMesh* MeshAsset, const FVector& Loc,
-		const FVector& Scale, float Life, const FLinearColor& BaseColor,
-		const FLinearColor& Emissive, float Metallic, float Roughness,
-		bool bUseGlass = false) -> AActor*
+	APHCNukeExplosion* Exp = World->SpawnActor<APHCNukeExplosion>(
+		APHCNukeExplosion::StaticClass(), Location, FRotator::ZeroRotator, SP);
+	if (Exp && bIsRPGRocket)
 	{
-		if (!MeshAsset) return nullptr;
-		AActor* A = World->SpawnActor<AActor>(
-			AActor::StaticClass(), Loc, FRotator::ZeroRotator, SP);
-		if (!A) return nullptr;
-		A->SetReplicates(false);
-		A->SetLifeSpan(Life);
+		Exp->SetActorScale3D(FVector(0.5f));
+	}
 
-		UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(
-			A, UStaticMeshComponent::StaticClass(), TEXT("ExpMesh"));
-		MC->SetStaticMesh(MeshAsset);
-		MC->SetRelativeScale3D(Scale);
-		MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MC->CastShadow = false;
-		A->SetRootComponent(MC);
-		MC->RegisterComponent();
-
-		UMaterial* BaseMat = bUseGlass ? GlassMat : ColorMat;
-		if (BaseMat)
+	// Damage nearby Lurkers (1500 UU radius, 100 damage — matches AC-130 105mm)
+	if (UPHCCitySubsystem* Sub = World->GetSubsystem<UPHCCitySubsystem>())
+	{
+		for (int32 CI = 0; CI < UPHCCitySubsystem::NumGiantCrabs; ++CI)
 		{
-			UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(
-				(UMaterialInterface*)BaseMat, A);
-			if (MID)
+			if (Sub->Crabs[CI].Actor && Sub->Crabs[CI].Health > 0.f && Sub->Crabs[CI].bVisible)
 			{
-				MID->SetVectorParameterValue(TEXT("BaseColor"), BaseColor);
-				MID->SetVectorParameterValue(TEXT("EmissiveColor"), Emissive);
-				MID->SetScalarParameterValue(TEXT("Metallic"), Metallic);
-				MID->SetScalarParameterValue(TEXT("Roughness"), Roughness);
-				if (bUseGlass)
-					MID->SetScalarParameterValue(TEXT("Opacity"), 0.6f);
-				MC->SetMaterial(0, MID);
+				const float D = FVector::Dist(Location, Sub->Crabs[CI].Actor->GetActorLocation());
+				if (D < 1500.f)
+				{
+					Sub->Crabs[CI].Health -= 100.f;
+					Sub->Crabs[CI].DamageFlashTimer = 0.2f;
+					if (Sub->Crabs[CI].Health <= 0.f)
+					{
+						Sub->RespawnCrab(CI);
+					}
+				}
 			}
 		}
-		return A;
-	};
-
-	// === FIREBALL — bright orange-yellow core (GTA V: 5-8m diameter) ===
-	// Inner fireball: intense bright core
-	SpawnMeshActor(SphereMesh, Location, FVector(4.5f), 0.35f,
-		FLinearColor(1.0f, 0.55f, 0.05f),     // hot orange
-		FLinearColor(20.f, 10.f, 2.f),         // intense emissive glow
-		0.f, 0.5f);
-
-	// Outer fireball: slightly larger, darker orange
-	SpawnMeshActor(SphereMesh, Location + FVector(0.f, 0.f, 30.f), FVector(6.f), 0.5f,
-		FLinearColor(0.8f, 0.3f, 0.02f),      // deep orange
-		FLinearColor(12.f, 4.f, 0.5f),         // warm glow
-		0.f, 0.6f);
-
-	// === SHOCKWAVE RING — expanding flat disc ===
-	SpawnMeshActor(CylMesh, Location + FVector(0.f, 0.f, 5.f),
-		FVector(8.f, 8.f, 0.03f), 0.3f,       // wide, paper-thin cylinder
-		FLinearColor(1.f, 0.8f, 0.4f),        // hot white-yellow
-		FLinearColor(6.f, 4.f, 1.5f),
-		0.f, 0.5f, true);                     // glass mat for translucency
-
-	// === DARK SMOKE CLOUD — GTA V lingers 3-5 seconds, rises ===
-	// Inner smoke puffs (6 around center, close range)
-	for (int32 i = 0; i < 6; ++i)
-	{
-		const float Angle = (float)i * 60.f;
-		const float Rad = FMath::DegreesToRadians(Angle);
-		const float OffR = FMath::RandRange(40.f, 120.f);
-		const FVector Offset(
-			FMath::Cos(Rad) * OffR,
-			FMath::Sin(Rad) * OffR,
-			FMath::RandRange(20.f, 80.f));    // slightly elevated
-		const float SmokeScale = FMath::RandRange(2.5f, 4.0f);
-		const float SmokeLife = FMath::RandRange(2.0f, 3.5f);
-		const float Gray = FMath::RandRange(0.04f, 0.12f);
-
-		SpawnMeshActor(SphereMesh, Location + Offset,
-			FVector(SmokeScale), SmokeLife,
-			FLinearColor(Gray, Gray, Gray),    // dark gray/black smoke
-			FLinearColor::Black,               // no glow
-			0.f, 0.95f);
 	}
-
-	// Outer rising smoke (4 higher, larger, longer lasting — GTA V convection)
-	for (int32 i = 0; i < 4; ++i)
-	{
-		const float Angle = (float)i * 90.f + 45.f;
-		const float Rad = FMath::DegreesToRadians(Angle);
-		const float OffR = FMath::RandRange(60.f, 160.f);
-		const FVector Offset(
-			FMath::Cos(Rad) * OffR,
-			FMath::Sin(Rad) * OffR,
-			FMath::RandRange(120.f, 250.f));  // higher — rising smoke
-		const float SmokeScale = FMath::RandRange(3.5f, 5.5f);
-		const float SmokeLife = FMath::RandRange(3.5f, 5.0f);
-		const float Gray = FMath::RandRange(0.06f, 0.15f);
-
-		SpawnMeshActor(SphereMesh, Location + Offset,
-			FVector(SmokeScale), SmokeLife,
-			FLinearColor(Gray, Gray, Gray),
-			FLinearColor::Black,
-			0.f, 0.95f);
-	}
-
-	// === EMBERS / DEBRIS — small bright particles scattered outward ===
-	for (int32 i = 0; i < 10; ++i)
-	{
-		const FVector Scatter(
-			FMath::RandRange(-200.f, 200.f),
-			FMath::RandRange(-200.f, 200.f),
-			FMath::RandRange(30.f, 200.f));
-		const float EmberScale = FMath::RandRange(0.06f, 0.15f);
-		const float EmberLife = FMath::RandRange(0.3f, 0.8f);
-
-		SpawnMeshActor(SphereMesh, Location + Scatter,
-			FVector(EmberScale), EmberLife,
-			FLinearColor(1.f, 0.6f, 0.1f),    // hot orange ember
-			FLinearColor(8.f, 4.f, 1.f),       // bright glow
-			0.f, 0.5f);
-	}
-
-	// === SCORCH MARK — flat dark disc on ground ===
-	SpawnMeshActor(CylMesh, FVector(Location.X, Location.Y, 2.f),
-		FVector(5.f, 5.f, 0.02f), 8.f,        // stays 8 seconds
-		FLinearColor(0.02f, 0.02f, 0.02f),    // near-black scorch
-		FLinearColor::Black,
-		0.f, 0.98f);
 }

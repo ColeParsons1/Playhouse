@@ -169,7 +169,7 @@ public:
 	float WalkSpeed = 2360.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PHC|Movement")
-	float SprintSpeed = 2600.f;
+	float SprintSpeed = 3146.f;
 
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Movement")
 	bool bIsSprinting = false;
@@ -348,11 +348,15 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SniperMagMesh;
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> SniperMuzzleMesh;
 
-	// -- Flamethrower weapon mesh --
+	// -- Flamethrower weapon mesh (Fab-swapped at BeginPlay, cylinder fallback) --
 	UPROPERTY(VisibleAnywhere, Category = "PHC|Mesh") TObjectPtr<UStaticMeshComponent> FlamethrowerMesh;
 	UPROPERTY(Transient) TObjectPtr<UNiagaraComponent> FlamethrowerFlameComp;
+	// Set true in BeginPlay when the Fab mesh load succeeds — drives Fab vs primitive render path.
+	bool bRPGFabLoaded = false;
+	bool bFlamethrowerFabLoaded = false;
 	bool bFlamethrowerFiring = false;
-	float FlamethrowerFuelTimer = 0.f; // continuous fire timer
+	float FlamethrowerFuelTimer = 0.f; // continuous projectile-spawn timer
+	float FlamethrowerGroundFireTimer = 0.f; // periodic ground-ignition line-trace timer
 
 	// -- Health ---------------------------------------------------------------
 	float Health = 100.f;
@@ -402,18 +406,23 @@ public:
 	bool bChopperGunnerActive = false;
 	float ChopperGunnerTimer = 0.f;
 	FVector ChopperGunnerPos = FVector::ZeroVector;
+	FVector SavedKillStreakLocation = FVector::ZeroVector; // player position when streak activated
 	float ChopperGunnerYaw = 0.f;
+	bool bChopperGunnerFiring = false;
+	float ChopperGunnerFireTimer = 0.f;
 	float ChopperGunnerPitch = -60.f;
 	float SavedArmLength = 320.f;
 	FVector SavedSocketOffset = FVector::ZeroVector;
 
-	// AC-130 state
+	// AC-130 state — player-flown gunship (not auto-orbit). AC130OrbitAngle doubles
+	// as aircraft heading (yaw), AC130FlightPos is the gunship's world position.
 	bool bAC130Active = false;
 	float AC130Timer = 0.f;
 	int32 AC130WeaponMode = 0; // 0=25mm, 1=40mm, 2=105mm
-	float AC130OrbitAngle = 0.f;
-	float AC130Pitch = -70.f;
+	float AC130OrbitAngle = 0.f;   // aircraft heading yaw in degrees
+	float AC130Pitch = -70.f;      // camera aim pitch (player adjusts via touch-look)
 	float AC130FireCooldown = 0.f;
+	FVector AC130FlightPos = FVector::ZeroVector;
 
 	void ActivateChopperGunner();
 	void ActivateAC130();

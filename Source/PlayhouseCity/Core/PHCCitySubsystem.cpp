@@ -389,6 +389,26 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// Bonfire — NS_NuclearExplosion animation phases (approx):
+	//   0.0 – 0.15s  initial white-hot flash
+	//   0.0 – 1.8s   fireball / flame burst ← the part we want to see
+	//   0.3 – 5.0s   smoke plume rising
+	//   0.5 – 5.0s   mushroom cloud billowing out
+	//   0.0 – 1.0s   ground shockwave ring
+	//   1.0 – 2.5s   flying ember particles
+	// Re-activating with reset=true every 1.0s truncates each playback at the
+	// end of the flame-burst phase, so the mushroom cloud, smoke plume, and
+	// shockwave never appear.
+	if (BonfireFlameComp)
+	{
+		BonfireReactivateTimer -= DeltaTime;
+		if (BonfireReactivateTimer <= 0.f)
+		{
+			BonfireReactivateTimer = 1.0f;
+			BonfireFlameComp->Activate(true);
+		}
+	}
+
 	// On remote clients, sync day/night time from the server's GameState
 	UWorld* World = GetWorld();
 	if (World)
@@ -434,7 +454,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 
 		// Intensity scales with elevation; zero when below horizon.
 		const float Elevation = FMath::Max(0.f, SunSine);
-		SunLightComp->SetIntensity(Elevation * 6.5f);
+		SunLightComp->SetIntensity(Elevation * 10.f); // brighter sun for clearer daytime
 
 		// PUBG 2026: neutral white sun at noon, subtle warm at horizon
 		if (Elevation > 0.01f)
@@ -462,12 +482,12 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	{
 		// Bright during day, very dim at night.
 		const float DayFactor = FMath::Max(0.f, SunSine);
-		SkyLightComp->SetIntensity(FMath::Lerp(0.04f, 2.5f, DayFactor)); // very dark night sky for visible stars
+		SkyLightComp->SetIntensity(FMath::Lerp(0.06f, 4.0f, DayFactor)); // brighter ambient fill during day
 
 		// Tint: blue-white during day, very deep blue at night.
 		const float NightFactor = FMath::Max(0.f, -SunSine);
 		// PUBG 2026: neutral pale blue sky light
-		const FLinearColor DayTint(0.7f, 0.75f, 0.85f);
+		const FLinearColor DayTint(0.85f, 0.88f, 0.95f); // brighter, cleaner day ambient
 		const FLinearColor NightTint(0.06f, 0.05f, 0.10f);  // much darker ambient at night
 		SkyLightComp->SetLightColor(FMath::Lerp(DayTint, NightTint, NightFactor));
 
@@ -485,8 +505,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 	if (FogComp)
 	{
 		const float NightFactor = FMath::Max(0.f, -SunSine);
-		FogComp->SetFogDensity(FMath::Lerp(0.0003f, 0.0008f, NightFactor));
-		FogComp->SetFogMaxOpacity(FMath::Lerp(0.20f, 0.08f, NightFactor));
+		FogComp->SetFogDensity(FMath::Lerp(0.00015f, 0.0008f, NightFactor)); // less fog during day
+		FogComp->SetFogMaxOpacity(FMath::Lerp(0.10f, 0.08f, NightFactor)); // clearer daytime visibility
 		FogComp->SetVolumetricFogDistance(FMath::Lerp(4000.f, 2000.f, NightFactor));
 
 		// GTA V-style directional inscattering -- warm haze at dawn/dusk, near-black at night
@@ -519,21 +539,21 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		FVector4 TargetOffset;
 		if (T < 0.125f || T >= 0.875f)
 		{
-			// Dawn: very subtle warm, mostly neutral
-			TargetGain = FVector4(1.03f, 1.00f, 0.96f, 1.0f);
-			TargetOffset = FVector4(0.005f, 0.002f, -0.002f, 0.0f);
+			// Dawn: warm and bright enough to see clearly
+			TargetGain = FVector4(1.08f, 1.04f, 0.98f, 1.0f);
+			TargetOffset = FVector4(0.008f, 0.005f, 0.0f, 0.0f);
 		}
 		else if (T < 0.375f)
 		{
-			// Day: perfectly neutral
-			TargetGain = FVector4(1.00f, 1.00f, 1.00f, 1.0f);
-			TargetOffset = FVector4(0.0f, 0.0f, 0.0f, 0.0f);
+			// Day: bright and clear — slight boost for visibility
+			TargetGain = FVector4(1.10f, 1.10f, 1.10f, 1.0f);
+			TargetOffset = FVector4(0.01f, 0.01f, 0.01f, 0.0f);
 		}
 		else if (T < 0.625f)
 		{
-			// Sunset: barely warm, no sepia
-			TargetGain = FVector4(1.04f, 0.98f, 0.92f, 1.0f);
-			TargetOffset = FVector4(0.008f, 0.002f, -0.004f, 0.0f);
+			// Sunset: warm golden but still bright enough to see
+			TargetGain = FVector4(1.10f, 1.02f, 0.92f, 1.0f);
+			TargetOffset = FVector4(0.01f, 0.005f, -0.002f, 0.0f);
 		}
 		else
 		{
@@ -551,7 +571,7 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 		const float WarmB = FMath::Lerp(1.0f, 1.03f, NF);
 		PP.ColorGamma = FVector4(WarmR, WarmG, WarmB, 1.0f);
 
-		PP.VignetteIntensity = FMath::Lerp(0.35f, 0.42f, DawnDuskFactor);
+		PP.VignetteIntensity = FMath::Lerp(0.20f, 0.30f, DawnDuskFactor); // less vignette for clarity
 
 		// Dynamic saturation — boost during golden hour, desaturate at night
 		{
@@ -568,8 +588,8 @@ void UPHCCitySubsystem::Tick(float DeltaTime)
 				FMath::Min(1.f, DeltaTime * 2.f));
 		}
 
-		PP.AutoExposureMinBrightness = FMath::Lerp(0.08f, 0.005f, NF);
-		PP.AutoExposureMaxBrightness = FMath::Lerp(4.0f, 0.6f, NF);
+		PP.AutoExposureMinBrightness = FMath::Lerp(0.15f, 0.005f, NF); // higher min during day
+		PP.AutoExposureMaxBrightness = FMath::Lerp(8.0f, 0.6f, NF); // wider exposure range
 
 		// ---- Depth of Field: sharper when walking, blurry background when driving ----
 		// Check if any local player is currently possessing a vehicle
@@ -4437,147 +4457,6 @@ void UPHCCitySubsystem::SpawnVisualPolish()
 		DustMotes.Add(Mote);
 	}
 
-	// ================================================================
-	// PUBG 2026 deciduous tree — single test tree near spawn for tuning
-	// ================================================================
-	if (CylinderMesh && SphereMesh && ColorMaterial)
-	{
-		// Right next to player spawn (-28000, -28000, 58)
-		const FVector TreePos(-27700.f, -28000.f, 58.f);
-
-		AActor* TreeActor = World->SpawnActor<AActor>(AActor::StaticClass(),
-			TreePos, FRotator::ZeroRotator);
-		if (TreeActor)
-		{
-			USceneComponent* TRoot = NewObject<USceneComponent>(TreeActor, TEXT("TRoot"));
-			TRoot->RegisterComponent();
-			TreeActor->SetRootComponent(TRoot);
-
-			int32 CompIdx = 0;
-			auto MakeTC = [&](UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot,
-				const FVector& Scale, const FLinearColor& Col, float Rough)
-			{
-				UStaticMeshComponent* MC = NewObject<UStaticMeshComponent>(TreeActor,
-					*FString::Printf(TEXT("TC_%d"), CompIdx++));
-				MC->SetStaticMesh(Mesh);
-				MC->AttachToComponent(TRoot, FAttachmentTransformRules::KeepRelativeTransform);
-				MC->SetRelativeLocation(Loc);
-				MC->SetRelativeRotation(Rot);
-				MC->SetRelativeScale3D(Scale);
-				MC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				MC->SetCastShadow(true);
-				MC->RegisterComponent();
-				TreeActor->AddInstanceComponent(MC);
-				if (ColorMaterial)
-				{
-					UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(ColorMaterial, MC);
-					if (Mat)
-					{
-						Mat->SetVectorParameterValue(TEXT("BaseColor"), Col);
-						Mat->SetScalarParameterValue(TEXT("Roughness"), Rough);
-						MC->SetMaterial(0, Mat);
-					}
-				}
-			};
-
-			// === PUBG TREE PROPORTIONS ===
-			// Total height: ~2800 UU
-			// Trunk: 60% of height (1680 UU), thin
-			// Canopy: top 50% (1400 UU), taller than wide (vertical oval)
-			const float TotalH = 2800.f;
-			const float TrunkH = TotalH * 0.60f;   // 1680 UU
-			const float TrunkBaseR = 35.f;           // base radius
-			const float TrunkTopR = 22.f;            // top radius (tapered)
-			const float CanopyBottom = TotalH * 0.40f; // start lower to overlap trunk
-			const float CanopyTop = TotalH * 1.0f;
-			const float CanopyW = 800.f;             // wider canopy
-			const float CanopyTallH = CanopyTop - CanopyBottom;
-
-			// Trunk color: gray-brown (PUBG desaturated bark)
-			const FLinearColor BarkCol(0.22f, 0.18f, 0.13f);
-			const FLinearColor BarkLight(0.28f, 0.24f, 0.18f);
-
-			// --- TRUNK: 4 tapered segments with slight lean ---
-			const int32 TrunkSegs = 4;
-			const float SegH = TrunkH / TrunkSegs;
-			const float LeanX = 40.f; // slight lean
-			for (int32 S = 0; S < TrunkSegs; ++S)
-			{
-				float T = float(S) / float(TrunkSegs);
-				float R = FMath::Lerp(TrunkBaseR, TrunkTopR, T);
-				if (S == 0) R *= 1.4f; // flared base
-				float SZ = S * SegH + SegH * 0.5f;
-				float SX = LeanX * FMath::Sin(T * PI * 0.5f);
-				FLinearColor SegCol = FMath::Lerp(BarkCol, BarkLight, T);
-
-				MakeTC(CylinderMesh, FVector(SX, 0.f, SZ), FRotator::ZeroRotator,
-					FVector(R / 50.f, R / 50.f, SegH / 100.f), SegCol, 0.90f);
-			}
-
-			// --- MAJOR BRANCHES: 3-4 thick branches spreading from trunk top ---
-			const float BranchStartZ = TrunkH * 0.85f;
-			const FLinearColor BranchCol(0.24f, 0.20f, 0.14f);
-			const float BranchAngles[] = { 0.f, 95.f, 200.f, 310.f };
-			const float BranchPitches[] = { 35.f, 42.f, 30.f, 38.f };
-			const float BranchLens[] = { 400.f, 350.f, 450.f, 320.f };
-
-			for (int32 B = 0; B < 4; ++B)
-			{
-				float BY = FMath::DegreesToRadians(BranchAngles[B]);
-				float BP = FMath::DegreesToRadians(BranchPitches[B]);
-				float BLen = BranchLens[B];
-				float BR = 14.f - B * 1.5f; // taper per branch
-
-				FVector BDir(FMath::Cos(BP) * FMath::Cos(BY),
-							 FMath::Cos(BP) * FMath::Sin(BY),
-							 FMath::Sin(BP));
-				FVector BMid = FVector(LeanX * 0.8f, 0.f, BranchStartZ) + BDir * BLen * 0.5f;
-
-				MakeTC(CylinderMesh, BMid,
-					FRotator(0.f, BranchAngles[B], 90.f - BranchPitches[B]),
-					FVector(BR / 50.f, BR / 50.f, BLen / 100.f),
-					BranchCol, 0.88f);
-			}
-
-			// --- CANOPY: Megascans plant meshes (keep original materials) ---
-			UStaticMesh* HempMesh = LoadObject<UStaticMesh>(nullptr,
-				TEXT("/Game/Fab/Megascans/Plants/Common_Hemp_Nettle_xh1kdfbqx/High/xh1kdfbqx_tier_1/StaticMeshes/SM_xh1kdfbqx_VarA.SM_xh1kdfbqx_VarA"));
-			UStaticMesh* BalsamMesh = LoadObject<UStaticMesh>(nullptr,
-				TEXT("/Game/Fab/Megascans/Plants/Small_Balsam_xefmcgrqx/High/xefmcgrqx_tier_1/StaticMeshes/SM_xefmcgrqx_VarA.SM_xefmcgrqx_VarA"));
-
-			FRandomStream CanopyRand(12345);
-			const int32 NumLeafClusters = 80;
-
-			for (int32 Li = 0; Li < NumLeafClusters; ++Li)
-			{
-				float Angle = CanopyRand.FRandRange(0.f, 2.f * PI);
-				float VPos = CanopyRand.FRandRange(0.f, 1.f);
-				float HorizDist = CanopyW * CanopyRand.FRandRange(0.0f, 1.0f);
-				float CX = FMath::Cos(Angle) * HorizDist + LeanX * 0.5f;
-				float CY = FMath::Sin(Angle) * HorizDist;
-				float CZ = CanopyBottom + VPos * CanopyTallH;
-
-				float PlantScale = CanopyRand.FRandRange(5.0f, 9.0f);
-				float Yaw = CanopyRand.FRandRange(0.f, 360.f);
-				float Pitch = CanopyRand.FRandRange(-25.f, 25.f);
-				float Roll = CanopyRand.FRandRange(-25.f, 25.f);
-				UStaticMesh* PlantMesh = (Li % 2 == 0) ? HempMesh : BalsamMesh;
-				if (!PlantMesh) continue;
-
-				UStaticMeshComponent* LeafMC = NewObject<UStaticMeshComponent>(TreeActor,
-					*FString::Printf(TEXT("Leaf_%d"), CompIdx++));
-				LeafMC->SetStaticMesh(PlantMesh);
-				LeafMC->AttachToComponent(TRoot, FAttachmentTransformRules::KeepRelativeTransform);
-				LeafMC->SetRelativeLocation(FVector(CX, CY, CZ));
-				LeafMC->SetRelativeRotation(FRotator(Pitch, Yaw, Roll));
-				LeafMC->SetRelativeScale3D(FVector(PlantScale));
-				LeafMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				LeafMC->SetCastShadow(false);
-				LeafMC->RegisterComponent();
-				TreeActor->AddInstanceComponent(LeafMC);
-			}
-		}
-	}
 
 	// ================================================================
 	// Volumetric cloud clusters (replace flat planes with sphere HISMs)
@@ -4741,10 +4620,11 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 	}
 	SpawnMountainRange();
 	SpawnSandCastle();
+	SpawnGiantBonfire();
 	SpawnLakeAndPirateShip();
 	SpawnJungle();
 	SpawnUndergroundCavern();
-	// SpawnGiantCrab(); // Disabled for multiplayer — re-enable for solo/testing
+	SpawnGiantCrab();
 	SpawnGoldCoins();
 	SpawnCollectibleMushrooms();
 	SpawnGrassSystem();
@@ -4892,14 +4772,12 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 		{
 			FRandomStream KGRand(54321);
 			int32 KGCount = 0;
-			for (int32 i = 0; i < 400; ++i)
+			// Reduced 90% (400 -> 40) and limited to jungle zone only
+			for (int32 i = 0; i < 40; ++i)
 			{
-				float GX = KGRand.FRandRange(-120000.f, 120000.f);
-				float GY = KGRand.FRandRange(-100000.f, 100000.f);
-				if (FMath::Abs(GX) < 36000.f && FMath::Abs(GY) < 36000.f) continue;
-				if (FMath::Square(GX - 22248.f) + FMath::Square(GY + 62419.f) < 55000.f * 55000.f) continue;
-				if (GY < -106000.f && GX > -45000.f && GX < 145000.f) continue;
-				if (GY > 105000.f) continue;
+				// Jungle bounds: X [-45000, 145000], Y [-162000, -106000]
+				float GX = KGRand.FRandRange(-45000.f, 145000.f);
+				float GY = KGRand.FRandRange(-162000.f, -106000.f);
 				float GZ = GetTerrainHeight(GX, GY);
 				if (GZ > 500.f) continue;
 				UStaticMesh* KGM = KGMeshes[KGRand.RandRange(0, 2)];
@@ -4986,6 +4864,20 @@ void UPHCCitySubsystem::SpawnCityEnvironment()
 				VMC->SetWorldScale3D(FVector(VScale));
 				VMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 				VMC->SetCastShadow(false);
+				// Darken Megascans vegetation to match scene lighting
+				for (int32 MI = 0; MI < VMC->GetNumMaterials(); ++MI)
+				{
+					if (UMaterialInterface* BM = VMC->GetMaterial(MI))
+					{
+						UMaterialInstanceDynamic* VMID = UMaterialInstanceDynamic::Create(BM, VMC);
+						if (VMID)
+						{
+							VMID->SetScalarParameterValue(TEXT("Roughness"), 0.85f);
+							VMID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.08f, 0.12f, 0.05f));
+							VMC->SetMaterial(MI, VMID);
+						}
+					}
+				}
 				VMC->RegisterComponent();
 				VA->SetRootComponent(VMC);
 				++VegCount;
@@ -9231,7 +9123,7 @@ void UPHCCitySubsystem::SpawnJungle()
 	}
 
 	// ================================================================
-	// LAYER 16: Mixed foliage — tall banana trees + desert imposter trees for shorter ones
+	// LAYER 16: Tall banana foliage
 	// ================================================================
 	{
 		// Banana vegetation — 6 variants
@@ -9243,21 +9135,10 @@ void UPHCCitySubsystem::SpawnJungle()
 		FoliageMeshes[4] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PN_Banana/Meshes/plants/banana_02_03.banana_02_03"));
 		FoliageMeshes[5] = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PN_Banana/Meshes/plants/banana_02_05.banana_02_05"));
 
-		// Desert tree imposters — 16 variants
-		UStaticMesh* DesertTreeMeshes[16];
-		int32 ValidDesertTrees = 0;
-		for (int32 i = 0; i < 16; ++i)
-		{
-			FString MPath = FString::Printf(TEXT("/Game/Desert_Tree_Pack/Meshes/Imposter/SM_Imposter_%d.SM_Imposter_%d"), i + 1, i + 1);
-			DesertTreeMeshes[i] = LoadObject<UStaticMesh>(nullptr, *MPath);
-			if (DesertTreeMeshes[i]) ++ValidDesertTrees;
-		}
-
 		const float FoliageCell = 1300.f;
 		const int32 FGX = FMath::CeilToInt((JMaxX - JMinX) / FoliageCell);
 		const int32 FGY = FMath::CeilToInt((JMaxY - JMinY) / FoliageCell);
 		int32 FoliageCount = 0;
-		int32 DesertCount = 0;
 		for (int32 GX = 0; GX < FGX; ++GX)
 		{
 			for (int32 GY = 0; GY < FGY; ++GY)
@@ -9272,8 +9153,8 @@ void UPHCCitySubsystem::SpawnJungle()
 				if (CityRandom.FRand() < 0.325f) continue;
 				float PlantYaw = CityRandom.FRandRange(0.f, 360.f);
 
-				// Tall bananas (scale >= 50) stay as banana trees
-				if (PlantScale >= 50.f && PlantMesh)
+				// Tall bananas (scale >= 50) — reduced 30%
+				if (PlantScale >= 50.f && PlantMesh && CityRandom.FRand() < 0.70f)
 				{
 					auto* PC = NewObject<UStaticMeshComponent>(JA, *FString::Printf(TEXT("JF_%d"), CI++));
 					PC->SetStaticMesh(PlantMesh);
@@ -9287,32 +9168,9 @@ void UPHCCitySubsystem::SpawnJungle()
 					JA->AddInstanceComponent(PC);
 					++FoliageCount;
 				}
-				// Shorter ones replaced with desert imposter trees (cross-billboard)
-				else if (ValidDesertTrees > 0)
-				{
-					int32 MIdx = (GX * FGY + GY) % 16;
-					for (int32 T = 0; T < 16 && !DesertTreeMeshes[MIdx]; ++T)
-						MIdx = (MIdx + 1) % 16;
-					if (!DesertTreeMeshes[MIdx]) continue;
-
-					for (int32 Card = 0; Card < 3; ++Card)
-					{
-						auto* PC = NewObject<UStaticMeshComponent>(JA, *FString::Printf(TEXT("JF_%d"), CI++));
-						PC->SetStaticMesh(DesertTreeMeshes[MIdx]);
-						PC->SetWorldLocation(FVector(FX, FY, FZ));
-						PC->SetWorldRotation(FRotator(0.f, PlantYaw + Card * 60.f, 0.f));
-						PC->SetWorldScale3D(FVector(PlantScale));
-						PC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-						PC->SetCastShadow(false);
-						PC->AttachToComponent(JA->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
-						PC->RegisterComponent();
-						JA->AddInstanceComponent(PC);
-					}
-					++DesertCount;
-				}
 			}
 		}
-		UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: added %d tall banana + %d desert trees"), FoliageCount, DesertCount);
+		UE_LOG(LogPlayhouseCity, Log, TEXT("SpawnJungle: added %d tall banana trees"), FoliageCount);
 	}
 
 	// ================================================================
@@ -9480,9 +9338,9 @@ void UPHCCitySubsystem::SpawnJungle()
 	}
 
 	// ================================================================
-	// Desert trees scattered across all sandy areas of the map
-	// (pyramid/desert zone, pirate beach, river banks)
+	// Desert trees — DISABLED everywhere except jungle (kept in LAYER 16 above)
 	// ================================================================
+	if (false) // disabled — desert imposters only in jungle now
 	{
 		UStaticMesh* SandyTreeMeshes[16];
 		int32 ValidSandyTrees = 0;
@@ -12464,6 +12322,21 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				PC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 				PC->bNeverDistanceCull = true;
 				PC->SetBoundsScale(50.f);
+				// Darken pine materials to match scene lighting (default is too bright)
+				for (int32 MatIdx = 0; MatIdx < PC->GetNumMaterials(); ++MatIdx)
+				{
+					if (UMaterialInterface* BaseMat = PC->GetMaterial(MatIdx))
+					{
+						UMaterialInstanceDynamic* PineMID = UMaterialInstanceDynamic::Create(BaseMat, PC);
+						if (PineMID)
+						{
+							PineMID->SetScalarParameterValue(TEXT("Roughness"), 0.85f);
+							// Tint down to 40% brightness to match other foliage
+							PineMID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.12f, 0.15f, 0.08f));
+							PC->SetMaterial(MatIdx, PineMID);
+						}
+					}
+				}
 				PC->RegisterComponent();
 				if (Card == 0) TA->SetRootComponent(PC);
 				TA->AddInstanceComponent(PC);
@@ -12472,11 +12345,11 @@ void UPHCCitySubsystem::SpawnMountainRange()
 
 		if (ValidPines > 0)
 		{
-			// 2 giant centerpiece pine trees
+			// 2 centerpiece pine trees — scaled to match tallest mountain peak height
 			SpawnPineTree(FVector(61500.f, 111000.f, GetTerrainHeight(61500.f, 111000.f)),
-				200.f, 0.f, 0, TEXT("GiantPine_0"));
+				40.f, 0.f, 0, TEXT("GiantPine_0"));
 			SpawnPineTree(FVector(16500.f, 123000.f, GetTerrainHeight(16500.f, 123000.f)),
-				200.f, 137.f, 3, TEXT("GiantPine_1"));
+				40.f, 137.f, 3, TEXT("GiantPine_1"));
 		}
 		// Consume random stream to keep deterministic seed in sync
 		for (int32 i = 0; i < 100; ++i) CityRandom.FRandRange(0.f, 1.f);
@@ -12490,7 +12363,7 @@ void UPHCCitySubsystem::SpawnMountainRange()
 				float PX = PineRand.FRandRange(XmasMinX, XmasMaxX);
 				float PY = PineRand.FRandRange(XmasMinY, XmasMaxY);
 				float PZ = GetTerrainHeight(PX, PY);
-				float PScale = PineRand.FRandRange(60.f, 120.f); // giant scale
+				float PScale = PineRand.FRandRange(15.f, 40.f); // scaled to mountain peak height
 				float PYaw = PineRand.FRandRange(0.f, 360.f);
 
 				if (ValidPines > 0)
@@ -14882,6 +14755,131 @@ void UPHCCitySubsystem::SpawnSandCastle()
 	UE_LOG(LogPlayhouseCity, Log,
 		TEXT("PHCCitySubsystem: Sand castle spawned at (%.0f, %.0f) with %d components."),
 		Origin.X, Origin.Y, Idx);
+}
+
+// ---------------------------------------------------------------------------
+// Giant Bonfire — 5× character-height flame tower near the player spawn point.
+// Character is 180 UU tall, so this reaches 900 UU into the air. Built from a
+// stacked log pile (5 crossed cylinders) and 10 vertically-stacked
+// NS_Flame_8_Torch Niagara emitters (the torch asset is world-space and ignores
+// component scale, so height comes from stacking rather than scaling). Adds a
+// strong warm point light for ambient illumination.
+// ---------------------------------------------------------------------------
+void UPHCCitySubsystem::SpawnGiantBonfire()
+{
+	UWorld* W = GetWorld();
+	if (!W) return;
+
+	// Placed at the player's exact spawn point. Z=0 puts the actor (and the
+	// flame emitter attached to its root at relative Z=0) right on the ground.
+	const FVector BonfireLoc(-28000.f, -28000.f, 0.f);
+
+	FActorSpawnParameters SP;
+	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AActor* Bonfire = W->SpawnActor<AActor>(AActor::StaticClass(), BonfireLoc, FRotator::ZeroRotator, SP);
+	if (!Bonfire) return;
+
+	// Root component (AActor has no default root)
+	USceneComponent* Root = NewObject<USceneComponent>(Bonfire, USceneComponent::StaticClass(), TEXT("BonfireRoot"));
+	Bonfire->SetRootComponent(Root);
+	Root->RegisterComponent();
+
+	UStaticMesh* CylMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	UMaterial* ColorMat = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/M_PHCColor.M_PHCColor"));
+
+	// ---- Stacked log pile at the base ----
+	if (CylMesh && ColorMat)
+	{
+		struct FLogLayout { FVector Offset; FRotator Rot; };
+		const FLogLayout Logs[] = {
+			{ FVector(  0.f,   0.f,  25.f), FRotator(0.f,   0.f, 90.f) },
+			{ FVector(  0.f,   0.f,  55.f), FRotator(0.f,  90.f, 90.f) },
+			{ FVector( 60.f,   0.f,  85.f), FRotator(0.f,  45.f, 90.f) },
+			{ FVector(-60.f,   0.f,  85.f), FRotator(0.f, -45.f, 90.f) },
+			{ FVector(  0.f,   0.f, 115.f), FRotator(0.f,  20.f, 90.f) },
+		};
+		const FLinearColor LogBrown(0.15f, 0.08f, 0.03f);
+		for (int32 i = 0; i < UE_ARRAY_COUNT(Logs); ++i)
+		{
+			UStaticMeshComponent* LogMesh = NewObject<UStaticMeshComponent>(
+				Bonfire, *FString::Printf(TEXT("BonfireLog_%d"), i));
+			LogMesh->SetStaticMesh(CylMesh);
+			LogMesh->SetupAttachment(Root);
+			LogMesh->SetRelativeLocation(Logs[i].Offset);
+			LogMesh->SetRelativeRotation(Logs[i].Rot);
+			// Cylinder default 100 UU × 50 UU radius → 400 UU long × 60 UU wide logs
+			LogMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 4.0f));
+			LogMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			LogMesh->SetCastShadow(true);
+
+			UMaterialInstanceDynamic* LogMat = UMaterialInstanceDynamic::Create(ColorMat, LogMesh);
+			if (LogMat)
+			{
+				LogMat->SetVectorParameterValue(TEXT("BaseColor"), LogBrown);
+				LogMat->SetScalarParameterValue(TEXT("Roughness"), 0.92f);
+				LogMat->SetScalarParameterValue(TEXT("Metallic"), 0.f);
+				LogMesh->SetMaterial(0, LogMat);
+			}
+			LogMesh->RegisterComponent();
+		}
+	}
+
+	// ---- Giant flame — single NS_NuclearExplosion Niagara ----
+	// Switched off NS_Flame_8_Torch (torch Niagara truly doesn't scale at the
+	// single-emitter level — the particle render sizes are authored and ignore
+	// component transform). NS_NuclearExplosion is proven to scale (the
+	// tactical nuke 20× and RPG 0.5× both render at those sizes), so at scale
+	// 0.1 here it produces a ~1000 UU tall fire column = 5× character height.
+	// The asset is a one-shot (~8s), so PHCCitySubsystem::Tick re-activates
+	// this component on a 6s cadence to make the bonfire persistent.
+	if (UNiagaraSystem* NukeFX = LoadObject<UNiagaraSystem>(nullptr,
+		TEXT("/Game/NuclearExplosion/Effects/NS_NuclearExplosion.NS_NuclearExplosion")))
+	{
+		BonfireFlameComp = NewObject<UNiagaraComponent>(Bonfire, TEXT("BonfireFlame"));
+		BonfireFlameComp->SetAsset(NukeFX);
+		BonfireFlameComp->SetupAttachment(Root);
+		BonfireFlameComp->SetRelativeLocation(FVector::ZeroVector);
+		BonfireFlameComp->SetRelativeRotation(FRotator::ZeroRotator);
+		BonfireFlameComp->SetRelativeScale3D(FVector(0.1f));
+		BonfireFlameComp->SetAutoActivate(true);
+		BonfireFlameComp->SetAutoDestroy(false);
+		BonfireFlameComp->RegisterComponent();
+		BonfireReactivateTimer = 1.0f;
+	}
+
+	// ---- Glowing coal sphere at the base — readable in daylight ----
+	UStaticMesh* SphereMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	if (SphereMesh && ColorMat)
+	{
+		UStaticMeshComponent* Coals = NewObject<UStaticMeshComponent>(Bonfire, TEXT("BonfireCoals"));
+		Coals->SetStaticMesh(SphereMesh);
+		Coals->SetupAttachment(Root);
+		Coals->SetRelativeLocation(FVector(0.f, 0.f, 80.f));
+		Coals->SetRelativeScale3D(FVector(2.4f, 2.4f, 1.4f)); // wide flat disc of glowing coals
+		Coals->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		UMaterialInstanceDynamic* CoalMat = UMaterialInstanceDynamic::Create(ColorMat, Coals);
+		if (CoalMat)
+		{
+			CoalMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(1.2f, 0.35f, 0.05f));
+			CoalMat->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor(18.f, 6.f, 1.f));
+			CoalMat->SetScalarParameterValue(TEXT("Roughness"), 0.6f);
+			CoalMat->SetScalarParameterValue(TEXT("Metallic"), 0.f);
+			Coals->SetMaterial(0, CoalMat);
+		}
+		Coals->RegisterComponent();
+	}
+
+	// ---- Warm orange point light — strong fire glow ----
+	UPointLightComponent* BonfireLight = NewObject<UPointLightComponent>(Bonfire, TEXT("BonfireLight"));
+	BonfireLight->SetupAttachment(Root);
+	BonfireLight->SetRelativeLocation(FVector(0.f, 0.f, 400.f));
+	BonfireLight->SetLightColor(FLinearColor(1.0f, 0.5f, 0.1f));
+	BonfireLight->SetIntensity(120000.f);            // much stronger — readable in daylight
+	BonfireLight->SetAttenuationRadius(6000.f);
+	BonfireLight->SetCastShadows(false);
+	BonfireLight->RegisterComponent();
+
+	UE_LOG(LogPlayhouseCity, Log, TEXT("Giant bonfire spawned at %s (900 UU tall)"), *BonfireLoc.ToString());
 }
 
 // ---------------------------------------------------------------------------

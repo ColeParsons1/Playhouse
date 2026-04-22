@@ -10,6 +10,7 @@ class UStaticMeshComponent;
 class UPointLightComponent;
 class UMaterialInstanceDynamic;
 class UNiagaraComponent;
+class UPostProcessComponent;
 
 /**
  * Large dynamite explosion effect built from basic shapes.
@@ -26,6 +27,7 @@ public:
 	APHCNukeExplosion();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaTime) override;
 
 private:
@@ -67,6 +69,18 @@ private:
 
 	// -- Niagara flame jets (F_FreeFlameFx_Pack) — added on top of mesh effects --
 	UPROPERTY() TArray<TObjectPtr<UNiagaraComponent>> FlameJets;
+
+	// -- Heat distortion "melting" effect --
+	UPROPERTY() TObjectPtr<UPostProcessComponent> HeatPostProcess;
+	UPROPERTY() TObjectPtr<UStaticMeshComponent> HeatHazeDome;
+	UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> HeatHazeMat;
+
+	// -- Time dilation state (real-seconds tracked to survive self-slowdown) --
+	double RealStartTime = 0.0;
+	bool bTimeDilationRestored = true;
+	static constexpr float TimeDilationPeak = 0.55f;   // 45% slowdown at peak
+	static constexpr float TimeDilationHold = 0.6f;    // real seconds held at peak
+	static constexpr float TimeDilationRamp = 0.9f;    // real seconds to ramp back
 
 	float ElapsedTime = 0.f;
 	static constexpr float TotalDuration = 8.f;

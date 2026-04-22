@@ -330,14 +330,10 @@ APHCCityCharacter::APHCCityCharacter()
 	SniperMuzzleMesh = MakeSph(TEXT("SniperMuzzle"),  FVector(0.f, 26.f, 125.f), 6.f);
 
 	// ================================================================
-	//  FLAMETHROWER — single Fab mesh, Niagara flame stream in BeginPlay
+	//  FLAMETHROWER — Fab mesh swap at BeginPlay, primitive cylinder fallback
 	// ================================================================
-	FlamethrowerMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FlamethrowerMesh"));
-	FlamethrowerMesh->SetupAttachment(RootComponent);
-	FlamethrowerMesh->SetRelativeLocation(FVector(0.f, 26.f, 6.f));
-	FlamethrowerMesh->SetRelativeScale3D(FVector(0.04f));
-	FlamethrowerMesh->SetVisibility(false);
-	FlamethrowerMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FlamethrowerMesh = MakeCyl(TEXT("FlamethrowerMesh"), FVector(0.f, 26.f, 6.f), 3.5f, 70.f);
+	if (FlamethrowerMesh) FlamethrowerMesh->SetVisibility(false);
 
 	// (Flashlight spotlight created in BeginPlay)
 
@@ -844,6 +840,40 @@ void APHCCityCharacter::BeginPlay()
 		}
 	}
 
+	// Bazooka: swap to Fab PBR RPG Launcher mesh. The Fab mesh's native PBR materials
+	// (/Game/Fab/.../Materials/Scene_-_Root) don't reliably compile on iOS Metal,
+	// so we force-override every material slot with M_PHCColor (our known-good PBR)
+	// to guarantee the mesh actually renders. Scale is tuned so the launcher reads
+	// as a real-sized weapon on the right shoulder.
+	{
+		UStaticMesh* RPGFabMesh = LoadObject<UStaticMesh>(nullptr,
+			TEXT("/Game/Fab/PBR_Game_Ready_RPG_Launcher/pbr_game_ready_rpg_launcher/StaticMeshes/pbr_game_ready_rpg_launcher.pbr_game_ready_rpg_launcher"));
+		if (RPGFabMesh && BazookaTubeMesh && ColorMat)
+		{
+			BazookaTubeMesh->SetStaticMesh(RPGFabMesh);
+			BazookaTubeMesh->EmptyOverrideMaterials();
+			const FLinearColor RPGOlive(0.22f, 0.24f, 0.14f);
+			const int32 NumMats = BazookaTubeMesh->GetNumMaterials();
+			for (int32 i = 0; i < NumMats; ++i)
+			{
+				UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(ColorMat, BazookaTubeMesh);
+				if (MID)
+				{
+					MID->SetVectorParameterValue(TEXT("BaseColor"), RPGOlive);
+					MID->SetScalarParameterValue(TEXT("Metallic"), 0.6f);
+					MID->SetScalarParameterValue(TEXT("Roughness"), 0.35f);
+					BazookaTubeMesh->SetMaterial(i, MID);
+				}
+			}
+			bRPGFabLoaded = true;
+			UE_LOG(LogPlayhouseCity, Log, TEXT("RPG Fab mesh loaded (%d material slots overridden)"), NumMats);
+		}
+		else
+		{
+			UE_LOG(LogPlayhouseCity, Warning, TEXT("RPG Fab mesh FAILED to load — falling back to primitive 7-piece assembly"));
+		}
+	}
+
 	// Dagger materials — crimson-tinted steel blade, dark leather handle
 	const FLinearColor DaggerSteel(0.72f, 0.12f, 0.08f);   // crimson steel
 	const FLinearColor DaggerHandle(0.08f, 0.06f, 0.04f);  // dark leather
@@ -885,14 +915,41 @@ void APHCCityCharacter::BeginPlay()
 		}
 	}
 
-	// Flamethrower — swap to Fab mesh (Apocalyptic Flamethrower)
+	// Flamethrower: apply primitive gunmetal color first (fallback), then swap to Fab mesh
+	// and force-override every material slot with M_PHCColor (Fab's standardSurface
+	// materials don't reliably compile on iOS Metal).
 	{
+		const FLinearColor FTSteel(0.18f, 0.18f, 0.20f);
+		ApplyColor(FlamethrowerMesh, FTSteel, 0.30f, 0.9f);
+
 		UStaticMesh* FTFabMesh = LoadObject<UStaticMesh>(nullptr,
 			TEXT("/Game/Fab/Apocalyptic_Flamethrower/apocalyptic_flamethrower/StaticMeshes/apocalyptic_flamethrower.apocalyptic_flamethrower"));
-		if (FTFabMesh && FlamethrowerMesh)
+		if (FTFabMesh && FlamethrowerMesh && ColorMat)
 		{
 			FlamethrowerMesh->SetStaticMesh(FTFabMesh);
-			FlamethrowerMesh->SetRelativeScale3D(FVector(0.04f));
+			FlamethrowerMesh->EmptyOverrideMaterials();
+			const int32 NumMats = FlamethrowerMesh->GetNumMaterials();
+			for (int32 i = 0; i < NumMats; ++i)
+			{
+				UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(ColorMat, FlamethrowerMesh);
+				if (MID)
+				{
+					// Alternate tank/body shades so the mesh reads with depth even under flat light.
+					const FLinearColor SlotColor = (i % 2 == 0)
+						? FLinearColor(0.18f, 0.18f, 0.20f)  // gunmetal
+						: FLinearColor(0.32f, 0.22f, 0.10f); // burnt copper/rust
+					MID->SetVectorParameterValue(TEXT("BaseColor"), SlotColor);
+					MID->SetScalarParameterValue(TEXT("Metallic"), 0.6f);
+					MID->SetScalarParameterValue(TEXT("Roughness"), 0.45f);
+					FlamethrowerMesh->SetMaterial(i, MID);
+				}
+			}
+			bFlamethrowerFabLoaded = true;
+			UE_LOG(LogPlayhouseCity, Log, TEXT("Flamethrower Fab mesh loaded (%d material slots overridden)"), NumMats);
+		}
+		else
+		{
+			UE_LOG(LogPlayhouseCity, Warning, TEXT("Flamethrower Fab mesh FAILED to load — falling back to primitive cylinder"));
 		}
 	}
 
@@ -1344,7 +1401,8 @@ void APHCCityCharacter::Tick(float DeltaTime)
 	float Speed = 0.f;
 
 	// ---- Skip all normal movement during active kill streaks ---------------
-	const bool bInKillStreak = (bChopperGunnerActive || bAC130Active || bTacticalNukeCountdown);
+	// Nuke countdown does NOT block movement — players can still move during the 10s timer
+	const bool bInKillStreak = (bChopperGunnerActive || bAC130Active);
 
 	// ---- Local-only movement, input, and ground following ---------------
 	if (!bIsSimProxy && !bInKillStreak)
@@ -2705,7 +2763,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 					MinigunFireTimer -= DeltaTime;
 					if (MinigunFireTimer <= 0.f)
 					{
-						MinigunFireTimer = 0.05f; // 20 rounds/sec (matches Dune Buggy)
+						MinigunFireTimer = 0.04167f; // 24 rounds/sec (+20% spray rate)
 						FireWeapon();
 					}
 				}
@@ -2716,69 +2774,109 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			}
 		}
 
-		// ---- Bazooka: held on right shoulder, fires like tank cannon ----
+		// ---- RPG Launcher: Fab mesh (primary) with primitive fallback ----
 		{
 			const bool bShowBazooka = (CurrentWeaponType == 1);
+			const bool bUsePrimitive = bShowBazooka && !bRPGFabLoaded;
 
-			auto SetVis = [](UStaticMeshComponent* C, bool V) { if (C) C->SetVisibility(V); };
-			SetVis(BazookaTubeMesh, bShowBazooka);
-			SetVis(BazookaRearEndMesh, bShowBazooka);
-			SetVis(BazookaFrontSightMesh, bShowBazooka);
-			SetVis(BazookaRearSightMesh, bShowBazooka);
-			SetVis(BazookaGripMesh, bShowBazooka);
-			SetVis(BazookaScopeMesh, bShowBazooka);
-			SetVis(BazookaMuzzleMesh, bShowBazooka && BazookaMuzzleFlashTimer > 0.f);
+			if (BazookaTubeMesh) BazookaTubeMesh->SetVisibility(bShowBazooka);
+			if (BazookaRearEndMesh) BazookaRearEndMesh->SetVisibility(bUsePrimitive);
+			if (BazookaFrontSightMesh) BazookaFrontSightMesh->SetVisibility(bUsePrimitive);
+			if (BazookaRearSightMesh) BazookaRearSightMesh->SetVisibility(bUsePrimitive);
+			if (BazookaGripMesh) BazookaGripMesh->SetVisibility(bUsePrimitive);
+			if (BazookaScopeMesh) BazookaScopeMesh->SetVisibility(bUsePrimitive);
+			if (BazookaMuzzleMesh) BazookaMuzzleMesh->SetVisibility(bShowBazooka && BazookaMuzzleFlashTimer > 0.f);
 
 			if (bShowBazooka)
 			{
-				// Shoulder weapon pose: tube on right shoulder pointing forward
-				const FVector BazHip(20.f, 12.f, -11.f);
-				const FVector BazADSP(15.f, 2.f, -8.f);
-				const FVector RShoulder = bFirstPersonMode
-					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(BazHip, BazADSP, ADSAlpha) + FPWeaponOffset)
-					: (RightShoulderMesh
-						? RightShoulderMesh->GetRelativeLocation() + FVector(-3.f, 0.f, 0.f)
-						: FVector(0.f, 22.f, 46.f));
+				// Grip anchor — exact same hip/ADS/offset as the flamethrower so both
+				// weapons sit in the identical spot relative to the character.
+				const FVector RPGHip(30.f, 6.f, -20.f);
+				const FVector RPGADS(22.f, 0.f, -16.f);
+				const FVector GripPt = bFirstPersonMode
+					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(RPGHip, RPGADS, ADSAlpha) + FPWeaponOffset)
+					: (RightHandMesh
+						? RightHandMesh->GetRelativeLocation() + FVector(-5.f, 0.f, 0.f)
+						: FVector(0.f, 26.f, 6.f));
 
-				// Cylinder axis is Z, so Pitch 90 points it forward + arm pitch in 3P
-				const float BazPitch = bFirstPersonMode ? FPCamPitch : -ForearmPitch;
-				const FRotator BazGunRot(90.f - BazPitch, 0.f, 0.f);
-				const FRotator BazAimRot(-BazPitch, 0.f, 0.f);
-				const FVector TubeCenter = RShoulder + BazAimRot.RotateVector(FVector(25.f, 4.f, 0.f));
+				const float AimPitch = bFirstPersonMode ? FPCamPitch : -ForearmPitch;
+				const FRotator AimRot(-AimPitch, 0.f, 0.f);
 
-				if (BazookaTubeMesh)
+				if (bRPGFabLoaded)
 				{
-					BazookaTubeMesh->SetRelativeLocation(TubeCenter);
-					BazookaTubeMesh->SetRelativeRotation(BazGunRot);
+					// Fab RPG mesh is natively +X forward (unlike the sniper which is -Y
+					// forward — hence the sniper uses yaw=90). Yaw=0 keeps the launcher's
+					// tube aligned with the actor's forward axis. Scale 0.28 reads as a
+					// real-size shoulder launcher in TP.
+					//
+					// Tube pivot pushed 30 UU forward from the flamethrower mount so the
+					// body reads as held-out-and-forward rather than tucked at the shoulder.
+					// Pitch is +AimPitch (not -AimPitch) because this mesh's aim axis is
+					// inverted relative to the sniper's yaw=90 convention — without the
+					// flip, the launcher dipped down when the camera looked up.
+					if (BazookaTubeMesh)
+					{
+						BazookaTubeMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(30.f, 0.f, -2.f)));
+						BazookaTubeMesh->SetRelativeRotation(FRotator(AimPitch, 0.f, 0.f));
+						BazookaTubeMesh->SetRelativeScale3D(FVector(0.28f));
+					}
+					// Muzzle anchors at the visible tip of the RPG tube — bullets spawn
+					// here (see FireWeapon: SpawnLoc = BazookaMuzzleMesh->GetComponentLocation).
+					if (BazookaMuzzleMesh)
+					{
+						BazookaMuzzleMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(150.f, 0.f, -2.f)));
+						BazookaMuzzleMesh->SetRelativeScale3D(FVector(0.16f));
+					}
 				}
-				if (BazookaRearEndMesh)
+				else
 				{
-					BazookaRearEndMesh->SetRelativeLocation(TubeCenter + BazAimRot.RotateVector(FVector(-60.f, 0.f, 0.f)));
-					BazookaRearEndMesh->SetRelativeRotation(BazGunRot);
-				}
-				if (BazookaFrontSightMesh)
-				{
-					BazookaFrontSightMesh->SetRelativeLocation(TubeCenter + BazAimRot.RotateVector(FVector(52.f, 0.f, 5.f)));
-				}
-				if (BazookaRearSightMesh)
-				{
-					BazookaRearSightMesh->SetRelativeLocation(TubeCenter + BazAimRot.RotateVector(FVector(-20.f, 0.f, 5.f)));
-				}
-				if (BazookaGripMesh)
-				{
-					BazookaGripMesh->SetRelativeLocation(TubeCenter + BazAimRot.RotateVector(FVector(0.f, 0.f, -10.f)));
-				}
-				if (BazookaScopeMesh)
-				{
-					BazookaScopeMesh->SetRelativeLocation(TubeCenter + BazAimRot.RotateVector(FVector(16.f, 0.f, 7.f)));
-					BazookaScopeMesh->SetRelativeRotation(BazGunRot);
-				}
-				if (BazookaMuzzleMesh)
-				{
-					BazookaMuzzleMesh->SetRelativeLocation(TubeCenter + BazAimRot.RotateVector(FVector(68.f, 0.f, 0.f)));
+					// Primitive fallback — 7-piece horizontal assembly.
+					const FRotator CylRot(90.f - AimPitch, 0.f, 0.f);
+					const FRotator BlockRot(-AimPitch, 0.f, 0.f);
+
+					if (BazookaTubeMesh)
+					{
+						BazookaTubeMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(40.f, 0.f, 0.f)));
+						BazookaTubeMesh->SetRelativeRotation(CylRot);
+						BazookaTubeMesh->SetRelativeScale3D(FVector(0.08f, 0.08f, 1.2f));
+					}
+					if (BazookaRearEndMesh)
+					{
+						BazookaRearEndMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(-20.f, 0.f, 0.f)));
+						BazookaRearEndMesh->SetRelativeRotation(CylRot);
+						BazookaRearEndMesh->SetRelativeScale3D(FVector(0.11f, 0.11f, 0.08f));
+					}
+					if (BazookaGripMesh)
+					{
+						BazookaGripMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(10.f, 0.f, -10.f)));
+						BazookaGripMesh->SetRelativeRotation(BlockRot);
+						BazookaGripMesh->SetRelativeScale3D(FVector(0.03f, 0.06f, 0.14f));
+					}
+					if (BazookaRearSightMesh)
+					{
+						BazookaRearSightMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(5.f, 0.f, 8.f)));
+						BazookaRearSightMesh->SetRelativeRotation(BlockRot);
+						BazookaRearSightMesh->SetRelativeScale3D(FVector(0.02f, 0.02f, 0.05f));
+					}
+					if (BazookaScopeMesh)
+					{
+						BazookaScopeMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(30.f, 0.f, 10.f)));
+						BazookaScopeMesh->SetRelativeRotation(CylRot);
+						BazookaScopeMesh->SetRelativeScale3D(FVector(0.05f, 0.05f, 0.18f));
+					}
+					if (BazookaFrontSightMesh)
+					{
+						BazookaFrontSightMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(80.f, 0.f, 8.f)));
+						BazookaFrontSightMesh->SetRelativeRotation(BlockRot);
+						BazookaFrontSightMesh->SetRelativeScale3D(FVector(0.02f, 0.02f, 0.06f));
+					}
+					if (BazookaMuzzleMesh)
+					{
+						BazookaMuzzleMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(100.f, 0.f, 0.f)));
+						BazookaMuzzleMesh->SetRelativeScale3D(FVector(0.16f));
+					}
 				}
 
-				// Timers
 				if (BazookaMuzzleFlashTimer > 0.f) BazookaMuzzleFlashTimer -= DeltaTime;
 				if (BazookaFireTimer > 0.f) BazookaFireTimer -= DeltaTime;
 			}
@@ -2930,7 +3028,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			}
 		}
 
-		// ---- Flamethrower visibility + positioning ----
+		// ---- Flamethrower: Fab mesh (primary) with primitive cylinder fallback ----
 		if (FlamethrowerMesh)
 		{
 			const bool bShowFT = (CurrentWeaponType == 7);
@@ -2938,48 +3036,198 @@ void APHCCityCharacter::Tick(float DeltaTime)
 
 			if (bShowFT)
 			{
-				// Position at right hand, barrel pointing forward
-				const FVector GripPt = RightHandMesh
-					? RightHandMesh->GetRelativeLocation() + FVector(10.f, 0.f, -5.f)
-					: FVector(15.f, 26.f, 6.f);
-				FlamethrowerMesh->SetRelativeLocation(GripPt);
-				// Rotate so the barrel points forward — Fab mesh is oriented along its local axis
-				// Try 0,0,0 first since the mesh import orientation varies
-				FlamethrowerMesh->SetRelativeRotation(FRotator(0.f, 0.f, 0.f));
-				FlamethrowerMesh->SetRelativeScale3D(FVector(0.06f)); // bigger so it's visible
+				// Grip anchor — identical pattern to AK-47 / Sniper so the flamethrower
+				// sits at the same position relative to the character as every other gun.
+				const FVector FTHip(30.f, 6.f, -20.f);
+				const FVector FTADS(22.f, 0.f, -16.f);
+				const FVector GripPt = bFirstPersonMode
+					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(FTHip, FTADS, ADSAlpha) + FPWeaponOffset)
+					: (RightHandMesh
+						? RightHandMesh->GetRelativeLocation() + FVector(-5.f, 0.f, 0.f)
+						: FVector(0.f, 26.f, 6.f));
+
+				const float AimPitch = bFirstPersonMode ? FPCamPitch : -ForearmPitch;
+				const FRotator AimRot(-AimPitch, 0.f, 0.f);
+
+				if (bFlamethrowerFabLoaded)
+				{
+					// Apocalyptic_Flamethrower Fab mesh is imported +Y forward.
+					// yaw=0 left it pointing sideways, yaw=+90 pointed it backward,
+					// so yaw=-90 is the one that rotates +Y → +X (actor forward).
+					FlamethrowerMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(6.f, 0.f, -2.f)));
+					FlamethrowerMesh->SetRelativeRotation(FRotator(-AimPitch, -90.f, 0.f));
+					FlamethrowerMesh->SetRelativeScale3D(FVector(0.75f));
+				}
+				else
+				{
+					// Primitive fallback: horizontal cylinder barrel from the grip.
+					FlamethrowerMesh->SetRelativeLocation(GripPt + AimRot.RotateVector(FVector(30.f, 0.f, 0.f)));
+					FlamethrowerMesh->SetRelativeRotation(FRotator(90.f - AimPitch, 0.f, 0.f));
+					FlamethrowerMesh->SetRelativeScale3D(FVector(0.07f, 0.07f, 0.7f));
+				}
 			}
 		}
 
-		// ---- Flamethrower firing (Niagara flame stream projected FORWARD) ----
+		// ---- Flamethrower firing: spawn projectile fireballs from the nozzle ----
+		// Dense stream of short-lived APHCMissileProjectile fireballs with a cone of
+		// spread, arcing forward from the weapon nozzle. The attached Niagara acts as
+		// a nozzle ignition flare (small, at the muzzle), not the flame stream itself.
 		if (CurrentWeaponType == 7 && bFlamethrowerFiring)
 		{
-			if (FlamethrowerFlameComp)
+			// Flame spawn origin — pushed well out in front of the player (500 UU ≈ 5m)
+			// so the NS_NuclearExplosion Niagara's radial particle spread never engulfs
+			// the wielder. Visually it reads as the flames igniting out ahead of the
+			// nozzle rather than at the weapon tip.
+			const FVector CharFwd = GetActorForwardVector();
+			const FVector CharRight = GetActorRightVector();
+			const FVector NozzlePos = GetActorLocation()
+				+ CharFwd * 500.f
+				+ CharRight * -10.f
+				+ FVector(0.f, 0.f, 35.f);
+
+			// Nozzle ignition flare intentionally disabled — the projectile Niagaras
+			// below handle all visible fire, so the fixed-in-front-of-player flame is
+			// redundant. Keep the component deactivated so it doesn't render.
+			if (FlamethrowerFlameComp && FlamethrowerFlameComp->IsActive())
 			{
-				if (!FlamethrowerFlameComp->IsActive())
-					FlamethrowerFlameComp->Activate();
-
-				// Position the flame ahead of the character — projected FORWARD.
-				// The Niagara flame emits upward in local +Z. To make it go forward,
-				// we pitch it -90 so local +Z becomes the actor's forward direction.
-				const FVector CharFwd = GetActorForwardVector();
-				const FVector CharPos = GetActorLocation();
-				// Start 120 UU ahead at chest height — flames begin past the character
-				const FVector FlameOrigin = CharPos + CharFwd * 120.f + FVector(0.f, 0.f, 50.f);
-				FlamethrowerFlameComp->SetWorldLocation(FlameOrigin);
-
-				// Get the actor's yaw, then pitch the flame -90 so +Z (up) becomes forward
-				const float ActorYaw = GetActorRotation().Yaw;
-				FlamethrowerFlameComp->SetWorldRotation(FRotator(-90.f, ActorYaw, 0.f));
-
-				// Wide billowing scale — X/Y = width, Z = length (which is now forward)
-				FlamethrowerFlameComp->SetWorldScale3D(FVector(50.f, 50.f, 150.f));
+				FlamethrowerFlameComp->Deactivate();
 			}
 
-			// Continuous damage via FireWeapon at ~10 ticks/sec
+			// Persistent terrain ignition — every 0.5s while firing, line-trace along
+			// the aim axis and plant a 4-minute torch-flame actor wherever the cone
+			// impacts world geometry. Flame projectiles themselves are Damage=0 fly-
+			// throughs, so this trace is what makes surfaces "catch fire and keep
+			// burning" after the stream has moved on.
+			FlamethrowerGroundFireTimer -= DeltaTime;
+			if (FlamethrowerGroundFireTimer <= 0.f)
+			{
+				FlamethrowerGroundFireTimer = 0.5f;
+				if (UWorld* W = GetWorld())
+				{
+					// Same aim direction the projectiles use (camera in FP, actor forward in TP)
+					FVector AimDir = CharFwd;
+					if (bFirstPersonMode)
+					{
+						if (AController* Ctl = GetController())
+						{
+							FVector CamLoc; FRotator CamRot;
+							Ctl->GetPlayerViewPoint(CamLoc, CamRot);
+							AimDir = CamRot.Vector();
+						}
+					}
+
+					FHitResult Hit;
+					FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(FlamethrowerIgnite), false, this);
+					const FVector TraceEnd = NozzlePos + AimDir * 15000.f;
+					if (W->LineTraceSingleByChannel(Hit, NozzlePos, TraceEnd, ECC_Visibility, TraceParams) && Hit.bBlockingHit)
+					{
+						FActorSpawnParameters FireSP;
+						FireSP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+						AActor* FireActor = W->SpawnActor<AActor>(AActor::StaticClass(), Hit.ImpactPoint, FRotator::ZeroRotator, FireSP);
+						if (FireActor)
+						{
+							FireActor->SetLifeSpan(240.f); // 4 minutes
+
+							// AActor has no default root — make one manually.
+							USceneComponent* Root = NewObject<USceneComponent>(FireActor, USceneComponent::StaticClass(), TEXT("GroundFireRoot"));
+							FireActor->SetRootComponent(Root);
+							Root->SetWorldLocation(Hit.ImpactPoint);
+							Root->RegisterComponent();
+
+							if (UNiagaraSystem* GroundFlameFX = LoadObject<UNiagaraSystem>(nullptr,
+								TEXT("/Game/F_FreeFlameFx_Pack/FX/NS_Flame_8_Torch.NS_Flame_8_Torch")))
+							{
+								UNiagaraComponent* FC = NewObject<UNiagaraComponent>(FireActor, TEXT("GroundFireFX"));
+								FC->SetAsset(GroundFlameFX);
+								FC->SetupAttachment(Root);
+								FC->SetRelativeLocation(FVector::ZeroVector);
+								FC->SetRelativeScale3D(FVector(15.f));
+								FC->SetAutoActivate(true);
+								FC->RegisterComponent();
+							}
+						}
+					}
+				}
+			}
+
+			// Projectile spawn timer — 60/sec. With 4 torches per projectile at 1.5s
+			// lifespan, concurrent = 360 torch Niagaras while firing continuously.
 			FlamethrowerFuelTimer -= DeltaTime;
 			if (FlamethrowerFuelTimer <= 0.f)
 			{
-				FlamethrowerFuelTimer = 0.1f;
+				FlamethrowerFuelTimer = 0.0167f;
+
+				if (UWorld* World = GetWorld())
+				{
+					// Aim direction from camera in FP, actor forward in TP
+					FVector AimDir = CharFwd;
+					if (bFirstPersonMode)
+					{
+						if (AController* C = GetController())
+						{
+							FVector CamLoc; FRotator CamRot;
+							C->GetPlayerViewPoint(CamLoc, CamRot);
+							AimDir = CamRot.Vector();
+						}
+					}
+
+					// 8° cone spread — tighter fan so the stream condenses into a narrower
+					// cone. Still narrow at the nozzle, expands modestly with distance.
+					const FVector SpreadDir = FMath::VRandCone(AimDir, FMath::DegreesToRadians(8.f));
+
+					FActorSpawnParameters SP;
+					SP.Owner = this;
+					SP.Instigator = this;
+					SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+					APHCMissileProjectile* Flame = World->SpawnActor<APHCMissileProjectile>(
+						APHCMissileProjectile::StaticClass(), NozzlePos, SpreadDir.Rotation(), SP);
+					if (Flame)
+					{
+						// Damage=0 disables APHCMissileProjectile's proximity-damage block,
+						// which is what was calling SpawnExplosion on every flame-hit. The
+						// character's FireWeapon() cone pass already handles flamethrower
+						// damage to crabs / NPCs / PvP, so the projectiles are purely visual.
+						Flame->Damage = 0.f;
+						Flame->Speed = 5000.f;              // fast — long reach
+						Flame->SetLifeSpan(1.5f);           // 1.5s × 5000 = 7500 UU range
+
+						// Hide the sphere mesh — the Niagara torch flames below are the visual.
+						if (Flame->ProjectileMesh)
+						{
+							Flame->ProjectileMesh->SetVisibility(false);
+						}
+
+						// 4× NS_Flame_8_Torch per projectile in a tight cross pattern.
+						// The torch system is proven to render and is lightweight vs the
+						// nuke Niagara. Pitch -90° aligns the torch's +Z emission axis
+						// with the projectile's forward +X. Cone shape comes from the
+						// VRandCone above.
+						if (UNiagaraSystem* FlameFX = LoadObject<UNiagaraSystem>(nullptr,
+							TEXT("/Game/F_FreeFlameFx_Pack/FX/NS_Flame_8_Torch.NS_Flame_8_Torch")))
+						{
+							const FVector Offsets[4] = {
+								FVector(0.f,  60.f,   0.f),
+								FVector(0.f, -60.f,   0.f),
+								FVector(0.f,   0.f,  60.f),
+								FVector(0.f,   0.f, -60.f),
+							};
+							for (int32 I = 0; I < 4; ++I)
+							{
+								UNiagaraComponent* FC = NewObject<UNiagaraComponent>(Flame,
+									*FString::Printf(TEXT("FlameStream_%d"), I));
+								FC->SetAsset(FlameFX);
+								FC->SetupAttachment(Flame->GetRootComponent());
+								FC->SetRelativeLocation(Offsets[I]);
+								FC->SetRelativeRotation(FRotator(-90.f, 0.f, 0.f));
+								FC->SetAutoActivate(true);
+								FC->RegisterComponent();
+							}
+						}
+					}
+				}
+
+				// Existing cone-damage pass — crabs, NPCs, other players.
 				FireWeapon();
 			}
 		}
@@ -3058,22 +3306,23 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		{
 			ChopperGunnerTimer += DeltaTime;
 
-			// Touch input drives yaw/pitch to let player aim
+			// Touch input drives yaw/pitch — slow sensitivity for precise aiming
 			if (bHUDTouchActive)
 			{
-				ChopperGunnerYaw += TouchLookX * 60.f;
+				ChopperGunnerYaw += TouchLookX * 25.f;
 				ChopperGunnerPitch = FMath::Clamp(
-					ChopperGunnerPitch + TouchLookY * 40.f, -85.f, -20.f);
+					ChopperGunnerPitch + TouchLookY * 18.f, -85.f, -20.f);
 			}
 			else
 			{
-				// Slow auto-orbit if no touch
-				ChopperGunnerYaw += 15.f * DeltaTime;
+				// Very slow auto-orbit when not touching
+				ChopperGunnerYaw += 5.f * DeltaTime;
 			}
 
+			// Orbit around the player's position when the streak was activated (SavedLocation)
 			const float OrbitRadius = 5000.f;
 			const float YawRad = FMath::DegreesToRadians(ChopperGunnerYaw);
-			ChopperGunnerPos = FVector(
+			ChopperGunnerPos = SavedKillStreakLocation + FVector(
 				FMath::Cos(YawRad) * OrbitRadius,
 				FMath::Sin(YawRad) * OrbitRadius,
 				3000.f);
@@ -3089,60 +3338,147 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				}
 			}
 
+			// Rapid-fire turret rounds — continuous spray while fire button held
+			if (bChopperGunnerFiring && FollowCamera && GetWorld())
+			{
+				ChopperGunnerFireTimer -= DeltaTime;
+				if (ChopperGunnerFireTimer <= 0.f)
+				{
+					ChopperGunnerFireTimer = 0.06f; // ~16 rounds/sec — fast turret
+
+					// Hitscan line trace from camera with slight random spread
+					const FVector TraceStart = FollowCamera->GetComponentLocation();
+					FVector TraceDir = FollowCamera->GetForwardVector();
+					// Add small random spread for turret spray feel
+					TraceDir += FVector(
+						FMath::FRandRange(-0.008f, 0.008f),
+						FMath::FRandRange(-0.008f, 0.008f),
+						FMath::FRandRange(-0.004f, 0.004f));
+					TraceDir.Normalize();
+					const FVector TraceEnd = TraceStart + TraceDir * 60000.f;
+
+					FCollisionQueryParams TParams;
+					TParams.AddIgnoredActor(this);
+					FHitResult THit;
+					if (GetWorld()->LineTraceSingleByChannel(THit, TraceStart, TraceEnd, ECC_WorldStatic, TParams))
+					{
+						// Spawn a brief bright flash at impact point (bullet spark)
+						AActor* Spark = GetWorld()->SpawnActor<AActor>(
+							AActor::StaticClass(), THit.ImpactPoint, FRotator::ZeroRotator);
+						if (Spark)
+						{
+							UPointLightComponent* SparkLight = NewObject<UPointLightComponent>(Spark, TEXT("Spark"));
+							SparkLight->SetWorldLocation(THit.ImpactPoint);
+							SparkLight->SetIntensity(80000.f);
+							SparkLight->SetAttenuationRadius(800.f);
+							SparkLight->SetLightColor(FLinearColor(1.f, 0.7f, 0.2f));
+							SparkLight->SetCastShadows(false);
+							SparkLight->RegisterComponent();
+							Spark->SetRootComponent(SparkLight);
+							Spark->SetLifeSpan(0.08f); // very brief flash
+
+							// Small dust puff sphere at impact
+							UStaticMesh* SphereSM = LoadObject<UStaticMesh>(nullptr,
+								TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+							if (SphereSM)
+							{
+								UStaticMeshComponent* Puff = NewObject<UStaticMeshComponent>(Spark, TEXT("Puff"));
+								Puff->SetStaticMesh(SphereSM);
+								Puff->SetWorldLocation(THit.ImpactPoint);
+								Puff->SetWorldScale3D(FVector(0.3f));
+								Puff->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+								Puff->RegisterComponent();
+							}
+						}
+
+						// Damage Lurkers near impact point (300 UU radius, 10 damage per round)
+						if (UPHCCitySubsystem* Sub = GetWorld()->GetSubsystem<UPHCCitySubsystem>())
+						{
+							for (int32 CI = 0; CI < UPHCCitySubsystem::NumGiantCrabs; ++CI)
+							{
+								if (Sub->Crabs[CI].Actor && Sub->Crabs[CI].Health > 0.f && Sub->Crabs[CI].bVisible)
+								{
+									const float D = FVector::Dist(THit.ImpactPoint, Sub->Crabs[CI].Actor->GetActorLocation());
+									if (D < 300.f)
+									{
+										Sub->Crabs[CI].Health -= 10.f;
+										Sub->Crabs[CI].DamageFlashTimer = 0.1f;
+										if (Sub->Crabs[CI].Health <= 0.f)
+										{
+											CrabKills++;
+											KillStreakCount++; KillStreakTimer = 5.f;
+											AddXP(50);
+											Sub->RespawnCrab(CI);
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
 			if (ChopperGunnerTimer > 30.f)
 			{
 				DeactivateKillStreak();
 			}
 		}
 
-		// AC-130 camera override — touch controls aim
+		// AC-130 — player-flown gunship (Raptor-style controls)
 		if (bAC130Active)
 		{
 			AC130Timer += DeltaTime;
 			AC130FireCooldown -= DeltaTime;
 
-			// Touch input drives orbit angle and pitch
+			// Flight controls via the character's movement joystick
+			// (TouchMoveX/Y are the raw joystick axes set from the HUD touch panel):
+			//   Y axis (up/down)    → throttle forward / reverse
+			//   X axis (left/right) → yaw steering
+			// Camera aim pitch is adjusted by the look panel (TouchLookY) — the
+			// pilot can tilt the gunship's view up/down for targeting.
+			const float Throttle = TouchMoveY;                     // -1..+1
+			const float Steer    = TouchMoveX;                     // -1..+1
+			const float FlightSpeed = 3500.f;                      // UU/sec at full throttle
+			const float YawRate     = 55.f;                        // deg/sec at full steer
+
+			AC130OrbitAngle += Steer * YawRate * DeltaTime;
+
+			// Forward motion along the aircraft's current heading, on the horizontal plane.
+			const float HeadingRad = FMath::DegreesToRadians(AC130OrbitAngle);
+			const FVector Forward(FMath::Cos(HeadingRad), FMath::Sin(HeadingRad), 0.f);
+			AC130FlightPos += Forward * Throttle * FlightSpeed * DeltaTime;
+
+			// Aim pitch only adjusts on the look panel, not the auto-orbit cadence.
 			if (bHUDTouchActive)
 			{
-				AC130OrbitAngle += TouchLookX * 40.f;
-				AC130Pitch = FMath::Clamp(AC130Pitch + TouchLookY * 30.f, -89.f, -30.f);
+				AC130Pitch = FMath::Clamp(AC130Pitch + TouchLookY * 15.f, -89.f, -10.f);
 			}
-			else
-			{
-				AC130OrbitAngle += 10.f * DeltaTime; // slow auto-orbit
-			}
-
-			const float OrbitRadius = 12000.f;
-			const float AngleRad = FMath::DegreesToRadians(AC130OrbitAngle);
-			const FVector CamPos = FVector(
-				FMath::Cos(AngleRad) * OrbitRadius,
-				FMath::Sin(AngleRad) * OrbitRadius,
-				8000.f);
 
 			if (CameraBoom)
 			{
 				CameraBoom->TargetArmLength = 0.f;
 				CameraBoom->SocketOffset = FVector::ZeroVector;
-				SetActorLocation(CamPos);
+				SetActorLocation(AC130FlightPos);
 				if (AController* C = GetController())
 				{
-					C->SetControlRotation(FRotator(AC130Pitch, AC130OrbitAngle + 180.f, 0.f));
+					// Camera looks forward along the aircraft's heading (NOT +180, since
+					// we're no longer orbiting a fixed point from the opposite side).
+					C->SetControlRotation(FRotator(AC130Pitch, AC130OrbitAngle, 0.f));
 				}
 			}
 
-			// Angel flares when timer < 10s
+			// Angel flares at t > 30s (kept — visual cue that the streak is ending)
 			if (AC130Timer > 30.f && GetWorld())
 			{
 				const float FlareT = AC130Timer - 30.f;
-				if (FMath::Fmod(FlareT, 2.f) < DeltaTime) // every 2 seconds
+				if (FMath::Fmod(FlareT, 2.f) < DeltaTime)
 				{
 					FActorSpawnParameters FlareSP;
 					FlareSP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-					const FVector FlarePos = CamPos + FVector(
+					const FVector FlarePos = AC130FlightPos + FVector(
 						FMath::FRandRange(-500.f, 500.f),
 						FMath::FRandRange(-500.f, 500.f),
 						FMath::FRandRange(-200.f, 0.f));
-					// Spawn a small explosion as a flare effect
 					GetWorld()->SpawnActor<APHCNukeExplosion>(
 						APHCNukeExplosion::StaticClass(), FlarePos, FRotator::ZeroRotator, FlareSP);
 				}
@@ -3173,7 +3509,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 						APHCNukeExplosion::StaticClass(), FVector(0.f, 0.f, 0.f), FRotator::ZeroRotator, NukeSP);
 					if (Nuke)
 					{
-						Nuke->SetActorScale3D(FVector(10.f, 10.f, 10.f)); // MASSIVE
+						Nuke->SetActorScale3D(FVector(20.f, 20.f, 20.f)); // doubled — MASSIVE tactical nuke
 					}
 				}
 			}
@@ -3774,17 +4110,19 @@ void APHCCityCharacter::FireWeapon()
 		{
 			Bullet->OwnerVehicle = this;
 
-			// Minigun: lavender (#cfc0ff) bullet color
+			// Minigun: torch-flame orange bullet color (matches jungle/pyramid torches)
 			if (CurrentWeaponType == 0 && Bullet->ProjectileMesh)
 			{
+				Bullet->ProjectileMesh->SetRelativeScale3D(FVector(5.0f, 0.35f, 0.35f));
 				UMaterialInstanceDynamic* BulletMat = Cast<UMaterialInstanceDynamic>(
 					Bullet->ProjectileMesh->GetMaterial(0));
 				if (BulletMat)
 				{
 					BulletMat->SetVectorParameterValue(TEXT("BaseColor"),
-						FLinearColor(0.81f, 0.75f, 1.0f));
+						FLinearColor(1.0f, 0.6f, 0.15f));
 					BulletMat->SetVectorParameterValue(TEXT("EmissiveColor"),
-						FLinearColor(4.05f, 3.75f, 5.0f));
+						FLinearColor(12.0f, 6.0f, 1.2f));
+					BulletMat->SetScalarParameterValue(TEXT("Roughness"), 0.1f);
 				}
 			}
 
@@ -4728,7 +5066,9 @@ void APHCCityCharacter::ActivateChopperGunner()
 	bChopperGunnerActive = true;
 	ChopperGunnerTimer = 0.f;
 	ChopperGunnerYaw = 0.f;
-	ChopperGunnerPos = FVector(0.f, 0.f, 3000.f);
+	ChopperGunnerPitch = -60.f;
+	SavedKillStreakLocation = FVector(GetActorLocation().X, GetActorLocation().Y, 0.f);
+	ChopperGunnerPos = SavedKillStreakLocation + FVector(0.f, 0.f, 3000.f);
 
 	// Save camera state
 	if (CameraBoom)
@@ -4748,8 +5088,14 @@ void APHCCityCharacter::ActivateAC130()
 	bAC130Active = true;
 	AC130Timer = 0.f;
 	AC130OrbitAngle = 0.f;
+	AC130Pitch = -70.f;
 	AC130WeaponMode = 0;
 	AC130FireCooldown = 0.f;
+	SavedKillStreakLocation = FVector(GetActorLocation().X, GetActorLocation().Y, 0.f);
+	// Start the gunship 12000 UU east of the player at 8000 UU altitude, heading west
+	// (toward the player's ground position). From here the pilot flies freely.
+	AC130FlightPos = SavedKillStreakLocation + FVector(12000.f, 0.f, 8000.f);
+	AC130OrbitAngle = 180.f;
 
 	// Save camera state
 	if (CameraBoom)
@@ -4789,7 +5135,9 @@ void APHCCityCharacter::DeactivateKillStreak()
 	KillStreakPerkTimer = 0.f;
 
 	bChopperGunnerActive = false;
+	bChopperGunnerFiring = false;
 	ChopperGunnerTimer = 0.f;
+	ChopperGunnerFireTimer = 0.f;
 	ChopperGunnerYaw = 0.f;
 	ChopperGunnerPos = FVector::ZeroVector;
 

@@ -19,6 +19,7 @@ class APHCBlackbirdPawn;
 class APHCBlackHawkPawn;
 class UProceduralMeshComponent;
 class UDecalComponent;
+class UNiagaraComponent;
 
 /** City district types for zone-based procedural generation. */
 enum class ECityDistrict : uint8
@@ -79,6 +80,7 @@ private:
 	void SpawnGiantCrab();
 	void SpawnMountainRange();
 	void SpawnSandCastle();
+	void SpawnGiantBonfire();
 	void SpawnLakeAndPirateShip();
 	void SpawnStreetLabels();
 	void SpawnLangtree();
@@ -548,6 +550,11 @@ public:
 		float Height;
 	};
 	TArray<FHillShape> HillShapes;
+
+	/** Giant bonfire flame — NS_NuclearExplosion Niagara, re-activated from Tick
+	 *  to make a single scalable explosion play forever as a persistent fire. */
+	UPROPERTY() TObjectPtr<UNiagaraComponent> BonfireFlameComp;
+	float BonfireReactivateTimer = 0.f;
 
 private:
 

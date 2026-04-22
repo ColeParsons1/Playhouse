@@ -3,11 +3,18 @@
 #include "Vehicle/PHCNukeExplosion.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/PostProcessComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
+#include "Kismet/GameplayStatics.h"
+#include "HAL/PlatformTime.h"
+#include "EngineUtils.h"
+#include "Player/PHCCityCharacter.h"
+#include "Core/PHCCitySubsystem.h"
 
 APHCNukeExplosion::APHCNukeExplosion()
 {
@@ -51,26 +58,10 @@ APHCNukeExplosion::APHCNukeExplosion()
 		return M;
 	};
 
-	// -- Core fireball (central) --
-	FireballCore = MakeSphere(TEXT("FireballCore"), FVector(0.f, 0.f, 80.f), 1.f);
-
-	// -- Flame burst lobes (offset fireballs for rolling fire look) --
-	FlameBurstA = MakeSphere(TEXT("FlameBurstA"), FVector(120.f, 60.f, 50.f), 1.f);
-	FlameBurstB = MakeSphere(TEXT("FlameBurstB"), FVector(-80.f, 150.f, 60.f), 1.f);
-	FlameBurstC = MakeSphere(TEXT("FlameBurstC"), FVector(-60.f, -130.f, 70.f), 1.f);
-
-	// -- Smoke plume (dark cylinder rising from center) --
-	SmokePlume = MakeCylinder(TEXT("SmokePlume"), FVector(0.f, 0.f, 50.f), FVector(4.f, 4.f, 0.5f));
-
-	// -- Smoke clouds (dark billowing spheres at top) --
-	SmokeCloudA = MakeSphere(TEXT("SmokeCloudA"), FVector(50.f, 30.f, 300.f), 1.f);
-	SmokeCloudB = MakeSphere(TEXT("SmokeCloudB"), FVector(-40.f, -50.f, 350.f), 1.f);
-
-	// -- Debris ring (flat brown cylinder at ground level) --
-	DebrisRing = MakeCylinder(TEXT("DebrisRing"), FVector(0.f, 0.f, 10.f), FVector(3.f, 3.f, 0.15f));
-
-	// -- Shockwave ring (fast thin white ring) --
-	ShockwaveRing = MakeCylinder(TEXT("ShockwaveRing"), FVector(0.f, 0.f, 5.f), FVector(2.f, 2.f, 0.02f));
+	// Legacy primitive pyrotechnics (FireballCore, FlameBurstA/B/C, SmokePlume,
+	// SmokeCloudA/B, DebrisRing, ShockwaveRing) have been removed — the Fab
+	// NS_NuclearExplosion Niagara is a complete replacement. Leaving these as
+	// nullptrs keeps Tick's null-guards a no-op for the legacy animation code.
 
 	// -- Explosion light --
 	ExplosionLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("ExplosionLight"));
@@ -80,6 +71,15 @@ APHCNukeExplosion::APHCNukeExplosion()
 	ExplosionLight->SetAttenuationRadius(12000.f);
 	ExplosionLight->SetLightColor(FLinearColor(1.0f, 0.6f, 0.15f));
 	ExplosionLight->SetCastShadows(false);
+
+	// HeatHazeDome (translucent orange sphere) removed — it was a custom mesh.
+	// The post-process shimmer below gives the heat-distortion look without any mesh.
+
+	// -- Unbound post-process for heat shimmer + chromatic aberration --
+	HeatPostProcess = CreateDefaultSubobject<UPostProcessComponent>(TEXT("HeatPostProcess"));
+	HeatPostProcess->SetupAttachment(Root);
+	HeatPostProcess->bUnbound = true;
+	HeatPostProcess->Priority = 5.f;
 }
 
 void APHCNukeExplosion::BeginPlay()
@@ -87,224 +87,138 @@ void APHCNukeExplosion::BeginPlay()
 	Super::BeginPlay();
 	SetLifeSpan(TotalDuration);
 
-	// Helper: create emissive MID on a mesh component
-	auto MakeEmissiveMat = [](UStaticMeshComponent* Comp,
-		const FLinearColor& Color) -> UMaterialInstanceDynamic*
+	// === Fab nuclear explosion Niagara — single system replaces the legacy
+	// 8-sphere / 100+ flame-jet custom effect. ===
 	{
-		if (!Comp || !Comp->GetStaticMesh()) return nullptr;
-		UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(
-			Comp->GetMaterial(0), Comp);
-		if (M)
+		UNiagaraSystem* NukeFX = LoadObject<UNiagaraSystem>(nullptr,
+			TEXT("/Game/NuclearExplosion/Effects/NS_NuclearExplosion.NS_NuclearExplosion"));
+		if (NukeFX)
 		{
-			M->SetVectorParameterValue(TEXT("BaseColor"), Color);
-			M->SetVectorParameterValue(TEXT("EmissiveColor"), Color);
-			M->SetScalarParameterValue(TEXT("Metallic"), 0.f);
-			M->SetScalarParameterValue(TEXT("Roughness"), 1.f);
-			Comp->SetMaterial(0, M);
+			UNiagaraComponent* FX = NewObject<UNiagaraComponent>(this, TEXT("NuclearExplosionFX"));
+			FX->SetAsset(NukeFX);
+			FX->SetupAttachment(GetRootComponent());
+			FX->SetRelativeLocation(FVector::ZeroVector);
+			FX->SetRelativeRotation(FRotator::ZeroRotator);
+			FX->SetAutoActivate(true);
+			FX->SetAutoDestroy(false);
+			FX->RegisterComponent();
+			UE_LOG(LogPlayhouseCity, Log, TEXT("NS_NuclearExplosion spawned"));
 		}
-		return M;
-	};
+		else
+		{
+			UE_LOG(LogPlayhouseCity, Warning, TEXT("NS_NuclearExplosion FAILED to load"));
+		}
+	}
 
-	// Initial colors
-	const FLinearColor WhiteHot(15.f, 12.f, 8.f);
-	const FLinearColor BrightOrange(8.f, 3.f, 0.4f);
-	const FLinearColor DarkSmoke(0.08f, 0.06f, 0.05f);
-	const FLinearColor BrownDirt(0.35f, 0.22f, 0.1f);
-	const FLinearColor WhiteFlash(6.f, 5.f, 3.f);
+	// Legacy mesh visuals (FireballCore, FlameBurstA/B/C, SmokePlume, clouds, debris,
+	// shockwave, embers, flame-jet rings) are intentionally left hidden — the Niagara
+	// system above handles all the pyrotechnic visuals now. The components still exist
+	// (constructor-created) but no materials/visibility are ever applied to them.
 
-	FireballCoreMat = MakeEmissiveMat(FireballCore, WhiteHot);
-	FlameMatA = MakeEmissiveMat(FlameBurstA, BrightOrange);
-	FlameMatB = MakeEmissiveMat(FlameBurstB, BrightOrange);
-	FlameMatC = MakeEmissiveMat(FlameBurstC, BrightOrange);
-	SmokePlumeMat = MakeEmissiveMat(SmokePlume, DarkSmoke);
-	SmokeCloudAMat = MakeEmissiveMat(SmokeCloudA, DarkSmoke);
-	SmokeCloudBMat = MakeEmissiveMat(SmokeCloudB, DarkSmoke);
-	DebrisRingMat = MakeEmissiveMat(DebrisRing, BrownDirt);
-	ShockwaveRingMat = MakeEmissiveMat(ShockwaveRing, WhiteFlash);
-
-	// Make all meshes visible at start
-	if (FireballCore) FireballCore->SetVisibility(true);
-	if (ShockwaveRing) ShockwaveRing->SetVisibility(true);
-	if (DebrisRing) DebrisRing->SetVisibility(true);
-
-	// Initial light flash
+	// Initial light flash — preserved for world-lighting pop on detonation.
 	if (ExplosionLight) ExplosionLight->SetIntensity(200000.f);
 
-	// -- Spawn ember particles at runtime --
-	UStaticMesh* SphereSM = LoadObject<UStaticMesh>(
-		nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-
-	Embers.Reserve(NumEmbers);
-	EmberMats.Reserve(NumEmbers);
-	EmberVelocities.Reserve(NumEmbers);
-	EmberPositions.Reserve(NumEmbers);
-
-	FRandomStream Rand(FMath::Rand());
-	for (int32 i = 0; i < NumEmbers; ++i)
+	// -- Heat haze dome material (translucent orange, emissive) --
+	if (HeatHazeDome && HeatHazeDome->GetStaticMesh())
 	{
-		UStaticMeshComponent* E = NewObject<UStaticMeshComponent>(this);
-		if (!E) continue;
-		E->SetupAttachment(GetRootComponent());
-		if (SphereSM) E->SetStaticMesh(SphereSM);
-		E->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		E->SetRelativeScale3D(FVector(FMath::RandRange(0.15f, 0.4f)));
-		E->SetRelativeLocation(FVector(0.f, 0.f, 50.f));
-		E->SetBoundsScale(50.f);
-		E->RegisterComponent();
-
-		UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(
-			E->GetMaterial(0), E);
-		if (M)
+		UMaterial* GlassMat = LoadObject<UMaterial>(nullptr,
+			TEXT("/Game/Materials/M_PHCGlass.M_PHCGlass"));
+		if (GlassMat)
 		{
-			const FLinearColor EmberColor(
-				FMath::RandRange(5.f, 10.f),
-				FMath::RandRange(1.5f, 3.f),
-				FMath::RandRange(0.05f, 0.3f));
-			M->SetVectorParameterValue(TEXT("BaseColor"), EmberColor);
-			M->SetVectorParameterValue(TEXT("EmissiveColor"), EmberColor);
-			M->SetScalarParameterValue(TEXT("Metallic"), 0.f);
-			M->SetScalarParameterValue(TEXT("Roughness"), 1.f);
-			E->SetMaterial(0, M);
+			HeatHazeMat = UMaterialInstanceDynamic::Create(GlassMat, HeatHazeDome);
+			if (HeatHazeMat)
+			{
+				HeatHazeMat->SetVectorParameterValue(TEXT("BaseColor"),
+					FLinearColor(1.0f, 0.4f, 0.1f));
+				HeatHazeMat->SetVectorParameterValue(TEXT("EmissiveColor"),
+					FLinearColor(5.0f, 2.0f, 0.5f));
+				HeatHazeMat->SetScalarParameterValue(TEXT("Opacity"), 0.25f);
+				HeatHazeMat->SetScalarParameterValue(TEXT("Metallic"), 0.f);
+				HeatHazeMat->SetScalarParameterValue(TEXT("Roughness"), 1.f);
+				HeatHazeDome->SetMaterial(0, HeatHazeMat);
+				HeatHazeDome->SetVisibility(true);
+			}
 		}
-
-		Embers.Add(E);
-		EmberMats.Add(M);
-		EmberPositions.Add(FVector(0.f, 0.f, 50.f));
-
-		// Random outward + upward velocity
-		const float Angle = Rand.FRandRange(0.f, 360.f);
-		const float HorizSpeed = Rand.FRandRange(800.f, 2500.f);
-		const float VertSpeed = Rand.FRandRange(600.f, 2000.f);
-		EmberVelocities.Add(FVector(
-			FMath::Cos(FMath::DegreesToRadians(Angle)) * HorizSpeed,
-			FMath::Sin(FMath::DegreesToRadians(Angle)) * HorizSpeed,
-			VertSpeed));
 	}
 
-	// === Niagara flame jets from F_FreeFlameFx_Pack — combined with mesh effects ===
-	UNiagaraSystem* FlameFX_8 = LoadObject<UNiagaraSystem>(nullptr,
-		TEXT("/Game/F_FreeFlameFx_Pack/FX/NS_Flame_8_Torch.NS_Flame_8_Torch"));
-	UNiagaraSystem* FlameFX_4 = LoadObject<UNiagaraSystem>(nullptr,
-		TEXT("/Game/F_FreeFlameFx_Pack/FX/NS_Flame_4.NS_Flame_4"));
-
-	if (FlameFX_8 || FlameFX_4)
+	// -- Post-process heat-shimmer initial settings (scaled up in Tick) --
+	if (HeatPostProcess)
 	{
-		FRandomStream FR(FMath::Rand());
+		FPostProcessSettings& PP = HeatPostProcess->Settings;
+		PP.bOverride_BloomIntensity = true;
+		PP.BloomIntensity = 1.0f;
+		PP.bOverride_SceneFringeIntensity = true;
+		PP.SceneFringeIntensity = 0.f;
+		PP.bOverride_FilmGrainIntensity = true;
+		PP.FilmGrainIntensity = 0.06f;
+		PP.bOverride_VignetteIntensity = true;
+		PP.VignetteIntensity = 0.4f;
+		PP.bOverride_MotionBlurAmount = true;
+		PP.MotionBlurAmount = 0.f;
+		PP.bOverride_ColorSaturation = true;
+		PP.ColorSaturation = FVector4(1.f, 1.f, 1.f, 1.f);
+		PP.bOverride_ColorGamma = true;
+		PP.ColorGamma = FVector4(1.f, 1.f, 1.f, 1.f);
+		PP.bOverride_WhiteTemp = true;
+		PP.WhiteTemp = 6500.f;
+	}
 
-		auto SpawnFlame = [&](UNiagaraSystem* FX, const FVector& Off, const FRotator& Rot, const FVector& Scale, const TCHAR* Name)
+	// -- Kick off slight global time distortion (tracked in real seconds) --
+	RealStartTime = FPlatformTime::Seconds();
+	if (UWorld* W = GetWorld())
+	{
+		UGameplayStatics::SetGlobalTimeDilation(this, TimeDilationPeak);
+		bTimeDilationRestored = false;
+	}
+
+	// -- Damage pass: kill all players, destroy NPC helicopters --
+	// Only the server has authority over health state. In Standalone/ListenServer each
+	// character's Role == ROLE_Authority locally; on clients, HasAuthority() is false so
+	// we skip (the server-side nuke spawn handles it).
+	if (UWorld* W = GetWorld())
+	{
+		for (TActorIterator<APHCCityCharacter> It(W); It; ++It)
 		{
-			if (!FX) return;
-			UNiagaraComponent* F = NewObject<UNiagaraComponent>(this, Name);
-			F->SetAsset(FX);
-			F->SetupAttachment(GetRootComponent());
-			F->SetRelativeLocation(Off);
-			F->SetRelativeRotation(Rot);
-			F->SetRelativeScale3D(Scale);
-			F->SetAutoActivate(true);
-			F->SetAutoDestroy(false);
-			F->RegisterComponent();
-			FlameJets.Add(F);
-		};
-
-		// Colossal central flame column
-		SpawnFlame(FlameFX_8, FVector(0.f, 0.f, 1200.f), FRotator::ZeroRotator,
-			FVector(800.f, 800.f, 1300.f), TEXT("MainColumn"));
-
-		// Inner secondary columns for chaos
-		for (int32 i = 0; i < 4; ++i)
-		{
-			const float Ang = FR.FRandRange(0.f, UE_PI * 2.f);
-			const FVector Off(FMath::Cos(Ang) * 250.f, FMath::Sin(Ang) * 250.f, FR.FRandRange(600.f, 1200.f));
-			SpawnFlame(FlameFX_8, Off,
-				FRotator(FR.FRandRange(-15.f, 15.f), FR.FRandRange(0.f, 360.f), 0.f),
-				FVector(FR.FRandRange(550.f, 700.f), FR.FRandRange(550.f, 700.f), FR.FRandRange(800.f, 1100.f)),
-				*FString::Printf(TEXT("InnerCol_%d"), i));
+			APHCCityCharacter* Ch = *It;
+			if (!Ch || !Ch->HasAuthority()) continue;
+			Ch->Health = 0.f;
+			Ch->MulticastDamageFlash();
+			Ch->ClientOnKilled();
+			Ch->Health = Ch->MaxHealth;
+			Ch->SetActorLocation(FVector(0.f, 0.f, 100.f));
 		}
 
-		// First shockwave ring — 16 outward jets
-		for (int32 i = 0; i < 16; ++i)
+		if (UPHCCitySubsystem* Sub = W->GetSubsystem<UPHCCitySubsystem>())
 		{
-			const float Ang = (UE_PI * 2.f / 16.f) * i;
-			const float Radius = 800.f + FR.FRandRange(-80.f, 80.f);
-			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(150.f, 350.f));
-			const FRotator Rot(FR.FRandRange(50.f, 70.f), FMath::RadiansToDegrees(Ang) + FR.FRandRange(-15.f, 15.f), 0.f);
-			SpawnFlame(FlameFX_8, Off, Rot,
-				FVector(FR.FRandRange(400.f, 550.f), FR.FRandRange(400.f, 550.f), FR.FRandRange(550.f, 750.f)),
-				*FString::Printf(TEXT("Ring1_%d"), i));
-		}
-
-		// Second shockwave ring — 14 wider jets
-		for (int32 i = 0; i < 14; ++i)
-		{
-			const float Ang = (UE_PI * 2.f / 14.f) * i + 0.2f;
-			const float Radius = 1500.f + FR.FRandRange(-150.f, 150.f);
-			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(100.f, 500.f));
-			const FRotator Rot(FR.FRandRange(60.f, 85.f), FMath::RadiansToDegrees(Ang) + FR.FRandRange(-20.f, 20.f), 0.f);
-			SpawnFlame(FlameFX_8, Off, Rot,
-				FVector(FR.FRandRange(450.f, 600.f), FR.FRandRange(450.f, 600.f), FR.FRandRange(600.f, 800.f)),
-				*FString::Printf(TEXT("Ring2_%d"), i));
-		}
-
-		// Mid-altitude billowing flames — 12 jets
-		for (int32 i = 0; i < 12; ++i)
-		{
-			const float Ang = (UE_PI * 2.f / 12.f) * i + 0.5f;
-			const float Radius = 700.f + FR.FRandRange(-150.f, 250.f);
-			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(900.f, 1500.f));
-			const FRotator Rot(FR.FRandRange(20.f, 50.f), FMath::RadiansToDegrees(Ang), 0.f);
-			SpawnFlame(FlameFX_4 ? FlameFX_4 : FlameFX_8, Off, Rot,
-				FVector(FR.FRandRange(500.f, 650.f), FR.FRandRange(500.f, 650.f), FR.FRandRange(650.f, 900.f)),
-				*FString::Printf(TEXT("Mid_%d"), i));
-		}
-
-		// Mushroom crown — 10 flames at top arching outward
-		for (int32 i = 0; i < 10; ++i)
-		{
-			const float Ang = (UE_PI * 2.f / 10.f) * i;
-			const float Radius = 1000.f + FR.FRandRange(-150.f, 150.f);
-			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(2000.f, 2500.f));
-			const FRotator Rot(FR.FRandRange(0.f, 25.f), FMath::RadiansToDegrees(Ang), 0.f);
-			SpawnFlame(FlameFX_4 ? FlameFX_4 : FlameFX_8, Off, Rot,
-				FVector(FR.FRandRange(550.f, 700.f), FR.FRandRange(550.f, 700.f), FR.FRandRange(750.f, 1000.f)),
-				*FString::Printf(TEXT("Crown_%d"), i));
-		}
-
-		// Ground-level fire storm — 14 horizontal blasts
-		for (int32 i = 0; i < 14; ++i)
-		{
-			const float Ang = (UE_PI * 2.f / 14.f) * i + 0.1f;
-			const float Radius = 1200.f + FR.FRandRange(-150.f, 250.f);
-			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(30.f, 200.f));
-			const FRotator Rot(FR.FRandRange(80.f, 100.f), FMath::RadiansToDegrees(Ang) + FR.FRandRange(-15.f, 15.f), 0.f);
-			SpawnFlame(FlameFX_8, Off, Rot,
-				FVector(FR.FRandRange(450.f, 600.f), FR.FRandRange(450.f, 600.f), FR.FRandRange(600.f, 850.f)),
-				*FString::Printf(TEXT("GroundJet_%d"), i));
-		}
-
-		// Far-reaching outer blast — 12 distant flames
-		for (int32 i = 0; i < 12; ++i)
-		{
-			const float Ang = (UE_PI * 2.f / 12.f) * i + 0.3f;
-			const float Radius = 2300.f + FR.FRandRange(-200.f, 250.f);
-			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(100.f, 400.f));
-			const FRotator Rot(FR.FRandRange(70.f, 90.f), FMath::RadiansToDegrees(Ang), 0.f);
-			SpawnFlame(FlameFX_8, Off, Rot,
-				FVector(FR.FRandRange(400.f, 550.f), FR.FRandRange(400.f, 550.f), FR.FRandRange(550.f, 750.f)),
-				*FString::Printf(TEXT("FarBlast_%d"), i));
-		}
-
-		// Random chaos flames — 20 randomly placed
-		for (int32 i = 0; i < 20; ++i)
-		{
-			const float Ang = FR.FRandRange(0.f, UE_PI * 2.f);
-			const float Radius = FR.FRandRange(300.f, 2000.f);
-			const FVector Off(FMath::Cos(Ang) * Radius, FMath::Sin(Ang) * Radius, FR.FRandRange(80.f, 1900.f));
-			const FRotator Rot(FR.FRandRange(0.f, 90.f), FR.FRandRange(0.f, 360.f), FR.FRandRange(0.f, 360.f));
-			SpawnFlame(FR.FRand() < 0.5f ? FlameFX_8 : FlameFX_4, Off, Rot,
-				FVector(FR.FRandRange(380.f, 580.f), FR.FRandRange(380.f, 580.f), FR.FRandRange(500.f, 800.f)),
-				*FString::Printf(TEXT("Chaos_%d"), i));
+			if (Sub->NPCHelicopter && Sub->bNPCHeliVisible && !Sub->bNPCHeliCrashing)
+			{
+				Sub->NPCHeliHealth = 0.f;
+				Sub->OnNPCHeliDestroyed();
+			}
+			if (Sub->NPCHelicopter2 && Sub->bNPCHeliVisible2 && !Sub->bNPCHeliCrashing2)
+			{
+				Sub->NPCHeliHealth2 = 0.f;
+				Sub->OnNPCHeli2Destroyed();
+			}
 		}
 	}
+
+	// Ember particles and the F_FreeFlameFx_Pack flame-jet rings have been removed —
+	// the Fab NS_NuclearExplosion Niagara system above is a full replacement.
+}
+
+void APHCNukeExplosion::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// Always restore normal time — don't leave the world in slow-mo if we die early.
+	if (!bTimeDilationRestored)
+	{
+		if (GetWorld())
+		{
+			UGameplayStatics::SetGlobalTimeDilation(this, 1.f);
+		}
+		bTimeDilationRestored = true;
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void APHCNukeExplosion::Tick(float DeltaTime)
@@ -313,6 +227,79 @@ void APHCNukeExplosion::Tick(float DeltaTime)
 
 	ElapsedTime += DeltaTime;
 	const float t = ElapsedTime;
+
+	// Real-seconds clock is immune to our own time dilation — use it for
+	// the time-dilation restore ramp and the heat-shimmer curve.
+	const float RealT = static_cast<float>(FPlatformTime::Seconds() - RealStartTime);
+
+	// Time dilation: hold peak slowdown, then smoothly ramp back to 1.0x.
+	if (!bTimeDilationRestored)
+	{
+		if (GetWorld())
+		{
+			float Dilation;
+			if (RealT < TimeDilationHold)
+			{
+				Dilation = TimeDilationPeak;
+			}
+			else
+			{
+				const float Alpha = FMath::Clamp(
+					(RealT - TimeDilationHold) / TimeDilationRamp, 0.f, 1.f);
+				Dilation = FMath::Lerp(TimeDilationPeak, 1.f, Alpha);
+				if (Alpha >= 1.f) bTimeDilationRestored = true;
+			}
+			UGameplayStatics::SetGlobalTimeDilation(this, Dilation);
+		}
+	}
+
+	// Heat-distortion post-process curve — rises to peak fast, fades slowly.
+	if (HeatPostProcess)
+	{
+		const float RiseA = FMath::Clamp(RealT / 0.15f, 0.f, 1.f);
+		const float FallA = FMath::Clamp((RealT - 1.0f) / 3.0f, 0.f, 1.f);
+		const float I = FMath::Clamp(RiseA - FallA, 0.f, 1.f);
+
+		FPostProcessSettings& PP = HeatPostProcess->Settings;
+		PP.SceneFringeIntensity = FMath::Lerp(0.f, 6.5f, I);
+		PP.FilmGrainIntensity = FMath::Lerp(0.06f, 0.45f, I);
+		PP.VignetteIntensity = FMath::Lerp(0.4f, 1.4f, I);
+		PP.MotionBlurAmount = FMath::Lerp(0.f, 0.9f, I);
+		PP.BloomIntensity = FMath::Lerp(1.0f, 4.5f, I);
+		PP.ColorSaturation = FVector4(
+			FMath::Lerp(1.f, 1.4f, I),
+			FMath::Lerp(1.f, 0.85f, I),
+			FMath::Lerp(1.f, 0.6f, I),
+			1.f);
+		PP.ColorGamma = FVector4(
+			FMath::Lerp(1.f, 0.85f, I),
+			FMath::Lerp(1.f, 0.95f, I),
+			FMath::Lerp(1.f, 1.05f, I),
+			1.f);
+		PP.WhiteTemp = FMath::Lerp(6500.f, 8500.f, I);
+	}
+
+	// Heat-haze dome — translucent orange sphere swelling outward, fading out.
+	if (HeatHazeDome && HeatHazeMat)
+	{
+		const float ExpandA = FMath::Clamp(RealT / 1.2f, 0.f, 1.f);
+		const float Eased = 1.f - FMath::Pow(1.f - ExpandA, 3.f);
+		const float Scale = FMath::Lerp(3.f, 140.f, Eased);
+		HeatHazeDome->SetRelativeScale3D(FVector(Scale));
+
+		const float FadeA = FMath::Clamp((RealT - 0.5f) / 2.5f, 0.f, 1.f);
+		HeatHazeMat->SetScalarParameterValue(TEXT("Opacity"),
+			FMath::Lerp(0.25f, 0.f, FadeA));
+
+		const float CoolA = FMath::Clamp(RealT / 0.4f, 0.f, 1.f);
+		FLinearColor Emissive = FMath::Lerp(
+			FLinearColor(5.f, 2.f, 0.5f),
+			FLinearColor(1.5f, 0.6f, 0.15f), CoolA);
+		Emissive = Emissive * FMath::Lerp(1.f, 0.f, FadeA);
+		HeatHazeMat->SetVectorParameterValue(TEXT("EmissiveColor"), Emissive);
+
+		if (FadeA >= 1.f) HeatHazeDome->SetVisibility(false);
+	}
 
 	// Force destroy when animation is complete
 	if (t >= TotalDuration)

@@ -16,6 +16,7 @@
 #include "Vehicle/PHCBlackbirdPawn.h"
 #include "Vehicle/PHCBlackHawkPawn.h"
 #include "Vehicle/PHCNukeExplosion.h"
+#include "Core/PHCCitySubsystem.h"
 #include "Camera/CameraComponent.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
@@ -4784,25 +4785,8 @@ void UPHCCityHUD::OnWeaponFirePressed()
 			// Kill streak fire modes override normal weapon fire
 			if (Char->bChopperGunnerActive)
 			{
-				// Chopper Gunner: line trace from camera downward, spawn explosion at hit
-				UWorld* W = Char->GetWorld();
-				if (W && Char->FollowCamera)
-				{
-					const FVector TraceStart = Char->FollowCamera->GetComponentLocation();
-					const FVector TraceDir = Char->FollowCamera->GetForwardVector();
-					const FVector TraceEnd = TraceStart + TraceDir * 50000.f;
-
-					FCollisionQueryParams Params;
-					Params.AddIgnoredActor(Char);
-					FHitResult Hit;
-					if (W->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, Params))
-					{
-						FActorSpawnParameters SP;
-						SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-						W->SpawnActor<APHCNukeExplosion>(
-							APHCNukeExplosion::StaticClass(), Hit.ImpactPoint, FRotator::ZeroRotator, SP);
-					}
-				}
+				// Chopper Gunner: rapid-fire turret — set flag, Tick handles continuous fire
+				Char->bChopperGunnerFiring = true;
 				return;
 			}
 
@@ -4852,6 +4836,34 @@ void UPHCCityHUD::OnWeaponFirePressed()
 							break;
 						}
 						}
+
+						// Damage Lurkers within explosion radius
+						const float BlastRadius = (Char->AC130WeaponMode == 0) ? 500.f :
+							(Char->AC130WeaponMode == 1) ? 1500.f : 3000.f;
+						const float BlastDamage = (Char->AC130WeaponMode == 0) ? 15.f :
+							(Char->AC130WeaponMode == 1) ? 50.f : 100.f;
+						if (UPHCCitySubsystem* Sub = W->GetSubsystem<UPHCCitySubsystem>())
+						{
+							for (int32 CI = 0; CI < UPHCCitySubsystem::NumGiantCrabs; ++CI)
+							{
+								if (Sub->Crabs[CI].Actor && Sub->Crabs[CI].Health > 0.f && Sub->Crabs[CI].bVisible)
+								{
+									const float D = FVector::Dist(Hit.ImpactPoint, Sub->Crabs[CI].Actor->GetActorLocation());
+									if (D < BlastRadius)
+									{
+										Sub->Crabs[CI].Health -= BlastDamage;
+										Sub->Crabs[CI].DamageFlashTimer = 0.2f;
+										if (Sub->Crabs[CI].Health <= 0.f)
+										{
+											Char->CrabKills++;
+											Char->KillStreakCount++; Char->KillStreakTimer = 5.f;
+											Char->AddXP(50);
+											Sub->RespawnCrab(CI);
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 				return;
@@ -4888,6 +4900,7 @@ void UPHCCityHUD::OnWeaponFireReleased()
 			Char->bMinigunFiring = false;
 			Char->bAK47Firing = false;
 			Char->bFlamethrowerFiring = false;
+			Char->bChopperGunnerFiring = false;
 		}
 	}
 }
