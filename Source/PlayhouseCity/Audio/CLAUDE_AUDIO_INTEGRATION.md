@@ -56,27 +56,34 @@ spots.
 
 ---
 
-## Stubs that need wavs
+## Weapon SFX (now shipped — Mixkit clips)
 
-`PHCCityCharacter::FireWeapon` references these paths. Until somebody
-imports a wav at each one, you'll see `LogPlayhouseCity: Warning:
-PHCAudio: Sound asset not found at '...'` once per missing weapon (cached
-after first lookup, so no log spam).
+`PHCCityCharacter::FireWeapon` references these paths. They are now
+populated with free Mixkit clips (license: free for commercial use, no
+attribution required — see https://mixkit.co/license/).
 
-Drop wavs at:
 ```
-/Game/Audio/SFX/Weapons/Minigun_Fire.uasset    (CurrentWeaponType 0)
-/Game/Audio/SFX/Weapons/RPG_Fire.uasset        (CurrentWeaponType 1)
-/Game/Audio/SFX/Weapons/Sword_Swing.uasset     (CurrentWeaponType 2)
-/Game/Audio/SFX/Weapons/Scythe_Swing.uasset    (CurrentWeaponType 3)
-/Game/Audio/SFX/Weapons/Dagger_Stab.uasset     (CurrentWeaponType 4)
-/Game/Audio/SFX/Weapons/AK47_Fire.uasset       (CurrentWeaponType 5)
-/Game/Audio/SFX/Weapons/Sniper_Fire.uasset     (CurrentWeaponType 6)
+/Game/Audio/SFX/Weapons/Minigun_Fire.uasset    (CurrentWeaponType 0)  Mixkit 1662
+/Game/Audio/SFX/Weapons/RPG_Fire.uasset        (CurrentWeaponType 1)  Mixkit 1700
+/Game/Audio/SFX/Weapons/Sword_Swing.uasset     (CurrentWeaponType 2)  Mixkit 2792
+/Game/Audio/SFX/Weapons/Scythe_Swing.uasset    (CurrentWeaponType 3)  Mixkit 1506
+/Game/Audio/SFX/Weapons/Dagger_Stab.uasset     (CurrentWeaponType 4)  Mixkit 1487
+/Game/Audio/SFX/Weapons/AK47_Fire.uasset       (CurrentWeaponType 5)  Mixkit 1662 (reuse — same as Minigun)
+/Game/Audio/SFX/Weapons/Sniper_Fire.uasset     (CurrentWeaponType 6)  Mixkit 1693
 ```
+
+Source `.mp3` files ship alongside each `.uasset` so they can be re-imported
+or auditioned outside UE. To swap any clip: drop a new `.mp3`/`.wav` over
+the existing source file and re-import in editor (right-click in Content
+Browser → Reimport).
 
 Index in `FireSoundPaths[]` matches `CurrentWeaponType`. If Cole adds an
 8th weapon type (e.g. flamethrower), append a path to that array — out-of-
 range indices are bounds-checked and silently skipped.
+
+**AK-47 currently shares the Minigun clip** (Mixkit doesn't have a
+distinct rifle SFX free). Worth replacing if it's bothersome — try
+OpenGameArt or GameSounds.xyz for a CC0 rifle.
 
 ---
 
