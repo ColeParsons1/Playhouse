@@ -25,6 +25,7 @@
 #include "Core/PHCPlayerController.h"
 #include "Core/PHCCitySubsystem.h"
 #include "Core/PHCGameInstance.h"
+#include "Audio/PHCAudio.h"
 #include "Vehicle/PHCMissileProjectile.h"
 #include "Vehicle/PHCNukeExplosion.h"
 #include "Vehicle/PHCRaptorPawn.h"
@@ -1087,6 +1088,52 @@ void APHCCityCharacter::Tick(float DeltaTime)
 
 	// Ensure old body meshes stay hidden (Mixamo replaces them)
 	HideOldBodyMeshes();
+
+	// ---- Footstep cadence (sneaker-on-concrete) ----------------------------
+	// Plays a randomly-picked run/walk foley sample at a speed-scaled interval
+	// while moving. Speed is computed from world-position delta because the
+	// character moves via AddActorWorldOffset (GetVelocity() returns 0).
+	if (IsLocallyControlled() && DeltaTime > KINDA_SMALL_NUMBER)
+	{
+		const FVector CurLoc = GetActorLocation();
+		const float HorizDelta = FVector(CurLoc.X - LastFootstepLocation.X,
+		                                  CurLoc.Y - LastFootstepLocation.Y, 0.f).Size();
+		const float Speed2D = HorizDelta / DeltaTime;
+		LastFootstepLocation = CurLoc;
+
+		if (Speed2D > 50.f && bHasBeenGrounded)
+		{
+			FootstepTimer -= DeltaTime;
+			if (FootstepTimer <= 0.f)
+			{
+				const bool bRunning = bIsSprinting || Speed2D > (WalkSpeed * 0.6f);
+				FootstepTimer = bRunning ? 0.28f : 0.42f;
+
+				static const TArray<FString> RunSounds = {
+					TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_run_03.Foley_fs_1p_sneaker_concrete_run_03"),
+					TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_run_07.Foley_fs_1p_sneaker_concrete_run_07"),
+					TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_run_11.Foley_fs_1p_sneaker_concrete_run_11"),
+					TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_run_15.Foley_fs_1p_sneaker_concrete_run_15"),
+					TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_run_19.Foley_fs_1p_sneaker_concrete_run_19"),
+					TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_run_23.Foley_fs_1p_sneaker_concrete_run_23"),
+					TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_run_27.Foley_fs_1p_sneaker_concrete_run_27"),
+				};
+				static const TArray<FString> WalkSounds = {
+					TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_walk_03.Foley_fs_1p_sneaker_concrete_walk_03"),
+					TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_walk_09.Foley_fs_1p_sneaker_concrete_walk_09"),
+					TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_walk_15.Foley_fs_1p_sneaker_concrete_walk_15"),
+					TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_walk_21.Foley_fs_1p_sneaker_concrete_walk_21"),
+					TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_walk_27.Foley_fs_1p_sneaker_concrete_walk_27"),
+				};
+				PHCAudio::PlayRandomOneShotAtLocation(GetWorld(),
+					bRunning ? RunSounds : WalkSounds, GetActorLocation(), 0.7f);
+			}
+		}
+		else
+		{
+			FootstepTimer = 0.f;
+		}
+	}
 
 	// If attached to a vehicle as a visible rider (dirt bike), skip all
 	// movement and ground-following — the vehicle handles positioning.
@@ -3811,6 +3858,15 @@ void APHCCityCharacter::HandleJumpStarted(const FInputActionValue& /*Value*/)
 		ManualVelocityZ = 500.f; // higher jump to make wall run easier to reach
 		bHasBeenGrounded = false;
 		bWasGrounded = false;
+
+		static const TArray<FString> JumpSounds = {
+			TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_jump_01.Foley_fs_1p_sneaker_concrete_jump_01"),
+			TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_jump_05.Foley_fs_1p_sneaker_concrete_jump_05"),
+			TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_jump_09.Foley_fs_1p_sneaker_concrete_jump_09"),
+			TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_jump_13.Foley_fs_1p_sneaker_concrete_jump_13"),
+			TEXT("/Game/Audio/Foley/SoundWaves/Sneaker/Concrete/Foley_fs_1p_sneaker_concrete_jump_17.Foley_fs_1p_sneaker_concrete_jump_17"),
+		};
+		PHCAudio::PlayRandomOneShotAtLocation(GetWorld(), JumpSounds, GetActorLocation(), 1.0f);
 	}
 }
 
@@ -3872,6 +3928,22 @@ void APHCCityCharacter::FireWeapon()
 
 	UWorld* World = GetWorld();
 	if (!World) return;
+
+	// Per-weapon fire SFX. Stub paths — drop wavs at /Game/Audio/SFX/Weapons/
+	// to wire them up. PHCAudio logs a warning if the asset is missing.
+	static const FString FireSoundPaths[] = {
+		TEXT("/Game/Audio/SFX/Weapons/Minigun_Fire.Minigun_Fire"),
+		TEXT("/Game/Audio/SFX/Weapons/RPG_Fire.RPG_Fire"),
+		TEXT("/Game/Audio/SFX/Weapons/Sword_Swing.Sword_Swing"),
+		TEXT("/Game/Audio/SFX/Weapons/Scythe_Swing.Scythe_Swing"),
+		TEXT("/Game/Audio/SFX/Weapons/Dagger_Stab.Dagger_Stab"),
+		TEXT("/Game/Audio/SFX/Weapons/AK47_Fire.AK47_Fire"),
+		TEXT("/Game/Audio/SFX/Weapons/Sniper_Fire.Sniper_Fire"),
+	};
+	if (CurrentWeaponType >= 0 && CurrentWeaponType < UE_ARRAY_COUNT(FireSoundPaths))
+	{
+		PHCAudio::PlayOneShotAtLocation(World, FireSoundPaths[CurrentWeaponType], GetActorLocation(), 1.0f);
+	}
 
 	// Use controller rotation (includes camera pitch) so bullets go where you're looking
 	const FRotator SpawnRot = GetController()

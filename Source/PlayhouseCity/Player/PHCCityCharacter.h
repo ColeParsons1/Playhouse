@@ -174,6 +174,12 @@ public:
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "PHC|Movement")
 	bool bIsSprinting = false;
 
+	/** Counts down to next footstep one-shot. Set in Tick. */
+	float FootstepTimer = 0.f;
+	/** Previous-tick world location, used to compute real movement speed
+	 *  (the character moves via AddActorWorldOffset so GetVelocity()==0). */
+	FVector LastFootstepLocation = FVector::ZeroVector;
+
 	/** True while the player is on a mushroom trip — replicated so other
 	 *  clients can hide this character (invisible to others while tripping). */
 	UPROPERTY(Replicated)

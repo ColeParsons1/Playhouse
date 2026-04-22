@@ -50,6 +50,7 @@
 #include "Vehicle/PHCNukeExplosion.h"
 #include "Core/PHCPlayerController.h"
 #include "Core/PHCGameInstance.h"
+#include "Audio/PHCAudio.h"
 #include "Economy/PHCEconomyManager.h"
 #include "TimerManager.h"
 #include "IImageWrapperModule.h"
@@ -366,6 +367,12 @@ void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCCityGameMode::BeginPlay -- Spawning city."));
 	SpawnCityEnvironment();
+
+	// Ambient soundscape: looping music bed + wind + birds. PHCAudio gracefully
+	// no-ops with a warning if a layer is missing — never crashes.
+	PHCAudio::PlayAmbientLoop2D(&InWorld, TEXT("/Game/Audio/Ambient/Starter_Music01.Starter_Music01"), 0.35f);
+	PHCAudio::PlayAmbientLoop2D(&InWorld, TEXT("/Game/Audio/Ambient/Starter_Wind05.Starter_Wind05"), 0.5f);
+	PHCAudio::PlayAmbientLoop2D(&InWorld, TEXT("/Game/Audio/Ambient/Starter_Birds01.Starter_Birds01"), 0.4f);
 }
 
 void UPHCCitySubsystem::Deinitialize()
