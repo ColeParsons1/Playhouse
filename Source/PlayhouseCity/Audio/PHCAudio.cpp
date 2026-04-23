@@ -81,3 +81,36 @@ void PHCAudio::PlayRandomOneShotAtLocation(UWorld* World, const TArray<FString>&
 	const int32 Index = FMath::RandRange(0, Paths.Num() - 1);
 	PlayOneShotAtLocation(World, Paths[Index], Location, VolumeMultiplier);
 }
+
+UAudioComponent* PHCAudio::SpawnAttached3DLoop(USceneComponent* AttachTo, const FString& Path,
+	float VolumeMultiplier, float PitchMultiplier)
+{
+	if (!AttachTo) return nullptr;
+	USoundBase* Sound = LoadSound(Path);
+	if (!Sound) return nullptr;
+
+	// Same loop-mutation trick used by PlayAmbientLoop2D so raw .wav imports
+	// loop without needing a SoundCue wrapper. SoundCues set their own loop
+	// behavior in their graph.
+	if (USoundWave* Wave = Cast<USoundWave>(Sound))
+	{
+		Wave->bLooping = true;
+	}
+
+	AActor* Owner = AttachTo->GetOwner();
+	if (!Owner) return nullptr;
+
+	UAudioComponent* AC = NewObject<UAudioComponent>(Owner);
+	if (!AC) return nullptr;
+
+	AC->SetSound(Sound);
+	AC->SetVolumeMultiplier(VolumeMultiplier);
+	AC->SetPitchMultiplier(PitchMultiplier);
+	AC->bAutoActivate = false;
+	AC->bAutoDestroy = false;
+	AC->bAllowSpatialization = true;
+	AC->AttachToComponent(AttachTo, FAttachmentTransformRules::KeepRelativeTransform);
+	AC->RegisterComponent();
+	AC->Play();
+	return AC;
+}

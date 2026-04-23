@@ -496,6 +496,9 @@ public:
 	// -- Weapon state ---------------------------------------------------------
 
 	int32 CurrentWeaponType = 3; // -1=none, 0=Gun, 1=RPG, 2=Sword, 3=Scythe, 4=Dagger, 5=AK47, 6=Sniper, 7=Flamethrower
+	FName WeaponRightHandBone = NAME_None;
+	FName WeaponLeftHandBone = NAME_None;
+	bool bLoggedWeaponBoneResolve = false;
 
 	float ScytheSwingTimer = 0.f;  // >0 = currently swinging
 
@@ -674,4 +677,7 @@ protected:
 
 private:
 	void CreateInputAssets();
+	void ResolveWeaponHandBones();
+	FVector GetWeaponHandLocalPosition(bool bLeftHand, const FVector& FallbackLocal) const;
+	float GetWeaponSupportAimPitch(float FallbackPitch) const;
 };

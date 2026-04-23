@@ -1,6 +1,8 @@
 // Copyright PlayhouseCity. All Rights Reserved.
 
 #include "Vehicle/PHCRaptorPawn.h"
+#include "Audio/PHCAudio.h"
+#include "Components/AudioComponent.h"
 #include "PlayhouseCity.h"
 #include "Net/UnrealNetwork.h"
 #include "Components/BoxComponent.h"
@@ -405,6 +407,11 @@ APHCRaptorPawn::APHCRaptorPawn()
 void APHCRaptorPawn::BeginPlay()
 {
 	Super::BeginPlay();
+
+	EngineAC = PHCAudio::SpawnAttached3DLoop(VehicleCollision,
+		TEXT("/Game/Audio/SFX/Vehicles/JetEngine_Loop.JetEngine_Loop"),
+		0.f, 0.95f);
+
 	CreateInputAssets();
 
 	// -- Colors --
@@ -672,6 +679,13 @@ void APHCRaptorPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 void APHCRaptorPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (EngineAC)
+	{
+		const float SpeedRatio = FMath::Clamp(FMath::Abs(CurrentSpeed) / FMath::Max(MaxSpeed, 1.f), 0.f, 1.f);
+		EngineAC->SetPitchMultiplier(FMath::Lerp(0.8f, 1.5f, SpeedRatio));
+		EngineAC->SetVolumeMultiplier(bIsOccupied ? FMath::Lerp(0.5f, 1.0f, SpeedRatio) : 0.f);
+	}
 
 	// ---- Damage flash ----
 	if (DamageFlashTimer > 0.f)

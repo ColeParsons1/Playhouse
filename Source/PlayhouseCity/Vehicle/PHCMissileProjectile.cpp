@@ -11,6 +11,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 #include "EngineUtils.h"
+#include "Kismet/GameplayStatics.h"
 #include "Core/PHCCitySubsystem.h"
 #include "Player/PHCCityCharacter.h"
 #include "Vehicle/PHCNukeExplosion.h"
@@ -336,13 +337,17 @@ void APHCMissileProjectile::SpawnExplosion(const FVector& Location)
 	// RPG rockets get a 0.5× actor scale so their blast reads as a tactical
 	// strike rather than a full nuke; the scale cascades to the NS_NuclearExplosion
 	// Niagara (child of the root) via normal transform inheritance.
-	FActorSpawnParameters SP;
-	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	APHCNukeExplosion* Exp = World->SpawnActor<APHCNukeExplosion>(
-		APHCNukeExplosion::StaticClass(), Location, FRotator::ZeroRotator, SP);
-	if (Exp && bIsRPGRocket)
+	const FVector ExplosionScale = bIsRPGRocket ? FVector(0.5f) : FVector(1.f);
+	const FTransform SpawnTM(FRotator::ZeroRotator, Location, ExplosionScale);
+	APHCNukeExplosion* Exp = World->SpawnActorDeferred<APHCNukeExplosion>(
+		APHCNukeExplosion::StaticClass(),
+		SpawnTM,
+		nullptr,
+		nullptr,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (Exp)
 	{
-		Exp->SetActorScale3D(FVector(0.5f));
+		UGameplayStatics::FinishSpawningActor(Exp, SpawnTM);
 	}
 
 	// Damage nearby Lurkers (1500 UU radius, 100 damage — matches AC-130 105mm)

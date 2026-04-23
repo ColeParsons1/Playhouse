@@ -2,6 +2,8 @@
 
 #include "PHCTankPawn.h"
 #include "Vehicle/PHCNukeExplosion.h"
+#include "Audio/PHCAudio.h"
+#include "Components/AudioComponent.h"
 #include "PlayhouseCity.h"
 #include "Net/UnrealNetwork.h"
 #include "Components/BoxComponent.h"
@@ -373,6 +375,10 @@ void APHCTankPawn::BeginPlay()
 {
 	Super::BeginPlay();
 
+	EngineAC = PHCAudio::SpawnAttached3DLoop(VehicleCollision,
+		TEXT("/Game/Audio/SFX/Vehicles/TankIdle_Loop.TankIdle_Loop"),
+		0.f, 0.7f);
+
 	CreateInputAssets();
 
 	// Load materials
@@ -485,6 +491,13 @@ void APHCTankPawn::BeginPlay()
 void APHCTankPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (EngineAC)
+	{
+		const float SpeedRatio = FMath::Clamp(FMath::Abs(CurrentSpeed) / FMath::Max(MaxSpeed, 1.f), 0.f, 1.f);
+		EngineAC->SetPitchMultiplier(FMath::Lerp(0.6f, 1.2f, SpeedRatio));
+		EngineAC->SetVolumeMultiplier(bIsOccupied ? FMath::Lerp(0.5f, 1.0f, SpeedRatio) : 0.f);
+	}
 
 	// Damage flash
 	if (DamageFlashTimer > 0.f)

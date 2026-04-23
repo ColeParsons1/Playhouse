@@ -1,6 +1,8 @@
 // Copyright PlayhouseCity. All Rights Reserved.
 
 #include "Vehicle/PHCBlackHawkPawn.h"
+#include "Audio/PHCAudio.h"
+#include "Components/AudioComponent.h"
 #include "PlayhouseCity.h"
 #include "Net/UnrealNetwork.h"
 #include "Components/BoxComponent.h"
@@ -309,6 +311,11 @@ APHCBlackHawkPawn::APHCBlackHawkPawn()
 void APHCBlackHawkPawn::BeginPlay()
 {
 	Super::BeginPlay();
+
+	EngineAC = PHCAudio::SpawnAttached3DLoop(VehicleCollision,
+		TEXT("/Game/Audio/SFX/Vehicles/HelicopterRotor_Loop.HelicopterRotor_Loop"),
+		0.f, 1.0f);
+
 	CreateInputAssets();
 
 	// -- Stealth gray colors (matching F-22 Raptor) --
@@ -546,6 +553,13 @@ void APHCBlackHawkPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 void APHCBlackHawkPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (EngineAC)
+	{
+		const float SpeedRatio = FMath::Clamp(FMath::Abs(CurrentSpeed) / FMath::Max(MaxSpeed, 1.f), 0.f, 1.f);
+		EngineAC->SetPitchMultiplier(FMath::Lerp(0.85f, 1.3f, SpeedRatio));
+		EngineAC->SetVolumeMultiplier(bIsOccupied ? FMath::Lerp(0.5f, 1.0f, SpeedRatio) : 0.f);
+	}
 
 	// ---- Rotor animation (runs whether occupied or not) ----
 	{

@@ -16,6 +16,7 @@ class UInputMappingContext;
 class UInputAction;
 class UMaterial;
 class UMaterialInstanceDynamic;
+class UAudioComponent;
 struct FInputActionValue;
 
 /**
@@ -179,4 +180,7 @@ private:
 
 	/** ClearCoat material for paint. */
 	UPROPERTY(Transient) TObjectPtr<UMaterial> ClearCoatMaterial;
+
+	/** 3D-attached looping engine sound (volume/pitch modulated by speed). */
+	UPROPERTY() TObjectPtr<UAudioComponent> EngineAC;
 };

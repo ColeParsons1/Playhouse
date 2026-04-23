@@ -364,6 +364,80 @@ APHCCityCharacter::APHCCityCharacter()
 	CharacterCollision->SetBoundsScale(200.f);
 }
 
+void APHCCityCharacter::ResolveWeaponHandBones()
+{
+	if (!CharacterSkelMesh || !CharacterSkelMesh->GetSkeletalMeshAsset())
+	{
+		return;
+	}
+
+	auto ResolveFirstExisting = [&](const TArray<FName>& Candidates) -> FName
+	{
+		for (const FName& Name : Candidates)
+		{
+			if (CharacterSkelMesh->DoesSocketExist(Name) || CharacterSkelMesh->GetBoneIndex(Name) != INDEX_NONE)
+			{
+				return Name;
+			}
+		}
+		return NAME_None;
+	};
+
+	WeaponRightHandBone = ResolveFirstExisting({
+		FName(TEXT("mixamorig:RightHand")),
+		FName(TEXT("RightHand")),
+		FName(TEXT("hand_r")),
+		FName(TEXT("R_Hand")),
+		FName(TEXT("RightHandSocket"))
+	});
+
+	WeaponLeftHandBone = ResolveFirstExisting({
+		FName(TEXT("mixamorig:LeftHand")),
+		FName(TEXT("LeftHand")),
+		FName(TEXT("hand_l")),
+		FName(TEXT("L_Hand")),
+		FName(TEXT("LeftHandSocket"))
+	});
+
+	if (!bLoggedWeaponBoneResolve)
+	{
+		bLoggedWeaponBoneResolve = true;
+		UE_LOG(LogPlayhouseCity, Log,
+			TEXT("Weapon hand bones resolved: Right=%s Left=%s"),
+			WeaponRightHandBone.IsNone() ? TEXT("NONE") : *WeaponRightHandBone.ToString(),
+			WeaponLeftHandBone.IsNone() ? TEXT("NONE") : *WeaponLeftHandBone.ToString());
+	}
+}
+
+FVector APHCCityCharacter::GetWeaponHandLocalPosition(bool bLeftHand, const FVector& FallbackLocal) const
+{
+	if (!CharacterSkelMesh || !CharacterSkelMesh->GetSkeletalMeshAsset())
+	{
+		return FallbackLocal;
+	}
+
+	const FName BoneName = bLeftHand ? WeaponLeftHandBone : WeaponRightHandBone;
+	if (BoneName.IsNone())
+	{
+		return FallbackLocal;
+	}
+
+	const FVector HandWorld = CharacterSkelMesh->GetSocketLocation(BoneName);
+	return GetActorTransform().InverseTransformPosition(HandWorld);
+}
+
+float APHCCityCharacter::GetWeaponSupportAimPitch(float FallbackPitch) const
+{
+	if (!CharacterSkelMesh || !CharacterSkelMesh->GetSkeletalMeshAsset() || WeaponRightHandBone.IsNone())
+	{
+		return FallbackPitch;
+	}
+
+	// Use socket/bone world rotation and convert to actor-relative pitch.
+	const FRotator HandRotWS = CharacterSkelMesh->GetSocketRotation(WeaponRightHandBone);
+	return FRotator::NormalizeAxis(HandRotWS.Pitch - GetActorRotation().Pitch);
+}
+
 // ---------------------------------------------------------------------------
 // Input asset creation (programmatic -- no .uasset files needed)
 // ---------------------------------------------------------------------------
@@ -548,6 +622,7 @@ void APHCCityCharacter::BeginPlay()
 	if (MixamoMesh && CharacterSkelMesh)
 	{
 		CharacterSkelMesh->SetSkeletalMeshAsset(MixamoMesh);
+		ResolveWeaponHandBones();
 		UE_LOG(LogPlayhouseCity, Warning, TEXT("Mixamo mesh loaded: %s"), *MixamoMesh->GetName());
 	}
 	else
@@ -2531,9 +2606,21 @@ void APHCCityCharacter::Tick(float DeltaTime)
 		const FVector FPCamOrigin(0.f, 0.f, 96.f); // matches CameraBoom SocketOffset
 		const FRotator FPPitchRot(-FPCamPitch, 0.f, 0.f);
 
-		// Third-person grip: forearm rotation so weapon follows arm swing
-		const float ForearmPitch = (!bFirstPersonMode && RightForearmMesh)
+		const FVector LegacyRightHandLocal = RightHandMesh
+			? RightHandMesh->GetRelativeLocation()
+			: FVector(0.f, 26.f, 6.f);
+		const FVector LegacyLeftHandLocal = LeftHandMesh
+			? LeftHandMesh->GetRelativeLocation()
+			: FVector(0.f, -26.f, 6.f);
+		const FVector MixamoRightHandLocal = GetWeaponHandLocalPosition(false, LegacyRightHandLocal);
+		const FVector MixamoLeftHandLocal = GetWeaponHandLocalPosition(true, LegacyLeftHandLocal);
+
+		// Third-person grip: prefer Mixamo hand-bone pitch, fallback to legacy forearm pitch.
+		const float LegacyForearmPitch = (!bFirstPersonMode && RightForearmMesh)
 			? RightForearmMesh->GetRelativeRotation().Pitch
+			: 0.f;
+		const float ForearmPitch = !bFirstPersonMode
+			? GetWeaponSupportAimPitch(LegacyForearmPitch)
 			: 0.f;
 
 		// ---- FP Weapon Bob (figure-8 using WalkCyclePhase) ----
@@ -2589,9 +2676,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			{
 				const FVector RHand = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FVector(25.f, 12.f, -18.f) + FPWeaponOffset)
-					: (RightHandMesh
-						? RightHandMesh->GetRelativeLocation() + FVector(-3.f, 0.f, 0.f)
-						: FVector(0.f, 26.f, 6.f));
+					: (MixamoRightHandLocal + FVector(-3.f, 0.f, 0.f));
 
 				float HoldPitch = bFirstPersonMode ? -15.f : ForearmPitch - 15.f;
 
@@ -2654,9 +2739,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			{
 				const FVector RHand = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FVector(25.f, 12.f, -18.f) + FPWeaponOffset)
-					: (RightHandMesh
-						? RightHandMesh->GetRelativeLocation() + FVector(-3.f, 0.f, 0.f)
-						: FVector(0.f, 26.f, 6.f));
+					: (MixamoRightHandLocal + FVector(-3.f, 0.f, 0.f));
 
 				// Hold angle: blade points upward, follows forearm in 3P
 				float HoldPitch = bFirstPersonMode ? -15.f : ForearmPitch - 15.f;
@@ -2703,9 +2786,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 			{
 				const FVector RHand = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FVector(25.f, 15.f, -21.f) + FPWeaponOffset)
-					: (RightHandMesh
-						? RightHandMesh->GetRelativeLocation() + FVector(-3.f, 0.f, 0.f)
-						: FVector(0.f, 26.f, 6.f));
+					: (MixamoRightHandLocal + FVector(-3.f, 0.f, 0.f));
 
 				// Hold angle: follows forearm in 3P
 				float HoldPitch = bFirstPersonMode ? -15.f : ForearmPitch - 15.f;
@@ -2753,12 +2834,8 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				const FVector GripCenter = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(MiniHip, MiniADS, ADSAlpha) + FPWeaponOffset)
 					: [&]() {
-						const FVector RH = RightHandMesh
-							? RightHandMesh->GetRelativeLocation() + FVector(-5.f, 0.f, 0.f)
-							: FVector(20.f, 26.f, 40.f);
-						const FVector LH = LeftHandMesh
-							? LeftHandMesh->GetRelativeLocation() + FVector(-5.f, 0.f, 0.f)
-							: FVector(22.f, -26.f, 38.f);
+						const FVector RH = MixamoRightHandLocal + FVector(-5.f, 0.f, 0.f);
+						const FVector LH = MixamoLeftHandLocal + FVector(-5.f, 0.f, 0.f);
 						return (RH + LH) * 0.5f;
 					}();
 
@@ -2842,9 +2919,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				const FVector RPGADS(22.f, 0.f, -16.f);
 				const FVector GripPt = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(RPGHip, RPGADS, ADSAlpha) + FPWeaponOffset)
-					: (RightHandMesh
-						? RightHandMesh->GetRelativeLocation() + FVector(-5.f, 0.f, 0.f)
-						: FVector(0.f, 26.f, 6.f));
+					: (MixamoRightHandLocal + FVector(-5.f, 0.f, 0.f));
 
 				const float AimPitch = bFirstPersonMode ? FPCamPitch : -ForearmPitch;
 				const FRotator AimRot(-AimPitch, 0.f, 0.f);
@@ -2945,9 +3020,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				const FVector AKADSPos(22.f, 0.f, -15.f);
 				const FVector GripPt = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(AKHip, AKADSPos, ADSAlpha) + FPWeaponOffset)
-					: (RightHandMesh
-						? RightHandMesh->GetRelativeLocation() + FVector(-5.f, 0.f, 0.f)
-						: FVector(0.f, 26.f, 6.f));
+					: (MixamoRightHandLocal + FVector(-5.f, 0.f, 0.f));
 
 				// Aim pitch: camera in FP, forearm in TP
 				const float AimPitch = bFirstPersonMode ? FPCamPitch : -ForearmPitch;
@@ -3027,9 +3100,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				const FVector SniperADS(20.f, 2.f, -16.f);
 				const FVector GripPt = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(SniperHip, SniperADS, ADSAlpha) + FPWeaponOffset)
-					: (RightHandMesh
-						? RightHandMesh->GetRelativeLocation() + FVector(-5.f, 0.f, 0.f)
-						: FVector(0.f, 26.f, 6.f));
+					: (MixamoRightHandLocal + FVector(-5.f, 0.f, 0.f));
 
 				const float AimPitch = bFirstPersonMode ? FPCamPitch : -ForearmPitch;
 				const FRotator AimRot(-AimPitch, 0.f, 0.f);
@@ -3089,9 +3160,7 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				const FVector FTADS(22.f, 0.f, -16.f);
 				const FVector GripPt = bFirstPersonMode
 					? FPCamOrigin + FPPitchRot.RotateVector(FMath::Lerp(FTHip, FTADS, ADSAlpha) + FPWeaponOffset)
-					: (RightHandMesh
-						? RightHandMesh->GetRelativeLocation() + FVector(-5.f, 0.f, 0.f)
-						: FVector(0.f, 26.f, 6.f));
+					: (MixamoRightHandLocal + FVector(-5.f, 0.f, 0.f));
 
 				const float AimPitch = bFirstPersonMode ? FPCamPitch : -ForearmPitch;
 				const FRotator AimRot(-AimPitch, 0.f, 0.f);
@@ -3550,13 +3619,19 @@ void APHCCityCharacter::Tick(float DeltaTime)
 				// Spawn MASSIVE nuke at map center
 				if (UWorld* W = GetWorld())
 				{
-					FActorSpawnParameters NukeSP;
-					NukeSP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-					APHCNukeExplosion* Nuke = W->SpawnActor<APHCNukeExplosion>(
-						APHCNukeExplosion::StaticClass(), FVector(0.f, 0.f, 0.f), FRotator::ZeroRotator, NukeSP);
+					const FTransform NukeTM(
+						FRotator::ZeroRotator,
+						FVector(0.f, 0.f, 0.f),
+						FVector(20.f, 20.f, 20.f));
+					APHCNukeExplosion* Nuke = W->SpawnActorDeferred<APHCNukeExplosion>(
+						APHCNukeExplosion::StaticClass(),
+						NukeTM,
+						nullptr,
+						nullptr,
+						ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 					if (Nuke)
 					{
-						Nuke->SetActorScale3D(FVector(20.f, 20.f, 20.f)); // doubled — MASSIVE tactical nuke
+						UGameplayStatics::FinishSpawningActor(Nuke, NukeTM); // doubled — MASSIVE tactical nuke
 					}
 				}
 			}

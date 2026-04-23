@@ -16,6 +16,7 @@ class UInputMappingContext;
 class UInputAction;
 class UMaterial;
 class UMaterialInstanceDynamic;
+class UAudioComponent;
 struct FInputActionValue;
 
 /**
@@ -241,4 +242,7 @@ private:
 	TArray<float> ExhaustPuffAge;
 	int32 NextExhaustPuff = 0;
 	float ExhaustSpawnTimer = 0.f;
+
+	/** 3D-attached looping engine sound (volume/pitch modulated by speed). */
+	UPROPERTY() TObjectPtr<UAudioComponent> EngineAC;
 };

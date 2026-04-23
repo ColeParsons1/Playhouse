@@ -149,11 +149,41 @@ local copy.
 
 ---
 
+## Vehicle engine loops (now shipped — Mixkit clips)
+
+Looping spatialized engine SFX wired into 7 vehicle pawns. Each spawns a
+`UAudioComponent` attached to its `VehicleCollision` root in `BeginPlay`,
+then modulates pitch by `CurrentSpeed/MaxSpeed` and gates volume on
+`bIsOccupied` in `Tick`. Idle vehicles are silent; mounted vehicles fade
+in from a base idle volume to full at top speed, with pitch sweeping
+upward as well.
+
+```
+/Game/Audio/SFX/Vehicles/CarEngine_Loop.uasset           Lambo + DuneBuggy   Mixkit 1553
+/Game/Audio/SFX/Vehicles/MotorcycleEngine_Loop.uasset    DirtBike            Mixkit 2721
+/Game/Audio/SFX/Vehicles/HelicopterRotor_Loop.uasset     BlackHawk           Mixkit 2704
+/Game/Audio/SFX/Vehicles/JetEngine_Loop.uasset           Blackbird + Raptor  Mixkit 1568
+/Game/Audio/SFX/Vehicles/TankIdle_Loop.uasset            Tank                Mixkit 2753
+```
+
+`PHCAudio` gained one new helper: `SpawnAttached3DLoop(USceneComponent*,
+path, volume, pitch)` — returns a looping, spatialized `UAudioComponent`
+parented to the vehicle. Same null-safety contract as the rest of the
+namespace (logs a warning + returns nullptr if the asset is missing).
+
+Source `.mp3` files ship alongside each `.uasset`. To swap any clip,
+drop a new `.mp3`/`.wav` over the source and re-import. `Content/Python/
+import_vehicle_sfx.py` is the bulk-import script (Tools -> Execute
+Python Script).
+
+RollerBlades is the only vehicle without an engine loop — wheel rolling
+sound belongs in character foley territory if you want it.
+
+---
+
 ## Suggested next hooks (not yet wired)
 
 If Cole wants more audio depth, the natural next places:
-- **Vehicle engine loops** — `UAudioComponent` attached to each vehicle
-  pawn, pitch by speed. Hook in vehicle pawn constructors + Tick.
 - **Explosion SFX** — call `PHCAudio::PlayOneShotAtLocation` from
   `PHCNukeExplosion::BeginPlay`.
 - **Weapon impact / hit markers** — already-hit code paths in `FireWeapon`

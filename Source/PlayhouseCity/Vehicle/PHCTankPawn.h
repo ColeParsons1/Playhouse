@@ -17,6 +17,7 @@ class UInputMappingContext;
 class UInputAction;
 class UMaterial;
 class UMaterialInstanceDynamic;
+class UAudioComponent;
 struct FInputActionValue;
 
 /**
@@ -206,4 +207,7 @@ private:
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> OliveDrabMeshes;
 
 	float WheelSpinAngle = 0.f;
+
+	/** 3D-attached looping engine sound (volume/pitch modulated by speed). */
+	UPROPERTY() TObjectPtr<UAudioComponent> EngineAC;
 };

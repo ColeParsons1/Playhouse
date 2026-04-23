@@ -2,6 +2,8 @@
 
 #include "Vehicle/PHCDirtBikePawn.h"
 #include "Vehicle/PHCNukeExplosion.h"
+#include "Audio/PHCAudio.h"
+#include "Components/AudioComponent.h"
 #include "PlayhouseCity.h"
 #include "Net/UnrealNetwork.h"
 #include "Components/BoxComponent.h"
@@ -287,6 +289,11 @@ APHCDirtBikePawn::APHCDirtBikePawn()
 void APHCDirtBikePawn::BeginPlay()
 {
 	Super::BeginPlay();
+
+	EngineAC = PHCAudio::SpawnAttached3DLoop(VehicleCollision,
+		TEXT("/Game/Audio/SFX/Vehicles/MotorcycleEngine_Loop.MotorcycleEngine_Loop"),
+		0.f, 0.9f);
+
 	CreateInputAssets();
 
 	const FLinearColor BikeRed(0.75f, 0.12f, 0.05f);
@@ -502,6 +509,13 @@ void APHCDirtBikePawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 void APHCDirtBikePawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (EngineAC)
+	{
+		const float SpeedRatio = FMath::Clamp(FMath::Abs(CurrentSpeed) / FMath::Max(MaxSpeed, 1.f), 0.f, 1.f);
+		EngineAC->SetPitchMultiplier(FMath::Lerp(0.8f, 1.6f, SpeedRatio));
+		EngineAC->SetVolumeMultiplier(bIsOccupied ? FMath::Lerp(0.4f, 1.0f, SpeedRatio) : 0.f);
+	}
 
 	// Damage flash
 	if (DamageFlashTimer > 0.f)

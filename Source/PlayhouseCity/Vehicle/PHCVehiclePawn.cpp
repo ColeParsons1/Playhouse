@@ -2,6 +2,8 @@
 
 #include "Vehicle/PHCVehiclePawn.h"
 #include "Vehicle/PHCNukeExplosion.h"
+#include "Audio/PHCAudio.h"
+#include "Components/AudioComponent.h"
 #include "PlayhouseCity.h"
 #include "Net/UnrealNetwork.h"
 #include "Components/BoxComponent.h"
@@ -266,6 +268,10 @@ void APHCVehiclePawn::BeginPlay()
 {
 	Super::BeginPlay();
 
+	EngineAC = PHCAudio::SpawnAttached3DLoop(VehicleCollision,
+		TEXT("/Game/Audio/SFX/Vehicles/CarEngine_Loop.CarEngine_Loop"),
+		0.f, 0.8f);
+
 	// Ground plane has NoCollision so the downward trace won't find it.
 	// Vehicle is spawned at Z=0 (ground level).
 	bHasBeenGrounded = true;
@@ -486,6 +492,13 @@ void APHCVehiclePawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 void APHCVehiclePawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (EngineAC)
+	{
+		const float SpeedRatio = FMath::Clamp(FMath::Abs(CurrentSpeed) / FMath::Max(MaxSpeed, 1.f), 0.f, 1.f);
+		EngineAC->SetPitchMultiplier(FMath::Lerp(0.7f, 1.4f, SpeedRatio));
+		EngineAC->SetVolumeMultiplier(bIsOccupied ? FMath::Lerp(0.4f, 1.0f, SpeedRatio) : 0.f);
+	}
 
 	// Damage flash
 	if (DamageFlashTimer > 0.f)

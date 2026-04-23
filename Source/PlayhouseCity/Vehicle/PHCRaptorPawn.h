@@ -17,6 +17,7 @@ class UMaterial;
 class UMaterialInstanceDynamic;
 class USpotLightComponent;
 class UPointLightComponent;
+class UAudioComponent;
 struct FInputActionValue;
 
 /**
@@ -274,4 +275,7 @@ private:
 
 	float BombCooldownRemaining = 0.f;
 	static constexpr float BombCooldown = 3.f;
+
+	/** 3D-attached looping engine sound (volume/pitch modulated by speed). */
+	UPROPERTY() TObjectPtr<UAudioComponent> EngineAC;
 };

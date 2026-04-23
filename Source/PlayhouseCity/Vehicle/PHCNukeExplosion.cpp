@@ -12,9 +12,41 @@
 #include "NiagaraSystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "HAL/PlatformTime.h"
+#include "HAL/IConsoleManager.h"
 #include "EngineUtils.h"
 #include "Player/PHCCityCharacter.h"
 #include "Core/PHCCitySubsystem.h"
+
+namespace PHCNukeExplosionCVars
+{
+	static TAutoConsoleVariable<int32> CVarEnableNiagara(
+		TEXT("phc.Nuke.EnableNiagara"),
+#if WITH_EDITOR
+		0,
+#else
+		1,
+#endif
+		TEXT("Enable NS_NuclearExplosion Niagara for APHCNukeExplosion. "
+			 "Disabled by default in editor for stability while iterating."),
+		ECVF_Default);
+
+	static TAutoConsoleVariable<float> CVarMaxNiagaraScale(
+		TEXT("phc.Nuke.MaxNiagaraActorScale"),
+#if WITH_EDITOR
+		6.0f,
+#else
+		20.0f,
+#endif
+		TEXT("Maximum APHCNukeExplosion actor scale allowed before spawning NS_NuclearExplosion."),
+		ECVF_Default);
+
+	static TAutoConsoleVariable<float> CVarGlobalEffectsMinScale(
+		TEXT("phc.Nuke.GlobalEffectsMinScale"),
+		10.0f,
+		TEXT("Minimum APHCNukeExplosion scale required to apply global gameplay effects "
+			 "(time dilation + full player reset/kill pass)."),
+		ECVF_Default);
+}
 
 APHCNukeExplosion::APHCNukeExplosion()
 {
@@ -87,8 +119,30 @@ void APHCNukeExplosion::BeginPlay()
 	Super::BeginPlay();
 	SetLifeSpan(TotalDuration);
 
+	const float MaxAllowedScale = FMath::Max(0.1f, PHCNukeExplosionCVars::CVarMaxNiagaraScale.GetValueOnGameThread());
+	const FVector InitialScale = GetActorScale3D();
+	const float InitialMaxAxis = InitialScale.GetAbsMax();
+	const float GlobalEffectsMinScale = FMath::Max(0.1f, PHCNukeExplosionCVars::CVarGlobalEffectsMinScale.GetValueOnGameThread());
+	const bool bApplyGlobalGameplayEffects = InitialMaxAxis >= GlobalEffectsMinScale;
+	if (InitialMaxAxis > MaxAllowedScale)
+	{
+		const float ScaleFactor = MaxAllowedScale / InitialMaxAxis;
+		SetActorScale3D(InitialScale * ScaleFactor);
+		UE_LOG(LogPlayhouseCity, Warning,
+			TEXT("APHCNukeExplosion scale clamped from (%.2f, %.2f, %.2f) to (%.2f, %.2f, %.2f)"),
+			InitialScale.X, InitialScale.Y, InitialScale.Z,
+			GetActorScale3D().X, GetActorScale3D().Y, GetActorScale3D().Z);
+	}
+	if (!bApplyGlobalGameplayEffects)
+	{
+		UE_LOG(LogPlayhouseCity, Verbose,
+			TEXT("APHCNukeExplosion global gameplay effects skipped (scale %.2f < %.2f)."),
+			InitialMaxAxis, GlobalEffectsMinScale);
+	}
+
 	// === Fab nuclear explosion Niagara — single system replaces the legacy
 	// 8-sphere / 100+ flame-jet custom effect. ===
+	if (PHCNukeExplosionCVars::CVarEnableNiagara.GetValueOnGameThread() != 0)
 	{
 		UNiagaraSystem* NukeFX = LoadObject<UNiagaraSystem>(nullptr,
 			TEXT("/Game/NuclearExplosion/Effects/NS_NuclearExplosion.NS_NuclearExplosion"));
@@ -108,6 +162,11 @@ void APHCNukeExplosion::BeginPlay()
 		{
 			UE_LOG(LogPlayhouseCity, Warning, TEXT("NS_NuclearExplosion FAILED to load"));
 		}
+	}
+	else
+	{
+		UE_LOG(LogPlayhouseCity, Warning,
+			TEXT("NS_NuclearExplosion skipped (phc.Nuke.EnableNiagara=0)."));
 	}
 
 	// Legacy mesh visuals (FireballCore, FlameBurstA/B/C, SmokePlume, clouds, debris,
@@ -164,41 +223,47 @@ void APHCNukeExplosion::BeginPlay()
 	}
 
 	// -- Kick off slight global time distortion (tracked in real seconds) --
-	RealStartTime = FPlatformTime::Seconds();
-	if (UWorld* W = GetWorld())
+	if (bApplyGlobalGameplayEffects)
 	{
-		UGameplayStatics::SetGlobalTimeDilation(this, TimeDilationPeak);
-		bTimeDilationRestored = false;
+		RealStartTime = FPlatformTime::Seconds();
+		if (UWorld* W = GetWorld())
+		{
+			UGameplayStatics::SetGlobalTimeDilation(this, TimeDilationPeak);
+			bTimeDilationRestored = false;
+		}
 	}
 
 	// -- Damage pass: kill all players, destroy NPC helicopters --
 	// Only the server has authority over health state. In Standalone/ListenServer each
 	// character's Role == ROLE_Authority locally; on clients, HasAuthority() is false so
 	// we skip (the server-side nuke spawn handles it).
-	if (UWorld* W = GetWorld())
+	if (bApplyGlobalGameplayEffects)
 	{
-		for (TActorIterator<APHCCityCharacter> It(W); It; ++It)
+		if (UWorld* W = GetWorld())
 		{
-			APHCCityCharacter* Ch = *It;
-			if (!Ch || !Ch->HasAuthority()) continue;
-			Ch->Health = 0.f;
-			Ch->MulticastDamageFlash();
-			Ch->ClientOnKilled();
-			Ch->Health = Ch->MaxHealth;
-			Ch->SetActorLocation(FVector(0.f, 0.f, 100.f));
-		}
-
-		if (UPHCCitySubsystem* Sub = W->GetSubsystem<UPHCCitySubsystem>())
-		{
-			if (Sub->NPCHelicopter && Sub->bNPCHeliVisible && !Sub->bNPCHeliCrashing)
+			for (TActorIterator<APHCCityCharacter> It(W); It; ++It)
 			{
-				Sub->NPCHeliHealth = 0.f;
-				Sub->OnNPCHeliDestroyed();
+				APHCCityCharacter* Ch = *It;
+				if (!Ch || !Ch->HasAuthority()) continue;
+				Ch->Health = 0.f;
+				Ch->MulticastDamageFlash();
+				Ch->ClientOnKilled();
+				Ch->Health = Ch->MaxHealth;
+				Ch->SetActorLocation(FVector(0.f, 0.f, 100.f));
 			}
-			if (Sub->NPCHelicopter2 && Sub->bNPCHeliVisible2 && !Sub->bNPCHeliCrashing2)
+
+			if (UPHCCitySubsystem* Sub = W->GetSubsystem<UPHCCitySubsystem>())
 			{
-				Sub->NPCHeliHealth2 = 0.f;
-				Sub->OnNPCHeli2Destroyed();
+				if (Sub->NPCHelicopter && Sub->bNPCHeliVisible && !Sub->bNPCHeliCrashing)
+				{
+					Sub->NPCHeliHealth = 0.f;
+					Sub->OnNPCHeliDestroyed();
+				}
+				if (Sub->NPCHelicopter2 && Sub->bNPCHeliVisible2 && !Sub->bNPCHeliCrashing2)
+				{
+					Sub->NPCHeliHealth2 = 0.f;
+					Sub->OnNPCHeli2Destroyed();
+				}
 			}
 		}
 	}

@@ -6,6 +6,7 @@
 
 class USoundBase;
 class UAudioComponent;
+class USceneComponent;
 class UWorld;
 
 /**
@@ -21,4 +22,14 @@ namespace PHCAudio
 	void PlayOneShot2D(UWorld* World, const FString& Path, float VolumeMultiplier = 1.f);
 	void PlayOneShotAtLocation(UWorld* World, const FString& Path, const FVector& Location, float VolumeMultiplier = 1.f);
 	void PlayRandomOneShotAtLocation(UWorld* World, const TArray<FString>& Paths, const FVector& Location, float VolumeMultiplier = 1.f);
+
+	/**
+	 * Spawn a looping, spatialized AudioComponent attached to the supplied scene
+	 * component. Used for vehicle engines, generators, etc. that should follow
+	 * a moving source. Returns the AudioComponent so the caller can modulate
+	 * pitch/volume per tick (e.g. by speed). Returns nullptr if the asset is
+	 * missing or AttachTo is null — safe to call early.
+	 */
+	UAudioComponent* SpawnAttached3DLoop(USceneComponent* AttachTo, const FString& Path,
+		float VolumeMultiplier = 1.f, float PitchMultiplier = 1.f);
 }
