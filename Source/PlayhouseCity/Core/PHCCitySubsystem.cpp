@@ -148,6 +148,18 @@ bool UPHCCitySubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) c
 	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE;
 }
 
+void UPHCCitySubsystem::EnsureCityGenerated()
+{
+	if (bCityGenerated) return;
+	UWorld* W = GetWorld();
+	if (!W) return;
+	if (W->GetNetMode() == NM_DedicatedServer) { bCityGenerated = true; return; }
+	// Re-enter OnWorldBeginPlay. The bCityGenerated guard at the top prevents
+	// duplicate work if generation already ran; Super::OnWorldBeginPlay is
+	// idempotent for UTickableWorldSubsystem.
+	OnWorldBeginPlay(*W);
+}
+
 void UPHCCitySubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);

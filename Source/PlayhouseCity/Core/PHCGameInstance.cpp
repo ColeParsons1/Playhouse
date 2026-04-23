@@ -16,6 +16,7 @@
 #include "Theme/PHCThemeManager.h"
 // #include "Economy/PHCEconomyManager.h"
 #include "Auth/PHCAuthManager.h"
+#include "Core/PHCCitySubsystem.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
@@ -53,18 +54,21 @@ void UPHCGameInstance::Init()
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCGameInstance::Init -- Initializing PlayhouseCity game instance."));
 
-	// Override network version so source-built server and launcher-built client
-	// always report the same version (both are UE 5.7.3).
-	static constexpr uint32 PHCNetworkVersion = 1;
+	// Network version derived from git commit hash. Cross-platform clients only
+	// handshake when iOS/Mac/Windows were all built from the same commit —
+	// otherwise UPROPERTY(Replicated) layouts can diverge silently and the
+	// session breaks mid-game with no visible error.
+	static const uint32 PHCNetworkVersion = GetTypeHash(FString(TEXT(PHC_GIT_SHA)));
 	FNetworkVersion::GetLocalNetworkVersionOverride.BindLambda([]() -> uint32
 	{
 		return PHCNetworkVersion;
 	});
 	FNetworkVersion::IsNetworkCompatibleOverride.BindLambda([](uint32 LocalVersion, uint32 RemoteVersion) -> bool
 	{
-		return true;
+		return LocalVersion == RemoteVersion;
 	});
-	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCGameInstance::Init -- Network version override set to %u."), PHCNetworkVersion);
+	UE_LOG(LogPlayhouseCity, Log, TEXT("PHCGameInstance::Init -- Network version %u (git %s)."),
+		PHCNetworkVersion, TEXT(PHC_GIT_SHA));
 
 #if WITH_EDITOR
 	bPendingServerConnect = false; // Editor: generate city immediately, no server travel
@@ -199,6 +203,16 @@ bool UPHCGameInstance::HostGame()
 	}
 
 	UE_LOG(LogPlayhouseCity, Log, TEXT("HostGame: Starting listen server on current world..."));
+
+	// In cooked builds Init() sets bPendingServerConnect=true, which makes
+	// CitySubsystem::OnWorldBeginPlay skip generation. If the player then
+	// hosts instead of joining, the listen server would come up on an empty
+	// map. Clear the flag and force-generate before Listen().
+	bPendingServerConnect = false;
+	if (UPHCCitySubsystem* City = World->GetSubsystem<UPHCCitySubsystem>())
+	{
+		City->EnsureCityGenerated();
+	}
 
 	// Use UWorld::Listen() to open a listen socket on the CURRENT world,
 	// avoiding a full ServerTravel map reload (which is too heavy on iOS

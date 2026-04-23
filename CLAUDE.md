@@ -506,7 +506,80 @@ RunUAT.sh BuildCookRun ...  # Second cook: packs the new .uasset into the pak
 - **Listen server model:** One player hosts, others connect via IP
 - **Dedicated server:** Linux binary on GAME_SERVER_IP, port 7777
 - **Session management:** `UPHCGameInstance::HostGame()` / `JoinGame(IP)` / `LeaveGame()`
-- **Network version override:** `FNetworkVersion` delegates set to fixed version=1 (resolves source build vs launcher build mismatch)
+- **Network version = git commit SHA:** `PlayhouseCity.Build.cs` reads `.git/HEAD` at compile time and injects the first 12 chars of the commit hash as `PHC_GIT_SHA`. `PHCGameInstance::Init` hashes that string for the network version and requires `LocalVersion == RemoteVersion`. **Effect: iOS / Mac / Windows can only cross-play when all three were built from the same commit.** Mismatch produces a clean "incompatible version" handshake rejection instead of silent replication breakage.
+
+### Cross-Platform Playtest Workflow (iOS + Mac + Windows) — READ THIS FIRST
+
+**TL;DR for the Claude session picking this up on the other side:** the user (on Windows, branch `tolsdev`) and Cole (on Mac, branch `DevCole`) could not cross-play because each platform was being built from a different commit. Replication layouts diverged silently. Fix landed in `tolsdev` and you (Cole's Claude) are being asked to replicate the build on this side so the two platforms can actually connect.
+
+#### What changed (files to know about)
+
+1. **`Source/PlayhouseCity/PlayhouseCity.Build.cs`** — reads `.git/HEAD` at compile time, injects first 12 chars of commit SHA as `PHC_GIT_SHA` preprocessor define. No action needed from you; it just works during build.
+2. **`Source/PlayhouseCity/Core/PHCGameInstance.cpp::Init`** — network version = `GetTypeHash(FString(TEXT(PHC_GIT_SHA)))`. `IsNetworkCompatibleOverride` now returns `LocalVersion == RemoteVersion` (previously `true` unconditionally). **Effect: iOS/Mac/Windows only handshake when built from the identical commit.** Mismatch = clean "incompatible version" rejection in logs instead of mystery mid-game disconnects.
+3. **`Source/PlayhouseCity/Core/PHCCitySubsystem.{h,cpp}`** — new public method `EnsureCityGenerated()`. Called from `HostGame` to force city generation on cooked hosts (previously `bPendingServerConnect=true` made `OnWorldBeginPlay` skip generation, so a cooked host would listen on an empty map).
+4. **`Source/PlayhouseCity/Core/PHCGameInstance.cpp::HostGame`** — now sets `bPendingServerConnect=false` and calls `City->EnsureCityGenerated()` before `World->Listen(7777)`.
+5. **`Config/DefaultEngine.ini`** — iOS `AdditionalPlistData` gained `NSLocalNetworkUsageDescription` + `NSBonjourServices`. Required on iOS 14+ for LAN connections. iOS will prompt user on first host/join; if denied, LAN is dead forever until they go into Settings.
+
+#### The one rule for cross-play to work
+
+**Everyone on the same commit, full rebuild, fresh install.** The SHA check is a gatekeeper, not a sync mechanism. Pulling code without rebuilding = useless (the SHA is baked into the binary at compile time).
+
+#### Pre-session checklist (the Claude on each side should run this)
+
+```bash
+# 1. Get the shared commit. If user's branches have diverged (tolsdev vs DevCole),
+#    merge them into a playtest commit FIRST and push. Don't build from divergent
+#    branches expecting cross-play to work — it won't.
+git fetch --all
+git checkout <shared-branch>         # e.g. tolsdev after merge
+git pull
+
+# 2. CONFIRM both sides are on the exact same commit before building.
+git rev-parse --short=12 HEAD
+# ^ This 12-char hash MUST match on both user's machine and Cole's machine.
+#   If they don't match, stop — fix the branch situation first.
+
+# 3. Full rebuild on this platform. On Mac (this side), that means:
+"/Users/Shared/Epic Games/UE_5.7/Engine/Build/BatchFiles/RunUBT.sh" \
+  PlayhouseCity IOS Development \
+  -Project="/Users/coleparsons/PlayhouseCity/PlayhouseCity.uproject" \
+  -Game -NoHotReload
+# (Plus the staged-build + codesign + install steps from the "Build & Deploy"
+#  section above — the uecommandline.txt clear, the Saved/Cooked delete before
+#  signing, and the framework re-sign are all still required.)
+
+# For Mac play:
+"/Users/Shared/Epic Games/UE_5.7/Engine/Build/BatchFiles/RunUBT.sh" \
+  PlayhouseCity Mac Development \
+  -Project="/Users/coleparsons/PlayhouseCity/PlayhouseCity.uproject" \
+  -Game -NoHotReload
+
+# 4. Install on every test device. Old binaries are not compatible — they
+#    have a different PHC_GIT_SHA baked in and will be rejected at handshake.
+```
+
+#### If SHAs match but cross-play still fails
+
+Check in this order:
+
+1. **Engine patch parity.** All platforms on same UE 5.7.x (5.7.3 on Mac, same on Windows, same source build on Linux dedicated server if used). Patch-level diffs can break CoreUObject layout even with the SHA check passing.
+2. **Windows firewall.** First `HostGame` on Windows pops a Defender prompt on port 7777. If the user clicks Cancel or dismisses it, UDP 7777 inbound is silently blocked forever. Ask the user to check Windows Defender Firewall → inbound rules → allow the PlayhouseCity executable.
+3. **iOS Local Network permission.** First run after this fix, iOS shows a Local Network prompt referencing the new `NSLocalNetworkUsageDescription`. If denied, LAN host/join fails. User must toggle it on in iOS Settings → Privacy → Local Network → PlayhouseCity.
+4. **IPv4 address.** Have the host read their IPv4 (System Settings → Network on Mac, `ipconfig` on Windows, Settings → Wi-Fi → i → IP Address on iOS). If they paste an IPv6, `ClientTravel` will fail.
+5. **Same Wi-Fi network.** No hotel captive portals, no "guest network" isolation, no VPN splitting traffic.
+6. **UE built-in VOIP vs Agora conflict** (known cruft). `DefaultEngine.ini` has `[Voice] bEnabled=true` and `bHasVoiceEnabled=true` but the project uses Agora for voice (off-band). UE's built-in VOIP tries to open a channel through OSS on iOS (Game Center) and can stall the connection. If you see hangs during `ClientTravel` on iOS specifically, set both to `false` and retest.
+
+#### DO NOT
+
+- Do not revert `IsNetworkCompatibleOverride` back to always returning `true`. That hid the exact bug we just fixed and produces silent replication breakage.
+- Do not re-introduce the `bPendingServerConnect`-skip in `OnWorldBeginPlay` without also wiring city generation into whatever new entry path you add. `HostGame` currently depends on `EnsureCityGenerated`.
+- Do not bump `PHC_GIT_SHA` manually or fake it. The whole point is that it's derived from actual git state.
+
+#### Branch hygiene (for the humans, tell them if asked)
+
+- User pushes to `tolsdev` only (per user's standing instruction — do not push to `DevCole` or other branches from user's machine).
+- Cole pushes to `DevCole`.
+- For cross-play sessions: merge both branches into one commit, push, both pull, both rebuild. Easiest cadence is a dedicated `playtest` branch that gets fast-forwarded from both sides before a session.
 
 ### City Sync
 - Each machine generates identical city from deterministic `FRandomStream` seeds — **no city data replicated**

@@ -60,6 +60,11 @@ public:
 	/** Whether the city has already been generated on this machine. */
 	bool bCityGenerated = false;
 
+	/** Force city generation now. Used by HostGame() in cooked builds where
+	 *  OnWorldBeginPlay deferred generation because bPendingServerConnect was
+	 *  true — without this, the listen server comes up on an empty map. */
+	void EnsureCityGenerated();
+
 private:
 	void SpawnCityEnvironment();
 	void SpawnGround();

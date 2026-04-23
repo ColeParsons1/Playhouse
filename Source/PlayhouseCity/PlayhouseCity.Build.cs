@@ -18,6 +18,35 @@ public class PlayhouseCity : ModuleRules
 		// Allow subdirectory includes like "Games/Base/PHCMiniGameMode.h"
 		PublicIncludePaths.Add(ModuleDirectory);
 
+		// Embed current git commit hash so all platforms built from the same
+		// commit share a network version and refuse to connect when they don't.
+		// Avoids "silent-handshake-then-broken-replication" cross-play failures.
+		string GitSha = "unknown";
+		try
+		{
+			string RepoRoot = System.IO.Path.GetFullPath(System.IO.Path.Combine(ModuleDirectory, "../../"));
+			string HeadPath = System.IO.Path.Combine(RepoRoot, ".git", "HEAD");
+			if (System.IO.File.Exists(HeadPath))
+			{
+				string Head = System.IO.File.ReadAllText(HeadPath).Trim();
+				if (Head.StartsWith("ref: "))
+				{
+					string RefPath = System.IO.Path.Combine(RepoRoot, ".git", Head.Substring(5).Trim());
+					if (System.IO.File.Exists(RefPath))
+					{
+						GitSha = System.IO.File.ReadAllText(RefPath).Trim();
+					}
+				}
+				else
+				{
+					GitSha = Head;
+				}
+				if (GitSha.Length > 12) GitSha = GitSha.Substring(0, 12);
+			}
+		}
+		catch { /* fall through with "unknown" */ }
+		PublicDefinitions.Add("PHC_GIT_SHA=\"" + GitSha + "\"");
+
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
 			"Core",
