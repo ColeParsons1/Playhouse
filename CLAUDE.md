@@ -184,3 +184,6 @@ Use this section to log major changes made in each session.
 - Installed frontend dependencies (npm install)
 - Applied database migrations
 - Created CLAUDE.md and CONTRIBUTING.md
+
+### 2026-11-15 - Cole
+- Rewrote README.md: it now covers the whole app (26 games, voice rooms, coins/shop), local setup including `frontend/.env`, the API, and which branches hold PlayhouseCity and the server snapshots
