@@ -164,6 +164,29 @@ A Vice City-themed 3D driving simulator with massive city environment, realistic
 - Beach umbrellas
 - Street lights with neon bulbs
 
+##### Day/Night Cycle & Weather
+- Full 24h day every 5 minutes (starts at 04:48, just before dawn)
+- Sun follows its real path for Tampa's latitude (equinox): sunrise ~05:56, sunset ~18:03
+- Sky, fog and lighting blend through dawn/dusk (warm sunset tint), moonlight at night
+- Rain showers (30-75s) alternate with dry spells (60-150s): rain streaks, overcast sky, reduced visibility
+- Logic lives in `frontend/src/utils/simulatorEnvironment.js` (unit tested)
+
+##### Performance / Quality Modes
+- `high` (default): native resolution, MSAA, 4K shadow map, full draw distance
+- `low`: auto-selected when WebGL is software-rendered (no GPU, e.g. VMs/CI sandboxes): reduced render scale, no shadows/MSAA, shorter foggier draw distance, simplified road markings, HUD glow animations disabled
+- Force a mode with `?quality=low|high` or `localStorage.playhouse_sim_quality`
+- Static city meshes are merged per material + map tile at load (~32k meshes -> a few hundred), cutting draw calls ~5x in both modes
+
+##### Automatic Headlights
+- Follow Florida's lighted-lamp rule: **on from sunset to sunrise (twilight included) and whenever it rains**, off in dry daylight
+- Headlight LEDs glow and a beam lights the road ahead when on (beam is softer in daylight rain)
+
+##### Test Panel (time/weather test cases)
+- Shown in dev builds (`npm run dev`), or in any build with `?simtest` in the URL
+- Click the 🧪 button (or press **T**) to cycle: Live, Day·Dry, Day·Rain, Night·Dry, Night·Rain, 2 min either side of sunset and sunrise, Sunset (live), Rain starts (live)
+- Fixed cases freeze the clock/weather and show PASS/FAIL against the expected headlight state; live cases show what transition to watch for
+- Scenarios are defined in `TEST_SCENARIOS` (`frontend/src/utils/simulatorEnvironment.js`) and unit tested
+
 #### Player Car (Vice City Testarossa Style)
 - White metallic body (2x scale)
 - Transparent blue-tinted windshield

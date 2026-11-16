@@ -1,8 +1,163 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import './SimulatorGame.css';
+import {
+  createEnvironmentState,
+  stepEnvironment,
+  getSunElevation,
+  getSunDirection,
+  getDaylightFactor,
+  getDuskWarmth,
+  applyHeadlightState,
+  createWeatherState,
+  formatTimeOfDay,
+  TEST_SCENARIOS,
+  createScenarioState,
+} from '../utils/simulatorEnvironment';
 
 // Dynamically import THREE to avoid SSR issues
 let THREE = null;
+
+// Rain particle settings (streaks in a box centred on the camera)
+const RAIN_DROP_COUNT = 4000;
+const RAIN_AREA = 160; // width/depth of the rain box
+const RAIN_HEIGHT = 90;
+const RAIN_MIN_Y = -30; // relative to the camera
+const RAIN_STREAK_LENGTH = 2.5;
+const RAIN_FALL_SPEED = 60; // units per second
+
+// Rendering quality presets. 'low' activates automatically when the browser
+// is software-rendering WebGL (no GPU, e.g. sandboxes/CI/VMs) and can be
+// forced with ?quality=low|high or localStorage 'playhouse_sim_quality'.
+const QUALITY_PRESETS = {
+  high: {
+    pixelRatio: () => window.devicePixelRatio, // full native resolution
+    antialias: true,
+    shadows: true,
+    shadowMapSize: 4096,
+    extraLights: true, // decorative fill/rim/bounce lights
+    roadMarkingDetail: 1, // full density, 3D markings
+    farPlane: 4000,
+    rainDropCount: RAIN_DROP_COUNT,
+    baseFogDensity: 0.00012,
+    mergeTileSize: 1000,
+  },
+  low: {
+    pixelRatio: () => 0.3, // render at half resolution, scale up in CSS
+    antialias: false,
+    shadows: false, // skips a whole shadow-map render pass per frame
+    shadowMapSize: 1024,
+    extraLights: false, // fewer lights = much cheaper pixels in software
+    roadMarkingDetail: 0.5, // flat markings at half density (major triangle savings)
+    farPlane: 450, // shorter draw distance...
+    rainDropCount: 1200,
+    baseFogDensity: 0.0018, // ...hidden by denser fog
+    mergeTileSize: 700, // smaller merged tiles cull better
+  },
+};
+
+const isSoftwareRenderer = () => {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+    if (!gl) return true;
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
+  } catch {
+    return false;
+  }
+};
+
+// Merge the static city into one mesh per (material, map tile, shadow flags).
+// The city is built from ~32,000 individual meshes, and that draw-call count
+// is what kills the frame rate on weak/software renderers (and costs CPU time
+// everywhere). Merging cuts the visible draw calls by roughly 10x; merging per
+// map tile (rather than into one huge mesh) keeps frustum culling effective.
+// Visually identical: same materials and world transforms.
+const CITY_MERGE_TILE_SIZE = 1000;
+
+const mergeStaticMeshes = (root, mergeGeometries, tileSize = CITY_MERGE_TILE_SIZE) => {
+  const buckets = new Map();
+  const center = new THREE.Vector3();
+  root.updateMatrixWorld(true);
+
+  root.traverse((obj) => {
+    if (!obj.isMesh || Array.isArray(obj.material)) return;
+    if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+    obj.geometry.boundingBox.getCenter(center).applyMatrix4(obj.matrixWorld);
+    const key = [
+      obj.material.uuid,
+      Math.round(center.x / tileSize),
+      Math.round(center.z / tileSize),
+      obj.castShadow,
+      obj.receiveShadow,
+    ].join('|');
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { material: obj.material, castShadow: obj.castShadow, receiveShadow: obj.receiveShadow, meshes: [] };
+      buckets.set(key, bucket);
+    }
+    bucket.meshes.push(obj);
+  });
+
+  buckets.forEach((bucket) => {
+    if (bucket.meshes.length < 2) return; // nothing to gain
+    const geometries = bucket.meshes.map((m) => m.geometry.clone().applyMatrix4(m.matrixWorld));
+    const merged = mergeGeometries(geometries, false);
+    geometries.forEach((g) => g.dispose());
+    if (!merged) return; // incompatible attributes - keep the originals
+
+    bucket.meshes.forEach((m) => m.parent?.remove(m));
+    const mesh = new THREE.Mesh(merged, bucket.material);
+    mesh.castShadow = bucket.castShadow;
+    mesh.receiveShadow = bucket.receiveShadow;
+    mesh.matrixAutoUpdate = false;
+    root.add(mesh);
+  });
+};
+
+// In-game test panel (cycles through time/weather test cases). Shown in
+// development builds, or in any build with ?simtest in the URL.
+const isTestPanelEnabled = () =>
+  import.meta.env.DEV || new URLSearchParams(window.location.search).has('simtest');
+
+const resolveQualityMode = () => {
+  const forced = new URLSearchParams(window.location.search).get('quality')
+    || localStorage.getItem('playhouse_sim_quality');
+  if (forced === 'low' || forced === 'high') return forced;
+  return isSoftwareRenderer() ? 'low' : 'high';
+};
+
+// Atmosphere
+const OVERCAST_FADE_SECONDS = 4; // how quickly clouds roll in/out with the rain
+const RAIN_FOG_DENSITY = 0.0012;
+const MAIN_LIGHT_DISTANCE = Math.hypot(-50, 60, 50); // same distance as the original moon position
+
+// Colours for the day/night cycle. Night values are the game's original
+// permanent-night look; day values are the original scene lighting.
+const createSkyPalette = () => ({
+  nightSky: new THREE.Color(0x0a0a1a),
+  daySky: new THREE.Color(0x87ceeb),
+  duskSky: new THREE.Color(0xff8c5a),
+  nightOvercastSky: new THREE.Color(0x0b0c12),
+  dayOvercastSky: new THREE.Color(0x7d8590),
+  nightAmbient: new THREE.Color(0x202040),
+  dayAmbient: new THREE.Color(0x404060),
+  nightHemiSky: new THREE.Color(0x1a1a3a),
+  dayHemiSky: new THREE.Color(0x87ceeb),
+  nightHemiGround: new THREE.Color(0x101020),
+  dayHemiGround: new THREE.Color(0x444422),
+  moonColor: new THREE.Color(0x6666ff),
+  sunColor: new THREE.Color(0xffeedd),
+  duskSunColor: new THREE.Color(0xff9955),
+  moonDir: new THREE.Vector3(-50, 60, 50).normalize(),
+  // Scratch objects reused every frame
+  sky: new THREE.Color(),
+  overcastSky: new THREE.Color(),
+  sunDir: new THREE.Vector3(),
+  lightDir: new THREE.Vector3(),
+});
 
 const SimulatorGame = ({ onClose, onExit }) => {
   // Support both onClose (from GameHub) and onExit prop names
@@ -26,15 +181,30 @@ const SimulatorGame = ({ onClose, onExit }) => {
   const [error, setError] = useState(null);
   const [altitude, setAltitude] = useState(0);
   const [isFlying, setIsFlying] = useState(false);
+  const [qualityMode, setQualityMode] = useState('high');
+
+  // Test panel state
+  const [showTestPanel] = useState(isTestPanelEnabled);
+  const showTestPanelRef = useRef(showTestPanel);
+  const [scenarioIndex, setScenarioIndex] = useState(0);
+  const scenarioIndexRef = useRef(0);
+  const scenarioRef = useRef(TEST_SCENARIOS[0]);
+  const [testStatus, setTestStatus] = useState(null); // { time, isRaining, headlightsOn }
+  const testStatusKeyRef = useRef('');
   const rampsRef = useRef([]);
   const neonLightsRef = useRef([]);
 
-  // Day/night cycle refs (5 minute full cycle)
-  const dayTimeRef = useRef(0); // 0 to 1 representing full day cycle
+  // Day/night cycle + weather (5 minute full day, see utils/simulatorEnvironment.js)
+  const environmentRef = useRef(null); // { timeOfDay, weather, headlightsOn }
+  const overcastRef = useRef(0); // 0 = clear sky, 1 = fully overcast (eases in/out with rain)
   const ambientLightRef = useRef(null);
   const hemiLightRef = useRef(null);
   const mainLightRef = useRef(null);
-  const DAY_CYCLE_DURATION = 300; // 5 minutes in seconds
+  const headlightMaterialsRef = useRef([]);
+  const headlightBeamsRef = useRef([]);
+  const rainRef = useRef(null);
+  const qualityRef = useRef(QUALITY_PRESETS.high);
+  const skyPaletteRef = useRef(null);
 
   // Check if current player is the host
   const isHost = true;
@@ -151,14 +321,27 @@ const SimulatorGame = ({ onClose, onExit }) => {
       scene.add(rightCurb);
     }
 
+    // Road markings: full quality uses thin boxes; low quality uses flat
+    // planes (2 triangles instead of 12) at lower density - the markings are
+    // by far the biggest triangle count in the scene (~28k stripe meshes)
+    const markingDetail = qualityRef.current.roadMarkingDetail;
+    const flatMarkings = markingDetail < 1;
+    const makeMarkingGeom = (w, d) => {
+      if (!flatMarkings) return new THREE.BoxGeometry(w, 0.12, d);
+      const plane = new THREE.PlaneGeometry(w, d);
+      plane.rotateX(-Math.PI / 2);
+      return plane;
+    };
+
     // Add center yellow dashed lines (only on some roads for performance)
-    const yellowDashGeom = new THREE.BoxGeometry(12 * scale, 0.12, 0.5 * scale);
-    const yellowDashGeomV = new THREE.BoxGeometry(0.5 * scale, 0.12, 12 * scale);
+    const yellowDashGeom = makeMarkingGeom(12 * scale, 0.5 * scale);
+    const yellowDashGeomV = makeMarkingGeom(0.5 * scale, 12 * scale);
+    const dashStep = (flatMarkings ? 120 : 60) * scale;
 
     // Horizontal road center lines (every other road)
     hRoadPositions.forEach((z, idx) => {
       if (idx % 2 === 0 && z < 650) {
-        for (let x = -1500; x <= 1500; x += 60 * scale) {
+        for (let x = -1500; x <= 1500; x += dashStep) {
           const dash = new THREE.Mesh(yellowDashGeom, yellowLineMat);
           dash.position.set(x, 0.12, z);
           scene.add(dash);
@@ -169,7 +352,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
     // Vertical road center lines (every other road)
     vRoadPositions.forEach((x, idx) => {
       if (idx % 2 === 0) {
-        for (let z = -1500; z <= 600; z += 60 * scale) {
+        for (let z = -1500; z <= 600; z += dashStep) {
           const dash = new THREE.Mesh(yellowDashGeomV, yellowLineMat);
           dash.position.set(x, 0.12, z);
           scene.add(dash);
@@ -178,14 +361,15 @@ const SimulatorGame = ({ onClose, onExit }) => {
     });
 
     // ZEBRA CROSSWALKS at intersections
-    const crosswalkStripeGeom = new THREE.BoxGeometry(3 * scale, 0.12, 1.2 * scale);
-    const crosswalkStripeGeomV = new THREE.BoxGeometry(1.2 * scale, 0.12, 3 * scale);
+    const crosswalkStripeGeom = makeMarkingGeom(3 * scale, 1.2 * scale);
+    const crosswalkStripeGeomV = makeMarkingGeom(1.2 * scale, 3 * scale);
+    const crosswalkEvery = flatMarkings ? 6 : 3;
 
     // Add crosswalks at every 3rd intersection for performance
     let intersectionCount = 0;
     vRoadPositions.forEach(x => {
       hRoadPositions.forEach(z => {
-        if (z < 650 && intersectionCount % 3 === 0) {
+        if (z < 650 && intersectionCount % crosswalkEvery === 0) {
           // North crosswalk (horizontal stripes)
           for (let i = -4; i <= 4; i++) {
             const stripe = new THREE.Mesh(crosswalkStripeGeom, whiteLineMat);
@@ -219,8 +403,8 @@ const SimulatorGame = ({ onClose, onExit }) => {
     });
 
     // Add white edge lines on roads (road edges)
-    const edgeLineGeom = new THREE.BoxGeometry(roadLength, 0.12, 0.3 * scale);
-    const edgeLineGeomV = new THREE.BoxGeometry(0.3 * scale, 0.12, roadLength);
+    const edgeLineGeom = makeMarkingGeom(roadLength, 0.3 * scale);
+    const edgeLineGeomV = makeMarkingGeom(0.3 * scale, roadLength);
 
     hRoadPositions.forEach((z, idx) => {
       if (idx % 3 === 0 && z < 650) {
@@ -1437,12 +1621,14 @@ const SimulatorGame = ({ onClose, onExit }) => {
       car.add(rim);
     });
 
-    // Headlights (more realistic with strong glow)
+    // Headlights (more realistic with strong glow). Switched on/off by the
+    // environment loop to follow the day/night cycle and rain.
     const headlightMaterial = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       emissive: 0xffffee,
-      emissiveIntensity: 1.5,
+      emissiveIntensity: 0,
     });
+    headlightMaterialsRef.current = [headlightMaterial];
 
     [-0.7, 0.7].forEach(x => {
       // Headlight housing
@@ -1458,6 +1644,21 @@ const SimulatorGame = ({ onClose, onExit }) => {
       led.position.set(x * scale, 0.5 * scale, 2.5 * scale);
       car.add(led);
     });
+
+    // Headlight beam that lights up the road ahead. One spot light without
+    // shadows keeps the cost low.
+    const headlightBeam = new THREE.SpotLight(0xfff4e0, 0, 200, Math.PI / 7, 0.5, 2);
+    headlightBeam.position.set(0, 0.5 * scale, 2.6 * scale);
+    headlightBeam.target.position.set(0, 0, 30 * scale);
+    car.add(headlightBeam);
+    car.add(headlightBeam.target);
+    headlightBeamsRef.current = [headlightBeam];
+
+    applyHeadlightState(
+      headlightMaterialsRef.current,
+      environmentRef.current?.headlightsOn ?? true,
+      headlightBeamsRef.current
+    );
 
     // Tail lights - brighter glow
     const tailLightMat = new THREE.MeshStandardMaterial({
@@ -1796,35 +1997,127 @@ const SimulatorGame = ({ onClose, onExit }) => {
     lookAtPosition.y += 2;
     camera.lookAt(lookAtPosition);
   }, []);
-  // Always nighttime - no day/night cycle
-  const updateDayNightCycle = useCallback(() => {
-    if (!sceneRef.current || !ambientLightRef.current || !hemiLightRef.current || !mainLightRef.current || !THREE) return;
+  // Rain streaks live in a box that follows the camera around
+  const createRain = useCallback((scene) => {
+    if (!THREE) return null;
+
+    const dropCount = qualityRef.current.rainDropCount;
+    const positions = new Float32Array(dropCount * 6); // 2 vertices per streak
+    const speeds = new Float32Array(dropCount);
+    for (let i = 0; i < dropCount; i++) {
+      const x = (Math.random() - 0.5) * RAIN_AREA;
+      const y = RAIN_MIN_Y + Math.random() * RAIN_HEIGHT;
+      const z = (Math.random() - 0.5) * RAIN_AREA;
+      positions.set([x, y + RAIN_STREAK_LENGTH, z, x, y, z], i * 6);
+      speeds[i] = RAIN_FALL_SPEED * (0.85 + Math.random() * 0.3);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.LineBasicMaterial({
+      color: 0xaabbcc,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false,
+    });
+    const mesh = new THREE.LineSegments(geometry, material);
+    mesh.frustumCulled = false; // positions change every frame
+    mesh.visible = false;
+    scene.add(mesh);
+
+    return { mesh, speeds };
+  }, []);
+
+  // Day/night cycle, weather and headlights. Time and rain come from
+  // utils/simulatorEnvironment.js; this applies them to the scene.
+  const updateEnvironment = useCallback((deltaSeconds) => {
+    if (!sceneRef.current || !ambientLightRef.current || !hemiLightRef.current || !mainLightRef.current || !skyPaletteRef.current || !THREE) return;
 
     const scene = sceneRef.current;
     const ambientLight = ambientLightRef.current;
     const hemiLight = hemiLightRef.current;
     const mainLight = mainLightRef.current;
+    const palette = skyPaletteRef.current;
 
-    // Permanent night settings
-    const skyColor = new THREE.Color(0x0a0a1a); // Dark night sky
-    const fogColor = new THREE.Color(0x0a0a1a);
-    const ambientColor = new THREE.Color(0x202040); // Dark blue ambient
-    const sunColor = new THREE.Color(0x6666ff); // Moonlight blue
-    const sunIntensity = 0.4;
-    const ambientIntensity = 0.25;
+    // Advance time + weather; headlights are derived from the same state.
+    // Test scenarios can hold the clock and/or weather still.
+    const scenario = scenarioRef.current;
+    const env = stepEnvironment(environmentRef.current ?? createEnvironmentState(), deltaSeconds, Math.random, {
+      freezeTime: Boolean(scenario.freezeTime),
+      freezeWeather: Boolean(scenario.freezeWeather),
+    });
+    environmentRef.current = env;
+    const isRaining = env.weather.isRaining;
 
-    // Apply colors
-    scene.background = skyColor;
-    if (scene.fog) {
-      scene.fog.color = fogColor;
+    // Test panel readout (only re-renders when the displayed values change)
+    if (showTestPanelRef.current) {
+      const time = formatTimeOfDay(env.timeOfDay);
+      const key = `${time}|${isRaining}|${env.headlightsOn}`;
+      if (key !== testStatusKeyRef.current) {
+        testStatusKeyRef.current = key;
+        setTestStatus({ time, isRaining, headlightsOn: env.headlightsOn });
+      }
     }
-    ambientLight.color = ambientColor;
-    ambientLight.intensity = ambientIntensity;
-    hemiLight.color = new THREE.Color(0x1a1a3a);
-    hemiLight.groundColor = new THREE.Color(0x101020);
-    mainLight.color = sunColor;
-    mainLight.intensity = sunIntensity;
-    mainLight.position.set(-50, 60, 50); // Moon position
+
+    // Cloud cover eases in/out with the rain
+    const overcastTarget = isRaining ? 1 : 0;
+    overcastRef.current += (overcastTarget - overcastRef.current) * Math.min(1, deltaSeconds / OVERCAST_FADE_SECONDS);
+    const overcast = overcastRef.current;
+
+    const sunElevation = getSunElevation(env.timeOfDay);
+    const daylight = getDaylightFactor(sunElevation);
+
+    applyHeadlightState(headlightMaterialsRef.current, env.headlightsOn, headlightBeamsRef.current, daylight);
+
+    // Warm sunrise/sunset tint, only while there's light in the sky and no cloud
+    const warmth = getDuskWarmth(sunElevation) * Math.min(1, daylight * 2) * (1 - overcast);
+
+    // Sky + fog
+    palette.sky.lerpColors(palette.nightSky, palette.daySky, daylight);
+    palette.sky.lerp(palette.duskSky, warmth * 0.6);
+    palette.overcastSky.lerpColors(palette.nightOvercastSky, palette.dayOvercastSky, daylight);
+    palette.sky.lerp(palette.overcastSky, overcast);
+    scene.background = palette.sky;
+    if (scene.fog) {
+      scene.fog.color.copy(palette.sky);
+      const baseFog = qualityRef.current.baseFogDensity;
+      scene.fog.density = baseFog + (RAIN_FOG_DENSITY - baseFog) * overcast;
+    }
+
+    // Ambient + hemisphere fill
+    ambientLight.color.lerpColors(palette.nightAmbient, palette.dayAmbient, daylight);
+    ambientLight.intensity = (0.25 + 0.05 * daylight) * (1 - 0.3 * overcast);
+    hemiLight.color.lerpColors(palette.nightHemiSky, palette.dayHemiSky, daylight);
+    hemiLight.groundColor.lerpColors(palette.nightHemiGround, palette.dayHemiGround, daylight);
+    hemiLight.intensity = 0.6 * (1 - 0.35 * overcast);
+
+    // Main light: moon at night, sun (following its real path) by day
+    mainLight.color.lerpColors(palette.moonColor, palette.sunColor, daylight);
+    mainLight.color.lerp(palette.duskSunColor, warmth * 0.7);
+    mainLight.intensity = (0.4 + 0.8 * daylight) * (1 - 0.6 * overcast);
+    const sun = getSunDirection(env.timeOfDay);
+    palette.sunDir.set(sun.x, Math.max(sun.y, 0.05), sun.z).normalize();
+    palette.lightDir.copy(palette.moonDir).lerp(palette.sunDir, daylight).normalize();
+    mainLight.position.copy(palette.lightDir).multiplyScalar(MAIN_LIGHT_DISTANCE);
+
+    // Rain
+    const rain = rainRef.current;
+    if (rain) {
+      rain.mesh.visible = isRaining;
+      if (isRaining) {
+        const positions = rain.mesh.geometry.attributes.position;
+        const arr = positions.array;
+        for (let i = 0; i < rain.speeds.length; i++) {
+          const o = i * 6;
+          let fall = rain.speeds[i] * deltaSeconds;
+          if (arr[o + 4] - fall < RAIN_MIN_Y) fall -= RAIN_HEIGHT; // wrap to the top
+          arr[o + 1] -= fall;
+          arr[o + 4] -= fall;
+        }
+        positions.needsUpdate = true;
+        if (cameraRef.current) rain.mesh.position.copy(cameraRef.current.position);
+      }
+    }
   }, []);
 
   // Initialize Three.js
@@ -1853,10 +2146,21 @@ const SimulatorGame = ({ onClose, onExit }) => {
           rotation: 0
         };
 
-        // Scene - 4K ULTRA QUALITY nighttime atmosphere
+        // Pick rendering quality (low when WebGL is software-rendered)
+        const qualityName = resolveQualityMode();
+        const quality = QUALITY_PRESETS[qualityName];
+        qualityRef.current = quality;
+        setQualityMode(qualityName);
+
+        // Day/night + weather state (drives sky, lighting, rain and headlights)
+        environmentRef.current = createEnvironmentState();
+        overcastRef.current = environmentRef.current.weather.isRaining ? 1 : 0;
+        skyPaletteRef.current = createSkyPalette();
+
+        // Scene - 4K ULTRA QUALITY atmosphere (colours updated each frame by updateEnvironment)
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x0a0a1a); // Dark night sky
-        scene.fog = new THREE.FogExp2(0x0a0a1a, 0.00012); // Night fog
+        scene.background = skyPaletteRef.current.sky.copy(skyPaletteRef.current.nightSky);
+        scene.fog = new THREE.FogExp2(0x0a0a1a, quality.baseFogDensity);
         sceneRef.current = scene;
 
         // Camera - extended far plane for 4K detail
@@ -1864,14 +2168,14 @@ const SimulatorGame = ({ onClose, onExit }) => {
           75,
           window.innerWidth / window.innerHeight,
           0.5,  // Lower near plane for sharper close-ups
-          4000  // Extended far plane for more detail
+          quality.farPlane  // Extended far plane for more detail (shorter on low quality)
         );
         camera.position.set(0, 5, -10);
         cameraRef.current = camera;
 
         // Renderer - 4K ULTRA QUALITY settings
         const renderer = new THREE.WebGLRenderer({
-          antialias: true, // Smooth edges - MSAA
+          antialias: quality.antialias, // Smooth edges - MSAA (off on low quality)
           powerPreference: 'high-performance',
           stencil: true,
           depth: true,
@@ -1880,8 +2184,8 @@ const SimulatorGame = ({ onClose, onExit }) => {
           precision: 'highp', // High precision shaders
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio); // Full device pixel ratio for 4K
-        renderer.shadowMap.enabled = true;
+        renderer.setPixelRatio(quality.pixelRatio());
+        renderer.shadowMap.enabled = quality.shadows;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadows for quality
         renderer.toneMapping = THREE.ACESFilmicToneMapping; // Cinematic tone mapping
         renderer.toneMappingExposure = 1.1;
@@ -1904,9 +2208,9 @@ const SimulatorGame = ({ onClose, onExit }) => {
         // Main directional light (sun) with HIGH QUALITY shadows
         const mainLight = new THREE.DirectionalLight(0xffeedd, 1.2);
         mainLight.position.set(50, 100, 50);
-        mainLight.castShadow = true;
-        mainLight.shadow.mapSize.width = 4096; // 4K shadow map
-        mainLight.shadow.mapSize.height = 4096;
+        mainLight.castShadow = quality.shadows;
+        mainLight.shadow.mapSize.width = quality.shadowMapSize;
+        mainLight.shadow.mapSize.height = quality.shadowMapSize;
         mainLight.shadow.camera.near = 0.5;
         mainLight.shadow.camera.far = 800;
         mainLight.shadow.camera.left = -200;
@@ -1919,35 +2223,50 @@ const SimulatorGame = ({ onClose, onExit }) => {
         scene.add(mainLight);
         mainLightRef.current = mainLight;
 
-        // Fill light from opposite side - warmer
-        const fillLight = new THREE.DirectionalLight(0xffd4a6, 0.4);
-        fillLight.position.set(-50, 60, -50);
-        scene.add(fillLight);
+        // Decorative lights, skipped on low quality (each extra light makes
+        // every shaded pixel more expensive)
+        if (quality.extraLights) {
+          // Fill light from opposite side - warmer
+          const fillLight = new THREE.DirectionalLight(0xffd4a6, 0.4);
+          fillLight.position.set(-50, 60, -50);
+          scene.add(fillLight);
 
-        // Rim light for car highlights - stronger
-        const rimLight = new THREE.DirectionalLight(0xff9966, 0.5);
-        rimLight.position.set(0, 30, -60);
-        scene.add(rimLight);
+          // Rim light for car highlights - stronger
+          const rimLight = new THREE.DirectionalLight(0xff9966, 0.5);
+          rimLight.position.set(0, 30, -60);
+          scene.add(rimLight);
 
-        // Additional bounce light from ground
-        const bounceLight = new THREE.DirectionalLight(0x90a090, 0.2);
-        bounceLight.position.set(0, -10, 0);
-        scene.add(bounceLight);
+          // Additional bounce light from ground
+          const bounceLight = new THREE.DirectionalLight(0x90a090, 0.2);
+          bounceLight.position.set(0, -10, 0);
+          scene.add(bounceLight);
+        }
 
-        // Create city and car
+        // Create the city, then merge its static meshes (see mergeStaticMeshes)
+        const { mergeGeometries } = await import('three/examples/jsm/utils/BufferGeometryUtils.js');
         createCity(scene);
+        mergeStaticMeshes(scene, mergeGeometries, quality.mergeTileSize);
         const car = createCar(scene);
         carRef.current = car;
+        rainRef.current = createRain(scene);
 
         setIsLoading(false);
 
         // Animation loop
+        let lastFrameTime = performance.now();
         const animate = () => {
           if (!mounted) return;
           animationRef.current = requestAnimationFrame(animate);
+
+          // Real elapsed time, so a day lasts 5 real minutes at any frame rate
+          // (clamped so returning to a background tab doesn't skip ahead)
+          const now = performance.now();
+          const deltaSeconds = Math.min((now - lastFrameTime) / 1000, 0.1);
+          lastFrameTime = now;
+
           updateCarPhysics();
           updateCamera();
-          updateDayNightCycle();
+          updateEnvironment(deltaSeconds);
 
           // Update traffic cars
           trafficCarsRef.current.forEach(tc => {
@@ -2006,7 +2325,36 @@ const SimulatorGame = ({ onClose, onExit }) => {
         rendererRef.current.dispose();
       }
     };
-  }, [createCity, createCar, updateCarPhysics, updateCamera]);
+  }, [createCity, createCar, createRain, updateCarPhysics, updateCamera, updateEnvironment]);
+
+  // Test panel: jump to the next time/weather test case
+  const cycleTestScenario = useCallback(() => {
+    const next = (scenarioIndexRef.current + 1) % TEST_SCENARIOS.length;
+    const scenario = TEST_SCENARIOS[next];
+    scenarioIndexRef.current = next;
+    scenarioRef.current = scenario;
+
+    if (scenario.live) {
+      // Back to normal: keep the current time, resume random weather
+      if (environmentRef.current) {
+        environmentRef.current = { ...environmentRef.current, weather: createWeatherState() };
+      }
+    } else {
+      environmentRef.current = createScenarioState(scenario);
+      overcastRef.current = environmentRef.current.weather.isRaining ? 1 : 0; // no fade-in wait
+    }
+    setScenarioIndex(next);
+  }, []);
+
+  // Keyboard shortcut for the test panel: T = next test case
+  useEffect(() => {
+    if (!showTestPanel) return undefined;
+    const onKey = (e) => {
+      if (e.code === 'KeyT' && !e.repeat) cycleTestScenario();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showTestPanel, cycleTestScenario]);
 
   // Touch controls
   const handleSteeringMove = useCallback((e) => {
@@ -2031,7 +2379,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
 
   if (error) {
     return (
-      <div className="simulator-game">
+      <div className={`simulator-game quality-${qualityMode}`}>
         <div className="simulator-error">
           <h2>Failed to load game</h2>
           <p>{error}</p>
@@ -2042,7 +2390,7 @@ const SimulatorGame = ({ onClose, onExit }) => {
   }
 
   return (
-    <div className="simulator-game">
+    <div className={`simulator-game quality-${qualityMode}`}>
       {isLoading && (
         <div className="simulator-loading">
           <div className="loading-spinner"></div>
@@ -2079,6 +2427,42 @@ const SimulatorGame = ({ onClose, onExit }) => {
           <div className="mini-map">
             <div className="map-dot" />
           </div>
+
+          {showTestPanel && (() => {
+            const scenario = TEST_SCENARIOS[scenarioIndex];
+            const hasExpectation = typeof scenario.expected === 'boolean';
+            const pass = hasExpectation && testStatus && testStatus.headlightsOn === scenario.expected;
+            return (
+              <div className="sim-test-panel">
+                <button
+                  type="button"
+                  className="sim-test-btn"
+                  onClick={(e) => { e.currentTarget.blur(); cycleTestScenario(); }}
+                >
+                  🧪 {scenario.label}
+                  <span className="sim-test-count">{scenarioIndex + 1}/{TEST_SCENARIOS.length}</span>
+                </button>
+                {testStatus && (
+                  <div className="sim-test-status">
+                    <span>🕒 {testStatus.time}</span>
+                    <span>{testStatus.isRaining ? '🌧 Rain' : '🌤 Dry'}</span>
+                    <span className={testStatus.headlightsOn ? 'sim-test-on' : 'sim-test-off'}>
+                      💡 Headlights {testStatus.headlightsOn ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                )}
+                {hasExpectation && testStatus && (
+                  <div className={`sim-test-verdict ${pass ? 'sim-test-pass' : 'sim-test-fail'}`}>
+                    {pass ? '✓ PASS' : '✗ FAIL'} · expected {scenario.expected ? 'ON' : 'OFF'}
+                  </div>
+                )}
+                {typeof scenario.expected === 'string' && (
+                  <div className="sim-test-verdict sim-test-watch">Watch: {scenario.expected}</div>
+                )}
+                <div className="sim-test-hint">Click or press T for the next case</div>
+              </div>
+            );
+          })()}
         </div>
       )}
 

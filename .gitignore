@@ -24,3 +24,19 @@ Thumbs.db
 frontend/.env
 .env.local
 .env.*.local
+
+# Build/DB
+dist/
+build/
+coverage/
+*.sqlite3
+
+# Extra Python/cache dirs
+.venv/
+env/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.cache/
+staticfiles/

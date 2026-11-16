@@ -616,3 +616,84 @@
   transform: scale(1.05);
   box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
 }
+
+/* ===== Low quality mode (no GPU / software rendering) =====
+   Infinite CSS animations and large glow box-shadows force the browser to
+   repaint blurred layers every frame. Without a GPU that costs more than the
+   whole 3D scene, so they are disabled when the renderer falls back to
+   software (see QUALITY_PRESETS in SimulatorGame.jsx). */
+.quality-low *,
+.quality-low *::before,
+.quality-low *::after {
+  animation: none !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+/* ===== In-game test panel (dev builds or ?simtest) =====
+   Deliberately plain (no shadows/animations) so it stays cheap to paint. */
+.sim-test-panel {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+  color: #fff;
+  font: 13px/1.3 system-ui, sans-serif;
+  min-width: 260px;
+}
+
+.sim-test-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #2b2b3d;
+  border: 1px solid #8a7dff;
+  border-radius: 8px;
+  color: #fff;
+  font: 600 14px system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.sim-test-btn:hover {
+  background: #3a3a55;
+}
+
+.sim-test-count {
+  font-weight: 400;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.sim-test-status {
+  display: flex;
+  gap: 12px;
+}
+
+.sim-test-on { color: #ffe680; font-weight: 600; }
+.sim-test-off { color: #9aa0aa; }
+
+.sim-test-verdict {
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.sim-test-pass { background: #1f6f3a; }
+.sim-test-fail { background: #a12626; }
+.sim-test-watch { background: #5a4a12; font-weight: 600; }
+
+.sim-test-hint {
+  font-size: 11px;
+  opacity: 0.6;
+}

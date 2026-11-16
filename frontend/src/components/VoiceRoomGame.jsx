@@ -12,13 +12,13 @@ const RTC_CONFIG = {
     { urls: 'stun:stun2.l.google.com:19302' },
     // Our own TURN server (for NAT traversal across different networks)
     {
-      urls: 'turn:GAME_SERVER_IP:3478',
-      username: 'playhouse',
+      urls: 'turn:turn.example.com:3478',
+      username: 'PLACEHOLDER_USER',
       credential: 'PLACEHOLDER_CREDENTIAL'
     },
     {
-      urls: 'turn:GAME_SERVER_IP:3478?transport=tcp',
-      username: 'playhouse',
+      urls: 'turn:turn.example.com:3478?transport=tcp',
+      username: 'PLACEHOLDER_USER',
       credential: 'PLACEHOLDER_CREDENTIAL'
     },
   ],
@@ -1167,7 +1167,7 @@ const VoiceRoomGame = ({ room, player, onLeave }) => {
     }
 
     // Update in backend
-    const API_BASE = import.meta.env.VITE_API_URL || 'https://tfplayhouse.com/api';
+    const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001/api';
     fetch(`${API_BASE}/voice-rooms/${room?.room_id}/`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },

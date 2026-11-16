@@ -41,7 +41,6 @@ Document any in-progress features here to prevent overlap:
 - Detail 1
 - Detail 2
 
-Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
 Example: `[frontend] Add login button`

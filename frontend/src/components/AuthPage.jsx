@@ -56,6 +56,15 @@ const AuthPage = ({ onLogin, isLoading }) => {
     }
   };
 
+  const handleGuest = async () => {
+    setError('');
+    try {
+      await onLogin('guest', {});
+    } catch (err) {
+      setError(err.message || 'Could not start a guest session');
+    }
+  };
+
   const switchMode = () => {
     setMode(mode === 'login' ? 'register' : 'login');
     setError('');
@@ -262,7 +271,7 @@ const AuthPage = ({ onLogin, isLoading }) => {
         <motion.button
           type="button"
           className="guest-btn"
-          onClick={() => onLogin('guest', {})}
+          onClick={handleGuest}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >

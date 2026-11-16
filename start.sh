@@ -11,7 +11,7 @@ echo ""
 echo -e "${PINK}Starting Django backend...${NC}"
 cd backend
 source venv/bin/activate
-python manage.py runserver 172.20.4.93:8001 &
+python manage.py runserver localhost:8001 &
 BACKEND_PID=$!
 cd ..
 
@@ -21,15 +21,15 @@ sleep 2
 # Start frontend
 echo -e "${PINK}Starting React frontend...${NC}"
 cd frontend
-npm run dev -- --host 172.20.4.93 --port 5174 &
+npm run dev -- --host localhost --port 5174 &
 FRONTEND_PID=$!
 cd ..
 
 echo ""
 echo -e "${PINK}✨ Game is starting up! ✨${NC}"
 echo ""
-echo "Backend running at: http://172.20.4.93:8001"
-echo "Frontend running at: http://172.20.4.93:5174"
+echo "Backend running at: http://localhost:8001"
+echo "Frontend running at: http://localhost:5174"
 echo ""
 echo "Press Ctrl+C to stop both servers"
 

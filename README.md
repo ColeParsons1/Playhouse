@@ -142,7 +142,7 @@ On `localhost`, voice rooms connect their WebSocket to `ws://localhost:8000` aut
 
 ### About `start.sh`
 
-`./start.sh` starts both servers at once, but it binds them to the LAN address `172.20.4.93` (backend on port 8001, frontend on 5174). Edit those addresses to match your machine, or follow the two steps above.
+`./start.sh` starts both servers at once, but it binds them to `localhost` (backend on port 8001, frontend on 5174). Edit those addresses to match your machine, or follow the two steps above.
 
 ### Settings and keys
 

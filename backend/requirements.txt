@@ -1,0 +1,8 @@
+# Backend dependencies (verified with Python 3.12: `python manage.py check` and migrations pass)
+# Setup: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+Django==6.1.3
+djangorestframework==3.18.3
+channels==4.3.2
+daphne==4.2.3
+django-cors-headers==4.9.0
+stripe==16.1.0

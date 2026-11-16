@@ -278,7 +278,7 @@ const YouTubeMusicPlayer = forwardRef(({
   }, [isAPIReady, volume, isHost]);
 
   // API base URL
-  const API_BASE = import.meta.env.VITE_API_URL || 'https://tfplayhouse.com/api';
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001/api';
 
   // Fetch autocomplete suggestions
   const fetchSuggestions = async (query) => {
